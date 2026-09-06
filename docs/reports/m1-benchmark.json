@@ -1,0 +1,31 @@
+{
+  "recordedAt": "2026-09-06T07:43:05.372Z",
+  "node": "v24.18.0",
+  "platform": "win32 10.0.26200",
+  "cpu": "AMD Ryzen 7 8845H w/ Radeon 780M Graphics",
+  "method": "Production build, 1000 persisted tasks, HTTP loopback; 200 warmup + 1000 sequential measured reads and edits; 20 switches; no model.",
+  "query": {
+    "samples": 1000,
+    "p50Ms": 13.59939999999915,
+    "p95Ms": 17.823200000000725,
+    "maxMs": 26.457399999999325
+  },
+  "write": {
+    "samples": 1000,
+    "p50Ms": 13.003600000000006,
+    "p95Ms": 17.66649999999936,
+    "maxMs": 70.15359999999964
+  },
+  "switchPause": {
+    "samples": 20,
+    "p50Ms": 1.1343000000015309,
+    "p95Ms": 1.5815000000002328,
+    "maxMs": 1.8241999999991094
+  },
+  "preparation": {
+    "samples": 20,
+    "p50Ms": 119.70080000000235,
+    "p95Ms": 145.11079999999856,
+    "maxMs": 148.5710999999974
+  }
+}

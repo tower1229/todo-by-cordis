@@ -2,7 +2,7 @@
 
 移动端优先的 AI 驱动 Todo Web 应用：用户通过对话生成、组合和修改插件，使同一应用与同一批任务数据持续获得新能力，并在独立验证约束下尝试自修复。
 
-**当前阶段：已完成第一轮 M0 核心机制实验，尚无可用 Web 应用或真实 AI 生成。** 15 项测试通过，保留运行基准与流程/事务恢复实验。
+**当前阶段：M1 可用 Web 应用已完成。** 支持持久化 Todo、默认/复盘工作流真实切换与撤回、明亮精致的响应式界面。流程插件为手写演示，尚未接入 AI 生成。
 
 当前原则：自迭代、性能、简单优雅的架构优先；演示功能精简，界面必须明亮、精致、富有生命感。旧文档中的安全治理平台不再是当前实施前置。
 
@@ -11,16 +11,33 @@
 - [V2 实施基线](docs/engineering/00-core-direction-v2.md)：最新范围、精简架构、视觉方向与里程碑，优先于旧工程文档。
 - [一手研究](docs/reports/self-evolution-research.md)：Cordis/dsh/Node 事实与架构取舍。
 - [M0 实测报告](docs/reports/m0-validation.md)：通过项、限制与下一步。
+- [M1 验收与演示](docs/reports/m1-validation.md)：运行说明、验收结果、性能与截图。
 
 使用 Node 24.18.0、pnpm 11.21.0：
 
 ```powershell
-pnpm install --frozen-lockfile --ignore-scripts
-pnpm test
-pnpm bench
+pnpm install --frozen-lockfile
+pnpm build
+pnpm start
 ```
 
-`experiments/` 是机制探针，`tests/runtime/` 是对应实验测试。没有 `pnpm dev`，也没有已接入模型的生成界面。实验夹具均为手写，不计作真实自迭代成果。
+打开 http://127.0.0.1:4517 。首次启动为空列表，可手工新增或点击“载入三件示例任务”。服务仅监听本机；数据库默认在 `.runtime/workspace.db`，开发与生产默认共用它。`DATABASE_PATH` 可指定独立数据库，`PORT` 可更换服务端口。
+
+开发时运行 `pnpm dev`，打开 http://127.0.0.1:5173 。Vite 代理 API 到 4517；开发与生产不要同时占用同一服务端口。前端支持热更新，修改服务端代码后重启开发命令。
+
+```powershell
+pnpm typecheck
+pnpm test
+pnpm exec playwright install chromium
+pnpm test:e2e
+pnpm bench:m1
+```
+
+`test:e2e` 和 `bench:m1` 使用最新生产构建，运行前先执行 `pnpm build`。测试使用独立临时数据库并自动清理，不改个人任务。浏览器测试监听 4518。
+
+`experiments/` 与 `tests/runtime/` 保留 M0 探针；正式应用在 `src/`，不导入实验 kernel。`pnpm bench` 仍运行 M0 调用微基准。
+
+需要备份时，先正常停止服务，再复制 `.runtime` 数据目录；恢复时在服务停止状态还原该目录。M1 不提供在线备份、导入或数据库迁移界面。
 
 ## 文档入口
 

@@ -4,10 +4,35 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.21.0",
-  "engines": { "node": "24.18.x" },
-  "scripts": {
-    "test": "node --test tests/runtime/*.test.mjs",
-    "bench": "node experiments/runtime/benchmark.mjs"
+  "engines": {
+    "node": "24.18.x"
   },
-  "dependencies": { "cordis": "4.0.0-rc.9" }
+  "scripts": {
+    "test": "node --import tsx --test tests/runtime/*.test.mjs tests/app/*.test.ts",
+    "bench": "node experiments/runtime/benchmark.mjs",
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc -p tsconfig.server.json && vite build",
+    "start": "node dist/server/main.js",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "bench:m1": "node scripts/benchmark.mjs"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.1",
+    "cordis": "4.0.0-rc.9",
+    "hono": "4.13.7",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.4.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "@vitejs/plugin-react": "6.1.1",
+    "prettier": "3.6.2",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2",
+    "vite": "8.2.2"
+  }
 }
