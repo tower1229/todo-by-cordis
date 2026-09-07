@@ -530,3 +530,95 @@ test("investigation never sends task data and operation retries return the origi
   );
   assert.equal(w.query().total, 1);
 });
+
+test("rejected proposal returns diagnostics so the same bounded investigation can correct its plan", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-plan-"));
+  const w = await Workspace.open(join(dir, "workspace.db"));
+  const fixture = new PlanningDriver();
+  let proposed = 0;
+  const driver: Driver = {
+    async generate(request) {
+      const result = await fixture.generate(request);
+      const call = result.calls[0];
+      if (call.name === "propose_plan" && proposed++ === 0) {
+        call.args.evidence = (call.args.evidence as { ref: string }[]).filter(
+          (e) => e.ref === "active-source",
+        );
+        call.args.writableScope = [
+          "active-source",
+          "active-contract",
+          "active-acceptance",
+        ];
+      }
+      return result;
+    },
+  };
+  const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+  t.after(async () => {
+    await e.close();
+    await w.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  await e.command({
+    type: "request",
+    text: "完成前填写复盘",
+    operationId: "request",
+  });
+  for (
+    let i = 0;
+    i < 100 && (await e.observe()).run?.status === "planning";
+    i++
+  )
+    await new Promise((r) => setTimeout(r, 10));
+  const run = (await e.observe()).run!;
+  assert.equal(run.status, "ready");
+  assert.equal(run.budget?.callsUsed, 4);
+  assert.equal(run.plans?.length, 2);
+  assert.equal(w.composition().revision, 1);
+  assert.equal(w.release.all().length, 2);
+  assert.ok(JSON.stringify(fixture.requests).includes("缺少调查证据"));
+});
+
+test("unavailable catalog source is a diagnostic, never read evidence or a crashed investigation", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-plan-"));
+  const w = await Workspace.open(join(dir, "workspace.db"));
+  const fixture = new PlanningDriver();
+  let attempted = false;
+  const driver: Driver = {
+    async generate(request) {
+      const result = await fixture.generate(request);
+      if (result.calls[0].name === "propose_plan" && !attempted) {
+        attempted = true;
+        return {
+          ...result,
+          calls: [{ name: "read_source", args: { ref: "../../.env" } }],
+        };
+      }
+      return result;
+    },
+  };
+  const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+  t.after(async () => {
+    await e.close();
+    await w.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  await e.command({
+    type: "request",
+    text: "完成前复盘",
+    operationId: "request",
+  });
+  for (
+    let i = 0;
+    i < 100 && (await e.observe()).run?.status === "planning";
+    i++
+  )
+    await new Promise((r) => setTimeout(r, 10));
+  const run = (await e.observe()).run!;
+  assert.equal(run.status, "ready");
+  assert.equal(
+    run.evidence?.some((e) => e.ref === "../../.env"),
+    false,
+  );
+  assert.equal(w.composition().revision, 1);
+});

@@ -11,7 +11,7 @@ import type {
   InvestigatedPlan,
 } from "../shared/assistant.js";
 import { AppError } from "../shared/contracts.js";
-import type { Investigation } from "../server/planning.js";
+import type { Investigation, InvestigationRead } from "../server/planning.js";
 import { hash } from "../release/storage.js";
 export type Target = {
   kind: "plugin";
@@ -26,7 +26,7 @@ export interface Domain {
     name: string,
     args: Record<string, unknown>,
     context: Investigation,
-  ): { ref: string; hash: string; content: unknown };
+  ): InvestigationRead;
   parse(
     value: unknown,
     context: Investigation,
@@ -34,6 +34,7 @@ export interface Domain {
   ): {
     plan: Omit<InvestigatedPlan, "id" | "requestRevision">;
     blockers: string[];
+    retryable: boolean;
   };
 }
 type RecordRun = {
@@ -395,7 +396,8 @@ export class Evolution {
       previousPlans: r.run.plans,
     });
     r.history = [];
-    while (true) {
+    const rejections = new Set<string>();
+    investigation: while (true) {
       const response = await this.call(
         r,
         {
@@ -454,6 +456,44 @@ export class Evolution {
               ...this.base(r),
               plans: [...(r.run.plans ?? []), plan],
             };
+            const rejection = hash({
+              blockers: parsed.blockers,
+              evidence: r.run.evidence,
+            });
+            if (
+              parsed.blockers.length &&
+              parsed.retryable &&
+              r.calls < this.limits.calls &&
+              !rejections.has(rejection)
+            ) {
+              rejections.add(rejection);
+              r.run = { ...base, status: "planning" };
+              r.history = [
+                ...r.history,
+                {
+                  role: "user",
+                  parts: [
+                    {
+                      functionResponse: {
+                        ...(call.id ? { id: call.id } : {}),
+                        name: call.name,
+                        response: {
+                          result: {
+                            accepted: false,
+                            blockers: parsed.blockers,
+                            budget: base.budget,
+                            instruction:
+                              "计划尚未通过，不允许执行。请在剩余预算内补读资料、纠正计划或如实保留阻塞；不要降低原目标、修改验收或绕过保护。相同诊断且没有新增证据会结束调查。",
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              ];
+              this.save(r);
+              continue investigation;
+            }
             r.run = parsed.blockers.length
               ? {
                   ...base,
@@ -467,10 +507,11 @@ export class Evolution {
           return;
         }
         const result = this.domain.read(call.name, call.args, context);
-        r.run.evidence = [
-          ...(r.run.evidence ?? []).filter((e) => e.ref !== result.ref),
-          { ref: result.ref, hash: result.hash },
-        ];
+        if ("ref" in result)
+          r.run.evidence = [
+            ...(r.run.evidence ?? []).filter((e) => e.ref !== result.ref),
+            { ref: result.ref, hash: result.hash },
+          ];
         parts.push({
           functionResponse: {
             ...(call.id ? { id: call.id } : {}),
