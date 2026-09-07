@@ -2,6 +2,8 @@
 
 > 历史 V1 方案。当前采用 [V2 精简架构](00-core-direction-v2.md)，不再按本文完整容器、能力代理、通用 UI DSL 和多包设计实施。
 
+> Agent 的最新范围、受保护策略、多文件候选与接口以 [Agent 重构详细设计](06-agent-redesign.md) 为准；本文 evolution-driver 替换不是应用内 Agent 的能力或本次验收要求。
+
 状态：拟实施 v1。本文的 TypeScript 为设计草案，不是 Cordis 原生 API，也不是已编译的 SDK。
 
 ## 1. 运行边界
