@@ -4,10 +4,10 @@ import type {
   AssistantSnapshot,
 } from "../shared/assistant.js";
 
-// Public planning boundary. Commands persist revisions and operation receipts.
-// Legacy confirm is parsed only to return an explicit refusal, never execution.
+// Public assistant boundary. Commands persist revisions and operation receipts.
+// Legacy confirm is parsed only to return an explicit refusal, never apply.
 export type AssistantService = {
-  observe(runId?: string): Promise<AssistantSnapshot>;
+  observe(runId?: string, afterSequence?: number): Promise<AssistantSnapshot>;
   command(command: AssistantCommand): Promise<AssistantSnapshot>;
 };
 
@@ -52,6 +52,13 @@ export function parseAssistantCommand(value: unknown): AssistantCommand {
       type: "cancel",
       operationId: input.operationId,
       runId: input.runId,
+    };
+  if (input.type === "start" && id(input.planId))
+    return {
+      type: "start",
+      operationId: input.operationId,
+      runId: input.runId,
+      planId: input.planId,
     };
   if (
     input.type === "confirm" &&

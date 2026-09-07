@@ -40,7 +40,12 @@ export function createApp(
   );
   app.get("/api/composition", (c) => c.json(workspace.composition()));
   app.get("/api/assistant", async (c) =>
-    c.json(await assistant.observe(c.req.query("runId"))),
+    c.json(
+      await assistant.observe(
+        c.req.query("runId"),
+        Number(c.req.query("after") ?? 0) || 0,
+      ),
+    ),
   );
   app.post("/api/assistant/commands", async (c) =>
     c.json(await assistant.command(parseAssistantCommand(await c.req.json()))),

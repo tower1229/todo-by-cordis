@@ -8,14 +8,17 @@ import { createApp } from "../../src/server/app.js";
 import { Evolution } from "../../src/evolution/evolution.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { PlanningDriver, toolReply } from "./planning-fixture.js";
+import { ExecutionDriver } from "./execution-fixture.js";
 const dir = mkdtempSync(join(tmpdir(), "cordis-browser-plan-"));
 const workspace = await Workspace.open(join(dir, "workspace.db"));
-const fixture = new PlanningDriver();
+const planning = new PlanningDriver();
 let clarify = false;
 const evolution = new Evolution(
   workspace.db,
   {
     async generate(request) {
+      if (request.tools?.some((t) => t.name === "submit_candidate"))
+        return new ExecutionDriver(planning).generate(request);
       if (request.message) {
         const input = JSON.parse(request.message) as { revisions: unknown[] };
         clarify = input.revisions.length === 1;
@@ -24,7 +27,7 @@ const evolution = new Evolution(
         return toolReply("request_clarification", {
           question: "复盘是必填还是选填？",
         });
-      return fixture.generate(request);
+      return planning.generate(request);
     },
   },
   new EvolutionDomain(workspace),

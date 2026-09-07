@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { ArrowUp, Check, Circle, CircleAlert, Sparkles } from "lucide-react";
-import type { AssistantStep } from "../shared/assistant.js";
+import type { AssistantEvent, AssistantStep } from "../shared/assistant.js";
 import type { AssistantController } from "./useAssistant.js";
 import { Button, ErrorMessage, Spinner } from "./ui.js";
 
@@ -20,6 +20,7 @@ function Steps({ steps }: { steps: AssistantStep[] }) {
           )}
           <span className={step.status === "pending" ? "text-muted" : ""}>
             {step.label}
+            {step.attempt && step.attempt > 1 ? ` · 第 ${step.attempt} 次` : ""}
           </span>
           <span className="sr-only">
             {
@@ -36,6 +37,24 @@ function Steps({ steps }: { steps: AssistantStep[] }) {
     </ol>
   );
 }
+
+function EventLog({ events }: { events: AssistantEvent[] }) {
+  if (!events.length) return null;
+  return (
+    <details className="text-xs leading-6 text-muted break-all">
+      <summary className="cursor-pointer">执行日志</summary>
+      <ol className="mt-2 space-y-1">
+        {events.map((event) => (
+          <li key={event.sequence}>
+            #{event.sequence} {event.label} · {event.status}
+            {event.detail ? ` · ${event.detail}` : ""}
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
 export function AssistantPanel({
   controller,
 }: {
@@ -47,12 +66,14 @@ export function AssistantPanel({
   const composing = useRef(false);
   const [editing, setEditing] = useState(false);
   const unconfigured = snapshot?.availability === "unconfigured";
-  const awaiting = run?.status === "ready" && !editing;
+  const locked =
+    run?.status === "executing" || run?.status === "awaiting-apply";
+  const hideComposer = (run?.status === "ready" && !editing) || locked;
   const canSend =
     snapshot?.availability === "ready" &&
     !busy &&
     !working &&
-    !awaiting &&
+    !hideComposer &&
     Boolean(draft.trim());
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -178,10 +199,27 @@ export function AssistantPanel({
                   </p>
                 ))}
               </details>
-              <p className="text-xs text-muted">
-                本阶段仅形成计划，尚未生成候选。执行入口将在后续版本开放。
-              </p>
-              <div className="flex gap-2">
+              {run.status === "ready" && (
+                <p className="text-xs text-muted">
+                  开始执行后将锁定需求并生成候选；验证通过后仍须另行确认应用。
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {run.status === "ready" && (
+                  <Button
+                    variant="primary"
+                    disabled={busy}
+                    onClick={() =>
+                      command({
+                        type: "start",
+                        runId: run.id,
+                        planId: run.plan.id,
+                      })
+                    }
+                  >
+                    开始执行{busy && <Spinner />}
+                  </Button>
+                )}
                 <Button
                   disabled={busy}
                   onClick={() => {
@@ -217,33 +255,58 @@ export function AssistantPanel({
             {Math.ceil(run.budget.millisecondsRemaining / 1000)} 秒
           </p>
         )}
-        {!!run?.revisions?.length && (
-          <details className="text-sm">
-            <summary>需求与计划历史</summary>
-            {run.revisions.map((r) => (
-              <p
-                key={r.revision}
-                className="py-2 whitespace-pre-wrap break-words"
-              >
-                修订 {r.revision}：{r.text}
-              </p>
-            ))}
-            {run.plans?.map((p) => (
-              <p key={p.id}>
-                修订 {p.requestRevision} 的计划：{p.summary}
-              </p>
-            ))}
-          </details>
-        )}
+        {!!run?.revisions?.length &&
+          run.status !== "executing" &&
+          run.status !== "awaiting-apply" && (
+            <details className="text-sm">
+              <summary>需求与计划历史</summary>
+              {run.revisions.map((r) => (
+                <p
+                  key={r.revision}
+                  className="py-2 whitespace-pre-wrap break-words"
+                >
+                  修订 {r.revision}：{r.text}
+                </p>
+              ))}
+              {run.plans?.map((p) => (
+                <p key={p.id}>
+                  修订 {p.requestRevision} 的计划：{p.summary}
+                </p>
+              ))}
+            </details>
+          )}
         {run?.status === "executing" && (
-          <section className="space-y-5" aria-label="执行状态">
+          <section className="space-y-5" aria-label="执行进度">
             <p role="status" className="text-sm font-medium">
-              正在执行
+              正在执行 · 需求已锁定
             </p>
             <Steps steps={run.steps} />
+            <EventLog events={snapshot?.events ?? []} />
             <p className="text-xs leading-5 text-muted">
-              可以收起助手，完成后会通知你。
+              可以收起助手继续使用 Todo，回来后会恢复同一次执行。
             </p>
+          </section>
+        )}
+        {run?.status === "awaiting-apply" && (
+          <section className="space-y-5" aria-label="候选结果">
+            <p
+              role="status"
+              className="flex items-start gap-2 text-sm leading-6"
+            >
+              <Check className="mt-1 size-4 shrink-0 text-accent" />
+              {run.summary}
+            </p>
+            <p className="text-xs text-muted">
+              候选已验证且尚未应用到正式环境。正式应用入口将在后续版本开放。
+            </p>
+            <Steps steps={run.steps} />
+            <EventLog events={snapshot?.events ?? []} />
+            <Button
+              disabled={busy}
+              onClick={() => command({ type: "cancel", runId: run.id })}
+            >
+              放弃候选
+            </Button>
           </section>
         )}
         {run?.status === "succeeded" && (
@@ -267,6 +330,7 @@ export function AssistantPanel({
           <div className="space-y-4">
             <ErrorMessage message={run.message} />
             <Steps steps={run.steps} />
+            <EventLog events={snapshot?.events ?? []} />
             <Button onClick={() => setDraft(run.request)}>修改后重试</Button>
           </div>
         )}
@@ -281,7 +345,8 @@ export function AssistantPanel({
             disabled={busy}
             onClick={() => command({ type: "cancel", runId: run.id })}
           >
-            取消{busy && <Spinner />}
+            {run.status === "executing" ? "停止" : "取消"}
+            {busy && <Spinner />}
           </Button>
         )}
         <ErrorMessage message={error} />
@@ -292,7 +357,7 @@ export function AssistantPanel({
           </div>
         )}
       </div>
-      {!working && !awaiting && (
+      {!working && !hideComposer && (
         <form
           className="shrink-0 border-t border-line p-4"
           onSubmit={async (event) => {

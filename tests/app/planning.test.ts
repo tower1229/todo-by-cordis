@@ -485,7 +485,7 @@ test("old pending confirmation is interrupted without replay and historical run 
       compositionRevision: 1,
       operationId: "legacy-confirm",
     }),
-    /仅支持需求调查/,
+    /旧确认不能授予/,
   );
   assert.equal(w.composition().revision, 1);
 });

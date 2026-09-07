@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   isAssistantWorking,
+  type AssistantEvent,
   type AssistantSnapshot,
   type AssistantCommand,
 } from "../shared/assistant.js";
@@ -22,6 +23,9 @@ export function useAssistant(onCompleted: () => Promise<void>) {
   const locked = useRef(false);
   const observing = useRef(false);
   const completed = useRef<string | null>(null);
+  const eventCursor = useRef(0);
+  const events = useRef<AssistantEvent[]>([]);
+  const runId = useRef<string | undefined>(undefined);
   const onCompletedRef = useRef(onCompleted);
   onCompletedRef.current = onCompleted;
   useEffect(() => {
@@ -32,9 +36,31 @@ export function useAssistant(onCompleted: () => Promise<void>) {
     observing.current = true;
     const request = ++sequence.current;
     try {
-      const result = await api<AssistantSnapshot>("/assistant");
+      const id = runId.current;
+      const query = id
+        ? `?runId=${encodeURIComponent(id)}&after=${eventCursor.current}`
+        : "";
+      const result = await api<AssistantSnapshot>(`/assistant${query}`);
       if (request !== sequence.current) return;
-      setSnapshot(result);
+      if (result.run?.id && result.run.id !== runId.current) {
+        runId.current = result.run.id;
+        events.current = result.events ?? [];
+        eventCursor.current = result.eventCursor ?? 0;
+      } else if (result.events?.length) {
+        const seen = new Set(events.current.map((e) => e.sequence));
+        for (const event of result.events)
+          if (!seen.has(event.sequence)) events.current.push(event);
+        eventCursor.current =
+          result.eventCursor ??
+          events.current.at(-1)?.sequence ??
+          eventCursor.current;
+      } else if (result.run) runId.current = result.run.id;
+      else runId.current = undefined;
+      setSnapshot({
+        ...result,
+        events: [...events.current],
+        eventCursor: eventCursor.current,
+      });
       setError("");
     } catch (error) {
       if (request === sequence.current) setError(errorMessage(error));
@@ -51,7 +77,6 @@ export function useAssistant(onCompleted: () => Promise<void>) {
   const working = isAssistantWorking(snapshot?.run);
   useEffect(() => {
     if (!working && !error) return;
-    // Polling observes host state only, and continues when the panel is closed.
     const timer = setInterval(() => {
       void observe();
     }, 1500);
@@ -59,7 +84,10 @@ export function useAssistant(onCompleted: () => Promise<void>) {
   }, [working, error, observe]);
   useEffect(() => {
     const run = snapshot?.run;
-    if (run?.status === "succeeded" && completed.current !== run.id) {
+    if (
+      (run?.status === "succeeded" || run?.status === "awaiting-apply") &&
+      completed.current !== run.id
+    ) {
       completed.current = run.id;
       void onCompletedRef.current();
     }
@@ -76,7 +104,18 @@ export function useAssistant(onCompleted: () => Promise<void>) {
         input,
       );
       sequence.current++;
-      setSnapshot(result);
+      if (result.run?.id) {
+        if (result.run.id !== runId.current || input.type === "start") {
+          events.current = result.events ?? [];
+          eventCursor.current = result.eventCursor ?? 0;
+        }
+        runId.current = result.run.id;
+      }
+      setSnapshot({
+        ...result,
+        events: [...events.current],
+        eventCursor: eventCursor.current,
+      });
       return true;
     } catch (error) {
       setError(errorMessage(error));

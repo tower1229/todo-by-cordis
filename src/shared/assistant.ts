@@ -23,6 +23,16 @@ export type AssistantStep = {
   id: string;
   label: string;
   status: "pending" | "running" | "succeeded" | "failed";
+  attempt?: number;
+};
+export type AssistantEvent = {
+  sequence: number;
+  stepId: string;
+  attempt: number;
+  label: string;
+  status: "started" | "succeeded" | "failed";
+  detail?: string;
+  at: string;
 };
 export type WorkflowRule = {
   key: string;
@@ -92,7 +102,13 @@ export type AssistantRun = Run &
     | { status: "dismissed"; message: string }
     | { status: "awaiting-input"; question: string }
     | { status: "awaiting-confirmation"; plan: AssistantPlan }
-    | { status: "executing"; plan: AssistantPlan; steps: AssistantStep[] }
+    | { status: "executing"; plan: InvestigatedPlan; steps: AssistantStep[] }
+    | {
+        status: "awaiting-apply";
+        plan: InvestigatedPlan;
+        steps: AssistantStep[];
+        summary: string;
+      }
     | { status: "succeeded"; summary: string; steps: AssistantStep[] }
     | { status: "failed"; message: string; steps: AssistantStep[] }
     | { status: "cancelled" }
@@ -100,9 +116,17 @@ export type AssistantRun = Run &
 export type AssistantSnapshot = {
   availability: "ready" | "unconfigured";
   run: AssistantRun | null;
+  events?: AssistantEvent[];
+  eventCursor?: number;
 };
 export type AssistantCommand =
   | { type: "request"; operationId: string; text: string; runId?: string }
+  | {
+      type: "start";
+      operationId: string;
+      runId: string;
+      planId: string;
+    }
   | {
       type: "confirm";
       operationId: string;

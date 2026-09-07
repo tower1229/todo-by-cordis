@@ -217,6 +217,7 @@ function App() {
       run?.status === "dismissed" ||
       run?.status === "awaiting-confirmation" ||
       run?.status === "awaiting-input" ||
+      run?.status === "awaiting-apply" ||
       run?.status === "succeeded" ||
       run?.status === "failed");
   const navigation = (mobile = false) => (

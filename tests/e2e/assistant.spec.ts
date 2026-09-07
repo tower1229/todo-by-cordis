@@ -4,7 +4,7 @@ import type {
   AssistantSnapshot,
 } from "../../src/shared/assistant.js";
 // Browser contract fixtures; real backend planning is covered by app tests.
-test("investigation, clarification, ready and reload never start execution", async ({
+test("investigation, clarification, ready and start entry are available", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 320, height: 850 });
@@ -15,13 +15,35 @@ test("investigation, clarification, ready and reload never start execution", asy
   };
   let snapshot: AssistantSnapshot = { availability: "ready", run: null };
   const commands: AssistantCommand[] = [];
-  await page.route("**/api/assistant", (route) =>
+  await page.route("**/api/assistant**", (route) =>
     route.fulfill({ json: snapshot }),
   );
   await page.route("**/api/assistant/commands", async (route) => {
     const command = route.request().postDataJSON() as AssistantCommand;
     commands.push(command);
-    snapshot = { availability: "ready", run: { ...base, status: "planning" } };
+    if (command.type === "start") {
+      snapshot = {
+        availability: "ready",
+        run: {
+          ...base,
+          status: "executing",
+          plan: (snapshot.run as { plan: never }).plan,
+          steps: [
+            {
+              id: "gen",
+              label: "生成候选",
+              status: "running",
+              attempt: 1,
+            },
+          ],
+        },
+      };
+    } else {
+      snapshot = {
+        availability: "ready",
+        run: { ...base, status: "planning" },
+      };
+    }
     await route.fulfill({ json: snapshot });
   });
   await page.goto("/");
@@ -37,6 +59,47 @@ test("investigation, clarification, ready and reload never start execution", asy
   await expect(page.getByText("复盘必填还是选填？")).toBeVisible();
   await page.getByRole("textbox", { name: "告诉 AI 你的需求" }).fill("必填");
   await page.getByRole("button", { name: "发送需求" }).click();
+  const plan = {
+    id: "plan-2",
+    compositionRevision: 1,
+    route: { kind: "application" as const },
+    summary: base.request,
+    changes: ["增加复盘"],
+    outcome: "空复盘不能完成",
+    dataImpact: "保留任务",
+    requestRevision: 2,
+    excluded: [],
+    evidence: [{ ref: "active-source", hash: "source-hash" }],
+    capabilityChanges: [
+      {
+        capability: "工作流",
+        provider: "active-source",
+        consumers: [],
+        change: "增加复盘字段",
+      },
+    ],
+    cases: [],
+    workflowRules: [],
+    ruleChanges: [],
+    acceptance: ["空复盘保持未完成"],
+    steps: [
+      {
+        id: "workflow",
+        purpose: "调整完成行为",
+        dependsOn: [],
+        artifact: "工作流候选",
+        evidence: "独立验收",
+      },
+    ],
+    writableScope: ["active-source"],
+    compatibility: "保留字段",
+    rollback: "保留数据撤回",
+    preview: "隔离合成任务",
+    application: "另行确认应用",
+    restartImpact: "重启业务子进程",
+    dependencies: [],
+    unresolved: [],
+  };
   snapshot = {
     availability: "ready",
     run: {
@@ -63,69 +126,20 @@ test("investigation, clarification, ready and reload never start execution", asy
         candidatesRemaining: 3,
         millisecondsRemaining: 590000,
       },
-      plan: {
-        id: "plan-2",
-        compositionRevision: 1,
-        route: { kind: "modify-plugin", pluginId: "default", name: "应用改进" },
-        summary: base.request,
-        changes: ["增加复盘"],
-        outcome: "空复盘不能完成",
-        dataImpact: "保留任务",
-        requestRevision: 2,
-        excluded: [],
-        evidence: [{ ref: "active-source", hash: "source-hash" }],
-        capabilityChanges: [
-          {
-            capability: "工作流",
-            provider: "active-source",
-            consumers: [],
-            change: "增加复盘字段",
-          },
-        ],
-        cases: [],
-        workflowRules: [],
-        ruleChanges: [],
-        acceptance: ["空复盘保持未完成"],
-        steps: [
-          {
-            id: "workflow",
-            purpose: "调整完成行为",
-            dependsOn: [],
-            artifact: "工作流候选",
-            evidence: "独立验收",
-          },
-        ],
-        writableScope: ["active-source"],
-        compatibility: "保留字段",
-        rollback: "保留数据撤回",
-        preview: "隔离合成任务",
-        application: "另行确认应用",
-        restartImpact: "重启业务子进程",
-        dependencies: [],
-        unresolved: [],
-      },
+      plan,
     },
   };
   await expect(page.getByRole("region", { name: "待确认方案" })).toBeVisible();
   await expect(page.getByText("空复盘不能完成")).toBeVisible();
+  await expect(page.getByRole("button", { name: "开始执行" })).toBeVisible();
   await expect(page.getByRole("button", { name: "确认执行" })).toHaveCount(0);
-  await page.reload();
-  await page.getByRole("button", { name: "改进应用", exact: true }).click();
-  await expect(page.getByRole("region", { name: "待确认方案" })).toBeVisible();
-  expect(commands.map((c) => c.type)).toEqual(["request", "answer"]);
-  await page.getByText("需求与计划历史", { exact: true }).click();
-  await expect(page.getByText("修订 2：必填")).toBeVisible();
-  await page.getByRole("button", { name: "修改需求", exact: true }).click();
-  await page
-    .getByRole("textbox", { name: "告诉 AI 你的需求" })
-    .fill("完成前复盘十个字");
-  await page.getByRole("button", { name: "发送需求" }).click();
-  expect(commands[2]).toMatchObject({ type: "revise", runId: base.id });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBe(true);
+  await page.getByRole("button", { name: "开始执行", exact: true }).click();
+  await expect(page.getByRole("region", { name: "执行进度" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "停止" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "告诉 AI 你的需求" })).toHaveCount(
+    0,
+  );
+  expect(commands.map((c) => c.type)).toEqual(["request", "answer", "start"]);
 });
 
 test("AI unavailable never fabricates a plan, requests do not change tasks", async ({
@@ -167,9 +181,10 @@ test("AI connection loss shows the last known stage and cancellation uses the ru
     run: { ...run, status: "planning" },
   };
   let offline = false;
-  await page.route("**/api/assistant", (route) =>
-    offline ? route.abort() : route.fulfill({ json: snapshot }),
-  );
+  await page.route("**/api/assistant**", (route) => {
+    if (route.request().url().includes("/commands")) return route.fallback();
+    return offline ? route.abort() : route.fulfill({ json: snapshot });
+  });
   const commands: AssistantCommand[] = [];
   await page.route("**/api/assistant/commands", async (route) => {
     commands.push(route.request().postDataJSON());

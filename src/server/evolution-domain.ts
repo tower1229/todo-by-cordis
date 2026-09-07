@@ -6,7 +6,7 @@ import {
   parsePlan,
   type Investigation,
 } from "./planning.js";
-import type { PlanEvidence } from "../shared/assistant.js";
+import type { PlanEvidence, InvestigatedPlan } from "../shared/assistant.js";
 import type { Domain, Target } from "../evolution/evolution.js";
 import { Workspace } from "./workspace.js";
 import {
@@ -55,12 +55,32 @@ export class EvolutionDomain implements Domain {
       parsed.blockers.push("调查期间实现资料已变化，请重新调查");
     return parsed;
   }
+  target(plan: InvestigatedPlan): Target {
+    const base = this.workspace.release.get(plan.baseVersion!);
+    return {
+      kind: "plugin",
+      baseVersion: plan.baseVersion!,
+      payload: {
+        pluginId: base.pluginId,
+        name: base.name,
+        fields: plan.workflowRules,
+      },
+    };
+  }
   check(target: Target, revision: number) {
     if (
       this.workspace.composition().revision !== revision ||
       this.workspace.activeVersion().id !== target.baseVersion
     )
       throw new AppError("PLAN_STALE", "基础版本已变化，请重新规划并确认", 409);
+  }
+  generation(target: Target) {
+    const base = this.workspace.release.get(target.baseVersion);
+    return {
+      contract,
+      source: base.source,
+      instruction: `Implement the frozen investigated plan as one self-contained TypeScript plugin. First read_contract and read_current_source. Export default an object satisfying Plugin; only type imports from './contract.js' allowed. No dependencies, IO, globals, runtime imports, any or enum. Submit complete source using submit_candidate. Keep the exact pluginId from target.payload, existing task states open/done, actions complete/reopen, all unknown task.fields. describe must be deterministic with initialState open; preserve base state/action definitions. For complete: collect target.payload.fields in a form when required values are missing/blank; validate trimmed Unicode code point lengths against minLength/maxLength; reject invalid values; valid input commits done and merges fields, storing trimmed text. Do not reuse stored text to bypass required input. Reopen commits open and preserves fields. Unsupported action or wrong state rejects. Field definitions must match frozen goal key,label,type:text,required. No side effects. You cannot change acceptance rules, install dependencies, publish, or call apply. Diagnostics are from host protected tests. A successful candidate stops for separate user apply confirmation. Use Chinese concise labels/errors.`,
+    };
   }
   async candidate(
     source: string,

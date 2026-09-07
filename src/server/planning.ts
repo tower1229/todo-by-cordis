@@ -116,7 +116,7 @@ export const planningInstruction = `你是本应用唯一的自迭代 Agent，�
 对于 workflow/1，先 describe_verification(rules) 取得可信检查器定义，把返回 cases 原样作为 acceptance、rules 作为 workflowRules。其他行为不能伪装为这些断言；保留原业务案例和空 workflowRules，宿主会阻塞。必须读取 active-contract 和 active-acceptance，规则改变在计划中展示旧新差异。
 提交前核对 inspect_application.planningRequirements，evidence 包含全部 requiredEvidence 及相关消费方的已读 ref/hash。propose_plan 被宿主拒绝时按工具返回的诊断继续只读调查和修正计划，不降级原目标，不削弱检查器；真实阻塞如实保留。
 propose_plan 包含 summary、changes、outcome、dataImpact、excluded、evidence(ref/hash，必须引用真实读过的资料)、capabilityChanges(capability/provider/consumers/change)、acceptance(given/when/then/checker)、steps(id/purpose/dependsOn/artifact/evidence)、writableScope、compatibility、rollback、preview、application、restartImpact、dependencies(所需包名)、unresolved。每项都真实具体；验收应覆盖正例、边界、已有行为和数据保留。不要自行声称验收已通过。ready 由宿主校验决定。
-当前票只完成调查到 ready，没有开始执行或应用工具。后续执行前仍须用户点击开始，正式应用还需针对已验证候选另行确认。宿主只提供 workflow/1 的固定文本字段检查器；其他行为须注明所需检查器并阻塞，不冒充已支持，也不降低目标。混合业务/控制文件须先由维护者拆出保护职责。`;
+用户点击开始后才会生成候选；验证通过后停在待应用，正式应用须另行确认，不得把开始当作应用授权。宿主只提供 workflow/1 的固定文本字段检查器；其他行为须注明所需检查器并阻塞，不冒充已支持，也不降低目标。混合业务/控制文件须先由维护者拆出保护职责。`;
 const obj = (
   properties: Record<string, unknown>,
   required = Object.keys(properties),
