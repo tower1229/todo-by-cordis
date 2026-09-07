@@ -4,11 +4,10 @@ import type {
   AssistantSnapshot,
 } from "../shared/assistant.js";
 
-// M2 integration boundary. Implementations must persist runs and deduplicate
-// operationId; confirm must bind the exact plan and recheck compositionRevision.
-// Request creates a plan only. No task/plugin mutation before explicit confirm.
+// Public planning boundary. Commands persist revisions and operation receipts.
+// Legacy confirm is parsed only to return an explicit refusal, never execution.
 export type AssistantService = {
-  observe(): Promise<AssistantSnapshot>;
+  observe(runId?: string): Promise<AssistantSnapshot>;
   command(command: AssistantCommand): Promise<AssistantSnapshot>;
 };
 
@@ -19,7 +18,11 @@ export function parseAssistantCommand(value: unknown): AssistantCommand {
   const id = (value: unknown): value is string =>
     typeof value === "string" && value.length > 0 && value.length <= 100;
   if (!id(input.operationId)) throw invalid();
-  if (input.type === "request") {
+  if (
+    input.type === "request" ||
+    input.type === "answer" ||
+    input.type === "revise"
+  ) {
     if (
       typeof input.text !== "string" ||
       !input.text.trim() ||
@@ -27,6 +30,15 @@ export function parseAssistantCommand(value: unknown): AssistantCommand {
       (input.runId !== undefined && !id(input.runId))
     )
       throw invalid();
+    if (input.type !== "request") {
+      if (!id(input.runId)) throw invalid();
+      return {
+        type: input.type,
+        operationId: input.operationId,
+        text: input.text.trim(),
+        runId: input.runId,
+      };
+    }
     return {
       type: "request",
       operationId: input.operationId,

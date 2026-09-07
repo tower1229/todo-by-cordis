@@ -39,7 +39,9 @@ export function createApp(
     c.json(workspace.operation(c.req.param("id"))),
   );
   app.get("/api/composition", (c) => c.json(workspace.composition()));
-  app.get("/api/assistant", async (c) => c.json(await assistant.observe()));
+  app.get("/api/assistant", async (c) =>
+    c.json(await assistant.observe(c.req.query("runId"))),
+  );
   app.post("/api/assistant/commands", async (c) =>
     c.json(await assistant.command(parseAssistantCommand(await c.req.json()))),
   );

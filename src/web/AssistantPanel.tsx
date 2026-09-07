@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { ArrowUp, Check, Circle, CircleAlert, Sparkles } from "lucide-react";
 import type { AssistantStep } from "../shared/assistant.js";
 import type { AssistantController } from "./useAssistant.js";
@@ -45,8 +45,9 @@ export function AssistantPanel({
     controller;
   const run = snapshot?.run;
   const composing = useRef(false);
+  const [editing, setEditing] = useState(false);
   const unconfigured = snapshot?.availability === "unconfigured";
-  const awaiting = run?.status === "awaiting-confirmation";
+  const awaiting = run?.status === "ready" && !editing;
   const canSend =
     snapshot?.availability === "ready" &&
     !busy &&
@@ -61,7 +62,7 @@ export function AssistantPanel({
             <Sparkles className="mb-4 size-6 text-accent" strokeWidth={1.5} />
             <p className="text-base font-medium">有什么需要调整？</p>
             <p className="mt-2 text-sm leading-6 text-muted">
-              说说需求，先确认方案，再执行。
+              描述希望应用增加或改变的能力，先调查并展示计划。
             </p>
           </div>
         )}
@@ -79,81 +80,160 @@ export function AssistantPanel({
         {run?.status === "awaiting-input" && (
           <p className="text-sm leading-6">{run.question}</p>
         )}
-        {run?.status === "awaiting-confirmation" && (
-          <section className="space-y-5" aria-label="待确认方案">
-            <h3 className="text-[15px] font-semibold">确认方案</h3>
-            <dl className="space-y-4 text-sm leading-6">
-              <div>
-                <dt className="plan-label">需求理解</dt>
-                <dd>{run.plan.summary}</dd>
-              </div>
-              <div>
-                <dt className="plan-label">处理方式</dt>
-                <dd>
-                  {run.plan.route.kind === "task"
-                    ? "操作任务"
-                    : run.plan.route.kind === "create-plugin"
-                      ? `新建插件 · ${run.plan.route.name}`
-                      : `修改现有插件 · ${run.plan.route.name}`}
-                </dd>
-              </div>
-              <div>
-                <dt className="plan-label">具体改动</dt>
-                <dd>
-                  <ul className="list-disc space-y-1 pl-4">
-                    {run.plan.changes.map((change, i) => (
-                      <li key={i}>{change}</li>
+        {(run?.status === "ready" || (run?.status === "blocked" && run.plan)) &&
+          run.plan && (
+            <section className="space-y-5" aria-label="待确认方案">
+              <h3 className="text-[15px] font-semibold">
+                执行计划 · 需求修订 {run.plan.requestRevision}
+              </h3>
+              <dl className="space-y-4 text-sm leading-6">
+                {[
+                  ["目标", run.plan.summary],
+                  ["最终效果", run.plan.outcome],
+                  ["数据影响", run.plan.dataImpact],
+                  ["兼容方式", run.plan.compatibility],
+                  ["撤回方式", run.plan.rollback],
+                  ["候选体验", run.plan.preview],
+                  ["应用方式", run.plan.application],
+                  ["重启影响", run.plan.restartImpact],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="plan-label">{label}</dt>
+                    <dd className="break-words">{value}</dd>
+                  </div>
+                ))}
+                {!!run.plan.ruleChanges.length && (
+                  <div>
+                    <dt className="plan-label">业务规则修订</dt>
+                    <dd>
+                      {run.plan.ruleChanges.map((c, i) => (
+                        <p key={i}>{c}</p>
+                      ))}
+                    </dd>
+                  </div>
+                )}
+                <div>
+                  <dt className="plan-label">具体改动</dt>
+                  <dd>
+                    {run.plan.changes.map((c, i) => (
+                      <p key={i}>{c}</p>
                     ))}
-                  </ul>
-                </dd>
-              </div>
-              <div>
-                <dt className="plan-label">最终效果</dt>
-                <dd>{run.plan.outcome}</dd>
-              </div>
-              <div>
-                <dt className="plan-label">数据影响</dt>
-                <dd>{run.plan.dataImpact}</dd>
-              </div>
-              {run.plan.acceptance?.length ? (
+                  </dd>
+                </div>
                 <div>
                   <dt className="plan-label">验收条件</dt>
                   <dd>
                     <ul>
-                      {run.plan.acceptance.map((condition) => (
-                        <li key={condition}>{condition}</li>
+                      {run.plan.acceptance?.map((c, i) => (
+                        <li key={i}>{c}</li>
                       ))}
                     </ul>
                   </dd>
                 </div>
-              ) : null}
-            </dl>
-            <div className="flex gap-2">
-              <Button
-                variant="primary"
-                disabled={busy}
-                onClick={() =>
-                  command({
-                    type: "confirm",
-                    runId: run.id,
-                    planId: run.plan.id,
-                    compositionRevision: run.plan.compositionRevision,
-                  })
-                }
-              >
-                {busy && <Spinner />}确认执行
-              </Button>
-              <Button
-                disabled={busy}
-                onClick={async () => {
-                  if (await command({ type: "cancel", runId: run.id }))
+                <div>
+                  <dt className="plan-label">大致步骤</dt>
+                  <dd>
+                    <ol className="list-decimal pl-5">
+                      {run.plan.steps.map((s) => (
+                        <li key={s.id}>
+                          {s.purpose} · {s.artifact}
+                        </li>
+                      ))}
+                    </ol>
+                  </dd>
+                </div>
+                <div>
+                  <dt className="plan-label">能力差异</dt>
+                  <dd>
+                    {run.plan.capabilityChanges.map((c, i) => (
+                      <p key={i}>
+                        {c.capability}：{c.change}
+                      </p>
+                    ))}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="plan-label">不包含</dt>
+                  <dd>{run.plan.excluded.join("；") || "无额外排除项"}</dd>
+                </div>
+                <div>
+                  <dt className="plan-label">未决项</dt>
+                  <dd>{run.plan.unresolved.join("；") || "无"}</dd>
+                </div>
+              </dl>
+              <details className="text-xs leading-6 text-muted break-all">
+                <summary>调查证据与修改范围</summary>
+                <p>基础版本：{run.plan.baseVersion}</p>
+                <p>修改范围：{run.plan.writableScope.join("、")}</p>
+                <p>依赖：{run.plan.dependencies.join("、") || "无新增依赖"}</p>
+                {run.plan.evidence.map((e) => (
+                  <p key={e.ref}>
+                    {e.ref} · {e.hash}
+                  </p>
+                ))}
+                {run.plan.steps.map((s) => (
+                  <p key={s.id}>
+                    {s.purpose}；依赖：{s.dependsOn.join("、") || "无"}
+                    ；完成证据：{s.evidence}
+                  </p>
+                ))}
+              </details>
+              <p className="text-xs text-muted">
+                本阶段仅形成计划，尚未生成候选。执行入口将在后续版本开放。
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  disabled={busy}
+                  onClick={() => {
+                    setEditing(true);
                     setDraft(run.request);
-                }}
+                  }}
+                >
+                  修改需求
+                </Button>
+                <Button
+                  disabled={busy}
+                  onClick={() => command({ type: "cancel", runId: run.id })}
+                >
+                  放弃计划
+                </Button>
+              </div>
+            </section>
+          )}
+        {(run?.status === "blocked" ||
+          run?.status === "interrupted" ||
+          run?.status === "dismissed") && (
+          <p role="status" className="text-sm leading-6">
+            {run.message}
+          </p>
+        )}
+        {run?.status === "awaiting-confirmation" && (
+          <p>旧方案需要重新调查，不能作为执行或应用授权。</p>
+        )}
+        {run?.budget && (
+          <p className="text-xs text-muted">
+            模型调用 {run.budget.callsUsed} 次，剩余 {run.budget.callsRemaining}{" "}
+            次；候选预算 {run.budget.candidatesRemaining}；活动时间剩余{" "}
+            {Math.ceil(run.budget.millisecondsRemaining / 1000)} 秒
+          </p>
+        )}
+        {!!run?.revisions?.length && (
+          <details className="text-sm">
+            <summary>需求与计划历史</summary>
+            {run.revisions.map((r) => (
+              <p
+                key={r.revision}
+                className="py-2 whitespace-pre-wrap break-words"
               >
-                修改需求
-              </Button>
-            </div>
-          </section>
+                修订 {r.revision}：{r.text}
+              </p>
+            ))}
+            {run.plans?.map((p) => (
+              <p key={p.id}>
+                修订 {p.requestRevision} 的计划：{p.summary}
+              </p>
+            ))}
+          </details>
         )}
         {run?.status === "executing" && (
           <section className="space-y-5" aria-label="执行状态">
@@ -220,12 +300,19 @@ export function AssistantPanel({
             if (!canSend || composing.current) return;
             if (
               await command({
-                type: "request",
+                ...(run?.status === "awaiting-input"
+                  ? { type: "answer" as const, runId: run.id }
+                  : editing &&
+                      run &&
+                      (run.status === "ready" || run.status === "blocked")
+                    ? { type: "revise" as const, runId: run.id }
+                    : { type: "request" as const }),
                 text: draft.trim(),
-                ...(run?.status === "awaiting-input" ? { runId: run.id } : {}),
               })
-            )
+            ) {
               setDraft("");
+              setEditing(false);
+            }
           }}
           onCompositionStart={() => {
             composing.current = true;
@@ -245,7 +332,7 @@ export function AssistantPanel({
               aria-label="告诉 AI 你的需求"
               className="w-full resize-none border-0 bg-transparent p-2 text-sm leading-6 outline-none"
               rows={3}
-              placeholder="描述你想做的事…"
+              placeholder="描述希望应用增加或改变的能力"
               maxLength={5000}
               disabled={busy}
               value={draft}

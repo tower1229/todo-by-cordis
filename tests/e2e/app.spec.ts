@@ -90,11 +90,11 @@ test("IME, failed save, AI and editor dismissal preserve drafts", async ({
   await page.getByRole("button", { name: "添加", exact: true }).click();
   await expect(page.getByRole("alert")).toBeVisible();
   await expect(input).toHaveValue("保留这个草稿");
-  await page.getByRole("button", { name: "打开 AI 助手", exact: true }).click();
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await page
     .getByRole("textbox", { name: "告诉 AI 你的需求" })
     .fill("完成前需要写一句复盘");
-  await page.getByRole("button", { name: "关闭AI 助手" }).click();
+  await page.getByRole("button", { name: "关闭改进应用" }).click();
   await page.reload();
   await expect(input).toHaveValue("保留这个草稿");
   await page.unroute("**/api/commands");
@@ -110,7 +110,7 @@ test("IME, failed save, AI and editor dismissal preserve drafts", async ({
   await expect(page.getByLabel("备注", { exact: true })).toHaveValue(
     "尚未保存的备注",
   );
-  await page.getByRole("button", { name: "打开 AI 助手", exact: true }).click();
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await expect(
     page.getByRole("textbox", { name: "告诉 AI 你的需求" }),
   ).toHaveValue("完成前需要写一句复盘");

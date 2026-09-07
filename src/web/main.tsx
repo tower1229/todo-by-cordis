@@ -212,7 +212,10 @@ function App() {
   }, [panel?.kind, messageId]);
   const notification =
     messageId !== seenMessage &&
-    (run?.status === "awaiting-confirmation" ||
+    (run?.status === "ready" ||
+      run?.status === "blocked" ||
+      run?.status === "dismissed" ||
+      run?.status === "awaiting-confirmation" ||
       run?.status === "awaiting-input" ||
       run?.status === "succeeded" ||
       run?.status === "failed");
@@ -285,7 +288,7 @@ function App() {
       : panel?.kind === "action"
         ? panel.form.label
         : panel?.kind === "assistant"
-          ? "AI 助手"
+          ? "改进应用"
           : "工作区设置";
   return (
     <div className="flex h-dvh min-h-0 bg-canvas text-ink">
@@ -499,8 +502,8 @@ function App() {
         ref={aiTrigger}
         variant="secondary"
         className={`fixed bottom-[96px] right-5 z-20 size-11 rounded-full border-line bg-surface p-0 shadow-sm md:bottom-28 md:right-10 ${panel ? "hidden" : ""}`}
-        aria-label="打开 AI 助手"
-        title="AI 助手"
+        aria-label="改进应用"
+        title="改进应用"
         onClick={() => {
           openPanel({ kind: "assistant" }, aiTrigger.current);
           void assistant.observe();
@@ -528,7 +531,7 @@ function App() {
           panel.kind !== "assistant" && (
             <Button
               variant="icon"
-              aria-label="打开 AI 助手"
+              aria-label="改进应用"
               onClick={() => {
                 openPanel({ kind: "assistant" }, aiTrigger.current);
                 void assistant.observe();

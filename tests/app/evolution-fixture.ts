@@ -1,4 +1,3 @@
-import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
 export function source(pluginId: string, name = "Reflection", minimum = 1) {
   return `import type { Plugin } from './contract.js';
 const plugin: Plugin = {
@@ -12,72 +11,4 @@ const plugin: Plugin = {
   return {kind:'commit',state:'done',fields:{...task.fields,reflection:value}};
  }
 }; export default plugin;`;
-}
-export const proposal = (modify = false, pluginId = "", minimum = 1) => ({
-  route: modify ? "modify-plugin" : "create-plugin",
-  pluginId,
-  name: "Reflection",
-  summary: "完成前复盘",
-  changes: [`复盘至少${minimum}字`],
-  outcome: "完成时填写复盘",
-  dataImpact: "保留已有数据",
-  fields: [
-    {
-      key: "reflection",
-      label: "复盘",
-      required: true,
-      minLength: minimum,
-      maxLength: 5000,
-    },
-  ],
-});
-export class FixtureDriver implements Driver {
-  requests: ModelRequest[] = [];
-  constructor(
-    public planning: unknown = proposal(),
-    public generateSource = source,
-  ) {}
-  async generate(request: ModelRequest, signal: AbortSignal) {
-    signal.throwIfAborted();
-    this.requests.push(request);
-    if (request.schema)
-      return {
-        text: JSON.stringify(this.planning),
-        history: [],
-        calls: [],
-        usage: null,
-        raw: { fixture: true },
-      };
-    const body = JSON.parse(request.message ?? "{}");
-    const target = body.target?.payload;
-    if (!target) throw new Error("fixture exhausted");
-    return {
-      text: "",
-      history: [
-        {
-          role: "model",
-          parts: [
-            {
-              functionCall: { name: "submit_candidate", args: {} },
-              thoughtSignature: "fixture",
-            },
-          ],
-        },
-      ],
-      calls: [
-        {
-          name: "submit_candidate",
-          args: {
-            source: this.generateSource(
-              target.pluginId,
-              target.name,
-              target.fields[0].minLength,
-            ),
-          },
-        },
-      ],
-      usage: null,
-      raw: { fixture: true },
-    };
-  }
 }

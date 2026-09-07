@@ -35,7 +35,7 @@ test("quiet workspace, secondary settings, accessible panels and touch targets",
     ).toBeVisible();
   }
   await page.screenshot({ path: info.outputPath("desktop.png") });
-  const ai = page.getByRole("button", { name: "打开 AI 助手", exact: true });
+  const ai = page.getByRole("button", { name: "改进应用", exact: true });
   await ai.focus();
   await page.keyboard.press("Enter");
   await expect(
