@@ -87,7 +87,7 @@ export function InputForm({
               id={`field-${field.key}`}
               className="input min-h-32"
               required={field.required}
-              maxLength={5000}
+              maxLength={10000}
               value={input[field.key] ?? ""}
               onChange={(e) =>
                 setInput({ ...input, [field.key]: e.target.value })

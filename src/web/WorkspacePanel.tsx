@@ -11,7 +11,7 @@ export function WorkspacePanel({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  async function recover(restore = false) {
+  async function recover(restore = false, versionId?: string) {
     if (!composition || busy) return;
     setBusy(true);
     setError("");
@@ -19,6 +19,7 @@ export function WorkspacePanel({
       if (restore)
         await sendOperation("/runtime/restore", {
           compositionRevision: composition.revision,
+          ...(versionId ? { versionId } : {}),
         });
       else await api("/runtime/retry", {});
       await refreshed();
@@ -61,13 +62,13 @@ export function WorkspacePanel({
           {busy && <Spinner />}重试运行环境
         </Button>
       )}
-      {composition && composition.workflow.id !== "default" && (
+      {composition && composition.previousVersionId && (
         <div className="space-y-3">
           <p className="text-xs leading-5 text-muted">
-            恢复默认完成方式，保留已有任务和字段。
+            撤回版本，保留已有任务和字段。
           </p>
           <Button disabled={busy} onClick={() => recover(true)}>
-            {busy && <Spinner />}恢复默认流程
+            {busy && <Spinner />}撤回上个版本
           </Button>
         </div>
       )}
@@ -81,7 +82,7 @@ export function WorkspacePanel({
             {composition.history.map((item) => (
               <li className="py-4" key={item.id}>
                 <p>
-                  {item.workflowId === "default" ? "默认流程" : "复盘流程"}
+                  {item.name}
                   <span className="ml-2 text-xs text-muted">
                     版本 {item.id}
                   </span>
@@ -89,6 +90,14 @@ export function WorkspacePanel({
                 <time className="mt-1 block text-xs text-muted">
                   {new Date(item.createdAt).toLocaleString("zh-CN")}
                 </time>
+                {item.versionId !== composition.versionId && (
+                  <Button
+                    disabled={busy}
+                    onClick={() => recover(true, item.versionId)}
+                  >
+                    恢复此版本
+                  </Button>
+                )}
               </li>
             ))}
           </ol>

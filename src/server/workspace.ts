@@ -1,9 +1,13 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID, createHash } from "node:crypto";
+import { stripTypeScriptTypes } from "node:module";
+import { Release, type Prepared } from "../release/release.js";
+import type { Version, RuntimeLike } from "../release/types.js";
+import { hash, operationHash } from "../release/storage.js";
 import { mkdirSync, readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { Runtime } from "../runtime/runtime.js";
-import { catalog, isWorkflowId } from "../runtime/catalog.js";
+import { catalog } from "./catalog.js";
 import {
   AppError,
   type Command,
@@ -16,17 +20,6 @@ import {
   type WorkflowId,
 } from "../shared/contracts.js";
 
-function canonical(value: any): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value && typeof value === "object")
-    return `{${Object.keys(value)
-      .sort()
-      .map((k) => `${JSON.stringify(k)}:${canonical(value[k])}`)
-      .join(",")}}`;
-  return JSON.stringify(value);
-}
-const hash = (value: unknown) =>
-  createHash("sha256").update(canonical(value)).digest("hex");
 function text(value: unknown, max: number, required = false) {
   if (
     typeof value !== "string" ||
@@ -39,14 +32,15 @@ function text(value: unknown, max: number, required = false) {
     );
   return required ? value.trim() : value;
 }
-type RuntimeLike = Pick<Runtime, "invoke" | "close" | "onFailure">;
 type Options = {
-  launch?: (id: WorkflowId) => Promise<RuntimeLike>;
+  launch?: (version: Version) => Promise<RuntimeLike>;
   checkpoint?: (stage: string) => void;
 };
 
 export class Workspace {
-  private db: DatabaseSync;
+  readonly db: DatabaseSync;
+  readonly release: Release;
+  private builtins = new Map<string, Version>();
   private runtime?: RuntimeLike;
   private queue: Promise<unknown> = Promise.resolve();
   private status: Composition["status"] = "unavailable";
@@ -55,13 +49,13 @@ export class Workspace {
   private automaticRestartUsed = false;
   private publishing = false;
   private retiring = new Set<Promise<void>>();
-  private launch: (id: WorkflowId) => Promise<RuntimeLike>;
+  private launch: (version: Version) => Promise<RuntimeLike>;
   private constructor(
     filename: string,
     private options: Options,
   ) {
     mkdirSync(dirname(filename), { recursive: true });
-    this.launch = options.launch ?? ((id) => Runtime.start(id));
+    this.launch = options.launch ?? ((version) => Runtime.start(version));
     this.db = new DatabaseSync(filename);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,title TEXT NOT NULL,description TEXT NOT NULL,state TEXT NOT NULL,revision INTEGER NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL,deletedAt TEXT,fields TEXT NOT NULL);
@@ -70,8 +64,55 @@ export class Workspace {
       CREATE TABLE IF NOT EXISTS workspace(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL,workflowId TEXT NOT NULL,buildHash TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS releases(id INTEGER PRIMARY KEY,workflowId TEXT NOT NULL,createdAt TEXT NOT NULL,pausedMs REAL NOT NULL,preparationMs REAL NOT NULL,buildHash TEXT NOT NULL);`);
     this.db
-      .prepare("INSERT OR IGNORE INTO workspace VALUES(1,1,?,?)")
+      .prepare(
+        "INSERT OR IGNORE INTO workspace(id,revision,workflowId,buildHash) VALUES(1,1,?,?)",
+      )
       .run("default", this.buildHash("default"));
+    this.release = new Release(
+      this.db,
+      join(dirname(filename), "artifacts"),
+      this.launch,
+    );
+    const columns = (table: string) =>
+      this.db
+        .prepare(`PRAGMA table_info(${table})`)
+        .all()
+        .map((r) => String(r.name));
+    if (!columns("workspace").includes("versionId"))
+      this.db.exec("ALTER TABLE workspace ADD COLUMN versionId TEXT");
+    if (!columns("releases").includes("versionId"))
+      this.db.exec(
+        "ALTER TABLE releases ADD COLUMN versionId TEXT; ALTER TABLE releases ADD COLUMN name TEXT",
+      );
+    for (const [id, workflow] of Object.entries(catalog)) {
+      const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
+      const source = readFileSync(
+        new URL(`./plugins/${id}.${extension}`, import.meta.url),
+        "utf8",
+      );
+      const code = stripTypeScriptTypes(source);
+      const version = this.release.record({
+        pluginId: id,
+        name: workflow.definition.name,
+        service: "workflow",
+        contractVersion: "workflow/1",
+        source,
+        code,
+        definition: workflow.definition,
+        evidence: { passed: true, origin: "builtin" },
+      });
+      this.builtins.set(id, version);
+      this.db
+        .prepare(
+          "UPDATE workspace SET versionId=?,buildHash=? WHERE workflowId=? AND versionId IS NULL",
+        )
+        .run(version.id, hash(code), id);
+      this.db
+        .prepare(
+          "UPDATE releases SET versionId=?,name=? WHERE workflowId=? AND versionId IS NULL",
+        )
+        .run(version.id, version.name, id);
+    }
   }
   static async open(filename: string, options: Options = {}) {
     const workspace = new Workspace(filename, options);
@@ -82,9 +123,7 @@ export class Workspace {
     const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
     return createHash("sha256")
       .update(
-        readFileSync(
-          new URL(`../runtime/plugins/${id}.${extension}`, import.meta.url),
-        ),
+        readFileSync(new URL(`./plugins/${id}.${extension}`, import.meta.url)),
       )
       .digest("hex");
   }
@@ -100,6 +139,7 @@ export class Workspace {
       revision: number;
       workflowId: WorkflowId;
       buildHash: string;
+      versionId: string;
     };
   }
   private bind(runtime: RuntimeLike) {
@@ -120,7 +160,9 @@ export class Workspace {
       await this.runtime?.close();
       let runtime: RuntimeLike | undefined;
       try {
-        runtime = await this.launch(this.current().workflowId);
+        runtime = await this.release.start(
+          this.release.get(this.current().versionId),
+        );
         await runtime.invoke("describe");
         this.runtime = runtime;
         this.bind(runtime);
@@ -138,21 +180,27 @@ export class Workspace {
     const active = this.current();
     return {
       revision: active.revision,
-      workflow: catalog[active.workflowId].definition,
+      workflow: this.release.get(active.versionId)
+        .definition as WorkflowDefinition,
+      versionId: active.versionId,
+      previousVersionId: this.previousVersionId(),
       status: this.status,
       buildHash: active.buildHash,
-      retainedFields: Object.values(catalog).flatMap(
-        (plugin) => plugin.definition.fields,
-      ),
+      retainedFields: this.release
+        .all()
+        .filter((v) => (v.evidence as { passed?: boolean }).passed)
+        .flatMap(
+          (v) => (v.definition as WorkflowDefinition | null)?.fields ?? [],
+        ),
       history: this.db
         .prepare(
-          "SELECT id,workflowId,createdAt,pausedMs,preparationMs FROM releases ORDER BY id DESC LIMIT 20",
+          "SELECT id,workflowId,versionId,name,createdAt,pausedMs,preparationMs FROM releases ORDER BY id DESC LIMIT 20",
         )
-        .all() as any,
+        .all() as unknown as Composition["history"],
     };
   }
-  private decode(row: any): Task {
-    return { ...row, fields: JSON.parse(row.fields) };
+  private decode(row: Record<string, unknown>): Task {
+    return { ...row, fields: JSON.parse(String(row.fields)) } as Task;
   }
   read(id: string): Task {
     const row = this.db.prepare("SELECT * FROM tasks WHERE id=?").get(id);
@@ -200,7 +248,7 @@ export class Workspace {
       .prepare("SELECT hash,result FROM operations WHERE id=?")
       .get(id);
     if (!row) return;
-    if (row.hash !== hash(input))
+    if (row.hash !== operationHash(input))
       throw new AppError("IDEMPOTENCY_MISMATCH", "请为新的修改重新提交", 409);
     return JSON.parse(row.result as string);
   }
@@ -240,7 +288,7 @@ export class Workspace {
       throw error;
     }
   }
-  command(command: Command): Promise<CommandResult> {
+  command(command: Command, complete?: () => void): Promise<CommandResult> {
     return this.serial(async () => {
       const replay = this.replay(command.operationId, command);
       if (replay) return replay;
@@ -293,7 +341,7 @@ export class Workspace {
           const input = command.input ?? {};
           if (
             Object.values(input).some(
-              (v) => typeof v !== "string" || v.length > 5000,
+              (v) => typeof v !== "string" || [...v].length > 5000,
             )
           )
             throw new AppError("INVALID_INPUT", "表单内容无效");
@@ -329,124 +377,156 @@ export class Workspace {
         this.save(task);
         this.db
           .prepare("INSERT INTO operations VALUES(?,?,?)")
-          .run(command.operationId, hash(command), JSON.stringify(result));
+          .run(
+            command.operationId,
+            operationHash(command),
+            JSON.stringify(result),
+          );
+        complete?.();
       });
       return result;
     });
   }
-  async activate(request: {
-    workflowId: WorkflowId;
-    operationId: string;
-    compositionRevision: number;
-  }) {
-    if (!isWorkflowId(request.workflowId))
-      throw new AppError("INVALID_WORKFLOW", "未知流程");
+  activeVersion() {
+    return this.release.get(this.current().versionId);
+  }
+  previousVersionId() {
+    const history = this.db
+      .prepare(
+        "SELECT versionId FROM releases WHERE versionId != ? ORDER BY id DESC LIMIT 1",
+      )
+      .get(this.current().versionId);
+    return history
+      ? String(history.versionId)
+      : this.current().workflowId !== "default"
+        ? this.builtins.get("default")?.id
+        : undefined;
+  }
+  async activate(
+    request: {
+      workflowId?: string;
+      versionId?: string;
+      operationId: string;
+      compositionRevision: number;
+    },
+    complete?: () => void,
+    signal?: AbortSignal,
+  ) {
     const replay = this.replay(request.operationId, request);
     if (replay) return replay;
-    if (this.publishing)
+    const versionId =
+      request.versionId ?? this.builtins.get(request.workflowId ?? "")?.id;
+    if (
+      request.versionId &&
+      !this.db
+        .prepare("SELECT id FROM releases WHERE versionId=? LIMIT 1")
+        .get(request.versionId) &&
+      ![...this.builtins.values()].some((v) => v.id === request.versionId) &&
+      !complete
+    )
+      throw new AppError("UNKNOWN_RELEASE", "只能恢复已发布版本");
+    if (!versionId) throw new AppError("INVALID_WORKFLOW", "未知流程");
+    const version = this.release.get(versionId);
+    if (!(version.evidence as { passed?: boolean })?.passed)
+      throw new AppError("UNVERIFIED_VERSION", "候选尚未通过验证");
+    const prepared = await this.release.prepare(version, async (runtime) => {
+      const definition = await runtime.invoke<WorkflowDefinition>("describe");
+      if (definition.id !== version.pluginId) throw new Error("候选身份不一致");
+    });
+    return this.publish(prepared, request, complete, signal);
+  }
+  async publish(
+    prepared: Prepared,
+    request: {
+      operationId: string;
+      compositionRevision: number;
+      versionId?: string;
+      workflowId?: string;
+    },
+    complete?: () => void,
+    signal?: AbortSignal,
+  ) {
+    if (this.publishing) {
+      await prepared.runtime.close();
       throw new AppError("RELEASE_BUSY", "正在切换流程，请稍候", 409);
+    }
     this.publishing = true;
-    let candidate: RuntimeLike | undefined;
-    const start = performance.now();
+    const result = { revision: request.compositionRevision + 1 };
     try {
-      candidate = await this.launch(request.workflowId);
-      const definition = await candidate.invoke<WorkflowDefinition>("describe");
-      if (definition.id !== request.workflowId)
-        throw new Error("候选身份不一致");
-      // Verify both useful behavior and input handling before touching the active pointer.
-      const sample: Task = {
-        id: "probe",
-        title: "验证",
-        description: "",
-        state: definition.initialState,
-        fields: {},
-        revision: 1,
-        createdAt: "",
-        updatedAt: "",
-        deletedAt: null,
-      };
-      const probe = await candidate.invoke<WorkflowDecision>("decide", {
-        task: sample,
-        action: "complete",
-        input: {},
-      });
-      if (probe.kind === "input-required") {
-        const completed = await candidate.invoke<WorkflowDecision>("decide", {
-          task: sample,
-          action: "complete",
-          input: Object.fromEntries(
-            probe.fields.map((f) => [f.key, "验证复盘"]),
-          ),
-        });
-        if (
-          completed.kind !== "commit" ||
-          definition.states[completed.state]?.category !== "done"
-        )
-          throw new Error("候选完成验证失败");
-      } else if (
-        probe.kind !== "commit" ||
-        definition.states[probe.state]?.category !== "done"
-      )
-        throw new Error("候选行为验证失败");
-      const preparationMs = performance.now() - start;
-      return await this.serial(async () => {
-        this.revision(request.compositionRevision);
-        for (const row of this.db
-          .prepare("SELECT DISTINCT state FROM tasks")
-          .all())
-          if (!definition.states[row.state as string])
-            throw new AppError(
-              "INCOMPATIBLE_STATE",
-              "新流程无法保留当前任务状态",
-            );
-        const paused = performance.now();
-        const revision = this.current().revision + 1;
-        const buildHash = this.buildHash(request.workflowId);
-        this.options.checkpoint?.("prepared");
-        const result = { revision };
-        this.transaction(() => {
-          this.db
-            .prepare(
-              "UPDATE workspace SET revision=?,workflowId=?,buildHash=? WHERE id=1",
-            )
-            .run(revision, request.workflowId, buildHash);
-          this.db
-            .prepare("INSERT INTO releases VALUES(?,?,?,?,?,?)")
-            .run(
-              revision,
-              request.workflowId,
-              new Date().toISOString(),
-              0,
-              preparationMs,
-              buildHash,
-            );
-          this.db
-            .prepare("INSERT INTO operations VALUES(?,?,?)")
-            .run(request.operationId, hash(request), JSON.stringify(result));
-          this.options.checkpoint?.("transaction");
-        });
-        this.options.checkpoint?.("switched");
-        const old = this.runtime;
-        this.runtime = candidate!;
-        candidate = undefined;
-        this.bind(this.runtime);
-        this.status = "ready";
-        this.automaticRestartUsed = false;
-        this.db
-          .prepare("UPDATE releases SET pausedMs=? WHERE id=?")
-          .run(performance.now() - paused, revision);
-        // Cleanup does not hold the task write queue; obsolete runtimes cannot commit data.
-        if (old) {
-          old.onFailure = undefined;
-          const cleanup = old
-            .close()
-            .finally(() => this.retiring.delete(cleanup));
-          this.retiring.add(cleanup);
-        }
-        return result;
-      });
+      await this.release.activate(
+        prepared,
+        {
+          serial: (work) => this.serial(work),
+          check: (version) => {
+            this.revision(request.compositionRevision);
+            const definition = version.definition as WorkflowDefinition;
+            for (const row of this.db
+              .prepare("SELECT DISTINCT state FROM tasks")
+              .all())
+              if (!definition.states[String(row.state)])
+                throw new AppError(
+                  "INCOMPATIBLE_STATE",
+                  "新流程无法保留当前任务状态",
+                );
+          },
+          commit: (version, metrics) => {
+            this.options.checkpoint?.("prepared");
+            this.transaction(() => {
+              this.db
+                .prepare(
+                  "UPDATE workspace SET revision=?,workflowId=?,buildHash=?,versionId=? WHERE id=1",
+                )
+                .run(
+                  result.revision,
+                  version.pluginId,
+                  hash(version.code),
+                  version.id,
+                );
+              this.db
+                .prepare(
+                  "INSERT INTO releases(id,workflowId,createdAt,pausedMs,preparationMs,buildHash,versionId,name) VALUES(?,?,?,?,?,?,?,?)",
+                )
+                .run(
+                  result.revision,
+                  version.pluginId,
+                  new Date().toISOString(),
+                  metrics.pausedMs,
+                  metrics.preparationMs,
+                  hash(version.code),
+                  version.id,
+                  version.name,
+                );
+              this.db
+                .prepare("INSERT INTO operations VALUES(?,?,?)")
+                .run(
+                  request.operationId,
+                  operationHash(request),
+                  JSON.stringify(result),
+                );
+              complete?.();
+              this.options.checkpoint?.("transaction");
+            });
+            this.options.checkpoint?.("switched");
+          },
+          install: (runtime) => {
+            const old = this.runtime;
+            this.runtime = runtime;
+            this.bind(runtime);
+            this.status = "ready";
+            this.automaticRestartUsed = false;
+            if (old) {
+              old.onFailure = undefined;
+              const cleanup = old
+                .close()
+                .finally(() => this.retiring.delete(cleanup));
+              this.retiring.add(cleanup);
+            }
+          },
+        },
+        signal,
+      );
+      return result;
     } finally {
-      if (candidate) await candidate.close();
       this.publishing = false;
     }
   }

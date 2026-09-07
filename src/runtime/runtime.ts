@@ -1,12 +1,12 @@
 import { fork, type ChildProcess } from "node:child_process";
-import type { WorkflowId } from "../shared/contracts.js";
+import type { RuntimeTarget } from "../release/types.js";
 
 export class Runtime {
   private child: ChildProcess;
   private pending = new Map<
     number,
     {
-      resolve: (value: any) => void;
+      resolve: (value: unknown) => void;
       reject: (error: Error) => void;
       timer: NodeJS.Timeout;
     }
@@ -21,18 +21,32 @@ export class Runtime {
     return this.child.pid;
   }
   private constructor(
-    id: WorkflowId,
+    target: RuntimeTarget,
     private timeout = 5000,
     entry?: URL,
   ) {
     const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
     this.child = fork(
       entry ?? new URL(`./child.${extension}`, import.meta.url),
-      [id],
+      [
+        JSON.stringify({
+          entry: target.entry,
+          service: target.service,
+          pluginId: target.pluginId,
+        }),
+      ],
       {
         stdio: ["ignore", "ignore", "pipe", "ipc"],
+        env: Object.fromEntries(
+          ["PATH", "SystemRoot", "TEMP", "TMP", "TMPDIR"].flatMap((key) =>
+            process.env[key] ? [[key, process.env[key]!]] : [],
+          ),
+        ),
         ...{ windowsHide: true },
-        execArgv: extension === "ts" ? ["--import", "tsx"] : [],
+        execArgv: [
+          "--max-old-space-size=128",
+          ...(extension === "ts" ? ["--import", "tsx"] : []),
+        ],
       },
     );
     let diagnostics = "";
@@ -66,7 +80,14 @@ export class Runtime {
         if (!this.closing) this.onFailure?.();
       }),
     );
-    this.child.on("message", (message: any) => {
+    this.child.on("message", (raw: unknown) => {
+      if (!raw || typeof raw !== "object") return;
+      const message = raw as {
+        ready?: boolean;
+        id: number;
+        error?: string;
+        value?: unknown;
+      };
       if (message.ready) {
         clearTimeout(timer);
         readyResolve();
@@ -80,8 +101,8 @@ export class Runtime {
       else request.resolve(message.value);
     });
   }
-  static async start(id: WorkflowId, timeout = 5000, entry?: URL) {
-    const runtime = new Runtime(id, timeout, entry);
+  static async start(target: RuntimeTarget, timeout = 5000, entry?: URL) {
+    const runtime = new Runtime(target, timeout, entry);
     try {
       await runtime.ready;
       return runtime;
@@ -100,7 +121,11 @@ export class Runtime {
         reject(new Error("插件执行超时"));
         this.child.kill("SIGKILL");
       }, this.timeout);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, {
+        resolve: (value) => resolve(value as T),
+        reject,
+        timer,
+      });
       this.child.send({ id, method, data }, (error) => {
         if (error) {
           clearTimeout(timer);

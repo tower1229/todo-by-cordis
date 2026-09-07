@@ -115,6 +115,18 @@ export function AssistantPanel({
                 <dt className="plan-label">数据影响</dt>
                 <dd>{run.plan.dataImpact}</dd>
               </div>
+              {run.plan.acceptance?.length ? (
+                <div>
+                  <dt className="plan-label">验收条件</dt>
+                  <dd>
+                    <ul>
+                      {run.plan.acceptance.map((condition) => (
+                        <li key={condition}>{condition}</li>
+                      ))}
+                    </ul>
+                  </dd>
+                </div>
+              ) : null}
             </dl>
             <div className="flex gap-2">
               <Button
@@ -183,7 +195,7 @@ export function AssistantPanel({
             已取消
           </p>
         )}
-        {working && run && (
+        {(working || run?.status === "awaiting-input") && run && (
           <Button
             variant="ghost"
             disabled={busy}

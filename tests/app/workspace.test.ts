@@ -1,4 +1,5 @@
-import test from "node:test";
+import test, { type TestContext } from "node:test";
+import type { Version } from "../../src/release/types.js";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,7 +12,7 @@ import { Runtime } from "../../src/runtime/runtime.js";
 import { createApp } from "../../src/server/app.js";
 import type { Command } from "../../src/shared/contracts.js";
 
-async function setup(t: any, options = {}) {
+async function setup(t: TestContext, options = {}) {
   const directory = await mkdtemp(join(tmpdir(), "cordis-m1-"));
   const filename = join(directory, "tasks.db");
   let workspace = await Workspace.open(filename, options);
@@ -115,8 +116,8 @@ test("workflow input, cancellation, release retry, retained values and restart",
 });
 test("candidate failure and stale publication keep old active version", async (t) => {
   const { w } = await setup(t, {
-    launch: async (id: any) => {
-      if (id === "review") throw new Error("candidate failed");
+    launch: async (id: Version) => {
+      if (id.pluginId === "review") throw new Error("candidate failed");
       return Runtime.start(id);
     },
   });
@@ -167,7 +168,7 @@ test("100-row pagination, literal search, and HTTP response replay", async (t) =
 test("20 switches release every old process", { timeout: 30000 }, async (t) => {
   const runtimes: Runtime[] = [];
   const { w } = await setup(t, {
-    launch: async (id: any) => {
+    launch: async (id: Version) => {
       const r = await Runtime.start(id);
       runtimes.push(r);
       return r;
@@ -201,7 +202,7 @@ test(
   async (t) => {
     const runtimes: Runtime[] = [];
     const { w } = await setup(t, {
-      launch: async (id: any) => {
+      launch: async (id: Version) => {
         const r = await Runtime.start(id);
         runtimes.push(r);
         return r;
@@ -258,7 +259,7 @@ test(
   { timeout: 10000 },
   async () => {
     const runtime = await Runtime.start(
-      "default",
+      { entry: "unused", service: "workflow", pluginId: "default" },
       500,
       new URL("./loop-fixture.mjs", import.meta.url),
     );

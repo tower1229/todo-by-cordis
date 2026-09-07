@@ -1,4 +1,10 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["src/server", "src/runtime", "src/shared"]
+  "include": [
+    "src/server",
+    "src/runtime",
+    "src/shared",
+    "src/release",
+    "src/evolution"
+  ]
 }

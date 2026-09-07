@@ -13,13 +13,21 @@ export type AssistantPlan = {
   changes: string[];
   outcome: string;
   dataImpact: string;
+  baseVersion?: string;
+  target?: { kind: "plugin" | "command"; id?: string };
+  acceptance?: string[];
 };
 export type AssistantStep = {
   id: string;
   label: string;
   status: "pending" | "running" | "succeeded" | "failed";
 };
-type Run = { id: string; request: string; updatedAt: string };
+type Run = {
+  id: string;
+  request: string;
+  updatedAt: string;
+  versionId?: string;
+};
 export type AssistantRun = Run &
   (
     | { status: "planning" }

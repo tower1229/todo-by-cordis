@@ -1,4 +1,4 @@
-export type WorkflowId = "default" | "review";
+export type WorkflowId = string;
 export type Task = {
   id: string;
   title: string;
@@ -56,10 +56,14 @@ export type Composition = {
   workflow: WorkflowDefinition;
   status: "ready" | "recovering" | "unavailable";
   buildHash: string;
+  versionId: string;
+  previousVersionId?: string;
   retainedFields: Field[];
   history: {
     id: number;
     workflowId: WorkflowId;
+    versionId: string;
+    name: string;
     createdAt: string;
     pausedMs: number;
     preparationMs: number;

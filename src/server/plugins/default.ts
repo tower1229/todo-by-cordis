@@ -29,3 +29,12 @@ export const workflow: Workflow = {
     };
   },
 };
+
+export default {
+  describe: () => workflow.definition,
+  decide: (data: {
+    task: Parameters<typeof workflow.decide>[0];
+    action: string;
+    input: Record<string, string>;
+  }) => workflow.decide(data.task, data.action, data.input),
+};

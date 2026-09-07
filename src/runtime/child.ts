@@ -1,23 +1,27 @@
 import { Context, FiberState } from "cordis";
-import { catalog, isWorkflowId } from "./catalog.js";
-import type { Workflow, Task } from "../shared/contracts.js";
+import { pathToFileURL } from "node:url";
+import type { RuntimeTarget } from "../release/types.js";
 
-const id = process.argv[2];
-if (!isWorkflowId(id)) throw new Error("Unknown workflow");
+const target = JSON.parse(process.argv[2]) as RuntimeTarget;
+const loaded: unknown = (await import(pathToFileURL(target.entry).href))
+  .default;
+if (!loaded || typeof loaded !== "object")
+  throw new Error("Invalid service export");
+const service = loaded as Record<string, unknown>;
 const ctx = new Context();
 const provider = ctx.plugin((local) => {
-  local.provide("workflow", catalog[id]);
+  local.provide(target.service, service);
 });
-let invoke: (
-  method: string,
-  data: { task: Task; action: string; input: Record<string, string> },
-) => unknown;
-const consumer = ctx.inject(["workflow"], (local) => {
-  const workflow = local.get("workflow") as Workflow;
-  invoke = (method, data) =>
-    method === "describe"
-      ? workflow.definition
-      : workflow.decide(data.task, data.action, data.input);
+let invoke: (method: string, data: unknown) => unknown = () => {
+  throw new Error("Not ready");
+};
+const consumer = ctx.inject([target.service], (local) => {
+  const active = local.get(target.service) as Record<string, unknown>;
+  invoke = (method, data) => {
+    if (!Object.hasOwn(active, method) || typeof active[method] !== "function")
+      throw new Error("Unknown service method");
+    return (active[method] as (data: unknown) => unknown).call(active, data);
+  };
 });
 await provider.await();
 await consumer.await();
@@ -25,10 +29,11 @@ if (
   provider.state !== FiberState.ACTIVE ||
   consumer.state !== FiberState.ACTIVE
 )
-  throw new Error("Workflow not active");
+  throw new Error("Service not active");
 process.on("disconnect", () => process.exit(0));
 process.on("message", async (raw: unknown) => {
-  const message = raw as { id: number; method: string; data: any };
+  if (!raw || typeof raw !== "object") return;
+  const message = raw as { id: number; method: string; data?: unknown };
   if (message.method === "close") {
     await consumer.dispose();
     await provider.dispose();
@@ -37,12 +42,12 @@ process.on("message", async (raw: unknown) => {
   try {
     process.send?.({
       id: message.id,
-      value: invoke(message.method, message.data),
+      value: await invoke(message.method, message.data),
     });
   } catch (error) {
     process.send?.({
       id: message.id,
-      error: error instanceof Error ? error.message : "插件执行失败",
+      error: error instanceof Error ? error.message : "Service failed",
     });
   }
 });
