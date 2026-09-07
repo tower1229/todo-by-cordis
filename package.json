@@ -8,8 +8,7 @@
     "node": "24.18.x"
   },
   "scripts": {
-    "test": "node --import tsx --test tests/runtime/*.test.mjs tests/app/*.test.ts",
-    "bench": "node experiments/runtime/benchmark.mjs",
+    "test": "node --import tsx --test tests/app/*.test.ts",
     "dev": "node scripts/dev.mjs",
     "build": "tsc -p tsconfig.server.json && vite build",
     "start": "node dist/server/main.js",
@@ -18,19 +17,23 @@
     "bench:m1": "node scripts/benchmark.mjs"
   },
   "dependencies": {
+    "@base-ui/react": "1.8.0",
     "@hono/node-server": "2.1.1",
     "cordis": "4.0.0-rc.9",
     "hono": "4.13.7",
+    "lucide-react": "1.41.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
+    "@tailwindcss/vite": "4.3.3",
     "@types/node": "26.4.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
     "@vitejs/plugin-react": "6.1.1",
     "prettier": "3.6.2",
+    "tailwindcss": "4.3.3",
     "tsx": "4.23.13",
     "typescript": "7.0.2",
     "vite": "8.2.2"

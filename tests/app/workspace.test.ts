@@ -267,3 +267,74 @@ test(
     await assert.rejects(runtime.invoke("describe"), /不可用/);
   },
 );
+
+test("assistant stays unavailable without a provider and never changes workspace", async (t) => {
+  const { w } = await setup(t);
+  await w.command(create());
+  const app = createApp(w);
+  const before = w.composition();
+  assert.deepEqual(await (await app.request("/api/assistant")).json(), {
+    availability: "unconfigured",
+    run: null,
+  });
+  for (const command of [
+    { type: "request", operationId: randomUUID(), text: "创建一个复盘插件" },
+    {
+      type: "confirm",
+      operationId: randomUUID(),
+      runId: "run",
+      planId: "plan",
+      compositionRevision: 1,
+    },
+  ]) {
+    const response = await app.request("/api/assistant/commands", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(command),
+    });
+    assert.equal(response.status, 503);
+  }
+  const invalid = await app.request("/api/assistant/commands", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "confirm", operationId: "test" }),
+  });
+  assert.equal(invalid.status, 400);
+  assert.deepEqual(w.composition(), before);
+  assert.equal(w.query().total, 1);
+});
+
+test("public demonstration installer is removed; recovery retains legacy task fields", async (t) => {
+  const { w } = await setup(t);
+  const task = (await w.command(create())).task!;
+  await w.activate({
+    workflowId: "review",
+    operationId: randomUUID(),
+    compositionRevision: 1,
+  });
+  await w.command({
+    type: "action",
+    taskId: task.id,
+    expectedRevision: task.revision,
+    compositionRevision: 2,
+    operationId: randomUUID(),
+    actionId: "complete",
+    input: { review: "保留旧工作区的数据" },
+  });
+  const app = createApp(w);
+  const removed = await app.request("/api/releases", { method: "POST" });
+  assert.equal(removed.status, 404);
+  const restored = await app.request("/api/runtime/restore", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      operationId: randomUUID(),
+      compositionRevision: 2,
+      workflowId: "review",
+    }),
+  });
+  assert.equal(restored.status, 200);
+  assert.equal(w.composition().workflow.id, "default");
+  assert.equal(w.read(task.id).fields.review, "保留旧工作区的数据");
+  assert.equal(w.read(task.id).state, "done");
+});

@@ -1,7 +1,16 @@
 import { Hono } from "hono";
 import { AppError } from "../shared/contracts.js";
 import { Workspace } from "./workspace.js";
-export function createApp(workspace: Workspace) {
+import {
+  unavailableAssistant,
+  parseAssistantCommand,
+  type AssistantService,
+} from "./assistant.js";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+export function createApp(
+  workspace: Workspace,
+  assistant: AssistantService = unavailableAssistant,
+) {
   const app = new Hono();
   app.onError((error, c) => {
     const known = error instanceof AppError;
@@ -10,7 +19,7 @@ export function createApp(workspace: Workspace) {
         code: known ? error.code : "INTERNAL_ERROR",
         message: error.message || "操作失败，请重试",
       },
-      (known ? error.status : 500) as any,
+      (known ? error.status : 500) as ContentfulStatusCode,
     );
   });
   app.get("/api/tasks", (c) =>
@@ -30,9 +39,20 @@ export function createApp(workspace: Workspace) {
     c.json(workspace.operation(c.req.param("id"))),
   );
   app.get("/api/composition", (c) => c.json(workspace.composition()));
-  app.post("/api/releases", async (c) =>
-    c.json(await workspace.activate(await c.req.json())),
+  app.get("/api/assistant", async (c) => c.json(await assistant.observe()));
+  app.post("/api/assistant/commands", async (c) =>
+    c.json(await assistant.command(parseAssistantCommand(await c.req.json()))),
   );
+  app.post("/api/runtime/restore", async (c) => {
+    const { operationId, compositionRevision } = await c.req.json();
+    return c.json(
+      await workspace.activate({
+        operationId,
+        compositionRevision,
+        workflowId: "default",
+      }),
+    );
+  });
   app.post("/api/runtime/retry", async (c) => {
     await workspace.restart();
     return c.json(workspace.composition());

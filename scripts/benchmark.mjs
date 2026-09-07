@@ -65,7 +65,7 @@ try {
     if (i >= 200) write.push(performance.now() - start);
   }
   for (let i = 0; i < 20; i++)
-    await post("/releases", {
+    await workspace.activate({
       workflowId: i % 2 ? "default" : "review",
       compositionRevision: i + 1,
       operationId: randomUUID(),

@@ -1,152 +1,174 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Trash2 } from "lucide-react";
 import type { Task, Field } from "../shared/contracts.js";
-import { api, sendCommand } from "./api.js";
-import { Icon } from "./Icon.js";
-const readDraft = (id: string, task?: Task) => {
-  try {
-    return (
-      JSON.parse(localStorage.getItem(`draft:${id}`) ?? "null") ?? {
-        title: task?.title ?? "",
-        description: task?.description ?? "",
-      }
-    );
-  } catch {
-    return { title: task?.title ?? "", description: task?.description ?? "" };
-  }
-};
+import {
+  api,
+  errorMessage,
+  readStored,
+  isStringRecord,
+  sendCommand,
+} from "./api.js";
+import { Button, ErrorMessage, Spinner } from "./ui.js";
+
 export function Editor({
   task,
   revision,
   fields,
   saved,
   close,
+  remove,
 }: {
-  task?: Task;
+  task: Task;
   revision: number;
   fields: Field[];
   saved: () => Promise<void>;
   close: () => void;
+  remove: () => Promise<void>;
 }) {
-  const id = task?.id ?? "new";
-  const [draft, setDraft] = useState(() => readDraft(id, task));
-  const [base, setBase] = useState(task?.revision);
+  const key = `draft:${task.id}`;
+  const [draft, setDraft] = useState(() => {
+    const stored = readStored(key, {}, isStringRecord);
+    return {
+      title: stored.title ?? task.title,
+      description: stored.description ?? task.description,
+    };
+  });
+  const [base, setBase] = useState(task.revision);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const composing = useRef(false);
   useEffect(() => {
-    localStorage.setItem(`draft:${id}`, JSON.stringify(draft));
-  }, [draft, id]);
-  async function submit(event: React.FormEvent) {
+    localStorage.setItem(key, JSON.stringify(draft));
+  }, [key, draft]);
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    if (composing.current || busy) return;
+    if (composing.current || busy || !draft.title.trim()) return;
     setBusy(true);
     setError("");
     try {
       await sendCommand({
-        type: task ? "edit" : "create",
-        taskId: task?.id,
+        type: "edit",
+        taskId: task.id,
         expectedRevision: base,
         compositionRevision: revision,
         ...draft,
       });
-      localStorage.removeItem(`draft:${id}`);
+      localStorage.removeItem(key);
       await saved();
       close();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (error) {
+      setError(errorMessage(error));
     } finally {
       setBusy(false);
     }
   }
   return (
-    <section className="editor">
-      <div className="panel-top">
-        <span className="eyebrow">
-          {task ? "留意每一个细节" : "从一件小事开始"}
-        </span>
-        <button className="icon-button" onClick={close} aria-label="关闭详情">
-          <Icon name="close" />
-        </button>
-      </div>
-      <h2>{task ? "任务详情" : "新的待办"}</h2>
-      <form
-        onSubmit={submit}
-        onCompositionStart={() => {
-          composing.current = true;
-        }}
-        onCompositionEnd={() => {
-          composing.current = false;
-        }}
-      >
-        <label htmlFor="title">想做些什么？</label>
-        <input
-          id="title"
-          autoFocus
-          value={draft.title}
-          onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-          placeholder="写下一个值得开始的小目标"
-          required
-        />
-        <label htmlFor="description">
-          补充一点细节 <span>可选</span>
-        </label>
-        <textarea
-          id="description"
-          rows={5}
-          value={draft.description}
-          onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-          placeholder="想法、线索，或给未来自己的提醒…"
-        />
-        {task &&
-          Object.entries(task.fields).map(([key, value]) => (
-            <div className="retained-field" key={key}>
-              <span>
-                {fields.find((field) => field.key === key)?.label ?? key}
-              </span>
-              <p>{value}</p>
-            </div>
-          ))}
-        {error && (
-          <div className="error" role="alert">
-            {error}
-            {task && (
-              <button
-                type="button"
-                className="text-button"
-                onClick={async () => {
-                  try {
-                    const latest = await api<Task>(`/tasks/${task.id}`);
-                    setBase(latest.revision);
-                    await saved();
-                    setError("已读取最新版本，草稿保留。确认内容后再次保存。");
-                  } catch (e: any) {
-                    setError(e.message);
-                  }
-                }}
-              >
-                读取最新版本
-              </button>
-            )}
-          </div>
-        )}
-        <div className="form-footer">
-          <span>离开时会保留草稿</span>
-          <button className="primary" disabled={busy}>
-            {busy ? "保存中…" : "保存任务"}
-            <Icon name="arrow" />
-          </button>
+    <form
+      className="flex min-h-0 flex-1 flex-col"
+      onSubmit={submit}
+      onCompositionStart={() => {
+        composing.current = true;
+      }}
+      onCompositionEnd={() => {
+        composing.current = false;
+      }}
+    >
+      <div className="flex-1 space-y-6 overflow-y-auto p-5">
+        <div className="space-y-2">
+          <label className="field-label" htmlFor="task-title">
+            任务名称
+          </label>
+          <input
+            data-panel-input
+            id="task-title"
+            className="input"
+            required
+            maxLength={200}
+            value={draft.title}
+            onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+          />
         </div>
-        <button
-          className="text-button muted"
-          type="button"
-          onClick={() => {
-            localStorage.removeItem(`draft:${id}`);
-            close();
+        <div className="space-y-2">
+          <label className="field-label" htmlFor="task-description">
+            备注
+          </label>
+          <textarea
+            id="task-description"
+            className="input min-h-36 resize-y"
+            maxLength={5000}
+            placeholder="添加备注"
+            value={draft.description}
+            onChange={(e) =>
+              setDraft({ ...draft, description: e.target.value })
+            }
+          />
+        </div>
+        {Object.entries(task.fields).map(([key, value]) => (
+          <div key={key} className="space-y-2">
+            <p className="field-label">
+              {fields.find((field) => field.key === key)?.label ?? key}
+            </p>
+            <p className="whitespace-pre-wrap break-words text-sm leading-6">
+              {value}
+            </p>
+          </div>
+        ))}
+        <ErrorMessage message={error} />
+        {error && (
+          <Button
+            onClick={async () => {
+              try {
+                const latest = await api<Task>(`/tasks/${task.id}`);
+                setBase(latest.revision);
+                await saved();
+                setError("已读取最新版本，请核对草稿后保存。");
+              } catch (error) {
+                setError(errorMessage(error));
+              }
+            }}
+          >
+            读取最新版本
+          </Button>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line p-4">
+        <Button
+          variant="icon"
+          aria-label="删除任务"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await remove();
+            } catch (error) {
+              setError(errorMessage(error));
+            } finally {
+              setBusy(false);
+            }
           }}
         >
-          放弃草稿
-        </button>
-      </form>
-    </section>
+          <Trash2 className="size-[18px]" />
+        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={() => {
+              localStorage.removeItem(key);
+              close();
+            }}
+          >
+            放弃修改
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={busy || !draft.title.trim()}
+          >
+            {busy && <Spinner />}保存
+          </Button>
+        </div>
+      </div>
+    </form>
   );
 }
