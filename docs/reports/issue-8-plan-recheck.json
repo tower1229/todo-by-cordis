@@ -1,0 +1,1581 @@
+{
+  "sourceCommit": "f45f08b16d9b6ebef65732017d41125abfe02305",
+  "sourceCleanAtStart": true,
+  "model": "gemini-3.1-pro-preview",
+  "scope": "Real Gemini Plan-only retry from copied synthetic failed workspace; not full Issue #8 acceptance",
+  "directory": "/var/folders/3g/sbd2x9l51tb9gkn_k1y2j_7w0000gn/T/cordis-issue8-plan-recheck-rLUV75",
+  "previousRunId": "3482cb7a-c476-4815-ae79-8be11839bb91",
+  "status": "ready",
+  "calls": [
+    {
+      "tools": [
+        {
+          "id": "call_276227",
+          "name": "inspect_application",
+          "args": {}
+        },
+        {
+          "id": "call_276259",
+          "name": "describe_verification",
+          "args": {
+            "rules": [
+              {
+                "key": "reflection",
+                "maxLength": 5000,
+                "minLength": 1,
+                "label": "复盘",
+                "required": true
+              }
+            ]
+          }
+        }
+      ],
+      "usage": {
+        "promptTokenCount": 2890,
+        "candidatesTokenCount": 51,
+        "totalTokenCount": 3286,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 2890
+          }
+        ],
+        "thoughtsTokenCount": 345,
+        "serviceTier": "standard"
+      }
+    },
+    {
+      "tools": [
+        {
+          "id": "call_146042",
+          "name": "read_source",
+          "args": {
+            "ref": "active-source"
+          }
+        },
+        {
+          "id": "call_146043",
+          "name": "read_contract",
+          "args": {
+            "ref": "active-contract"
+          }
+        },
+        {
+          "id": "call_146044",
+          "name": "read_acceptance",
+          "args": {
+            "ref": "active-acceptance"
+          }
+        },
+        {
+          "id": "call_146045",
+          "name": "read_source",
+          "args": {
+            "ref": "src/shared/contracts.ts"
+          }
+        },
+        {
+          "id": "call_146046",
+          "name": "read_source",
+          "args": {
+            "ref": "src/server/evolution-domain.ts"
+          }
+        },
+        {
+          "id": "call_146047",
+          "name": "check_environment",
+          "args": {}
+        }
+      ],
+      "usage": {
+        "promptTokenCount": 6458,
+        "candidatesTokenCount": 110,
+        "totalTokenCount": 6671,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 6458
+          }
+        ],
+        "thoughtsTokenCount": 103,
+        "serviceTier": "standard"
+      }
+    },
+    {
+      "tools": [
+        {
+          "id": "call_361863",
+          "name": "read_source",
+          "args": {
+            "ref": "src/web/ActionForm.tsx"
+          }
+        },
+        {
+          "id": "call_361864",
+          "name": "read_source",
+          "args": {
+            "ref": "src/web/TaskEditor.tsx"
+          }
+        }
+      ],
+      "usage": {
+        "promptTokenCount": 15119,
+        "candidatesTokenCount": 46,
+        "totalTokenCount": 15649,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 15119
+          }
+        ],
+        "thoughtsTokenCount": 484,
+        "serviceTier": "standard"
+      }
+    },
+    {
+      "tools": [
+        {
+          "id": "call_310680",
+          "name": "propose_plan",
+          "args": {
+            "restartImpact": "由于动态替换模块，会导致有瞬间后台请求延迟。界面操作无需硬刷新。",
+            "compatibility": "完全兼容。对于未经历过 increment 的历史任务，count 会自动初始化为 1 并保存。未知字段仍由宿主逻辑进行无损保留。",
+            "excluded": [
+              "直接操作本地或远程的非授权 IO 存储",
+              "改动宿主的 Task 定义接口"
+            ],
+            "dataImpact": "不会覆盖原有任何任务数据，只会针对调用了增加计数操作的任务新增或修改 count 属性值。",
+            "workflowRules": [
+              {
+                "required": true,
+                "label": "复盘",
+                "key": "reflection",
+                "maxLength": 5000,
+                "minLength": 1
+              }
+            ],
+            "unresolved": [],
+            "writableScope": [
+              "business/entry.ts",
+              "business/view.ts",
+              "business/config.json",
+              "business/compatibility.json"
+            ],
+            "changes": [
+              "在 extensions.actions 中定义 increment 动作",
+              "在 extensions.fields 中定义 count 字段",
+              "在 business/entry.ts 内增加 increment 处理，解析 count 字段，处理异常情况，+1后返回 commit",
+              "在 business/view.ts 中将 count 加入展示字段中，使得该字段能在详细页呈现"
+            ],
+            "acceptance": [
+              {
+                "given": "未完成任务",
+                "when": "reflection 缺失、空字符串或空白，其他字段有效",
+                "checker": "workflow/1",
+                "then": "要求输入该字段，不提交任务"
+              },
+              {
+                "when": "reflection 输入 5001 个字，其他字段有效",
+                "given": "未完成任务",
+                "then": "拒绝完成，不提交任务",
+                "checker": "workflow/1"
+              },
+              {
+                "given": "未完成任务",
+                "then": "允许完成",
+                "when": "reflection 输入 5000 个 Unicode 码点，其他字段有效",
+                "checker": "workflow/1"
+              },
+              {
+                "checker": "workflow/1",
+                "then": "完成任务，保存去除首尾空白的值并保留未知历史字段",
+                "given": "未完成任务且已有历史字段",
+                "when": "提交符合冻结规则的全部字段并带首尾空白"
+              },
+              {
+                "given": "已完成任务且已有字段",
+                "then": "变为未完成并保留所有字段",
+                "checker": "workflow/1",
+                "when": "重新打开"
+              },
+              {
+                "then": "拒绝执行",
+                "checker": "workflow/1",
+                "when": "提交动作",
+                "given": "任务状态与动作不匹配或动作未知"
+              }
+            ],
+            "capabilityChanges": [
+              {
+                "provider": "business/entry.ts",
+                "capability": "workflow",
+                "consumers": [
+                  "src/web/ActionForm.tsx",
+                  "src/web/TaskEditor.tsx",
+                  "src/server/evolution-domain.ts"
+                ],
+                "change": "在已有的开放状态任务流中增加 increment 操作，用以驱动 count 字段自增"
+              }
+            ],
+            "intent": "improve",
+            "preview": "可在界面任务上发现新的可用按钮动作，点击后计数值直接加 1 并在界面实时反映，无破坏表现。",
+            "outcome": "支持用户在界面的 open 状态任务点击动作完成计数追加，对复盘主流程零干扰，确保非状态允许下的安全拒收。",
+            "evidence": [
+              {
+                "hash": "bba0d4744f3f890667e8825cb6947846e10349ee28d3dd166afe3f1597968d88",
+                "ref": "inspect_application"
+              },
+              {
+                "hash": "5759b5c7e62d03a1545983adf74237dbc1236c0c8fce445ab756f11b491fcc6e",
+                "ref": "active-source"
+              },
+              {
+                "hash": "920b231c4528015ca7247819a2f356341194752afb97c946d8b141e6102bebbc",
+                "ref": "active-contract"
+              },
+              {
+                "ref": "active-acceptance",
+                "hash": "e258f380eb380dc68e5835fe9c6f7f1ccb0e4bbf575b9ed090494655172812d4"
+              },
+              {
+                "hash": "06b76b6879892eea822d5c92c44473d3864fb0fe05b0f7e65ef3eab896eec47b",
+                "ref": "src/shared/contracts.ts"
+              },
+              {
+                "hash": "97ecea5424a07dc1b40bec1f112704b91ae0b22e9e7b4e9ac2b80b711a624df6",
+                "ref": "src/server/evolution-domain.ts"
+              },
+              {
+                "ref": "check_environment",
+                "hash": "1565e087b175be2c3e1ef1b2574ede7646598eb28cc64d78d775a28bf5d15290"
+              },
+              {
+                "ref": "verification-definition",
+                "hash": "e45edb17232e86be8feda725269ffa13107f5f4d95bb227f6c839adf74876f4a"
+              },
+              {
+                "ref": "src/web/ActionForm.tsx",
+                "hash": "136c7b20334d1010a24ce292b1c714f53b132ee219dc8fff75aba7bd0a0192cd"
+              },
+              {
+                "hash": "6765fefa22539c8405ae54add4f1033a5f01348f2d2e15aac5045e67f8544ff2",
+                "ref": "src/web/TaskEditor.tsx"
+              }
+            ],
+            "extensions": {
+              "fields": [
+                {
+                  "key": "count",
+                  "label": "计数",
+                  "type": "text"
+                }
+              ],
+              "cases": [
+                {
+                  "action": "increment",
+                  "input": {},
+                  "name": "increment existing counter case",
+                  "fields": {
+                    "retained": "historical",
+                    "count": "7"
+                  },
+                  "expected": {
+                    "state": "open",
+                    "kind": "commit",
+                    "fields": {
+                      "retained": "historical",
+                      "count": "8"
+                    }
+                  },
+                  "state": "open"
+                },
+                {
+                  "state": "open",
+                  "name": "increment fallback zero case",
+                  "fields": {
+                    "retained": "historical"
+                  },
+                  "action": "increment",
+                  "expected": {
+                    "fields": {
+                      "retained": "historical",
+                      "count": "1"
+                    },
+                    "state": "open",
+                    "kind": "commit"
+                  },
+                  "input": {}
+                },
+                {
+                  "state": "done",
+                  "fields": {
+                    "count": "7"
+                  },
+                  "expected": {
+                    "kind": "reject"
+                  },
+                  "action": "increment",
+                  "name": "increment negative case in done state",
+                  "input": {}
+                }
+              ],
+              "actions": [
+                {
+                  "id": "increment",
+                  "label": "增加计数",
+                  "from": [
+                    "open"
+                  ]
+                }
+              ]
+            },
+            "steps": [
+              {
+                "evidence": "实现 business-actions/1 断言覆盖用例的通过；确保任务从正常值和缺省边界等能无损自增。",
+                "artifact": "business/entry.ts, business/view.ts",
+                "dependsOn": [],
+                "purpose": "实现独立计数的动作逻辑并在视图中暴露。",
+                "id": "develop_increment_logic"
+              }
+            ],
+            "application": "需宿主确认并加载新生成的业务脚本，由子进程无缝切换处理。",
+            "rollback": "可退回到已有版本，之前记录的 count 将因为 unknown field 保留策略静默地保留但不做任何加一计算。",
+            "dependencies": [],
+            "acceptanceReason": "用户需要新增独立的增加计数能力，以对特定状态下任务记录调用计数，原有任务模型及复盘操作不受影响。",
+            "summary": "增加独立计数能力：提供名为 increment 的动作，将任务开放状态下的 count 字段整数字符串进行加1（含边界处理与默认值），并保证在其它状态禁用；保留全部原有配置、数据验证以及业务行为。"
+          }
+        }
+      ],
+      "usage": {
+        "promptTokenCount": 18007,
+        "candidatesTokenCount": 1880,
+        "totalTokenCount": 26541,
+        "cachedContentTokenCount": 12136,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 18007
+          }
+        ],
+        "cacheTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 12136
+          }
+        ],
+        "thoughtsTokenCount": 6654,
+        "serviceTier": "standard"
+      }
+    },
+    {
+      "tools": [
+        {
+          "id": "call_386724",
+          "name": "read_source",
+          "args": {
+            "ref": "business/entry.ts"
+          }
+        },
+        {
+          "id": "call_386725",
+          "name": "read_source",
+          "args": {
+            "ref": "business/view.ts"
+          }
+        },
+        {
+          "id": "call_386726",
+          "name": "read_source",
+          "args": {
+            "ref": "business/config.json"
+          }
+        },
+        {
+          "id": "call_386727",
+          "name": "read_source",
+          "args": {
+            "ref": "business/compatibility.json"
+          }
+        }
+      ],
+      "usage": {
+        "promptTokenCount": 26720,
+        "candidatesTokenCount": 80,
+        "totalTokenCount": 27620,
+        "cachedContentTokenCount": 16241,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 26720
+          }
+        ],
+        "cacheTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 16241
+          }
+        ],
+        "thoughtsTokenCount": 820,
+        "serviceTier": "standard"
+      }
+    },
+    {
+      "tools": [
+        {
+          "id": "call_302828",
+          "name": "propose_plan",
+          "args": {
+            "unresolved": [],
+            "excluded": [
+              "直接操作本地或远程的非授权 IO 存储",
+              "改动宿主的 Task 定义接口"
+            ],
+            "workflowRules": [
+              {
+                "maxLength": 5000,
+                "minLength": 1,
+                "required": true,
+                "label": "复盘",
+                "key": "reflection"
+              }
+            ],
+            "restartImpact": "由于动态替换模块，会导致有瞬间后台请求延迟。界面操作无需硬刷新。",
+            "steps": [
+              {
+                "id": "develop_increment_logic",
+                "dependsOn": [],
+                "evidence": "实现 business-actions/1 断言覆盖用例的通过；确保任务从正常值和缺省边界等能无损自增。",
+                "purpose": "实现独立计数的动作逻辑并在视图中暴露。",
+                "artifact": "business/entry.ts, business/view.ts"
+              }
+            ],
+            "writableScope": [
+              "business/entry.ts",
+              "business/view.ts",
+              "business/config.json",
+              "business/compatibility.json"
+            ],
+            "outcome": "支持用户在界面的 open 状态任务点击动作完成计数追加，对复盘主流程零干扰，确保非状态允许下的安全拒收。",
+            "acceptanceReason": "用户需要新增独立的增加计数能力，以对特定状态下任务记录调用计数，原有任务模型及复盘操作不受影响。",
+            "application": "需宿主确认并加载新生成的业务脚本，由子进程无缝切换处理。",
+            "preview": "可在界面任务上发现新的可用按钮动作，点击后计数值直接加 1 并在界面实时反映，无破坏表现。",
+            "extensions": {
+              "cases": [
+                {
+                  "expected": {
+                    "kind": "commit",
+                    "fields": {
+                      "count": "8",
+                      "retained": "historical"
+                    },
+                    "state": "open"
+                  },
+                  "action": "increment",
+                  "fields": {
+                    "retained": "historical",
+                    "count": "7"
+                  },
+                  "name": "increment existing counter case",
+                  "state": "open",
+                  "input": {}
+                },
+                {
+                  "action": "increment",
+                  "input": {},
+                  "fields": {
+                    "retained": "historical"
+                  },
+                  "state": "open",
+                  "name": "increment fallback zero case",
+                  "expected": {
+                    "kind": "commit",
+                    "fields": {
+                      "count": "1",
+                      "retained": "historical"
+                    },
+                    "state": "open"
+                  }
+                },
+                {
+                  "name": "increment negative case in done state",
+                  "expected": {
+                    "kind": "reject"
+                  },
+                  "fields": {
+                    "count": "7"
+                  },
+                  "action": "increment",
+                  "state": "done",
+                  "input": {}
+                }
+              ],
+              "fields": [
+                {
+                  "label": "计数",
+                  "key": "count",
+                  "type": "text"
+                }
+              ],
+              "actions": [
+                {
+                  "label": "增加计数",
+                  "from": [
+                    "open"
+                  ],
+                  "id": "increment"
+                }
+              ]
+            },
+            "acceptance": [
+              {
+                "when": "reflection 缺失、空字符串或空白，其他字段有效",
+                "given": "未完成任务",
+                "checker": "workflow/1",
+                "then": "要求输入该字段，不提交任务"
+              },
+              {
+                "then": "拒绝完成，不提交任务",
+                "when": "reflection 输入 5001 个字，其他字段有效",
+                "checker": "workflow/1",
+                "given": "未完成任务"
+              },
+              {
+                "given": "未完成任务",
+                "when": "reflection 输入 5000 个 Unicode 码点，其他字段有效",
+                "then": "允许完成",
+                "checker": "workflow/1"
+              },
+              {
+                "then": "完成任务，保存去除首尾空白的值并保留未知历史字段",
+                "when": "提交符合冻结规则的全部字段并带首尾空白",
+                "checker": "workflow/1",
+                "given": "未完成任务且已有历史字段"
+              },
+              {
+                "then": "变为未完成并保留所有字段",
+                "checker": "workflow/1",
+                "when": "重新打开",
+                "given": "已完成任务且已有字段"
+              },
+              {
+                "when": "提交动作",
+                "checker": "workflow/1",
+                "given": "任务状态与动作不匹配或动作未知",
+                "then": "拒绝执行"
+              }
+            ],
+            "evidence": [
+              {
+                "hash": "bba0d4744f3f890667e8825cb6947846e10349ee28d3dd166afe3f1597968d88",
+                "ref": "inspect_application"
+              },
+              {
+                "hash": "5759b5c7e62d03a1545983adf74237dbc1236c0c8fce445ab756f11b491fcc6e",
+                "ref": "active-source"
+              },
+              {
+                "ref": "business/entry.ts",
+                "hash": "61b0820edde637fe81432e79fa63299f514989d16ebcecb19f9cabfe18f61fde"
+              },
+              {
+                "hash": "267feea98bad639c2ace5fd3d693cd708df3153c6be5b6c80cf55970e3f1b590",
+                "ref": "business/view.ts"
+              },
+              {
+                "ref": "business/config.json",
+                "hash": "bb511d1e2723214ac1c3710d939883722d57e31b0145d33d427d9628b209be38"
+              },
+              {
+                "ref": "business/compatibility.json",
+                "hash": "23e916ee1bd6efa8f53b4d884b04b231d76d54baa874209405672fbd71067bae"
+              },
+              {
+                "ref": "active-contract",
+                "hash": "920b231c4528015ca7247819a2f356341194752afb97c946d8b141e6102bebbc"
+              },
+              {
+                "hash": "e258f380eb380dc68e5835fe9c6f7f1ccb0e4bbf575b9ed090494655172812d4",
+                "ref": "active-acceptance"
+              },
+              {
+                "hash": "06b76b6879892eea822d5c92c44473d3864fb0fe05b0f7e65ef3eab896eec47b",
+                "ref": "src/shared/contracts.ts"
+              },
+              {
+                "hash": "97ecea5424a07dc1b40bec1f112704b91ae0b22e9e7b4e9ac2b80b711a624df6",
+                "ref": "src/server/evolution-domain.ts"
+              },
+              {
+                "ref": "check_environment",
+                "hash": "1565e087b175be2c3e1ef1b2574ede7646598eb28cc64d78d775a28bf5d15290"
+              },
+              {
+                "hash": "e45edb17232e86be8feda725269ffa13107f5f4d95bb227f6c839adf74876f4a",
+                "ref": "verification-definition"
+              },
+              {
+                "hash": "136c7b20334d1010a24ce292b1c714f53b132ee219dc8fff75aba7bd0a0192cd",
+                "ref": "src/web/ActionForm.tsx"
+              },
+              {
+                "ref": "src/web/TaskEditor.tsx",
+                "hash": "6765fefa22539c8405ae54add4f1033a5f01348f2d2e15aac5045e67f8544ff2"
+              }
+            ],
+            "changes": [
+              "在 extensions.actions 中定义 increment 动作",
+              "在 extensions.fields 中定义 count 字段",
+              "在 business/entry.ts 内增加 increment 处理，解析 count 字段，处理异常情况，+1后返回 commit",
+              "在 business/view.ts 中将 count 加入展示字段中，使得该字段能在详细页呈现"
+            ],
+            "dependencies": [],
+            "summary": "增加独立计数能力：提供名为 increment 的动作，将任务开放状态下的 count 字段整数字符串进行加1（含边界处理与默认值），并保证在其它状态禁用；保留全部原有配置、数据验证以及业务行为。",
+            "intent": "improve",
+            "compatibility": "完全兼容。对于未经历过 increment 的历史任务，count 会自动初始化为 1 并保存。未知字段仍由宿主逻辑进行无损保留。",
+            "rollback": "可退回到已有版本，之前记录的 count 将因为 unknown field 保留策略静默地保留但不做任何加一计算。",
+            "dataImpact": "不会覆盖原有任何任务数据，只会针对调用了增加计数操作的任务新增或修改 count 属性值。",
+            "capabilityChanges": [
+              {
+                "provider": "business/entry.ts",
+                "consumers": [
+                  "src/web/ActionForm.tsx",
+                  "src/web/TaskEditor.tsx",
+                  "src/server/evolution-domain.ts"
+                ],
+                "change": "在已有的开放状态任务流中增加 increment 操作，用以驱动 count 字段自增",
+                "capability": "workflow"
+              }
+            ]
+          }
+        }
+      ],
+      "usage": {
+        "promptTokenCount": 28507,
+        "candidatesTokenCount": 2162,
+        "totalTokenCount": 30962,
+        "cachedContentTokenCount": 24346,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 28507
+          }
+        ],
+        "cacheTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 24346
+          }
+        ],
+        "thoughtsTokenCount": 293,
+        "serviceTier": "standard"
+      }
+    }
+  ],
+  "snapshot": {
+    "availability": "ready",
+    "run": {
+      "diagnostics": [],
+      "acceptanceRevisions": [],
+      "parentRunId": "3482cb7a-c476-4815-ae79-8be11839bb91",
+      "baseVersion": "51c1d27804bd71325ae3b45c5759940705532da930d7255d608baf96164b9c19",
+      "capabilityId": "default",
+      "parent": {
+        "status": "blocked",
+        "message": "缺少可靠业务验收检查器，需要维护者补齐；业务案例尚未映射到独立检查器的可靠数据化断言，不能仅凭检查器名称进入 ready；提供者或消费方尚未调查，不能确认能力差异",
+        "budget": {
+          "callsUsed": 3,
+          "callsRemaining": 9,
+          "candidatesRemaining": 3,
+          "millisecondsRemaining": 534128.246625
+        }
+      },
+      "id": "d87c58cc-0706-4520-90d8-0e654234ea2c",
+      "request": "增加独立计数能力：新增 increment 动作，仅 open 状态可用，将任务 count 字段的非负整数字符串加 1，缺省为 0，done 状态拒绝。新动作在界面可操作。保留 reflection 显示名称“复盘”和必填复盘：去除首尾空白后必须为 1 到 5000 个 Unicode 码点，不能更改其上下限。保留 complete/reopen 和所有已有字段、工作流身份及名称。无外部服务或依赖。用 business-actions/1 的正反例与已有 count 7 加到 8 验证新动作，workflow/1 回归现有工作流。extensions.cases 仅包含 increment 案例。",
+      "requestRevision": 1,
+      "revisions": [
+        {
+          "revision": 1,
+          "type": "request",
+          "text": "增加独立计数能力：新增 increment 动作，仅 open 状态可用，将任务 count 字段的非负整数字符串加 1，缺省为 0，done 状态拒绝。新动作在界面可操作。保留 reflection 显示名称“复盘”和必填复盘：去除首尾空白后必须为 1 到 5000 个 Unicode 码点，不能更改其上下限。保留 complete/reopen 和所有已有字段、工作流身份及名称。无外部服务或依赖。用 business-actions/1 的正反例与已有 count 7 加到 8 验证新动作，workflow/1 回归现有工作流。extensions.cases 仅包含 increment 案例。",
+          "createdAt": "2026-09-08T07:00:15.065Z"
+        }
+      ],
+      "plans": [
+        {
+          "intent": "improve",
+          "compositionRevision": 2,
+          "baseVersion": "51c1d27804bd71325ae3b45c5759940705532da930d7255d608baf96164b9c19",
+          "route": {
+            "kind": "application"
+          },
+          "summary": "增加独立计数能力：提供名为 increment 的动作，将任务开放状态下的 count 字段整数字符串进行加1（含边界处理与默认值），并保证在其它状态禁用；保留全部原有配置、数据验证以及业务行为。",
+          "changes": [
+            "在 extensions.actions 中定义 increment 动作",
+            "在 extensions.fields 中定义 count 字段",
+            "在 business/entry.ts 内增加 increment 处理，解析 count 字段，处理异常情况，+1后返回 commit",
+            "在 business/view.ts 中将 count 加入展示字段中，使得该字段能在详细页呈现"
+          ],
+          "outcome": "支持用户在界面的 open 状态任务点击动作完成计数追加，对复盘主流程零干扰，确保非状态允许下的安全拒收。",
+          "dataImpact": "不会覆盖原有任何任务数据，只会针对调用了增加计数操作的任务新增或修改 count 属性值。",
+          "excluded": [
+            "直接操作本地或远程的非授权 IO 存储",
+            "改动宿主的 Task 定义接口"
+          ],
+          "evidence": [
+            {
+              "ref": "inspect_application",
+              "hash": "bba0d4744f3f890667e8825cb6947846e10349ee28d3dd166afe3f1597968d88"
+            },
+            {
+              "ref": "active-source",
+              "hash": "5759b5c7e62d03a1545983adf74237dbc1236c0c8fce445ab756f11b491fcc6e"
+            },
+            {
+              "ref": "active-contract",
+              "hash": "920b231c4528015ca7247819a2f356341194752afb97c946d8b141e6102bebbc"
+            },
+            {
+              "ref": "active-acceptance",
+              "hash": "e258f380eb380dc68e5835fe9c6f7f1ccb0e4bbf575b9ed090494655172812d4"
+            },
+            {
+              "ref": "src/shared/contracts.ts",
+              "hash": "06b76b6879892eea822d5c92c44473d3864fb0fe05b0f7e65ef3eab896eec47b"
+            },
+            {
+              "ref": "src/server/evolution-domain.ts",
+              "hash": "97ecea5424a07dc1b40bec1f112704b91ae0b22e9e7b4e9ac2b80b711a624df6"
+            },
+            {
+              "ref": "check_environment",
+              "hash": "1565e087b175be2c3e1ef1b2574ede7646598eb28cc64d78d775a28bf5d15290"
+            },
+            {
+              "ref": "verification-definition",
+              "hash": "e45edb17232e86be8feda725269ffa13107f5f4d95bb227f6c839adf74876f4a"
+            },
+            {
+              "ref": "src/web/ActionForm.tsx",
+              "hash": "136c7b20334d1010a24ce292b1c714f53b132ee219dc8fff75aba7bd0a0192cd"
+            },
+            {
+              "ref": "src/web/TaskEditor.tsx",
+              "hash": "6765fefa22539c8405ae54add4f1033a5f01348f2d2e15aac5045e67f8544ff2"
+            }
+          ],
+          "workflowRules": [
+            {
+              "key": "reflection",
+              "label": "复盘",
+              "required": true,
+              "minLength": 1,
+              "maxLength": 5000
+            }
+          ],
+          "ruleChanges": [],
+          "acceptanceChanges": [],
+          "capabilityChanges": [
+            {
+              "capability": "workflow",
+              "provider": "business/entry.ts",
+              "consumers": [
+                "src/web/ActionForm.tsx",
+                "src/web/TaskEditor.tsx",
+                "src/server/evolution-domain.ts"
+              ],
+              "change": "在已有的开放状态任务流中增加 increment 操作，用以驱动 count 字段自增"
+            }
+          ],
+          "acceptance": [
+            "当 未完成任务，执行 reflection 缺失、空字符串或空白，其他字段有效，应 要求输入该字段，不提交任务",
+            "当 未完成任务，执行 reflection 输入 5001 个字，其他字段有效，应 拒绝完成，不提交任务",
+            "当 未完成任务，执行 reflection 输入 5000 个 Unicode 码点，其他字段有效，应 允许完成",
+            "当 未完成任务且已有历史字段，执行 提交符合冻结规则的全部字段并带首尾空白，应 完成任务，保存去除首尾空白的值并保留未知历史字段",
+            "当 已完成任务且已有字段，执行 重新打开，应 变为未完成并保留所有字段",
+            "当 任务状态与动作不匹配或动作未知，执行 提交动作，应 拒绝执行",
+            "当 {\"state\":\"open\",\"fields\":{\"retained\":\"historical\",\"count\":\"7\"}}，执行 {\"action\":\"increment\",\"input\":{}}，应 {\"state\":\"open\",\"kind\":\"commit\",\"fields\":{\"retained\":\"historical\",\"count\":\"8\"}}",
+            "当 {\"state\":\"open\",\"fields\":{\"retained\":\"historical\"}}，执行 {\"action\":\"increment\",\"input\":{}}，应 {\"fields\":{\"retained\":\"historical\",\"count\":\"1\"},\"state\":\"open\",\"kind\":\"commit\"}",
+            "当 {\"state\":\"done\",\"fields\":{\"count\":\"7\"}}，执行 {\"action\":\"increment\",\"input\":{}}，应 {\"kind\":\"reject\"}"
+          ],
+          "cases": [
+            {
+              "given": "未完成任务",
+              "when": "reflection 缺失、空字符串或空白，其他字段有效",
+              "then": "要求输入该字段，不提交任务",
+              "checker": "workflow/1"
+            },
+            {
+              "given": "未完成任务",
+              "when": "reflection 输入 5001 个字，其他字段有效",
+              "then": "拒绝完成，不提交任务",
+              "checker": "workflow/1"
+            },
+            {
+              "given": "未完成任务",
+              "when": "reflection 输入 5000 个 Unicode 码点，其他字段有效",
+              "then": "允许完成",
+              "checker": "workflow/1"
+            },
+            {
+              "given": "未完成任务且已有历史字段",
+              "when": "提交符合冻结规则的全部字段并带首尾空白",
+              "then": "完成任务，保存去除首尾空白的值并保留未知历史字段",
+              "checker": "workflow/1"
+            },
+            {
+              "given": "已完成任务且已有字段",
+              "when": "重新打开",
+              "then": "变为未完成并保留所有字段",
+              "checker": "workflow/1"
+            },
+            {
+              "given": "任务状态与动作不匹配或动作未知",
+              "when": "提交动作",
+              "then": "拒绝执行",
+              "checker": "workflow/1"
+            },
+            {
+              "given": "{\"state\":\"open\",\"fields\":{\"retained\":\"historical\",\"count\":\"7\"}}",
+              "when": "{\"action\":\"increment\",\"input\":{}}",
+              "then": "{\"state\":\"open\",\"kind\":\"commit\",\"fields\":{\"retained\":\"historical\",\"count\":\"8\"}}",
+              "checker": "business-actions/1"
+            },
+            {
+              "given": "{\"state\":\"open\",\"fields\":{\"retained\":\"historical\"}}",
+              "when": "{\"action\":\"increment\",\"input\":{}}",
+              "then": "{\"fields\":{\"retained\":\"historical\",\"count\":\"1\"},\"state\":\"open\",\"kind\":\"commit\"}",
+              "checker": "business-actions/1"
+            },
+            {
+              "given": "{\"state\":\"done\",\"fields\":{\"count\":\"7\"}}",
+              "when": "{\"action\":\"increment\",\"input\":{}}",
+              "then": "{\"kind\":\"reject\"}",
+              "checker": "business-actions/1"
+            }
+          ],
+          "extensions": {
+            "fields": [
+              {
+                "key": "count",
+                "label": "计数",
+                "type": "text"
+              }
+            ],
+            "cases": [
+              {
+                "action": "increment",
+                "input": {},
+                "name": "increment existing counter case",
+                "fields": {
+                  "retained": "historical",
+                  "count": "7"
+                },
+                "expected": {
+                  "state": "open",
+                  "kind": "commit",
+                  "fields": {
+                    "retained": "historical",
+                    "count": "8"
+                  }
+                },
+                "state": "open"
+              },
+              {
+                "state": "open",
+                "name": "increment fallback zero case",
+                "fields": {
+                  "retained": "historical"
+                },
+                "action": "increment",
+                "expected": {
+                  "fields": {
+                    "retained": "historical",
+                    "count": "1"
+                  },
+                  "state": "open",
+                  "kind": "commit"
+                },
+                "input": {}
+              },
+              {
+                "state": "done",
+                "fields": {
+                  "count": "7"
+                },
+                "expected": {
+                  "kind": "reject"
+                },
+                "action": "increment",
+                "name": "increment negative case in done state",
+                "input": {}
+              }
+            ],
+            "actions": [
+              {
+                "id": "increment",
+                "label": "增加计数",
+                "from": [
+                  "open"
+                ]
+              }
+            ]
+          },
+          "steps": [
+            {
+              "id": "develop_increment_logic",
+              "purpose": "实现独立计数的动作逻辑并在视图中暴露。",
+              "dependsOn": [],
+              "artifact": "business/entry.ts, business/view.ts",
+              "evidence": "实现 business-actions/1 断言覆盖用例的通过；确保任务从正常值和缺省边界等能无损自增。"
+            }
+          ],
+          "writableScope": [
+            "business/entry.ts",
+            "business/view.ts",
+            "business/config.json",
+            "business/compatibility.json"
+          ],
+          "compatibility": "完全兼容。对于未经历过 increment 的历史任务，count 会自动初始化为 1 并保存。未知字段仍由宿主逻辑进行无损保留。",
+          "rollback": "可退回到已有版本，之前记录的 count 将因为 unknown field 保留策略静默地保留但不做任何加一计算。",
+          "preview": "可在界面任务上发现新的可用按钮动作，点击后计数值直接加 1 并在界面实时反映，无破坏表现。",
+          "application": "需宿主确认并加载新生成的业务脚本，由子进程无缝切换处理。",
+          "restartImpact": "由于动态替换模块，会导致有瞬间后台请求延迟。界面操作无需硬刷新。",
+          "dependencies": [],
+          "unresolved": [],
+          "id": "3102b253-19ec-4c94-9d0e-a666645e63c0",
+          "requestRevision": 1
+        },
+        {
+          "intent": "improve",
+          "compositionRevision": 2,
+          "baseVersion": "51c1d27804bd71325ae3b45c5759940705532da930d7255d608baf96164b9c19",
+          "route": {
+            "kind": "application"
+          },
+          "summary": "增加独立计数能力：提供名为 increment 的动作，将任务开放状态下的 count 字段整数字符串进行加1（含边界处理与默认值），并保证在其它状态禁用；保留全部原有配置、数据验证以及业务行为。",
+          "changes": [
+            "在 extensions.actions 中定义 increment 动作",
+            "在 extensions.fields 中定义 count 字段",
+            "在 business/entry.ts 内增加 increment 处理，解析 count 字段，处理异常情况，+1后返回 commit",
+            "在 business/view.ts 中将 count 加入展示字段中，使得该字段能在详细页呈现"
+          ],
+          "outcome": "支持用户在界面的 open 状态任务点击动作完成计数追加，对复盘主流程零干扰，确保非状态允许下的安全拒收。",
+          "dataImpact": "不会覆盖原有任何任务数据，只会针对调用了增加计数操作的任务新增或修改 count 属性值。",
+          "excluded": [
+            "直接操作本地或远程的非授权 IO 存储",
+            "改动宿主的 Task 定义接口"
+          ],
+          "evidence": [
+            {
+              "ref": "inspect_application",
+              "hash": "bba0d4744f3f890667e8825cb6947846e10349ee28d3dd166afe3f1597968d88"
+            },
+            {
+              "ref": "active-source",
+              "hash": "5759b5c7e62d03a1545983adf74237dbc1236c0c8fce445ab756f11b491fcc6e"
+            },
+            {
+              "ref": "business/entry.ts",
+              "hash": "61b0820edde637fe81432e79fa63299f514989d16ebcecb19f9cabfe18f61fde"
+            },
+            {
+              "ref": "business/view.ts",
+              "hash": "267feea98bad639c2ace5fd3d693cd708df3153c6be5b6c80cf55970e3f1b590"
+            },
+            {
+              "ref": "business/config.json",
+              "hash": "bb511d1e2723214ac1c3710d939883722d57e31b0145d33d427d9628b209be38"
+            },
+            {
+              "ref": "business/compatibility.json",
+              "hash": "23e916ee1bd6efa8f53b4d884b04b231d76d54baa874209405672fbd71067bae"
+            },
+            {
+              "ref": "active-contract",
+              "hash": "920b231c4528015ca7247819a2f356341194752afb97c946d8b141e6102bebbc"
+            },
+            {
+              "ref": "active-acceptance",
+              "hash": "e258f380eb380dc68e5835fe9c6f7f1ccb0e4bbf575b9ed090494655172812d4"
+            },
+            {
+              "ref": "src/shared/contracts.ts",
+              "hash": "06b76b6879892eea822d5c92c44473d3864fb0fe05b0f7e65ef3eab896eec47b"
+            },
+            {
+              "ref": "src/server/evolution-domain.ts",
+              "hash": "97ecea5424a07dc1b40bec1f112704b91ae0b22e9e7b4e9ac2b80b711a624df6"
+            },
+            {
+              "ref": "check_environment",
+              "hash": "1565e087b175be2c3e1ef1b2574ede7646598eb28cc64d78d775a28bf5d15290"
+            },
+            {
+              "ref": "verification-definition",
+              "hash": "e45edb17232e86be8feda725269ffa13107f5f4d95bb227f6c839adf74876f4a"
+            },
+            {
+              "ref": "src/web/ActionForm.tsx",
+              "hash": "136c7b20334d1010a24ce292b1c714f53b132ee219dc8fff75aba7bd0a0192cd"
+            },
+            {
+              "ref": "src/web/TaskEditor.tsx",
+              "hash": "6765fefa22539c8405ae54add4f1033a5f01348f2d2e15aac5045e67f8544ff2"
+            }
+          ],
+          "workflowRules": [
+            {
+              "key": "reflection",
+              "label": "复盘",
+              "required": true,
+              "minLength": 1,
+              "maxLength": 5000
+            }
+          ],
+          "ruleChanges": [],
+          "acceptanceChanges": [],
+          "capabilityChanges": [
+            {
+              "capability": "workflow",
+              "provider": "business/entry.ts",
+              "consumers": [
+                "src/web/ActionForm.tsx",
+                "src/web/TaskEditor.tsx",
+                "src/server/evolution-domain.ts"
+              ],
+              "change": "在已有的开放状态任务流中增加 increment 操作，用以驱动 count 字段自增"
+            }
+          ],
+          "acceptance": [
+            "当 未完成任务，执行 reflection 缺失、空字符串或空白，其他字段有效，应 要求输入该字段，不提交任务",
+            "当 未完成任务，执行 reflection 输入 5001 个字，其他字段有效，应 拒绝完成，不提交任务",
+            "当 未完成任务，执行 reflection 输入 5000 个 Unicode 码点，其他字段有效，应 允许完成",
+            "当 未完成任务且已有历史字段，执行 提交符合冻结规则的全部字段并带首尾空白，应 完成任务，保存去除首尾空白的值并保留未知历史字段",
+            "当 已完成任务且已有字段，执行 重新打开，应 变为未完成并保留所有字段",
+            "当 任务状态与动作不匹配或动作未知，执行 提交动作，应 拒绝执行",
+            "当 {\"state\":\"open\",\"fields\":{\"retained\":\"historical\",\"count\":\"7\"}}，执行 {\"action\":\"increment\",\"input\":{}}，应 {\"kind\":\"commit\",\"fields\":{\"count\":\"8\",\"retained\":\"historical\"},\"state\":\"open\"}",
+            "当 {\"state\":\"open\",\"fields\":{\"retained\":\"historical\"}}，执行 {\"action\":\"increment\",\"input\":{}}，应 {\"kind\":\"commit\",\"fields\":{\"count\":\"1\",\"retained\":\"historical\"},\"state\":\"open\"}",
+            "当 {\"state\":\"done\",\"fields\":{\"count\":\"7\"}}，执行 {\"action\":\"increment\",\"input\":{}}，应 {\"kind\":\"reject\"}"
+          ],
+          "cases": [
+            {
+              "given": "未完成任务",
+              "when": "reflection 缺失、空字符串或空白，其他字段有效",
+              "then": "要求输入该字段，不提交任务",
+              "checker": "workflow/1"
+            },
+            {
+              "given": "未完成任务",
+              "when": "reflection 输入 5001 个字，其他字段有效",
+              "then": "拒绝完成，不提交任务",
+              "checker": "workflow/1"
+            },
+            {
+              "given": "未完成任务",
+              "when": "reflection 输入 5000 个 Unicode 码点，其他字段有效",
+              "then": "允许完成",
+              "checker": "workflow/1"
+            },
+            {
+              "given": "未完成任务且已有历史字段",
+              "when": "提交符合冻结规则的全部字段并带首尾空白",
+              "then": "完成任务，保存去除首尾空白的值并保留未知历史字段",
+              "checker": "workflow/1"
+            },
+            {
+              "given": "已完成任务且已有字段",
+              "when": "重新打开",
+              "then": "变为未完成并保留所有字段",
+              "checker": "workflow/1"
+            },
+            {
+              "given": "任务状态与动作不匹配或动作未知",
+              "when": "提交动作",
+              "then": "拒绝执行",
+              "checker": "workflow/1"
+            },
+            {
+              "given": "{\"state\":\"open\",\"fields\":{\"retained\":\"historical\",\"count\":\"7\"}}",
+              "when": "{\"action\":\"increment\",\"input\":{}}",
+              "then": "{\"kind\":\"commit\",\"fields\":{\"count\":\"8\",\"retained\":\"historical\"},\"state\":\"open\"}",
+              "checker": "business-actions/1"
+            },
+            {
+              "given": "{\"state\":\"open\",\"fields\":{\"retained\":\"historical\"}}",
+              "when": "{\"action\":\"increment\",\"input\":{}}",
+              "then": "{\"kind\":\"commit\",\"fields\":{\"count\":\"1\",\"retained\":\"historical\"},\"state\":\"open\"}",
+              "checker": "business-actions/1"
+            },
+            {
+              "given": "{\"state\":\"done\",\"fields\":{\"count\":\"7\"}}",
+              "when": "{\"action\":\"increment\",\"input\":{}}",
+              "then": "{\"kind\":\"reject\"}",
+              "checker": "business-actions/1"
+            }
+          ],
+          "extensions": {
+            "cases": [
+              {
+                "expected": {
+                  "kind": "commit",
+                  "fields": {
+                    "count": "8",
+                    "retained": "historical"
+                  },
+                  "state": "open"
+                },
+                "action": "increment",
+                "fields": {
+                  "retained": "historical",
+                  "count": "7"
+                },
+                "name": "increment existing counter case",
+                "state": "open",
+                "input": {}
+              },
+              {
+                "action": "increment",
+                "input": {},
+                "fields": {
+                  "retained": "historical"
+                },
+                "state": "open",
+                "name": "increment fallback zero case",
+                "expected": {
+                  "kind": "commit",
+                  "fields": {
+                    "count": "1",
+                    "retained": "historical"
+                  },
+                  "state": "open"
+                }
+              },
+              {
+                "name": "increment negative case in done state",
+                "expected": {
+                  "kind": "reject"
+                },
+                "fields": {
+                  "count": "7"
+                },
+                "action": "increment",
+                "state": "done",
+                "input": {}
+              }
+            ],
+            "fields": [
+              {
+                "label": "计数",
+                "key": "count",
+                "type": "text"
+              }
+            ],
+            "actions": [
+              {
+                "label": "增加计数",
+                "from": [
+                  "open"
+                ],
+                "id": "increment"
+              }
+            ]
+          },
+          "steps": [
+            {
+              "id": "develop_increment_logic",
+              "purpose": "实现独立计数的动作逻辑并在视图中暴露。",
+              "dependsOn": [],
+              "artifact": "business/entry.ts, business/view.ts",
+              "evidence": "实现 business-actions/1 断言覆盖用例的通过；确保任务从正常值和缺省边界等能无损自增。"
+            }
+          ],
+          "writableScope": [
+            "business/entry.ts",
+            "business/view.ts",
+            "business/config.json",
+            "business/compatibility.json"
+          ],
+          "compatibility": "完全兼容。对于未经历过 increment 的历史任务，count 会自动初始化为 1 并保存。未知字段仍由宿主逻辑进行无损保留。",
+          "rollback": "可退回到已有版本，之前记录的 count 将因为 unknown field 保留策略静默地保留但不做任何加一计算。",
+          "preview": "可在界面任务上发现新的可用按钮动作，点击后计数值直接加 1 并在界面实时反映，无破坏表现。",
+          "application": "需宿主确认并加载新生成的业务脚本，由子进程无缝切换处理。",
+          "restartImpact": "由于动态替换模块，会导致有瞬间后台请求延迟。界面操作无需硬刷新。",
+          "dependencies": [],
+          "unresolved": [],
+          "id": "e672d526-8dfc-41a3-92ab-e7a5c4843ba5",
+          "requestRevision": 1
+        }
+      ],
+      "evidence": [
+        {
+          "ref": "inspect_application",
+          "hash": "bba0d4744f3f890667e8825cb6947846e10349ee28d3dd166afe3f1597968d88"
+        },
+        {
+          "ref": "verification-definition",
+          "hash": "e45edb17232e86be8feda725269ffa13107f5f4d95bb227f6c839adf74876f4a"
+        },
+        {
+          "ref": "active-source",
+          "hash": "5759b5c7e62d03a1545983adf74237dbc1236c0c8fce445ab756f11b491fcc6e"
+        },
+        {
+          "ref": "active-contract",
+          "hash": "920b231c4528015ca7247819a2f356341194752afb97c946d8b141e6102bebbc"
+        },
+        {
+          "ref": "active-acceptance",
+          "hash": "e258f380eb380dc68e5835fe9c6f7f1ccb0e4bbf575b9ed090494655172812d4"
+        },
+        {
+          "ref": "src/shared/contracts.ts",
+          "hash": "06b76b6879892eea822d5c92c44473d3864fb0fe05b0f7e65ef3eab896eec47b"
+        },
+        {
+          "ref": "src/server/evolution-domain.ts",
+          "hash": "97ecea5424a07dc1b40bec1f112704b91ae0b22e9e7b4e9ac2b80b711a624df6"
+        },
+        {
+          "ref": "check_environment",
+          "hash": "1565e087b175be2c3e1ef1b2574ede7646598eb28cc64d78d775a28bf5d15290"
+        },
+        {
+          "ref": "src/web/ActionForm.tsx",
+          "hash": "136c7b20334d1010a24ce292b1c714f53b132ee219dc8fff75aba7bd0a0192cd"
+        },
+        {
+          "ref": "src/web/TaskEditor.tsx",
+          "hash": "6765fefa22539c8405ae54add4f1033a5f01348f2d2e15aac5045e67f8544ff2"
+        },
+        {
+          "ref": "business/entry.ts",
+          "hash": "61b0820edde637fe81432e79fa63299f514989d16ebcecb19f9cabfe18f61fde"
+        },
+        {
+          "ref": "business/view.ts",
+          "hash": "267feea98bad639c2ace5fd3d693cd708df3153c6be5b6c80cf55970e3f1b590"
+        },
+        {
+          "ref": "business/config.json",
+          "hash": "bb511d1e2723214ac1c3710d939883722d57e31b0145d33d427d9628b209be38"
+        },
+        {
+          "ref": "business/compatibility.json",
+          "hash": "23e916ee1bd6efa8f53b4d884b04b231d76d54baa874209405672fbd71067bae"
+        }
+      ],
+      "budget": {
+        "callsUsed": 6,
+        "callsRemaining": 6,
+        "candidatesRemaining": 3,
+        "millisecondsRemaining": 482619.536209
+      },
+      "updatedAt": "2026-09-08T07:02:12.461Z",
+      "status": "ready",
+      "plan": {
+        "intent": "improve",
+        "compositionRevision": 2,
+        "baseVersion": "51c1d27804bd71325ae3b45c5759940705532da930d7255d608baf96164b9c19",
+        "route": {
+          "kind": "application"
+        },
+        "summary": "增加独立计数能力：提供名为 increment 的动作，将任务开放状态下的 count 字段整数字符串进行加1（含边界处理与默认值），并保证在其它状态禁用；保留全部原有配置、数据验证以及业务行为。",
+        "changes": [
+          "在 extensions.actions 中定义 increment 动作",
+          "在 extensions.fields 中定义 count 字段",
+          "在 business/entry.ts 内增加 increment 处理，解析 count 字段，处理异常情况，+1后返回 commit",
+          "在 business/view.ts 中将 count 加入展示字段中，使得该字段能在详细页呈现"
+        ],
+        "outcome": "支持用户在界面的 open 状态任务点击动作完成计数追加，对复盘主流程零干扰，确保非状态允许下的安全拒收。",
+        "dataImpact": "不会覆盖原有任何任务数据，只会针对调用了增加计数操作的任务新增或修改 count 属性值。",
+        "excluded": [
+          "直接操作本地或远程的非授权 IO 存储",
+          "改动宿主的 Task 定义接口"
+        ],
+        "evidence": [
+          {
+            "ref": "inspect_application",
+            "hash": "bba0d4744f3f890667e8825cb6947846e10349ee28d3dd166afe3f1597968d88"
+          },
+          {
+            "ref": "active-source",
+            "hash": "5759b5c7e62d03a1545983adf74237dbc1236c0c8fce445ab756f11b491fcc6e"
+          },
+          {
+            "ref": "business/entry.ts",
+            "hash": "61b0820edde637fe81432e79fa63299f514989d16ebcecb19f9cabfe18f61fde"
+          },
+          {
+            "ref": "business/view.ts",
+            "hash": "267feea98bad639c2ace5fd3d693cd708df3153c6be5b6c80cf55970e3f1b590"
+          },
+          {
+            "ref": "business/config.json",
+            "hash": "bb511d1e2723214ac1c3710d939883722d57e31b0145d33d427d9628b209be38"
+          },
+          {
+            "ref": "business/compatibility.json",
+            "hash": "23e916ee1bd6efa8f53b4d884b04b231d76d54baa874209405672fbd71067bae"
+          },
+          {
+            "ref": "active-contract",
+            "hash": "920b231c4528015ca7247819a2f356341194752afb97c946d8b141e6102bebbc"
+          },
+          {
+            "ref": "active-acceptance",
+            "hash": "e258f380eb380dc68e5835fe9c6f7f1ccb0e4bbf575b9ed090494655172812d4"
+          },
+          {
+            "ref": "src/shared/contracts.ts",
+            "hash": "06b76b6879892eea822d5c92c44473d3864fb0fe05b0f7e65ef3eab896eec47b"
+          },
+          {
+            "ref": "src/server/evolution-domain.ts",
+            "hash": "97ecea5424a07dc1b40bec1f112704b91ae0b22e9e7b4e9ac2b80b711a624df6"
+          },
+          {
+            "ref": "check_environment",
+            "hash": "1565e087b175be2c3e1ef1b2574ede7646598eb28cc64d78d775a28bf5d15290"
+          },
+          {
+            "ref": "verification-definition",
+            "hash": "e45edb17232e86be8feda725269ffa13107f5f4d95bb227f6c839adf74876f4a"
+          },
+          {
+            "ref": "src/web/ActionForm.tsx",
+            "hash": "136c7b20334d1010a24ce292b1c714f53b132ee219dc8fff75aba7bd0a0192cd"
+          },
+          {
+            "ref": "src/web/TaskEditor.tsx",
+            "hash": "6765fefa22539c8405ae54add4f1033a5f01348f2d2e15aac5045e67f8544ff2"
+          }
+        ],
+        "workflowRules": [
+          {
+            "key": "reflection",
+            "label": "复盘",
+            "required": true,
+            "minLength": 1,
+            "maxLength": 5000
+          }
+        ],
+        "ruleChanges": [],
+        "acceptanceChanges": [],
+        "capabilityChanges": [
+          {
+            "capability": "workflow",
+            "provider": "business/entry.ts",
+            "consumers": [
+              "src/web/ActionForm.tsx",
+              "src/web/TaskEditor.tsx",
+              "src/server/evolution-domain.ts"
+            ],
+            "change": "在已有的开放状态任务流中增加 increment 操作，用以驱动 count 字段自增"
+          }
+        ],
+        "acceptance": [
+          "当 未完成任务，执行 reflection 缺失、空字符串或空白，其他字段有效，应 要求输入该字段，不提交任务",
+          "当 未完成任务，执行 reflection 输入 5001 个字，其他字段有效，应 拒绝完成，不提交任务",
+          "当 未完成任务，执行 reflection 输入 5000 个 Unicode 码点，其他字段有效，应 允许完成",
+          "当 未完成任务且已有历史字段，执行 提交符合冻结规则的全部字段并带首尾空白，应 完成任务，保存去除首尾空白的值并保留未知历史字段",
+          "当 已完成任务且已有字段，执行 重新打开，应 变为未完成并保留所有字段",
+          "当 任务状态与动作不匹配或动作未知，执行 提交动作，应 拒绝执行",
+          "当 {\"state\":\"open\",\"fields\":{\"retained\":\"historical\",\"count\":\"7\"}}，执行 {\"action\":\"increment\",\"input\":{}}，应 {\"kind\":\"commit\",\"fields\":{\"count\":\"8\",\"retained\":\"historical\"},\"state\":\"open\"}",
+          "当 {\"state\":\"open\",\"fields\":{\"retained\":\"historical\"}}，执行 {\"action\":\"increment\",\"input\":{}}，应 {\"kind\":\"commit\",\"fields\":{\"count\":\"1\",\"retained\":\"historical\"},\"state\":\"open\"}",
+          "当 {\"state\":\"done\",\"fields\":{\"count\":\"7\"}}，执行 {\"action\":\"increment\",\"input\":{}}，应 {\"kind\":\"reject\"}"
+        ],
+        "cases": [
+          {
+            "given": "未完成任务",
+            "when": "reflection 缺失、空字符串或空白，其他字段有效",
+            "then": "要求输入该字段，不提交任务",
+            "checker": "workflow/1"
+          },
+          {
+            "given": "未完成任务",
+            "when": "reflection 输入 5001 个字，其他字段有效",
+            "then": "拒绝完成，不提交任务",
+            "checker": "workflow/1"
+          },
+          {
+            "given": "未完成任务",
+            "when": "reflection 输入 5000 个 Unicode 码点，其他字段有效",
+            "then": "允许完成",
+            "checker": "workflow/1"
+          },
+          {
+            "given": "未完成任务且已有历史字段",
+            "when": "提交符合冻结规则的全部字段并带首尾空白",
+            "then": "完成任务，保存去除首尾空白的值并保留未知历史字段",
+            "checker": "workflow/1"
+          },
+          {
+            "given": "已完成任务且已有字段",
+            "when": "重新打开",
+            "then": "变为未完成并保留所有字段",
+            "checker": "workflow/1"
+          },
+          {
+            "given": "任务状态与动作不匹配或动作未知",
+            "when": "提交动作",
+            "then": "拒绝执行",
+            "checker": "workflow/1"
+          },
+          {
+            "given": "{\"state\":\"open\",\"fields\":{\"retained\":\"historical\",\"count\":\"7\"}}",
+            "when": "{\"action\":\"increment\",\"input\":{}}",
+            "then": "{\"kind\":\"commit\",\"fields\":{\"count\":\"8\",\"retained\":\"historical\"},\"state\":\"open\"}",
+            "checker": "business-actions/1"
+          },
+          {
+            "given": "{\"state\":\"open\",\"fields\":{\"retained\":\"historical\"}}",
+            "when": "{\"action\":\"increment\",\"input\":{}}",
+            "then": "{\"kind\":\"commit\",\"fields\":{\"count\":\"1\",\"retained\":\"historical\"},\"state\":\"open\"}",
+            "checker": "business-actions/1"
+          },
+          {
+            "given": "{\"state\":\"done\",\"fields\":{\"count\":\"7\"}}",
+            "when": "{\"action\":\"increment\",\"input\":{}}",
+            "then": "{\"kind\":\"reject\"}",
+            "checker": "business-actions/1"
+          }
+        ],
+        "extensions": {
+          "cases": [
+            {
+              "expected": {
+                "kind": "commit",
+                "fields": {
+                  "count": "8",
+                  "retained": "historical"
+                },
+                "state": "open"
+              },
+              "action": "increment",
+              "fields": {
+                "retained": "historical",
+                "count": "7"
+              },
+              "name": "increment existing counter case",
+              "state": "open",
+              "input": {}
+            },
+            {
+              "action": "increment",
+              "input": {},
+              "fields": {
+                "retained": "historical"
+              },
+              "state": "open",
+              "name": "increment fallback zero case",
+              "expected": {
+                "kind": "commit",
+                "fields": {
+                  "count": "1",
+                  "retained": "historical"
+                },
+                "state": "open"
+              }
+            },
+            {
+              "name": "increment negative case in done state",
+              "expected": {
+                "kind": "reject"
+              },
+              "fields": {
+                "count": "7"
+              },
+              "action": "increment",
+              "state": "done",
+              "input": {}
+            }
+          ],
+          "fields": [
+            {
+              "label": "计数",
+              "key": "count",
+              "type": "text"
+            }
+          ],
+          "actions": [
+            {
+              "label": "增加计数",
+              "from": [
+                "open"
+              ],
+              "id": "increment"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "id": "develop_increment_logic",
+            "purpose": "实现独立计数的动作逻辑并在视图中暴露。",
+            "dependsOn": [],
+            "artifact": "business/entry.ts, business/view.ts",
+            "evidence": "实现 business-actions/1 断言覆盖用例的通过；确保任务从正常值和缺省边界等能无损自增。"
+          }
+        ],
+        "writableScope": [
+          "business/entry.ts",
+          "business/view.ts",
+          "business/config.json",
+          "business/compatibility.json"
+        ],
+        "compatibility": "完全兼容。对于未经历过 increment 的历史任务，count 会自动初始化为 1 并保存。未知字段仍由宿主逻辑进行无损保留。",
+        "rollback": "可退回到已有版本，之前记录的 count 将因为 unknown field 保留策略静默地保留但不做任何加一计算。",
+        "preview": "可在界面任务上发现新的可用按钮动作，点击后计数值直接加 1 并在界面实时反映，无破坏表现。",
+        "application": "需宿主确认并加载新生成的业务脚本，由子进程无缝切换处理。",
+        "restartImpact": "由于动态替换模块，会导致有瞬间后台请求延迟。界面操作无需硬刷新。",
+        "dependencies": [],
+        "unresolved": [],
+        "id": "e672d526-8dfc-41a3-92ab-e7a5c4843ba5",
+        "requestRevision": 1
+      }
+    },
+    "events": [],
+    "eventCursor": 0,
+    "candidates": []
+  },
+  "observedRejections": [
+    {
+      "result": {
+        "accepted": false,
+        "blockers": [
+          "尚未调查拟修改资料：business/entry.ts",
+          "尚未调查拟修改资料：business/view.ts",
+          "尚未调查拟修改资料：business/config.json",
+          "尚未调查拟修改资料：business/compatibility.json",
+          "提供者或消费方尚未调查，不能确认能力差异；请补读资料：business/entry.ts"
+        ],
+        "budget": {
+          "callsUsed": 4,
+          "callsRemaining": 8,
+          "candidatesRemaining": 3,
+          "millisecondsRemaining": 600000
+        },
+        "instruction": "计划尚未通过，不允许执行。请在剩余预算内补读资料、纠正计划或如实保留阻塞；不要降低原目标、修改验收或绕过保护。相同诊断且没有新增证据会结束调查。"
+      }
+    }
+  ],
+  "checks": {
+    "typecheck": "passed",
+    "build": "passed",
+    "applicationTests": {
+      "passed": 81,
+      "failed": 0
+    },
+    "browserTests": {
+      "passed": 19,
+      "failed": 0
+    },
+    "independentReview": "no remaining findings",
+    "realModelAssertions": [
+      "count plan ready",
+      "reflection remains required, minLength=1, maxLength=5000",
+      "increment action retained",
+      "formal composition unchanged"
+    ],
+    "scopeLimit": "Plan-only; does not replace the blocked full acceptance evidence in issue-8-real-model.json"
+  }
+}
