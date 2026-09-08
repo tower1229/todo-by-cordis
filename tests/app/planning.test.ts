@@ -765,3 +765,130 @@ test("invalid plan step dependencies return bounded diagnostics before ready", a
       },
     );
 });
+
+test("misplaced supported action cases can be corrected with consumer investigation", async (t) => {
+  for (const mode of ["correct", "repeat", "unknown"] as const)
+    await t.test(mode, async (t) => {
+      const dir = mkdtempSync(join(tmpdir(), "cordis-plan-action-placement-"));
+      const w = await Workspace.open(join(dir, "workspace.db"));
+      const planning = new PlanningDriver({
+        extensions: {
+          actions: [{ id: "increment", label: "增加", from: ["open"] }],
+          fields: [],
+          cases: [
+            {
+              name: "已有计数累加",
+              state: "open",
+              fields: { count: "7" },
+              action: "increment",
+              input: {},
+              expected: {
+                kind: "commit",
+                state: "open",
+                fields: { count: "8" },
+              },
+            },
+            {
+              name: "完成状态拒绝累加",
+              state: "done",
+              fields: { count: "7" },
+              action: "increment",
+              input: {},
+              expected: { kind: "reject" },
+            },
+          ],
+        },
+        capabilityChanges: [
+          {
+            capability: "workflow",
+            provider: "active-source",
+            consumers: ["src/web/TaskEditor.tsx"],
+            change: "增加计数动作",
+          },
+        ],
+      });
+      let proposals = 0;
+      let supplemented = false;
+      const e = new Evolution(
+        w.db,
+        {
+          async generate(request) {
+            if (mode === "correct" && proposals === 1 && !supplemented) {
+              supplemented = true;
+              return {
+                text: "",
+                history: request.history,
+                calls: [
+                  {
+                    name: "read_source",
+                    args: { ref: "src/web/TaskEditor.tsx" },
+                  },
+                ],
+                usage: null,
+                raw: { fixture: true },
+              };
+            }
+            const response = await planning.generate(request);
+            const proposal = response.calls.find(
+              (c) => c.name === "propose_plan",
+            );
+            if (proposal && (++proposals === 1 || mode !== "correct")) {
+              proposal.args.acceptance = [
+                ...(proposal.args.acceptance as unknown[]),
+                {
+                  given: "open, count=7",
+                  when: "increment",
+                  then: "commit, count=8",
+                  checker:
+                    mode === "unknown"
+                      ? "notification/1"
+                      : "business-actions/1",
+                },
+              ];
+            }
+            return response;
+          },
+        },
+        new EvolutionDomain(w),
+      );
+      t.after(async () => {
+        await e.close();
+        await w.close();
+        rmSync(dir, { recursive: true, force: true });
+      });
+      await e.command({
+        type: "request",
+        operationId: "action-placement",
+        text: "保留复盘，增加独立计数动作",
+      });
+      for (
+        let i = 0;
+        i < 100 && (await e.observe()).run?.status === "planning";
+        i++
+      )
+        await new Promise((r) => setTimeout(r, 10));
+      const snapshot = await e.observe();
+      const run = snapshot.run!;
+      assert.equal(
+        run.status,
+        mode === "correct" ? "ready" : "blocked",
+        JSON.stringify(run),
+      );
+      assert.equal(
+        run.budget?.callsUsed,
+        mode === "correct" ? 5 : mode === "repeat" ? 4 : 3,
+      );
+      assert.equal(run.plans?.length, mode === "unknown" ? 1 : 2);
+      if (mode === "correct") {
+        assert.equal(run.status, "ready");
+        if (run.status !== "ready") throw new Error("expected ready");
+        assert.ok(run.evidence.some((e) => e.ref === "src/web/TaskEditor.tsx"));
+        assert.equal(run.plan.extensions?.cases.length, 2);
+        const history = JSON.stringify(planning.requests);
+        assert.match(history, /extensions.cases/);
+        assert.match(history, /src\/web\/TaskEditor.tsx/);
+      }
+      assert.equal(snapshot.candidates.length, 0);
+      assert.equal(w.composition().revision, 1);
+    });
+});

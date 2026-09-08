@@ -236,13 +236,24 @@ export const planningTools = [
         items: obj({
           capability: text,
           provider: text,
-          consumers: list,
+          consumers: {
+            ...list,
+            description:
+              "Existing consumers must be exact catalog refs already read through investigation tools; listing a ref is not reading it. New business/* consumers may use exact paths declared in writableScope and need no fabricated read evidence.",
+          },
           change: text,
         }),
       },
       acceptance: {
         type: "array",
-        items: obj({ given: text, when: text, then: text, checker: text }),
+        description:
+          "Copy describe_verification(rules).cases unchanged. Only workflow/1 cases belong here. Put added-action cases exclusively in extensions.cases; the host combines both after validation.",
+        items: obj({
+          given: text,
+          when: text,
+          then: text,
+          checker: { type: "string", enum: ["workflow/1"] },
+        }),
       },
       steps: {
         type: "array",
@@ -511,8 +522,15 @@ export function parsePlan(
     then: planText(c.then),
     checker: planText(c.checker),
   }));
-  if (cases.some((c) => c.checker !== "workflow/1"))
+  const unsupportedChecker = cases.some(
+    (c) => c.checker !== "workflow/1" && c.checker !== "business-actions/1",
+  );
+  if (unsupportedChecker)
     blockers.push("缺少可靠业务验收检查器，需要维护者补齐");
+  if (cases.some((c) => c.checker === "business-actions/1"))
+    blockers.push(
+      "新增动作案例位置错误：business-actions/1 仅通过 extensions.cases 提交数据化案例；acceptance 必须原样使用 describe_verification 返回的 workflow/1 cases，不得混入新增动作案例。请修正后重新提交，不能删除新增动作的验收要求",
+    );
   const verifiedCases = workflowCases(workflowRules);
   if (
     (!workflowRules.length && !extensions && v.intent !== "repair") ||
@@ -555,30 +573,25 @@ export function parsePlan(
     change: planText(c.change),
   }));
   for (const c of capabilityChanges) {
-    if (
-      (!seen.some((e) => e.ref === c.provider) &&
+    const unread = [c.provider, ...c.consumers].filter(
+      (ref) =>
+        !seen.some((e) => e.ref === ref) &&
         !(
-          businessPath(c.provider) &&
-          scope.includes(c.provider) &&
-          !Object.hasOwn(context.files, c.provider)
-        )) ||
-      c.consumers.some(
-        (ref) =>
-          !seen.some((e) => e.ref === ref) &&
-          !(
-            businessPath(ref) &&
-            scope.includes(ref) &&
-            !Object.hasOwn(context.files, ref)
-          ),
-      )
-    )
-      blockers.push("提供者或消费方尚未调查，不能确认能力差异");
+          businessPath(ref) &&
+          scope.includes(ref) &&
+          !Object.hasOwn(context.files, ref)
+        ),
+    );
+    if (unread.length)
+      blockers.push(
+        `提供者或消费方尚未调查，不能确认能力差异；请补读资料：${[...new Set(unread)].join("、")}`,
+      );
   }
   return {
     retryable:
       !unresolved.length &&
       workflowRules.length > 0 &&
-      cases.every((c) => c.checker === "workflow/1") &&
+      !unsupportedChecker &&
       !context.environment.missing.length &&
       dependencies.every(
         (name) => context.environment.dependencies[name]?.available,
