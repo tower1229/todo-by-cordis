@@ -201,3 +201,72 @@ test("plugin action forms use their contract and preserve cancelled input", asyn
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
+
+test("additional workflow actions are visible and keyboard usable on a narrow screen", async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 320, height: 850 });
+  const composition = await (await request.get("/api/composition")).json();
+  const created = await (
+    await request.post("/api/commands", {
+      data: {
+        type: "create",
+        title: "多个动作任务",
+        compositionRevision: composition.revision,
+        operationId: crypto.randomUUID(),
+      },
+    })
+  ).json();
+  await page.route("**/api/composition", (route) =>
+    route.fulfill({
+      json: {
+        ...composition,
+        workflow: {
+          ...composition.workflow,
+          actions: [
+            ...composition.workflow.actions,
+            { id: "annotate", label: "补充说明", from: [created.task.state] },
+          ],
+        },
+      },
+    }),
+  );
+  const actions: string[] = [];
+  await page.route("**/api/commands", async (route) => {
+    const command = route.request().postDataJSON();
+    if (command.type !== "action" || command.actionId !== "annotate")
+      return route.continue();
+    actions.push(command.actionId);
+    await route.fulfill({
+      json: {
+        decision: {
+          kind: "input-required",
+          fields: [{ key: "annotation", label: "说明", type: "text" }],
+        },
+      },
+    });
+  });
+  await page.goto("/");
+  const secondary = page.getByRole("button", {
+    name: "补充说明 多个动作任务",
+    exact: true,
+  });
+  await expect(secondary).toBeVisible();
+  await secondary.focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("textbox", { name: "说明", exact: true }),
+  ).toBeVisible();
+  expect(actions).toEqual(["annotate"]);
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(secondary).toBeFocused();
+  await expect(
+    page.getByRole("button", { name: "完成 多个动作任务", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});

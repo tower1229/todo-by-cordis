@@ -322,6 +322,7 @@ test("new provider and consumer implement an additional action with frozen indep
   });
   await e.close();
   const nextPlanning = new PlanningDriver({
+    extensions: { actions: [], fields: [], cases: [] },
     writableScope: ["business/counter.ts"],
     capabilityChanges: [
       {

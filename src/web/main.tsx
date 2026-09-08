@@ -448,6 +448,24 @@ function App() {
                           </span>
                         )}
                       </button>
+                      {actions.length > 1 && (
+                        <div className="flex max-w-[45%] flex-wrap justify-end gap-1 py-2">
+                          {actions.slice(1).map((action) => (
+                            <Button
+                              key={action.id}
+                              variant="ghost"
+                              className="max-w-full break-words whitespace-normal"
+                              aria-label={`${action.label} ${task.title}`}
+                              disabled={busy || composition?.status !== "ready"}
+                              onClick={(event) =>
+                                act(task, action, event.currentTarget)
+                              }
+                            >
+                              {action.label}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
                     </article>
                   );
                 })}

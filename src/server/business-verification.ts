@@ -47,7 +47,13 @@ export function parseExtensions(
   base: WorkflowDefinition,
   previous?: BusinessExtensions,
 ): BusinessExtensions | undefined {
-  if (value === undefined)
+  if (
+    value === undefined ||
+    (record(value) &&
+      ["actions", "fields", "cases"].every(
+        (key) => Array.isArray(value[key]) && value[key].length === 0,
+      ))
+  )
     return previous ? structuredClone(previous) : undefined;
   if (
     !record(value) ||

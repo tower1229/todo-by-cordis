@@ -955,6 +955,7 @@ export class Evolution {
     r.run.capabilityId = context.pluginId;
     let message: string | undefined = JSON.stringify({
       intent: r.run.intent,
+      budget: this.base(r).budget,
       parent: r.run.parent,
       parentRunId: r.run.parentRunId,
       baseVersion: context.versionId,

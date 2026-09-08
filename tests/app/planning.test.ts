@@ -475,18 +475,16 @@ test("old pending confirmation is interrupted without replay and historical run 
     steps: [],
     versionId: w.activeVersion().id,
   };
-  w.db
-    .prepare("INSERT INTO evolution_runs VALUES(?,?)")
-    .run(
-      publishedRun.id,
-      JSON.stringify({
-        run: publishedRun,
-        history: [],
-        calls: 4,
-        candidates: 1,
-        elapsed: 100,
-      }),
-    );
+  w.db.prepare("INSERT INTO evolution_runs VALUES(?,?)").run(
+    publishedRun.id,
+    JSON.stringify({
+      run: publishedRun,
+      history: [],
+      calls: 4,
+      candidates: 1,
+      elapsed: 100,
+    }),
+  );
   const driver = new PlanningDriver();
   const e = new Evolution(w.db, driver, new EvolutionDomain(w));
   t.after(async () => {
@@ -668,4 +666,102 @@ test("unavailable catalog source is a diagnostic, never read evidence or a crash
     false,
   );
   assert.equal(w.composition().revision, 1);
+});
+
+test("empty extension declaration permits a workflow-only plan", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-empty-extensions-"));
+  const w = await Workspace.open(join(dir, "workspace.db"));
+  const e = new Evolution(
+    w.db,
+    new PlanningDriver({
+      extensions: { actions: [], fields: [], cases: [] },
+    }),
+    new EvolutionDomain(w),
+  );
+  t.after(async () => {
+    await e.close();
+    await w.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  await e.command({
+    type: "request",
+    operationId: "empty-extensions",
+    text: "完成前填写复盘",
+  });
+  for (
+    let i = 0;
+    i < 100 && (await e.observe()).run?.status === "planning";
+    i++
+  )
+    await new Promise((r) => setTimeout(r, 10));
+  const run = (await e.observe()).run;
+  assert.equal(run?.status, "ready", JSON.stringify(run));
+  if (run?.status !== "ready") throw new Error("expected ready");
+  assert.equal(run.plan.extensions, undefined);
+  assert.equal(w.composition().revision, 1);
+});
+
+test("invalid plan step dependencies return bounded diagnostics before ready", async (t) => {
+  for (const repeated of [false, true])
+    await t.test(
+      repeated ? "repeated rejection stops" : "model corrects the dependency",
+      async (t) => {
+        const dir = mkdtempSync(join(tmpdir(), "cordis-plan-dependency-"));
+        const w = await Workspace.open(join(dir, "workspace.db"));
+        const planning = new PlanningDriver();
+        let proposals = 0;
+        const e = new Evolution(
+          w.db,
+          {
+            async generate(request) {
+              const response = await planning.generate(request);
+              if (response.calls[0]?.name === "propose_plan") {
+                proposals++;
+                if (proposals === 1 || repeated)
+                  response.calls[0].args.steps = [
+                    {
+                      id: "workflow",
+                      purpose: "修改工作流",
+                      dependsOn: ["active-source"],
+                      artifact: "业务产物",
+                      evidence: "业务验收",
+                    },
+                  ];
+              }
+              return response;
+            },
+          },
+          new EvolutionDomain(w),
+        );
+        t.after(async () => {
+          await e.close();
+          await w.close();
+          rmSync(dir, { recursive: true, force: true });
+        });
+        await e.command({
+          type: "request",
+          operationId: "dependencies",
+          text: "完成前填写复盘",
+        });
+        for (
+          let i = 0;
+          i < 100 && (await e.observe()).run?.status === "planning";
+          i++
+        )
+          await new Promise((r) => setTimeout(r, 10));
+        const run = (await e.observe()).run;
+        assert.equal(
+          run?.status,
+          repeated ? "blocked" : "ready",
+          JSON.stringify(run),
+        );
+        assert.equal(run.budget?.callsUsed, 4);
+        assert.equal(run.plans?.length, 2);
+        assert.equal(run.plans?.[0].steps[0].dependsOn[0], "active-source");
+        assert.ok(
+          JSON.stringify(planning.requests).includes("计划步骤依赖无效"),
+        );
+        assert.equal(w.composition().revision, 1);
+      },
+    );
 });
