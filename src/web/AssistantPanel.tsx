@@ -286,12 +286,30 @@ export function AssistantPanel({
               </div>
             </section>
           )}
-        {(run?.status === "blocked" ||
-          run?.status === "interrupted" ||
-          run?.status === "dismissed") && (
+        {(run?.status === "blocked" || run?.status === "dismissed") && (
           <p role="status" className="text-sm leading-6">
             {run.message}
           </p>
+        )}
+        {run?.status === "interrupted" && (
+          <section className="space-y-4" aria-label="恢复动作">
+            <p role="status" className="text-sm leading-6">
+              {run.message}
+            </p>
+            <p className="text-xs leading-5 text-muted">
+              未完成的计划或执行已按重启事实中断，不会自动重放模型。可基于原需求重新规划。
+            </p>
+            <Button
+              disabled={busy}
+              onClick={() => {
+                setEditing(true);
+                setRepair(false);
+                setDraft(run.request);
+              }}
+            >
+              重新规划
+            </Button>
+          </section>
         )}
         {run?.status === "awaiting-confirmation" && (
           <p>旧方案需要重新调查，不能作为执行或应用授权。</p>
@@ -519,6 +537,9 @@ export function AssistantPanel({
             </div>
             <p className="text-xs break-all text-muted">
               已发布版本：{run.versionId}
+            </p>
+            <p className="text-xs leading-5 text-muted">
+              如需撤回实现，请在工作区设置中恢复上一版本；期间新增的任务和字段会保留。
             </p>
             <details className="text-sm text-muted">
               <summary className="cursor-pointer">执行详情</summary>

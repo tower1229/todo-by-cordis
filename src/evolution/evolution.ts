@@ -50,6 +50,7 @@ export interface Domain {
   target(plan: InvestigatedPlan): Target;
   check(target: Target, revision: number): void;
   isActiveVersion(versionId: string): boolean;
+  isReadyVersion(versionId: string): boolean;
   generation(target: Target): {
     instruction: string;
     contract: string;
@@ -143,25 +144,34 @@ export class Evolution {
         this.save(record);
       } else if (record.run.status === "applying") {
         const versionId = record.versionId ?? record.run.versionId;
-        const committed = !!versionId && this.domain.isActiveVersion(versionId);
+        const ready = !!versionId && this.domain.isReadyVersion(versionId);
+        const committed =
+          !!versionId && this.domain.isActiveVersion(versionId);
         const plan =
           "plan" in record.run
             ? (record.run as Extract<AssistantRun, { status: "applying" }>).plan
             : record.plan;
-        record.run = committed
+        record.run = ready
           ? {
               ...this.base(record),
               status: "succeeded",
               summary: "候选已正式应用",
               steps: this.steps(record),
             }
-          : {
-              ...this.base(record),
-              status: "awaiting-apply",
-              plan: plan as InvestigatedPlan,
-              steps: this.steps(record),
-              summary: `${plan && "outcome" in plan ? plan.outcome : "候选"}（应用中断，尚未提交，可重新确认）`,
-            };
+          : committed
+            ? {
+                ...this.base(record),
+                status: "interrupted",
+                message:
+                  "发布已提交但运行未就绪。请在工作区重试运行环境；不会自动重放模型。",
+              }
+            : {
+                ...this.base(record),
+                status: "awaiting-apply",
+                plan: plan as InvestigatedPlan,
+                steps: this.steps(record),
+                summary: `${plan && "outcome" in plan ? plan.outcome : "候选"}（应用中断，按发布事实尚未就绪或已补偿，可重新确认）`,
+              };
         this.save(record);
       }
     }
@@ -447,7 +457,7 @@ export class Evolution {
         if (wasApplying) {
           refreshApplyReceipt = true;
           const versionId = record.versionId ?? record.run.versionId;
-          if (versionId && this.domain.isActiveVersion(versionId)) {
+          if (versionId && this.domain.isReadyVersion(versionId)) {
             record.run = {
               ...this.base(record),
               status: "succeeded",
@@ -455,6 +465,9 @@ export class Evolution {
               steps: this.steps(record),
               versionId,
             };
+          } else if (versionId && this.domain.isActiveVersion(versionId)) {
+            // Committed but writes not open yet — keep applying; reconcile on readiness.
+            refreshApplyReceipt = false;
           } else {
             record.run = { ...this.base(record), status: "cancelled" };
           }
@@ -682,7 +695,7 @@ export class Evolution {
             const versionId = current.versionId ?? current.run.versionId;
             if (
               versionId &&
-              this.domain.isActiveVersion(versionId) &&
+              this.domain.isReadyVersion(versionId) &&
               current.run.status !== "succeeded"
             )
               this.finishApply(
@@ -711,7 +724,7 @@ export class Evolution {
             controller.signal,
           );
           const after = this.get(record.run.id);
-          if (!this.domain.isActiveVersion(versionId)) {
+          if (!this.domain.isReadyVersion(versionId)) {
             if (after.run.status !== "applying") return;
             throw new Error("应用提交后运行未就绪");
           }
@@ -729,7 +742,7 @@ export class Evolution {
         if (kind === "apply") {
           const versionId = persisted.versionId ?? persisted.run.versionId;
           const opId = applyOperationId ?? persisted.applyOperationId;
-          if (versionId && this.domain.isActiveVersion(versionId)) {
+          if (versionId && this.domain.isReadyVersion(versionId)) {
             if (persisted.run.status !== "succeeded")
               this.finishApply(
                 persisted,
@@ -749,7 +762,7 @@ export class Evolution {
               status: "awaiting-apply",
               plan: plan as InvestigatedPlan,
               steps: this.steps(persisted),
-              summary: `${plan && "outcome" in plan ? plan.outcome : "候选"}（候选已验证，尚未应用；上次应用未提交）`,
+              summary: `${plan && "outcome" in plan ? plan.outcome : "候选"}（候选已验证，尚未正式就绪；可按版本与回执重新确认应用）`,
               versionId,
             };
             this.save(record);

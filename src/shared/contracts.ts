@@ -33,6 +33,13 @@ export type Composition = {
   buildHash: string;
   versionId: string;
   previousVersionId?: string;
+  recovery?: {
+    attemptedVersionId: string;
+    restoredVersionId: string;
+    reason: string;
+    revision: number;
+    at: string;
+  };
   retainedFields: Field[];
   history: {
     id: number;

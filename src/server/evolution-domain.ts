@@ -169,6 +169,12 @@ export class EvolutionDomain implements Domain {
   isActiveVersion(versionId: string) {
     return this.workspace.activeVersion().id === versionId;
   }
+  isReadyVersion(versionId: string) {
+    return (
+      this.isActiveVersion(versionId) &&
+      this.workspace.composition().status === "ready"
+    );
+  }
   generation(target: Target) {
     const base = this.workspace.release.get(target.baseVersion);
     return {

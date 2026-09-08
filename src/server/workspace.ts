@@ -80,6 +80,8 @@ export class Workspace {
         .map((r) => String(r.name));
     if (!columns("workspace").includes("versionId"))
       this.db.exec("ALTER TABLE workspace ADD COLUMN versionId TEXT");
+    if (!columns("workspace").includes("recovery"))
+      this.db.exec("ALTER TABLE workspace ADD COLUMN recovery TEXT");
     if (!columns("releases").includes("versionId"))
       this.db.exec(
         "ALTER TABLE releases ADD COLUMN versionId TEXT; ALTER TABLE releases ADD COLUMN name TEXT",
@@ -140,7 +142,22 @@ export class Workspace {
       workflowId: WorkflowId;
       buildHash: string;
       versionId: string;
+      recovery: string | null;
     };
+  }
+  private readRecovery(): Composition["recovery"] | undefined {
+    const raw = this.current().recovery;
+    if (!raw) return undefined;
+    try {
+      return JSON.parse(raw) as Composition["recovery"];
+    } catch {
+      return undefined;
+    }
+  }
+  private writeRecovery(recovery: Composition["recovery"] | undefined) {
+    this.db
+      .prepare("UPDATE workspace SET recovery=? WHERE id=1")
+      .run(recovery ? JSON.stringify(recovery) : null);
   }
   private bind(runtime: RuntimeLike) {
     runtime.onFailure = () => {
@@ -178,6 +195,7 @@ export class Workspace {
   }
   composition(): Composition {
     const active = this.current();
+    const recovery = this.readRecovery();
     const published = new Set([
       active.versionId,
       ...[...this.builtins.values()].map((version) => version.id),
@@ -194,6 +212,7 @@ export class Workspace {
       previousVersionId: this.previousVersionId(),
       status: this.status,
       buildHash: active.buildHash,
+      ...(recovery ? { recovery } : {}),
       retainedFields: this.release
         .all()
         .filter(
@@ -462,7 +481,15 @@ export class Workspace {
       throw new AppError("RELEASE_BUSY", "正在切换流程，请稍候", 409);
     }
     this.publishing = true;
-    const result = { revision: request.compositionRevision + 1 };
+    const prior = this.current();
+    const priorRuntime = this.runtime;
+    const result: {
+      revision: number;
+      compensated?: boolean;
+      versionId?: string;
+      attemptedVersionId?: string;
+      reason?: string;
+    } = { revision: request.compositionRevision + 1 };
     try {
       await this.release.activate(
         prepared,
@@ -523,14 +550,93 @@ export class Workspace {
             const old = this.runtime;
             this.runtime = runtime;
             this.bind(runtime);
-            this.status = "ready";
+            // Writes stay frozen until openWrites after readiness.
+            this.status = "recovering";
             this.automaticRestartUsed = false;
-            if (old) {
+            if (old && old !== priorRuntime) {
               old.onFailure = undefined;
               const cleanup = old
                 .close()
                 .finally(() => this.retiring.delete(cleanup));
               this.retiring.add(cleanup);
+            }
+          },
+          openWrites: () => {
+            this.options.checkpoint?.("ready-check");
+            this.status = "ready";
+            this.writeRecovery(undefined);
+            if (priorRuntime && priorRuntime !== this.runtime) {
+              priorRuntime.onFailure = undefined;
+              const cleanup = priorRuntime
+                .close()
+                .finally(() => this.retiring.delete(cleanup));
+              this.retiring.add(cleanup);
+            }
+          },
+          compensate: async (failed, reason) => {
+            const restoredRevision = result.revision + 1;
+            const restored = this.release.get(prior.versionId);
+            const at = new Date().toISOString();
+            const recovery = {
+              attemptedVersionId: failed.id,
+              restoredVersionId: restored.id,
+              reason,
+              revision: restoredRevision,
+              at,
+            };
+            this.transaction(() => {
+              this.db
+                .prepare(
+                  "UPDATE workspace SET revision=?,workflowId=?,buildHash=?,versionId=? WHERE id=1",
+                )
+                .run(
+                  restoredRevision,
+                  restored.pluginId,
+                  hash(restored.code),
+                  restored.id,
+                );
+              this.db
+                .prepare(
+                  "INSERT INTO releases(id,workflowId,createdAt,pausedMs,preparationMs,buildHash,versionId,name) VALUES(?,?,?,?,?,?,?,?)",
+                )
+                .run(
+                  restoredRevision,
+                  restored.pluginId,
+                  at,
+                  0,
+                  0,
+                  hash(restored.code),
+                  restored.id,
+                  `${restored.name}（补偿恢复）`,
+                );
+              result.revision = restoredRevision;
+              result.compensated = true;
+              result.versionId = restored.id;
+              result.attemptedVersionId = failed.id;
+              result.reason = reason;
+              this.db
+                .prepare("UPDATE operations SET result=? WHERE id=?")
+                .run(JSON.stringify(result), request.operationId);
+              this.writeRecovery(recovery);
+            });
+            if (this.runtime && this.runtime !== priorRuntime) {
+              this.runtime.onFailure = undefined;
+              this.runtime = undefined;
+            }
+            if (priorRuntime) {
+              this.runtime = priorRuntime;
+              this.bind(priorRuntime);
+              this.status = "ready";
+              return;
+            }
+            try {
+              const runtime = await this.release.start(restored);
+              await runtime.invoke("describe");
+              this.runtime = runtime;
+              this.bind(runtime);
+              this.status = "ready";
+            } catch {
+              this.status = "unavailable";
             }
           },
         },

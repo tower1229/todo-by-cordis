@@ -62,6 +62,13 @@ export function WorkspacePanel({
           {busy && <Spinner />}重试运行环境
         </Button>
       )}
+      {composition?.recovery && (
+        <p role="status" className="text-xs leading-5 text-muted">
+          最近一次发布在开放写入前失败，已补偿回版本{" "}
+          {composition.recovery.restoredVersionId.slice(0, 8)}…；原因：
+          {composition.recovery.reason}
+        </p>
+      )}
       {composition && composition.previousVersionId && (
         <div className="space-y-3">
           <p className="text-xs leading-5 text-muted">

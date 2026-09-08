@@ -30,6 +30,8 @@ export type Activation = {
     metrics: { pausedMs: number; preparationMs: number },
   ): void;
   install(runtime: RuntimeLike): void;
+  openWrites(): void;
+  compensate(failed: Version, reason: string): Promise<void>;
 };
 export class Release {
   constructor(
@@ -238,7 +240,7 @@ export class Release {
     };
   }
   async activate(prepared: Prepared, host: Activation, signal?: AbortSignal) {
-    let installed = false;
+    let opened = false;
     try {
       return await host.serial(async () => {
         signal?.throwIfAborted();
@@ -253,10 +255,21 @@ export class Release {
           pausedMs: performance.now() - paused,
         });
         host.install(prepared.runtime);
-        installed = true;
+        try {
+          // Post-commit readiness while writes stay frozen; failure compensates.
+          await prepared.runtime.invoke("describe");
+          signal?.throwIfAborted();
+          host.openWrites();
+          opened = true;
+        } catch (error) {
+          const reason =
+            error instanceof Error ? error.message : "提交后就绪检查失败";
+          await host.compensate(prepared.version, reason);
+          throw error instanceof Error ? error : new Error(reason);
+        }
       });
     } finally {
-      if (!installed) await prepared.runtime.close();
+      if (!opened) await prepared.runtime.close();
     }
   }
 }
