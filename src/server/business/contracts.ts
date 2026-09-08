@@ -68,14 +68,19 @@ export type CommandRegistration = {
 
 export type ScheduleRegistration = {
   id: string;
-  /** Absolute ISO-8601 fire time (online scheduler only). */
+  /**
+   * Absolute ISO time, or when atKind is "field", the task field key holding ISO/wall time.
+   */
   at: string;
+  /** Defaults to "absolute". */
+  atKind?: "absolute" | "field";
   timezone?: string;
   dedupeKey: string;
   onFire: {
     type: "action";
     commandId: string;
-    taskId: string;
+    /** Required for absolute jobs; field jobs fill taskId per armed task. */
+    taskId?: string;
     input?: Record<string, string>;
   };
   missPolicy: MissPolicy;
@@ -132,8 +137,17 @@ export type BeforeCommitInput = {
   decision: Extract<WorkflowDecision, { kind: "commit" }>;
 };
 
+export type HookAnnotations = {
+  annotations?: string[];
+};
+
 export type BeforeCommitResult =
-  | { kind: "ok"; fields?: Record<string, string>; state?: string }
+  | {
+      kind: "ok";
+      fields?: Record<string, string>;
+      state?: string;
+      annotations?: string[];
+    }
   | { kind: "reject"; message: string };
 
 export type TaskEvent = {
@@ -143,6 +157,8 @@ export type TaskEvent = {
   revision: number;
   source: string;
 };
+
+export type TaskEventResult = void | HookAnnotations;
 
 export type ExtensionCapability = {
   interfaceId: string;
@@ -166,10 +182,10 @@ export type Plugin = {
     input: Record<string, string>;
   }): WorkflowDecision;
   contribute?(): ExtensionContribution;
-  lifecycleActivate?(data?: Record<string, never>): void;
-  lifecycleReady?(data?: Record<string, never>): void;
-  lifecycleQuiesce?(data?: Record<string, never>): void;
-  lifecycleDispose?(data?: Record<string, never>): void;
+  lifecycleActivate?(data?: Record<string, never>): void | HookAnnotations;
+  lifecycleReady?(data?: Record<string, never>): void | HookAnnotations;
+  lifecycleQuiesce?(data?: Record<string, never>): void | HookAnnotations;
+  lifecycleDispose?(data?: Record<string, never>): void | HookAnnotations;
   beforeCommit?(data: BeforeCommitInput): BeforeCommitResult;
-  onTaskEvent?(data: TaskEvent): void;
+  onTaskEvent?(data: TaskEvent): TaskEventResult;
 };

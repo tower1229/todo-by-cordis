@@ -13,6 +13,8 @@ export type {
   BeforeCommitResult,
   TaskEvent,
   TaskEventKind,
+  TaskEventResult,
+  HookAnnotations,
   ScheduleRegistration,
   MissPolicy,
   Plugin,

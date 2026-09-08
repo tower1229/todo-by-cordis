@@ -23,8 +23,11 @@ import {
   emptyContribution,
   type BeforeCommitResult,
   type ExtensionContribution,
+  type HookAnnotations,
+  type ScheduleRegistration,
   type TaskEvent,
   type TaskEventKind,
+  type TaskEventResult,
 } from "./business/contracts.js";
 import { ExtensionRegistry } from "./extensions/registry.js";
 import { OnlineScheduler } from "./extensions/scheduler.js";
@@ -285,38 +288,95 @@ export class Workspace {
     }
   }
   private async setupExtensions(runtime: RuntimeLike, pluginId: string) {
+    const definition = (await runtime.invoke(
+      "describe",
+    )) as WorkflowDefinition;
     const contribution =
       (await this.invokeOptional<ExtensionContribution>(
         runtime,
         "contribute",
       )) ?? emptyContribution();
-    this.extensions.install(pluginId, contribution);
+    this.extensions.install(pluginId, contribution, definition.fields);
     const life = contribution.lifecycle;
     if (life?.activate)
-      await this.invokeOptional(runtime, "lifecycleActivate", {});
-    if (life?.ready) await this.invokeOptional(runtime, "lifecycleReady", {});
+      this.recordAnnotations(
+        await this.invokeOptional<HookAnnotations>(
+          runtime,
+          "lifecycleActivate",
+          {},
+        ),
+      );
+    if (life?.ready)
+      this.recordAnnotations(
+        await this.invokeOptional<HookAnnotations>(
+          runtime,
+          "lifecycleReady",
+          {},
+        ),
+      );
     this.armSchedules(runtime);
   }
   private async teardownExtensions(runtime: RuntimeLike) {
     this.scheduler.cancelAll();
     const life = this.extensions.current().lifecycle;
     if (life?.quiesce)
-      await this.invokeOptional(runtime, "lifecycleQuiesce", {}).catch(
-        () => undefined,
+      this.recordAnnotations(
+        await this.invokeOptional<HookAnnotations>(
+          runtime,
+          "lifecycleQuiesce",
+          {},
+        ).catch(() => undefined),
       );
     if (life?.dispose)
-      await this.invokeOptional(runtime, "lifecycleDispose", {}).catch(
-        () => undefined,
+      this.recordAnnotations(
+        await this.invokeOptional<HookAnnotations>(
+          runtime,
+          "lifecycleDispose",
+          {},
+        ).catch(() => undefined),
       );
     this.extensions.clear();
     this.diagnosticsNotes = [];
   }
+  private expandScheduleJobs(): ScheduleRegistration[] {
+    const jobs: ScheduleRegistration[] = [];
+    for (const schedule of this.extensions.schedules()) {
+      const kind = schedule.atKind ?? "absolute";
+      if (kind === "absolute") {
+        if (!schedule.onFire.taskId) continue;
+        jobs.push(schedule);
+        continue;
+      }
+      const fieldKey = schedule.at;
+      const rows = this.db
+        .prepare("SELECT * FROM tasks WHERE deletedAt IS NULL")
+        .all() as Record<string, unknown>[];
+      for (const row of rows) {
+        const task = this.decode(row);
+        const value = task.fields[fieldKey];
+        if (!value) continue;
+        jobs.push({
+          ...schedule,
+          at: value,
+          atKind: "absolute",
+          dedupeKey: `${schedule.dedupeKey}:${task.id}`,
+          onFire: {
+            ...schedule.onFire,
+            taskId: task.id,
+          },
+        });
+      }
+    }
+    return jobs;
+  }
   private armSchedules(runtime: RuntimeLike) {
-    this.scheduler.arm(this.extensions.schedules(), {
+    this.scheduler.arm(this.expandScheduleJobs(), {
       fire: async (job) => {
         if (this.runtime !== runtime || this.status !== "ready") return;
+        const taskId = job.onFire.taskId;
+        if (!taskId) return;
         try {
-          const task = this.read(job.onFire.taskId);
+          const task = this.read(taskId);
           await this.command({
             type: "action",
             taskId: task.id,
@@ -332,10 +392,21 @@ export class Workspace {
       },
     });
   }
-  private annotateDiagnostic(note: string) {
+  private recordAnnotations(value: unknown) {
     if (!this.extensions.hasDiagnostics()) return;
-    const trimmed = note.slice(0, 200);
-    this.diagnosticsNotes = [...this.diagnosticsNotes, trimmed].slice(-20);
+    if (!value || typeof value !== "object") return;
+    const notes = (value as HookAnnotations).annotations;
+    if (!Array.isArray(notes)) return;
+    for (const note of notes) {
+      if (typeof note !== "string" || !note.trim()) continue;
+      this.diagnosticsNotes = [
+        ...this.diagnosticsNotes,
+        note.trim().slice(0, 200),
+      ].slice(-20);
+    }
+  }
+  private annotateDiagnostic(note: string) {
+    this.recordAnnotations({ annotations: [note] });
   }
   diagnostics() {
     return [...this.diagnosticsNotes];
@@ -369,6 +440,7 @@ export class Workspace {
       throw new AppError("ACTION_REJECTED", result.message);
     if (result.kind !== "ok")
       throw new AppError("INVALID_EXTENSION", "beforeCommit 返回无效结果");
+    this.recordAnnotations(result);
     if (result.fields) {
       if (Object.values(result.fields).some((v) => typeof v !== "string"))
         throw new AppError("INVALID_EXTENSION", "beforeCommit 字段无效");
@@ -386,21 +458,28 @@ export class Workspace {
     task: Task,
     changedPaths: string[],
   ) {
-    if (!this.extensions.subscribedEvents().has(kind)) return;
-    const event: TaskEvent = {
-      kind,
-      task,
-      changedPaths,
-      revision: task.revision,
-      source: this.extensions.activePluginId() ?? "workflow",
-    };
-    try {
-      await runtime.invoke("onTaskEvent", event);
-    } catch (error) {
-      this.annotateDiagnostic(
-        error instanceof Error ? error.message : "onTaskEvent failed",
-      );
+    if (this.extensions.subscribedEvents().has(kind)) {
+      const event: TaskEvent = {
+        kind,
+        task,
+        changedPaths,
+        revision: task.revision,
+        source: this.extensions.activePluginId() ?? "workflow",
+      };
+      try {
+        const result = await runtime.invoke<TaskEventResult>(
+          "onTaskEvent",
+          event,
+        );
+        this.recordAnnotations(result);
+      } catch (error) {
+        this.annotateDiagnostic(
+          error instanceof Error ? error.message : "onTaskEvent failed",
+        );
+      }
     }
+    if (this.extensions.hasFieldSchedules() && this.runtime === runtime)
+      this.armSchedules(runtime);
   }
   restart(manual = true): Promise<void> {
     if (this.recovering) return this.recovering;
@@ -457,25 +536,35 @@ export class Workspace {
         .all()
         .map((row) => String(row.versionId)),
     ]);
+    const base = this.release.get(active.versionId)
+      .definition as WorkflowDefinition;
+    const workflow: WorkflowDefinition = {
+      ...base,
+      fields: this.extensions.mergedFields(base),
+      actions: this.extensions.mergedActions(base),
+    };
+    const retained = this.release
+      .all()
+      .filter(
+        (v) =>
+          published.has(v.id) && (v.evidence as { passed?: boolean }).passed,
+      )
+      .flatMap(
+        (v) => (v.definition as WorkflowDefinition | null)?.fields ?? [],
+      );
+    const retainedKeys = new Set(retained.map((f) => f.key));
+    for (const field of this.extensions.fields())
+      if (!retainedKeys.has(field.key)) retained.push(field);
     return {
       revision: active.revision,
-      workflow: this.release.get(active.versionId)
-        .definition as WorkflowDefinition,
+      workflow,
       versionId: active.versionId,
       previousVersionId: this.previousVersionId(),
       status: this.status,
       buildHash: active.buildHash,
       ...(this.activationPending() ? { activationPending: true } : {}),
       ...(recovery ? { recovery } : {}),
-      retainedFields: this.release
-        .all()
-        .filter(
-          (v) =>
-            published.has(v.id) && (v.evidence as { passed?: boolean }).passed,
-        )
-        .flatMap(
-          (v) => (v.definition as WorkflowDefinition | null)?.fields ?? [],
-        ),
+      retainedFields: retained,
       extensions: this.extensions.summarize(),
       history: this.db
         .prepare(

@@ -2,6 +2,7 @@ import { AppError } from "../../shared/contracts.js";
 import {
   emptyContribution,
   EXTENSIONS_CONTRACT,
+  type Action,
   type CommandRegistration,
   type ExtensionCapability,
   type ExtensionContribution,
@@ -9,6 +10,7 @@ import {
   type Field,
   type ScheduleRegistration,
   type TaskEventKind,
+  type WorkflowDefinition,
 } from "../business/contracts.js";
 
 export class ExtensionRegistry {
@@ -20,8 +22,12 @@ export class ExtensionRegistry {
     this.contribution = emptyContribution();
   }
 
-  install(pluginId: string, contribution: ExtensionContribution) {
-    this.validate(contribution);
+  install(
+    pluginId: string,
+    contribution: ExtensionContribution,
+    workflowFields: Field[] = [],
+  ) {
+    this.validate(contribution, workflowFields);
     this.pluginId = pluginId;
     this.contribution = contribution;
   }
@@ -54,13 +60,36 @@ export class ExtensionRegistry {
     return this.contribution.schedules ?? [];
   }
 
+  hasFieldSchedules() {
+    return (this.contribution.schedules ?? []).some(
+      (s) => (s.atKind ?? "absolute") === "field",
+    );
+  }
+
   hasDiagnostics() {
     return !!this.contribution.diagnostics;
   }
 
+  mergedFields(workflow: WorkflowDefinition): Field[] {
+    const keys = new Set(workflow.fields.map((f) => f.key));
+    const extra = (this.contribution.fields ?? []).filter((f) => !keys.has(f.key));
+    return [...workflow.fields, ...extra];
+  }
+
+  mergedActions(workflow: WorkflowDefinition): Action[] {
+    const ids = new Set(workflow.actions.map((a) => a.id));
+    const extra: Action[] = (this.contribution.commands ?? [])
+      .filter((c) => !ids.has(c.id))
+      .map((c) => ({
+        id: c.id,
+        label: c.label,
+        from: c.from?.length ? c.from : ["open"],
+      }));
+    return [...workflow.actions, ...extra];
+  }
+
   summarize(): ExtensionSummary {
-    if (!this.pluginId)
-      return { contractVersion: null, capabilities: [] };
+    if (!this.pluginId) return { contractVersion: null, capabilities: [] };
     const providerId = this.pluginId;
     const c = this.contribution;
     const commands = c.commands?.length ?? 0;
@@ -137,7 +166,7 @@ export class ExtensionRegistry {
       },
       {
         interfaceId: "diagnostics.annotate",
-        status: c.diagnostics ? "stub" : "declared",
+        status: c.diagnostics ? "active" : "declared",
         providerId,
         count: c.diagnostics ? 1 : 0,
       },
@@ -166,13 +195,22 @@ export class ExtensionRegistry {
     };
   }
 
-  private validate(contribution: ExtensionContribution) {
+  private validate(
+    contribution: ExtensionContribution,
+    workflowFields: Field[],
+  ) {
+    const workflowKeys = new Set(workflowFields.map((f) => f.key));
     const fieldKeys = new Set<string>();
     for (const field of contribution.fields ?? []) {
       if (fieldKeys.has(field.key))
         throw new AppError(
           "EXTENSION_CONFLICT",
           `字段重复注册：${field.key}`,
+        );
+      if (workflowKeys.has(field.key))
+        throw new AppError(
+          "EXTENSION_CONFLICT",
+          `字段与流程定义冲突：${field.key}`,
         );
       fieldKeys.add(field.key);
     }
@@ -195,6 +233,11 @@ export class ExtensionRegistry {
       scheduleKeys.add(schedule.dedupeKey);
       if (schedule.missPolicy !== "skip" && schedule.missPolicy !== "run-once")
         throw new AppError("INVALID_EXTENSION", "无效的错过执行策略");
+      const kind = schedule.atKind ?? "absolute";
+      if (kind !== "absolute" && kind !== "field")
+        throw new AppError("INVALID_EXTENSION", "无效的调度时间类型");
+      if (kind === "absolute" && !schedule.onFire.taskId)
+        throw new AppError("INVALID_EXTENSION", "绝对调度缺少 taskId");
     }
     let primary = 0;
     for (const sort of contribution.querySorts ?? [])
