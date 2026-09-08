@@ -14,6 +14,9 @@ test("real backend restores clarification and investigated plan without changing
     .fill("完成前填写复盘");
   await page.getByRole("button", { name: "发送需求" }).click();
   await expect(page.getByText("复盘是必填还是选填？")).toBeVisible();
+  await expect(
+    page.getByRole("checkbox", { name: "修复已有问题（先复现旧版失败）" }),
+  ).toHaveCount(0);
   const first = await (await request.get("/api/assistant")).json();
   await page.reload();
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
@@ -162,7 +165,9 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   await page.getByRole("button", { name: "体验", exact: true }).click();
   await expect(page.getByRole("region", { name: "体验结果" })).toBeVisible();
   await expect(
-    page.getByRole("region", { name: "体验结果" }).getByText("隔离体验结果（模拟）"),
+    page
+      .getByRole("region", { name: "体验结果" })
+      .getByText("隔离体验结果（模拟）"),
   ).toBeVisible();
   expect(await (await request.get("/api/composition")).json()).toEqual(before);
 
@@ -228,14 +233,20 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   expect(finalReplay.run.status).toBe("succeeded");
 
   await page.reload();
-  await page.getByRole("button", {name:"改进应用", exact:true}).click();
-  await page.getByRole("button", {name:"继续修改", exact:true}).click();
-  await page.getByRole("textbox", {name:"告诉 AI 你的需求"}).fill("复盘至少三个字");
-  await page.getByRole("button", {name:"发送需求"}).click();
-  await expect(page.getByRole("button", {name:"确认业务验收修订", exact:true})).toBeVisible();
-  await expect(page.getByRole("button", {name:"开始执行", exact:true})).toHaveCount(0);
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  await page.getByRole("button", { name: "继续修改", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "告诉 AI 你的需求" })
+    .fill("复盘至少三个字");
+  await page.getByRole("button", { name: "发送需求" }).click();
+  await expect(
+    page.getByRole("button", { name: "确认业务验收修订", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "开始执行", exact: true }),
+  ).toHaveCount(0);
   const comparison = page.getByLabel("规则比较");
-  await expect(comparison).toContainText('旧规则：');
+  await expect(comparison).toContainText("旧规则：");
   await expect(comparison).toContainText('"minLength":1');
   await expect(comparison).toContainText('"minLength":3');
   await expect(comparison).toContainText("用户要求复盘至少三个字");
@@ -243,15 +254,33 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   expect(pending.run.parentRunId).toBe(ready.run.id);
   expect(pending.run.baseVersion).toBe(composition.versionId);
   await page.reload();
-  await page.getByRole("button", {name:"改进应用", exact:true}).click();
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await expect(page.getByLabel("规则比较")).toContainText("旧规则");
-  await page.getByRole("button", {name:"确认业务验收修订", exact:true}).click();
-  await expect(page.getByRole("button", {name:"开始执行", exact:true})).toBeVisible();
-  expect((await (await request.get("/api/assistant")).json()).run.acceptanceRevisions).toHaveLength(1);
-  expect((await (await request.get("/api/composition")).json()).versionId).toBe(composition.versionId);
-  await page.getByRole("button", {name:"开始执行", exact:true}).click();
-  await expect(page.getByRole("region", {name:"候选结果"})).toBeVisible({timeout:15000});
-  await page.getByRole("button", {name:"应用", exact:true}).click();
-  await expect(page.getByRole("button", {name:"继续修改", exact:true})).toBeVisible({timeout:15000});
-  expect((await (await request.get("/api/composition")).json()).versionId).not.toBe(composition.versionId);
+  await page
+    .getByRole("button", { name: "确认业务验收修订", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "开始执行", exact: true }),
+  ).toBeVisible();
+  expect(
+    (await (await request.get("/api/assistant")).json()).run
+      .acceptanceRevisions,
+  ).toHaveLength(1);
+  expect((await (await request.get("/api/composition")).json()).versionId).toBe(
+    composition.versionId,
+  );
+  await expect(
+    page.getByRole("checkbox", { name: "修复已有问题（先复现旧版失败）" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "开始执行", exact: true }).click();
+  await expect(page.getByRole("region", { name: "候选结果" })).toBeVisible({
+    timeout: 15000,
+  });
+  await page.getByRole("button", { name: "应用", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "继续修改", exact: true }),
+  ).toBeVisible({ timeout: 15000 });
+  expect(
+    (await (await request.get("/api/composition")).json()).versionId,
+  ).not.toBe(composition.versionId);
 });

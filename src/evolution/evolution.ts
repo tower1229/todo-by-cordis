@@ -43,7 +43,10 @@ export interface Domain {
     blockers: string[];
     retryable: boolean;
   };
-  reproduce?(plan: InvestigatedPlan, signal: AbortSignal): Promise<NonNullable<InvestigatedPlan["repairEvidence"]> | undefined>;
+  reproduce?(
+    plan: InvestigatedPlan,
+    signal: AbortSignal,
+  ): Promise<NonNullable<InvestigatedPlan["repairEvidence"]> | undefined>;
   target(plan: InvestigatedPlan): Target;
   check(target: Target, revision: number): void;
   isActiveVersion(versionId: string): boolean;
@@ -95,7 +98,9 @@ const terminal = (status: string) =>
     "interrupted",
   ].includes(status);
 const editable = (status: string) =>
-  ["awaiting-input", "awaiting-acceptance", "ready", "blocked"].includes(status);
+  ["awaiting-input", "awaiting-acceptance", "ready", "blocked"].includes(
+    status,
+  );
 export class Evolution {
   private active?: {
     id: string;
@@ -138,14 +143,10 @@ export class Evolution {
         this.save(record);
       } else if (record.run.status === "applying") {
         const versionId = record.versionId ?? record.run.versionId;
-        const committed =
-          !!versionId && this.domain.isActiveVersion(versionId);
+        const committed = !!versionId && this.domain.isActiveVersion(versionId);
         const plan =
           "plan" in record.run
-            ? (record.run as Extract<
-                AssistantRun,
-                { status: "applying" }
-              >).plan
+            ? (record.run as Extract<AssistantRun, { status: "applying" }>).plan
             : record.plan;
         record.run = committed
           ? {
@@ -167,6 +168,12 @@ export class Evolution {
   }
   private base(r: RecordRun) {
     return {
+      diagnostics: [
+        ...new Set([
+          ...(r.run.diagnostics ?? []),
+          ...("message" in r.run ? [r.run.message] : []),
+        ]),
+      ],
       intent: r.run.intent,
       acceptanceRevisions: r.run.acceptanceRevisions ?? [],
       parentRunId: r.run.parentRunId,
@@ -263,9 +270,7 @@ export class Evolution {
           passed: stored.passed,
           sourceHash: stored.sourceHash,
           ...(stored.diagnostic ? { diagnostic: stored.diagnostic } : {}),
-          ...(stored.evidenceHash
-            ? { evidenceHash: stored.evidenceHash }
-            : {}),
+          ...(stored.evidenceHash ? { evidenceHash: stored.evidenceHash } : {}),
           ...(stored.versionId ? { versionId: stored.versionId } : {}),
         };
       });
@@ -327,7 +332,7 @@ export class Evolution {
             ? "REQUEST_LOCKED"
             : "EVOLUTION_BUSY",
           latest &&
-            ["executing", "awaiting-apply", "applying"].includes(latest.status)
+          ["executing", "awaiting-apply", "applying"].includes(latest.status)
             ? "需求已锁定，请先停止当前执行"
             : "请先完成或取消当前方案",
           409,
@@ -360,17 +365,39 @@ export class Evolution {
       if (command.type === "continue") {
         const previous = this.get(command.runId);
         if (!terminal(previous.run.status))
-          throw new AppError("REQUEST_LOCKED", "请先停止当前运行，再重新规划", 409);
+          throw new AppError(
+            "REQUEST_LOCKED",
+            "请先停止当前运行，再重新规划",
+            409,
+          );
         const context = this.domain.context();
-        if (command.baseVersion !== context.versionId ||
-          (previous.run.status === "succeeded" && previous.run.versionId !== context.versionId) ||
-          (previous.run.capabilityId && previous.run.capabilityId !== context.pluginId))
-          throw new AppError("PLAN_STALE", "已发布版本或能力已变化，请基于当前版本重新提出需求", 409);
-        record.run = { ...record.run, parentRunId: previous.run.id,
-          baseVersion: context.versionId, capabilityId: context.pluginId,
-          parent: { status: previous.run.status,
-            ...("message" in previous.run ? { message: previous.run.message } : {}),
-            budget: previous.run.budget } };
+        if (
+          command.baseVersion !== context.versionId ||
+          (previous.run.status === "succeeded" &&
+            previous.run.versionId !== context.versionId) ||
+          (previous.run.capabilityId &&
+            previous.run.capabilityId !== context.pluginId)
+        )
+          throw new AppError(
+            "PLAN_STALE",
+            "已发布版本或能力已变化，请基于当前版本重新提出需求",
+            409,
+          );
+        record.run = {
+          ...record.run,
+          parentRunId: previous.run.id,
+          baseVersion: context.versionId,
+          capabilityId: context.pluginId,
+          parent: {
+            status: previous.run.status,
+            ...("message" in previous.run
+              ? { message: previous.run.message }
+              : previous.run.diagnostics?.length
+                ? { message: previous.run.diagnostics.join("；") }
+                : {}),
+            budget: previous.run.budget,
+          },
+        };
       } else if (command.runId) {
         const previous = this.get(command.runId);
         if (!editable(previous.run.status) || latest?.id !== previous.run.id)
@@ -380,8 +407,15 @@ export class Evolution {
           previous.run.status !== "awaiting-input"
         )
           throw new AppError("REQUEST_LOCKED", "当前不等待回答", 409);
-        if (previous.candidates > 0 || previous.run.status === "blocked" && previous.target)
-          throw new AppError("REQUEST_LOCKED", "执行后调整需求须通过 continue 重新规划和开始", 409);
+        if (
+          previous.candidates > 0 ||
+          (previous.run.status === "blocked" && previous.target)
+        )
+          throw new AppError(
+            "REQUEST_LOCKED",
+            "执行后调整需求须通过 continue 重新规划和开始",
+            409,
+          );
         record = previous;
         const revision = (previous.run.requestRevision ?? 1) + 1;
         record.history = [];
@@ -430,13 +464,31 @@ export class Evolution {
       }
     } else if (command.type === "confirm-acceptance") {
       record = this.get(command.runId);
-      if (record.run.status !== "awaiting-acceptance" || record.run.plan.id !== command.planId || record.run.acceptanceRevision.id !== command.revisionId)
-        throw new AppError("ACCEPTANCE_STALE", "验收修订已变化或需求已锁定，请重新比较规则", 409);
+      if (
+        record.run.status !== "awaiting-acceptance" ||
+        record.run.plan.id !== command.planId ||
+        record.run.acceptanceRevision.id !== command.revisionId
+      )
+        throw new AppError(
+          "ACCEPTANCE_STALE",
+          "验收修订已变化或需求已锁定，请重新比较规则",
+          409,
+        );
       const plan = record.run.plan;
       this.domain.check(this.domain.target(plan), plan.compositionRevision);
-      const revision = { ...record.run.acceptanceRevision, confirmedAt: new Date().toISOString() };
-      record.run = { ...this.base(record), status: "ready", plan: { ...plan, acceptanceRevision: revision },
-        acceptanceRevisions: [...(record.run.acceptanceRevisions ?? []), revision] };
+      const revision = {
+        ...record.run.acceptanceRevision,
+        confirmedAt: new Date().toISOString(),
+      };
+      record.run = {
+        ...this.base(record),
+        status: "ready",
+        plan: { ...plan, acceptanceRevision: revision },
+        acceptanceRevisions: [
+          ...(record.run.acceptanceRevisions ?? []),
+          revision,
+        ],
+      };
     } else if (command.type === "start") {
       record = this.get(command.runId);
       if (record.run.status !== "ready" || !("plan" in record.run))
@@ -444,6 +496,18 @@ export class Evolution {
       const plan = record.run.plan as InvestigatedPlan;
       if (command.planId !== plan.id)
         throw new AppError("PLAN_STALE", "开始与计划不一致", 409);
+      if (
+        plan.acceptanceChanges?.length &&
+        (!plan.acceptanceRevision?.confirmedAt ||
+          plan.acceptanceRevision.planId !== plan.id ||
+          hash(plan.acceptanceRevision.changes) !==
+            hash(plan.acceptanceChanges))
+      )
+        throw new AppError(
+          "ACCEPTANCE_STALE",
+          "请先确认本计划的业务验收修订",
+          409,
+        );
       const target = this.domain.target(plan);
       this.domain.check(target, plan.compositionRevision);
       record.target = target;
@@ -528,11 +592,16 @@ export class Evolution {
     let receipt: AssistantSnapshot;
     try {
       this.save(record);
-      if (command.type === "confirm-acceptance" && record.run.status === "ready") {
+      if (
+        command.type === "confirm-acceptance" &&
+        record.run.status === "ready"
+      ) {
         const revision = record.run.plan.acceptanceRevision!;
-        this.db.prepare("INSERT INTO evolution_acceptance_revisions VALUES(?,?,?)").run(revision.id, record.run.id, JSON.stringify(revision));
+        this.db
+          .prepare("INSERT INTO evolution_acceptance_revisions VALUES(?,?,?)")
+          .run(revision.id, record.run.id, JSON.stringify(revision));
       }
-      receipt = this.snapshot(record.run);
+      receipt = this.snapshot(this.get(record.run.id).run);
       this.db
         .prepare(
           "INSERT INTO evolution_operations(id,hash,runId,receipt) VALUES(?,?,?,?)",
@@ -863,7 +932,11 @@ export class Evolution {
   }
   private async plan(r: RecordRun, signal: AbortSignal) {
     const context = this.domain.context();
-    if (r.run.baseVersion && (r.run.baseVersion !== context.versionId || r.run.capabilityId !== context.pluginId))
+    if (
+      r.run.baseVersion &&
+      (r.run.baseVersion !== context.versionId ||
+        r.run.capabilityId !== context.pluginId)
+    )
       throw new Error("基础版本已变化，请重新规划");
     r.run.baseVersion = context.versionId;
     r.run.capabilityId = context.pluginId;
@@ -936,15 +1009,28 @@ export class Evolution {
             };
             if (!parsed.blockers.length && plan.intent === "repair") {
               parsed.retryable = false;
-              if (plan.acceptanceChanges?.length) parsed.blockers.push("修复不能替换已有业务规则；要求变化须另行修订和规划");
-              else if (!this.domain.reproduce) parsed.blockers.push("缺少可靠故障检查器，无法复现");
+              if (plan.acceptanceChanges?.length)
+                parsed.blockers.push(
+                  "修复不能替换已有业务规则；要求变化须另行修订和规划",
+                );
+              else if (!this.domain.reproduce)
+                parsed.blockers.push("缺少可靠故障检查器，无法复现");
               else {
                 try {
-                  plan.repairEvidence = await this.domain.reproduce(plan, signal);
-                  if (!plan.repairEvidence) parsed.blockers.push("unreproduced：旧版未出现相同断言失败，无法复现，不生成修复候选");
+                  plan.repairEvidence = await this.domain.reproduce(
+                    plan,
+                    signal,
+                  );
+                  signal.throwIfAborted();
+                  if (!plan.repairEvidence)
+                    parsed.blockers.push(
+                      "unreproduced：旧版未出现相同断言失败，无法复现，不生成修复候选",
+                    );
                 } catch (error) {
                   signal.throwIfAborted();
-                  parsed.blockers.push(`故障检查未可靠完成，不能证明修复：${error instanceof Error ? error.message : "检查失败"}`);
+                  parsed.blockers.push(
+                    `故障检查未可靠完成，不能证明修复：${error instanceof Error ? error.message : "检查失败"}`,
+                  );
                 }
               }
             }
@@ -998,8 +1084,21 @@ export class Evolution {
                   plan,
                 }
               : plan.acceptanceChanges?.length
-                ? { ...base, status: "awaiting-acceptance", plan,
-                    acceptanceRevision: { id: hash({planId: plan.id, baseVersion: plan.baseVersion, changes: plan.acceptanceChanges}), planId: plan.id, baseVersion: plan.baseVersion!, changes: plan.acceptanceChanges } }
+                ? {
+                    ...base,
+                    status: "awaiting-acceptance",
+                    plan,
+                    acceptanceRevision: {
+                      id: hash({
+                        planId: plan.id,
+                        baseVersion: plan.baseVersion,
+                        changes: plan.acceptanceChanges,
+                      }),
+                      planId: plan.id,
+                      baseVersion: plan.baseVersion!,
+                      changes: plan.acceptanceChanges,
+                    },
+                  }
                 : { ...base, status: "ready", plan };
           }
           this.save(r);

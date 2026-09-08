@@ -134,10 +134,12 @@ export const planningInstruction = `你是本应用唯一的自迭代 Agent，�
 提交前核对 inspect_application.planningRequirements，evidence 包含全部 requiredEvidence 及相关消费方的已读 ref/hash。propose_plan 被宿主拒绝时按工具返回的诊断继续只读调查和修正计划，不降级原目标，不削弱检查器；真实阻塞如实保留。
 propose_plan 包含 summary、changes、outcome、dataImpact、excluded、evidence(ref/hash，必须引用真实读过的资料)、capabilityChanges(capability/provider/consumers/change)、acceptance(given/when/then/checker)、steps(id/purpose/dependsOn/artifact/evidence)、writableScope、compatibility、rollback、preview、application、restartImpact、dependencies(所需包名)、unresolved。每项都真实具体；验收应覆盖正例、边界、已有行为和数据保留。不要自行声称验收已通过。ready 由宿主校验决定。
 修复故障的请求必须在 propose_plan 中设置 intent:"repair"，绑定旧版故障，不以修改需求期望冒充修复。宿主先运行旧版相同验收；无法复现或执行错误则阻塞。
-用户点击开始后才会生成候选；验证通过后停在待应用，正式应用须另行确认，不得把开始当作应用授权。宿主提供 workflow/1 字段检查器及 business-actions/1 新增动作检查器。新增纯业务动作可用 extensions 提供 actions、fields、cases，每个动作至少一个 commit 正例和 reject 反例，完整数据化用例在开始前展示冻结；不能移除既有行为。可写范围使用 business/entry.ts、business/view.ts、business/config.json、business/compatibility.json 及同目录新增提供者 .ts 文件。新文件无需虚构已读证据。其他 IO、通知交付、控制协议变更仍须维护者升级。`;
+用户点击开始后才会生成候选；验证通过后停在待应用，正式应用须另行确认，不得把开始当作应用授权。宿主提供 workflow/1 字段检查器及 business-actions/1 新增动作检查器。新增纯业务动作可用 extensions 提供 actions、fields、cases，extensions.cases 只能引用 extensions.actions 中的动作；complete/reopen 的回归由 workflow/1 自动验证，不能放入 extensions.cases。每个动作至少一个 commit 正例和 reject 反例，完整数据化用例在开始前展示冻结；不能移除既有行为。可写范围使用 business/entry.ts、business/view.ts、business/config.json、business/compatibility.json 及同目录新增提供者 .ts 文件。新文件无需虚构已读证据。其他 IO、通知交付、控制协议变更仍须维护者升级。`;
 const obj = (
   properties: Record<string, unknown>,
-  required = Object.keys(properties).filter((key) => !["extensions", "acceptanceReason", "intent"].includes(key)),
+  required = Object.keys(properties).filter(
+    (key) => !["extensions", "acceptanceReason", "intent"].includes(key),
+  ),
 ) => ({ type: "object", properties, required, additionalProperties: false });
 const text = { type: "string" };
 const list = { type: "array", items: text };
@@ -294,7 +296,7 @@ export function readInvestigation(
             },
             sourceBasis:
               "active-source 与 business/* 来自精确活动产物；src/* 为只读宿主资料。多文件候选只写冻结的 business/* 路径，正式应用另行确认。",
-                  compositionRevision: context.revision,
+            compositionRevision: context.revision,
             versionId: context.versionId,
             capabilities: [
               ...context.capabilities,
@@ -306,7 +308,7 @@ export function readInvestigation(
                 ready: context.runtimeStatus === "ready",
                 runtimeStatus: context.runtimeStatus,
                 evidence: {
-                        compositionRevision: context.revision,
+                  compositionRevision: context.revision,
                   artifact: context.versionId,
                 },
                 contract: "active-contract",
@@ -394,7 +396,8 @@ export function parsePlan(
   retryable: boolean;
 } {
   const v = object(value);
-  if (v.intent !== undefined && v.intent !== "improve" && v.intent !== "repair") throw new Error("需求类型无效");
+  if (v.intent !== undefined && v.intent !== "improve" && v.intent !== "repair")
+    throw new Error("需求类型无效");
   const evidence = objects(v.evidence).map((e) => ({
     ref: planText(e.ref),
     hash: planText(e.hash),
@@ -440,7 +443,8 @@ export function parsePlan(
     blockers.push(`环境依赖不可用：${context.environment.missing.join("、")}`);
   const workflowRules = parseRules(v.workflowRules ?? []);
   const ruleChanges: string[] = [];
-  const acceptanceChanges: NonNullable<InvestigatedPlan["acceptanceChanges"]> = [];
+  const acceptanceChanges: NonNullable<InvestigatedPlan["acceptanceChanges"]> =
+    [];
   const previous = JSON.parse(context.files["active-acceptance"].content) as {
     rules?: WorkflowRule[];
     extensions?: BusinessExtensions;
@@ -459,7 +463,15 @@ export function parsePlan(
   for (const old of previous.rules ?? []) {
     const next = workflowRules.find((r) => r.key === old.key);
     if (next && hash(old) !== hash(next)) {
-      acceptanceChanges.push({rule: old.key, before: JSON.stringify(old), after: JSON.stringify(next), reason: typeof v.acceptanceReason === "string" ? v.acceptanceReason.trim() : ""});
+      acceptanceChanges.push({
+        rule: old.key,
+        before: JSON.stringify(old),
+        after: JSON.stringify(next),
+        reason:
+          typeof v.acceptanceReason === "string"
+            ? v.acceptanceReason.trim()
+            : "",
+      });
       ruleChanges.push(
         `${old.label}：${old.required ? "必填" : "选填"} ${old.minLength}–${old.maxLength} 字 → ${next.required ? "必填" : "选填"} ${next.minLength}–${next.maxLength} 字；开始前确认本修订`,
       );
@@ -473,7 +485,15 @@ export function parsePlan(
   for (const old of previous.extensions?.cases ?? []) {
     const next = extensions?.cases.find((c) => c.name === old.name);
     if (next && hash(next) !== hash(old))
-      acceptanceChanges.push({rule: old.name, before: JSON.stringify(old), after: JSON.stringify(next), reason: typeof v.acceptanceReason === "string" ? v.acceptanceReason.trim() : ""});
+      acceptanceChanges.push({
+        rule: old.name,
+        before: JSON.stringify(old),
+        after: JSON.stringify(next),
+        reason:
+          typeof v.acceptanceReason === "string"
+            ? v.acceptanceReason.trim()
+            : "",
+      });
   }
   if (acceptanceChanges.some((c) => !c.reason || c.reason.length > 5000))
     blockers.push("业务规则修订必须说明原因，再由用户比较并确认");

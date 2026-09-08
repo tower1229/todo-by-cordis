@@ -1,6 +1,6 @@
 # 自迭代 Agent 重构详细设计
 
-日期：2026-09-07。状态：调查、执行进度、候选体验（隔离探针）与绑定式 apply 已有公开命令与测试验收；体验为临时 Runtime 探针而非完整独立数据平面；持续迭代与恢复主线另票。
+日期：2026-09-07。状态：调查、执行进度、候选体验（隔离探针）与绑定式 apply 已有公开命令与测试验收；体验为临时 Runtime 探针而非完整独立数据平面；持续迭代已提供绑定发布版本的 continue、独立业务验收修订确认和旧版故障复现门槛；恢复主线另票。
 
 本文是当前 Agent 重构的实施依据，覆盖原 PRD、V1 工程方案和 V2 中冲突的 Agent 职责、执行策略可修改性、确认流程与生成范围。其他未冲突的本地单所有者、四个深模块、数据保留和极简界面约束继续有效。决策依据见 [ADR 0001](../adr/0001-evolution-scope-and-application-confirmation.md)、[ADR 0002](../adr/0002-protect-independent-evolution-controls.md)、[ADR 0003](../adr/0003-complete-capability-gaps-within-one-change.md)、[ADR 0004](../adr/0004-freeze-request-and-show-execution-progress.md)；术语见 [CONTEXT.md](../../CONTEXT.md)。
 
@@ -123,6 +123,7 @@ Plan 是有预算的只读工具循环，可以读取当前版本、相关文件
 | --- | --- | --- |
 | planning | 查看、停止；修改需等调查停止 | 调查证据、问题或有效计划 |
 | awaiting-input | 回答、修改需求、取消 | 新需求修订后重新调查 |
+| awaiting-acceptance | 比较旧、新规则及原因、确认修订、修改、取消 | confirm-acceptance 绑定 planId 与 revisionId，确认后进入 ready |
 | ready | 查看计划、修改、开始、取消 | 精确 planId 和基础版本校验 |
 | executing | 查看、停止；禁止修改及另起执行 | 候选通过、阻塞、失败或取消 |
 | awaiting-apply | 体验、应用、放弃、调整后重新规划 | 精确候选与验收摘要确认 |
@@ -132,7 +133,7 @@ Plan 是有预算的只读工具循环，可以读取当前版本、相关文件
 
 executing 内部阶段为生成、构建、验收、修正、准备体验；一个固定步骤可以多次尝试。改变步骤状态必须对应工具开始/结束事件，不能因为进入下一步就把上一步全部标为成功。
 
-拟定命令：request、answer、revise、start、cancel、apply、continue。start 绑定 runId、planId；apply 额外绑定 candidateId、evidenceHash、compositionRevision。revise 仅在等待用户的可编辑状态可用，执行期间返回 REQUEST_LOCKED，服务端强制拒绝，不能只禁用输入框。所有写命令带 operationId，同 ID 同输入返回原回执，同 ID 不同输入拒绝。
+公开命令：request、answer、revise、confirm-acceptance、start、cancel、experience、apply、continue。continue 绑定父 runId 和当前已发布 baseVersion，保留父运行的诊断与预算事实；成功运行仅可继续其仍在使用的精确发布版本。修复请求使用 intent: repair，模型识别为修复时也触发旧版检查；无法复现断言失败时以 unreproduced 阻塞。start 绑定 runId、planId；apply 额外绑定 candidateId、evidenceHash、compositionRevision。revise 仅在等待用户的可编辑状态可用，执行期间返回 REQUEST_LOCKED，服务端强制拒绝，不能只禁用输入框。所有写命令带 operationId，同 ID 同输入返回原回执，同 ID 不同输入拒绝。
 
 observe 支持 runId 和事件游标，默认返回最新运行。保留 `/api/assistant` 和 `/api/assistant/commands` 作为入口，增加按运行查询及事件增量参数；不因内部重构建立第二套 API。旧 confirm 不得在新流程中被解释成应用授权。
 

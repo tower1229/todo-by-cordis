@@ -18,7 +18,12 @@ export function parseAssistantCommand(value: unknown): AssistantCommand {
   const id = (value: unknown): value is string =>
     typeof value === "string" && value.length > 0 && value.length <= 100;
   if (!id(input.operationId)) throw invalid();
-  if (input.intent !== undefined && input.intent !== "improve" && input.intent !== "repair") throw invalid();
+  if (
+    input.intent !== undefined &&
+    input.intent !== "improve" &&
+    input.intent !== "repair"
+  )
+    throw invalid();
   const intent = input.intent as "improve" | "repair" | undefined;
   if (
     input.type === "request" ||
@@ -43,7 +48,7 @@ export function parseAssistantCommand(value: unknown): AssistantCommand {
     }
     return {
       type: "request",
-      ...(intent ? {intent} : {}),
+      ...(intent ? { intent } : {}),
       operationId: input.operationId,
       text: input.text.trim(),
       ...(input.runId ? { runId: input.runId as string } : {}),
@@ -51,11 +56,34 @@ export function parseAssistantCommand(value: unknown): AssistantCommand {
   }
   if (!id(input.runId)) throw invalid();
   if (input.type === "continue") {
-    if (!id(input.baseVersion) || typeof input.text !== "string" || !input.text.trim() || input.text.length > 5000) throw invalid();
-    return { ...(intent ? {intent} : {}), type: "continue", operationId: input.operationId, runId: input.runId, baseVersion: input.baseVersion, text: input.text.trim() };
+    if (
+      !id(input.baseVersion) ||
+      typeof input.text !== "string" ||
+      !input.text.trim() ||
+      input.text.length > 5000
+    )
+      throw invalid();
+    return {
+      ...(intent ? { intent } : {}),
+      type: "continue",
+      operationId: input.operationId,
+      runId: input.runId,
+      baseVersion: input.baseVersion,
+      text: input.text.trim(),
+    };
   }
-  if (input.type === "confirm-acceptance" && id(input.planId) && id(input.revisionId))
-    return { type: "confirm-acceptance", operationId: input.operationId, runId: input.runId, planId: input.planId, revisionId: input.revisionId };
+  if (
+    input.type === "confirm-acceptance" &&
+    id(input.planId) &&
+    id(input.revisionId)
+  )
+    return {
+      type: "confirm-acceptance",
+      operationId: input.operationId,
+      runId: input.runId,
+      planId: input.planId,
+      revisionId: input.revisionId,
+    };
   if (input.type === "cancel")
     return {
       type: "cancel",

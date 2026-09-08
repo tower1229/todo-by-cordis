@@ -45,7 +45,9 @@ export class PlanningDriver implements Driver {
           { name: "read_contract", args: { ref: "active-contract" } },
           { name: "read_acceptance", args: { ref: "active-acceptance" } },
           { name: "describe_verification", args: { rules } },
-          ...((this.finish.writableScope ?? []) as string[]).filter((ref) => ref.startsWith("business/")).map((ref) => ({name: "read_source", args: {ref}})),
+          ...((this.finish.writableScope ?? []) as string[])
+            .filter((ref) => ref.startsWith("business/"))
+            .map((ref) => ({ name: "read_source", args: { ref } })),
         ],
       };
     const messages = request.history as {

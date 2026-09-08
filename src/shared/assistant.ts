@@ -50,7 +50,11 @@ export type AcceptanceRevision = {
   changes: { rule: string; before: string; after: string; reason: string }[];
   confirmedAt?: string;
 };
-export type RepairEvidence = { baseVersion: string; definitionHash: string; diagnostic: string };
+export type RepairEvidence = {
+  baseVersion: string;
+  definitionHash: string;
+  diagnostic: string;
+};
 export type InvestigatedPlan = AssistantPlan & {
   intent?: "improve" | "repair";
   repairEvidence?: RepairEvidence;
@@ -92,6 +96,7 @@ export type RequestRevision = {
   createdAt: string;
 };
 type Run = {
+  diagnostics?: string[];
   intent?: "improve" | "repair";
   acceptanceRevisions?: AcceptanceRevision[];
   parentRunId?: string;
@@ -117,7 +122,11 @@ export type AssistantRun = Run &
   (
     | { status: "planning" }
     | { status: "ready"; plan: InvestigatedPlan }
-    | { status: "awaiting-acceptance"; plan: InvestigatedPlan; acceptanceRevision: AcceptanceRevision }
+    | {
+        status: "awaiting-acceptance";
+        plan: InvestigatedPlan;
+        acceptanceRevision: AcceptanceRevision;
+      }
     | { status: "blocked"; message: string; plan?: InvestigatedPlan }
     | { status: "interrupted"; message: string }
     | { status: "dismissed"; message: string }
@@ -169,9 +178,28 @@ export type AssistantSnapshot = {
   eventCursor?: number;
 };
 export type AssistantCommand =
-  | { type: "confirm-acceptance"; operationId: string; runId: string; planId: string; revisionId: string }
-  | { type: "continue"; operationId: string; runId: string; baseVersion: string; text: string; intent?: "improve" | "repair" }
-  | { type: "request"; operationId: string; text: string; runId?: string; intent?: "improve" | "repair" }
+  | {
+      type: "confirm-acceptance";
+      operationId: string;
+      runId: string;
+      planId: string;
+      revisionId: string;
+    }
+  | {
+      type: "continue";
+      operationId: string;
+      runId: string;
+      baseVersion: string;
+      text: string;
+      intent?: "improve" | "repair";
+    }
+  | {
+      type: "request";
+      operationId: string;
+      text: string;
+      runId?: string;
+      intent?: "improve" | "repair";
+    }
   | {
       type: "start";
       operationId: string;

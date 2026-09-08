@@ -19,9 +19,19 @@ const evolution = new Evolution(
   {
     async generate(request) {
       if (request.tools?.some((t) => t.name === "submit_candidate")) {
-        const result = await new ExecutionDriver(planning, "default", "轻快完成", workspace.activeVersion().bundle ? 3 : 1).generate(request);
-        if (result.calls[0]?.name === "submit_candidate" && workspace.activeVersion().bundle) {
-          result.calls[0].args = JSON.parse(candidateSource(String(result.calls[0].args.source))) as {files:unknown};
+        const result = await new ExecutionDriver(
+          planning,
+          "default",
+          "轻快完成",
+          workspace.activeVersion().bundle ? 3 : 1,
+        ).generate(request);
+        if (
+          result.calls[0]?.name === "submit_candidate" &&
+          workspace.activeVersion().bundle
+        ) {
+          result.calls[0].args = JSON.parse(
+            candidateSource(String(result.calls[0].args.source)),
+          ) as { files: unknown };
           return result;
         }
         if (
@@ -42,12 +52,26 @@ const evolution = new Evolution(
         return result;
       }
       if (request.message) {
-        const input = JSON.parse(request.message) as { revisions: unknown[]; parentRunId?: string };
+        const input = JSON.parse(request.message) as {
+          revisions: unknown[];
+          parentRunId?: string;
+        };
         clarify = input.revisions.length === 1 && !input.parentRunId;
-        planning.finish = input.parentRunId ? {
-          workflowRules:[{key:"reflection", label:"复盘", required:true, minLength:3, maxLength:5000}],
-          acceptanceReason:"用户要求复盘至少三个字", writableScope:candidateScope,
-        } : {};
+        planning.finish = input.parentRunId
+          ? {
+              workflowRules: [
+                {
+                  key: "reflection",
+                  label: "复盘",
+                  required: true,
+                  minLength: 3,
+                  maxLength: 5000,
+                },
+              ],
+              acceptanceReason: "用户要求复盘至少三个字",
+              writableScope: candidateScope,
+            }
+          : {};
       }
       if (clarify && request.history.length)
         return toolReply("request_clarification", {

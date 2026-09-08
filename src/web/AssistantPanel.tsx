@@ -75,7 +75,12 @@ export function AssistantPanel({
     run?.status === "executing" ||
     run?.status === "awaiting-apply" ||
     run?.status === "applying";
-  const hideComposer = (["ready", "awaiting-acceptance", "succeeded"].includes(run?.status ?? "") && !editing) || locked;
+  const hideComposer =
+    (["ready", "awaiting-acceptance", "succeeded"].includes(
+      run?.status ?? "",
+    ) &&
+      !editing) ||
+    locked;
   const canSend =
     snapshot?.availability === "ready" &&
     !busy &&
@@ -109,7 +114,9 @@ export function AssistantPanel({
         {run?.status === "awaiting-input" && (
           <p className="text-sm leading-6">{run.question}</p>
         )}
-        {(run?.status === "ready" || run?.status === "awaiting-acceptance" || (run?.status === "blocked" && run.plan)) &&
+        {(run?.status === "ready" ||
+          run?.status === "awaiting-acceptance" ||
+          (run?.status === "blocked" && run.plan)) &&
           run.plan && (
             <section className="space-y-5" aria-label="待确认方案">
               <h3 className="text-[15px] font-semibold">
@@ -142,7 +149,10 @@ export function AssistantPanel({
                         <p>原因：{change.reason}</p>
                       </dd>
                     ))}
-                    <dd>数据保留、授权、取消、发布与 Agent 策略等系统保护约束保持有效。</dd>
+                    <dd>
+                      数据保留、授权、取消、发布与 Agent
+                      策略等系统保护约束保持有效。
+                    </dd>
                   </div>
                 )}
                 {!!run.plan.ruleChanges.length && (
@@ -228,7 +238,18 @@ export function AssistantPanel({
               )}
               <div className="flex flex-wrap gap-2">
                 {run.status === "awaiting-acceptance" && (
-                  <Button variant="primary" disabled={busy} onClick={() => command({ type: "confirm-acceptance", runId: run.id, planId: run.plan.id, revisionId: run.acceptanceRevision.id })}>
+                  <Button
+                    variant="primary"
+                    disabled={busy}
+                    onClick={() =>
+                      command({
+                        type: "confirm-acceptance",
+                        runId: run.id,
+                        planId: run.plan.id,
+                        revisionId: run.acceptanceRevision.id,
+                      })
+                    }
+                  >
                     确认业务验收修订
                   </Button>
                 )}
@@ -278,24 +299,42 @@ export function AssistantPanel({
         {run?.parentRunId && (
           <details className="text-xs leading-6 text-muted break-words">
             <summary>关联运行与基础版本</summary>
-            <p>父运行：{run.parentRunId} · {run.parent?.status}</p>
+            <p>
+              父运行：{run.parentRunId} · {run.parent?.status}
+            </p>
             <p>基础版本：{run.baseVersion}</p>
             {run.parent?.message && <p>{run.parent.message}</p>}
-            <p>父运行已用调用：{run.parent?.budget?.callsUsed ?? "未知"}；剩余候选：{run.parent?.budget?.candidatesRemaining ?? "未知"}</p>
+            <p>
+              父运行已用调用：{run.parent?.budget?.callsUsed ?? "未知"}
+              ；剩余候选：{run.parent?.budget?.candidatesRemaining ?? "未知"}
+            </p>
           </details>
         )}
         {!!run?.acceptanceRevisions?.length && (
           <details className="text-xs leading-6 break-words">
             <summary>已确认验收修订历史</summary>
-            {run.acceptanceRevisions.map((revision) => <div key={revision.id}>
-              <p>确认时间：{revision.confirmedAt}</p>
-              {revision.changes.map((c) => <p key={c.rule}>{c.rule}：{c.before} → {c.after}；{c.reason}</p>)}
-            </div>)}
+            {run.acceptanceRevisions.map((revision) => (
+              <div key={revision.id}>
+                <p>确认时间：{revision.confirmedAt}</p>
+                {revision.changes.map((c) => (
+                  <p key={c.rule}>
+                    {c.rule}：{c.before} → {c.after}；{c.reason}
+                  </p>
+                ))}
+              </div>
+            ))}
           </details>
         )}
-        {run && "plan" in run && run.plan && "repairEvidence" in run.plan && run.plan.repairEvidence && (
-          <p className="text-xs leading-6 break-words">旧版故障已复现：{run.plan.repairEvidence.diagnostic}；候选须通过同一组冻结断言及保护回归。</p>
-        )}
+        {run &&
+          "plan" in run &&
+          run.plan &&
+          "repairEvidence" in run.plan &&
+          run.plan.repairEvidence && (
+            <p className="text-xs leading-6 break-words">
+              旧版故障已复现：{run.plan.repairEvidence.diagnostic}
+              ；候选须通过同一组冻结断言及保护回归。
+            </p>
+          )}
         {run?.budget && (
           <p className="text-xs text-muted">
             模型调用 {run.budget.callsUsed} 次，剩余 {run.budget.callsRemaining}{" "}
@@ -459,10 +498,28 @@ export function AssistantPanel({
               {run.summary}
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => { setEditing(true); setRepair(false); setDraft(""); }}>继续修改</Button>
-              <Button onClick={() => { setEditing(true); setRepair(true); setDraft(""); }}>修复问题</Button>
+              <Button
+                onClick={() => {
+                  setEditing(true);
+                  setRepair(false);
+                  setDraft("");
+                }}
+              >
+                继续修改
+              </Button>
+              <Button
+                onClick={() => {
+                  setEditing(true);
+                  setRepair(true);
+                  setDraft("");
+                }}
+              >
+                修复问题
+              </Button>
             </div>
-            <p className="text-xs break-all text-muted">已发布版本：{run.versionId}</p>
+            <p className="text-xs break-all text-muted">
+              已发布版本：{run.versionId}
+            </p>
             <details className="text-sm text-muted">
               <summary className="cursor-pointer">执行详情</summary>
               <div className="pt-4">
@@ -514,11 +571,36 @@ export function AssistantPanel({
                   ? { type: "answer" as const, runId: run.id }
                   : editing &&
                       run &&
-                      (run.status === "ready" || run.status === "awaiting-acceptance")
+                      (run.status === "ready" ||
+                        run.status === "awaiting-acceptance")
                     ? { type: "revise" as const, runId: run.id }
-                    : run && ["succeeded", "failed", "blocked", "cancelled", "interrupted"].includes(run.status) && (run.status === "succeeded" ? run.versionId : run.baseVersion)
-                      ? { type: "continue" as const, runId: run.id, baseVersion: (run.status === "succeeded" ? run.versionId : run.baseVersion)!, intent: repair ? "repair" as const : "improve" as const }
-                      : { type: "request" as const, intent: repair ? "repair" as const : "improve" as const }),
+                    : run &&
+                        [
+                          "succeeded",
+                          "failed",
+                          "blocked",
+                          "cancelled",
+                          "interrupted",
+                        ].includes(run.status) &&
+                        (run.status === "succeeded"
+                          ? run.versionId
+                          : run.baseVersion)
+                      ? {
+                          type: "continue" as const,
+                          runId: run.id,
+                          baseVersion: (run.status === "succeeded"
+                            ? run.versionId
+                            : run.baseVersion)!,
+                          intent: repair
+                            ? ("repair" as const)
+                            : ("improve" as const),
+                        }
+                      : {
+                          type: "request" as const,
+                          intent: repair
+                            ? ("repair" as const)
+                            : ("improve" as const),
+                        }),
                 text: draft.trim(),
               })
             ) {
@@ -538,10 +620,19 @@ export function AssistantPanel({
               AI 尚未连接。可以先记下需求。
             </p>
           )}
-          <label className="mb-2 flex items-center gap-2 text-xs text-muted">
-            <input type="checkbox" checked={repair} disabled={busy} onChange={(event) => setRepair(event.target.checked)} />
-            修复已有问题（先复现旧版失败）
-          </label>
+          {!["ready", "awaiting-acceptance", "awaiting-input"].includes(
+            run?.status ?? "",
+          ) && (
+            <label className="mb-2 flex items-center gap-2 text-xs text-muted">
+              <input
+                type="checkbox"
+                checked={repair}
+                disabled={busy}
+                onChange={(event) => setRepair(event.target.checked)}
+              />
+              修复已有问题（先复现旧版失败）
+            </label>
+          )}
           <div className="rounded-lg border border-line bg-surface p-2 focus-within:border-accent">
             <textarea
               data-panel-input

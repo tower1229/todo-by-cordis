@@ -83,18 +83,32 @@ export class EvolutionDomain implements Domain {
     const base = this.workspace.release.get(plan.baseVersion!);
     this.check(this.target(plan), plan.compositionRevision);
     const runtime = await this.workspace.release.start(base);
-    const abort = () => { void runtime.close(); };
+    const abort = () => {
+      void runtime.close();
+    };
     signal.addEventListener("abort", abort, { once: true });
     try {
       signal.throwIfAborted();
       const definition = await runtime.invoke<WorkflowDefinition>("describe");
       try {
-        await verifyWorkflow(runtime, definition, base, this.target(plan).payload as Goal);
+        await verifyWorkflow(
+          runtime,
+          definition,
+          base,
+          this.target(plan).payload as Goal,
+        );
         if (plan.extensions) await verifyExtensions(runtime, plan.extensions);
       } catch (error) {
         signal.throwIfAborted();
         if (!(error instanceof BusinessAssertionError)) throw error;
-        return { baseVersion: base.id, definitionHash: hash({rules: plan.workflowRules, extensions: plan.extensions}), diagnostic: error.message };
+        return {
+          baseVersion: base.id,
+          definitionHash: hash({
+            rules: plan.workflowRules,
+            extensions: plan.extensions,
+          }),
+          diagnostic: error.message,
+        };
       }
       return undefined;
     } finally {
@@ -171,7 +185,12 @@ export class EvolutionDomain implements Domain {
   ) {
     const base = this.workspace.release.get(target.baseVersion);
     const goal = target.payload as Goal;
-    if (goal.repairEvidence && (goal.repairEvidence.baseVersion !== base.id || goal.repairEvidence.definitionHash !== hash({rules: goal.fields, extensions: goal.extensions})))
+    if (
+      goal.repairEvidence &&
+      (goal.repairEvidence.baseVersion !== base.id ||
+        goal.repairEvidence.definitionHash !==
+          hash({ rules: goal.fields, extensions: goal.extensions }))
+    )
       throw new ProtectedCandidateError("修复断言与旧版证据不一致");
     stage("构建候选");
     if (

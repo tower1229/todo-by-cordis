@@ -11,7 +11,7 @@ export class ExecutionDriver implements Driver {
     private name = "轻快完成",
     private minimum = 1,
   ) {}
-  async generate(request: ModelRequest) {
+  async generate(request: ModelRequest, signal = new AbortController().signal) {
     this.requests.push(request);
     if (
       request.tools?.some((t) => t.name === "submit_candidate") ||
@@ -29,6 +29,6 @@ export class ExecutionDriver implements Driver {
         source: source(this.pluginId, this.name, this.minimum),
       });
     }
-    return this.planning.generate(request);
+    return this.planning.generate(request, signal);
   }
 }

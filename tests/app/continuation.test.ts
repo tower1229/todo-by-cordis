@@ -8,44 +8,89 @@ import { Evolution } from "../../src/evolution/evolution.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { createApp } from "../../src/server/app.js";
 import { PlanningDriver } from "./planning-fixture.js";
-import { source, candidateSource, candidateScope } from "./evolution-fixture.js";
+import {
+  source,
+  candidateSource,
+  candidateScope,
+} from "./evolution-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
 
 async function settled(e: Evolution) {
   for (let i = 0; i < 1000; i++) {
     const s = await e.observe();
-    if (s.run && !["planning", "executing", "applying"].includes(s.run.status)) return s;
+    if (s.run && !["planning", "executing", "applying"].includes(s.run.status))
+      return s;
     await new Promise((r) => setTimeout(r, 20));
   }
   throw new Error("run did not settle");
 }
-async function setup(t: test.TestContext) {
+async function setup(
+  t: test.TestContext,
+  candidateArgs?: () => Record<string, unknown>,
+) {
   const dir = mkdtempSync(join(tmpdir(), "cordis-continue-"));
   const w = await Workspace.open(join(dir, "workspace.db"));
   const planning = new PlanningDriver();
-  const driver = { async generate(request: import("../../src/evolution/driver.js").ModelRequest) {
-    const rules = planning.finish.workflowRules as { minLength: number }[] | undefined;
-    const result = await new ExecutionDriver(planning, "default", "轻快完成", rules?.[0]?.minLength ?? 1).generate(request);
-    if (result.calls[0]?.name === "submit_candidate" && w.activeVersion().bundle)
-      result.calls[0].args = JSON.parse(candidateSource(String(result.calls[0].args.source))) as {files: unknown};
-    return result;
-  }};
+  const driver = {
+    async generate(
+      request: import("../../src/evolution/driver.js").ModelRequest,
+    ) {
+      const rules = planning.finish.workflowRules as
+        | { minLength: number }[]
+        | undefined;
+      const result = await new ExecutionDriver(
+        planning,
+        "default",
+        "轻快完成",
+        rules?.[0]?.minLength ?? 1,
+      ).generate(request);
+      if (result.calls[0]?.name === "submit_candidate" && candidateArgs)
+        result.calls[0].args = candidateArgs();
+      else if (
+        result.calls[0]?.name === "submit_candidate" &&
+        w.activeVersion().bundle
+      )
+        result.calls[0].args = JSON.parse(
+          candidateSource(String(result.calls[0].args.source)),
+        ) as { files: unknown };
+      return result;
+    },
+  };
   const e = new Evolution(w.db, driver, new EvolutionDomain(w));
-  t.after(async () => { await e.close(); await w.close(); rmSync(dir, {recursive:true, force:true}); });
-  const app = createApp(w, e);
-  const command = async (body: Record<string, unknown>) => app.request("/api/assistant/commands", {
-    method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify(body),
+  t.after(async () => {
+    await e.close();
+    await w.close();
+    rmSync(dir, { recursive: true, force: true });
   });
+  const app = createApp(w, e);
+  const command = async (body: Record<string, unknown>) =>
+    app.request("/api/assistant/commands", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
   return { w, e, planning, command, driver };
 }
 
 test("continue explicitly links a stopped run to the exact published base and retains its budget and diagnostics", async (t) => {
-  const {w, e, command} = await setup(t);
-  await e.command({type:"request", operationId:"request", text:"完成前复盘"});
+  const { w, e, command, planning } = await setup(t);
+  planning.finish = { unresolved: ["合成环境缺少所需依赖"] };
+  await e.command({
+    type: "request",
+    operationId: "request",
+    text: "完成前复盘",
+  });
   const parent = (await settled(e)).run!;
-  await e.command({type:"cancel", operationId:"cancel", runId:parent.id});
+  assert.equal(parent.status, "blocked");
+  await e.command({ type: "cancel", operationId: "cancel", runId: parent.id });
   const before = await e.observe(parent.id);
-  const body = {type:"continue", operationId:"continue", runId:parent.id, baseVersion:w.activeVersion().id, text:"继续完善复盘"};
+  const body = {
+    type: "continue",
+    operationId: "continue",
+    runId: parent.id,
+    baseVersion: w.activeVersion().id,
+    text: "继续完善复盘",
+  };
   const response = await command(body);
   assert.equal(response.status, 200, await response.clone().text());
   const receipt = await response.json();
@@ -55,43 +100,116 @@ test("continue explicitly links a stopped run to the exact published base and re
   assert.equal(receipt.run.capabilityId, w.activeVersion().pluginId);
   assert.deepEqual(receipt.run.parent.budget, before.run?.budget);
   assert.equal(receipt.run.parent.status, "cancelled");
+  assert.match(receipt.run.parent.message, /合成环境缺少所需依赖/);
   assert.deepEqual(await (await command(body)).json(), receipt);
   await settled(e);
   assert.deepEqual(await e.observe(parent.id), before);
-  await e.command({type:"cancel", operationId:"cancel-child", runId:receipt.run.id});
-  assert.equal((await command({...body, operationId:"stale", baseVersion:"stale"})).status, 409);
+  await e.command({
+    type: "cancel",
+    operationId: "cancel-child",
+    runId: receipt.run.id,
+  });
+  assert.equal(
+    (await command({ ...body, operationId: "stale", baseVersion: "stale" }))
+      .status,
+    409,
+  );
 });
 
-
 test("A14: changed business rules require a separate exact confirmation and retain history across restart", async (t) => {
-  const {w, e, planning, command, driver} = await setup(t);
+  const { w, e, planning, command, driver } = await setup(t);
   // Publish through the same public start/apply commands users invoke.
-  await e.command({type:"request", operationId:"request", text:"完成前复盘"});
+  await e.command({
+    type: "request",
+    operationId: "request",
+    text: "完成前复盘",
+  });
   const ready = (await settled(e)).run!;
   assert.equal(ready.status, "ready");
   if (ready.status !== "ready") return;
-  await e.command({type:"start", operationId:"start", runId:ready.id, planId:ready.plan.id});
+  await e.command({
+    type: "start",
+    operationId: "start",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
   const candidate = await settled(e);
   assert.equal(candidate.run?.status, "awaiting-apply");
-  await e.command({type:"apply", operationId:"apply", runId:ready.id, candidateId:candidate.candidates![0].id,
-    evidenceHash:candidate.candidates![0].evidenceHash!, compositionRevision:w.composition().revision});
+  await e.command({
+    type: "apply",
+    operationId: "apply",
+    runId: ready.id,
+    candidateId: candidate.candidates![0].id,
+    evidenceHash: candidate.candidates![0].evidenceHash!,
+    compositionRevision: w.composition().revision,
+  });
   const published = (await settled(e)).run!;
   assert.equal(published.status, "succeeded");
   planning.finish = {
-    workflowRules: [{key:"reflection", label:"复盘", required:true, minLength:3, maxLength:5000}],
-    acceptanceReason:"用户要求复盘至少三个字",
-    writableScope:["business/entry.ts", "business/view.ts", "business/config.json", "business/compatibility.json"],
+    workflowRules: [
+      {
+        key: "reflection",
+        label: "复盘",
+        required: true,
+        minLength: 3,
+        maxLength: 5000,
+      },
+    ],
+    acceptanceReason: "用户要求复盘至少三个字",
+    writableScope: [
+      "business/entry.ts",
+      "business/view.ts",
+      "business/config.json",
+      "business/compatibility.json",
+    ],
   };
-  assert.equal((await command({type:"continue", operationId:"continue", runId:published.id,
-    baseVersion:published.versionId, text:"复盘至少三个字"})).status, 200);
+  assert.equal(
+    (
+      await command({
+        type: "continue",
+        operationId: "continue",
+        runId: published.id,
+        baseVersion: published.versionId,
+        text: "复盘至少三个字",
+      })
+    ).status,
+    200,
+  );
   const pending = (await settled(e)).run!;
   assert.equal(pending.status, "awaiting-acceptance", JSON.stringify(pending));
   if (pending.status !== "awaiting-acceptance") return;
   assert.match(pending.plan.acceptanceChanges![0].before, /1/);
   assert.match(pending.plan.acceptanceChanges![0].after, /3/);
-  assert.equal((await command({type:"start", operationId:"premature", runId:pending.id, planId:pending.plan.id})).status, 409);
-  assert.equal((await command({type:"confirm-acceptance", operationId:"wrong", runId:pending.id, planId:pending.plan.id, revisionId:"wrong"})).status, 409);
-  const confirm = {type:"confirm-acceptance", operationId:"confirm", runId:pending.id, planId:pending.plan.id, revisionId:pending.acceptanceRevision.id};
+  assert.equal(
+    (
+      await command({
+        type: "start",
+        operationId: "premature",
+        runId: pending.id,
+        planId: pending.plan.id,
+      })
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await command({
+        type: "confirm-acceptance",
+        operationId: "wrong",
+        runId: pending.id,
+        planId: pending.plan.id,
+        revisionId: "wrong",
+      })
+    ).status,
+    409,
+  );
+  const confirm = {
+    type: "confirm-acceptance",
+    operationId: "confirm",
+    runId: pending.id,
+    planId: pending.plan.id,
+    revisionId: pending.acceptanceRevision.id,
+  };
   const response = await command(confirm);
   assert.equal(response.status, 200);
   const confirmed = await response.json();
@@ -104,18 +222,52 @@ test("A14: changed business rules require a separate exact confirmation and reta
   const reopened = new Evolution(w.db, driver, new EvolutionDomain(w));
   t.after(() => reopened.close());
   assert.deepEqual((await reopened.observe(pending.id)).run, confirmed.run);
-  await w.command({type:"create", title:"保留历史任务", operationId:"task", compositionRevision:w.composition().revision});
+  await w.command({
+    type: "create",
+    title: "保留历史任务",
+    operationId: "task",
+    compositionRevision: w.composition().revision,
+  });
   const oldTask = w.query().tasks[0];
-  const act = (input: string, op: string) => w.command({type:"action", taskId:oldTask.id, actionId:"complete", input:{reflection:input}, expectedRevision:oldTask.revision, operationId:op, compositionRevision:w.composition().revision});
+  const act = (input: string, op: string) =>
+    w.command({
+      type: "action",
+      taskId: oldTask.id,
+      actionId: "complete",
+      input: { reflection: input },
+      expectedRevision: oldTask.revision,
+      operationId: op,
+      compositionRevision: w.composition().revision,
+    });
   // Existing rules still apply until the new candidate is explicitly applied.
   const oldVersion = w.activeVersion().id;
-  await reopened.command({type:"start", runId:pending.id, planId:pending.plan.id, operationId:"start-next"});
-  await assert.rejects(reopened.command({type:"revise", runId:pending.id, operationId:"locked", text:"改成选填"}), /锁定/);
+  await reopened.command({
+    type: "start",
+    runId: pending.id,
+    planId: pending.plan.id,
+    operationId: "start-next",
+  });
+  await assert.rejects(
+    reopened.command({
+      type: "revise",
+      runId: pending.id,
+      operationId: "locked",
+      text: "改成选填",
+    }),
+    /锁定/,
+  );
   const next = await settled(reopened);
   assert.equal(next.run?.status, "awaiting-apply", JSON.stringify(next));
   assert.equal(w.activeVersion().id, oldVersion);
   assert.deepEqual(w.query().tasks[0], oldTask);
-  await reopened.command({type:"apply", runId:pending.id, operationId:"apply-next", candidateId:next.candidates![0].id, evidenceHash:next.candidates![0].evidenceHash!, compositionRevision:w.composition().revision});
+  await reopened.command({
+    type: "apply",
+    runId: pending.id,
+    operationId: "apply-next",
+    candidateId: next.candidates![0].id,
+    evidenceHash: next.candidates![0].evidenceHash!,
+    compositionRevision: w.composition().revision,
+  });
   assert.equal((await settled(reopened)).run?.status, "succeeded");
   assert.equal(w.activeVersion().pluginId, "default");
   assert.equal(w.activeVersion().parentId, oldVersion);
@@ -126,48 +278,293 @@ test("A14: changed business rules require a separate exact confirmation and reta
   assert.equal(w.query("", "all").tasks[0].state, "done");
 });
 
-
 test("A15: a repair with no reproducible old-version assertion failure is blocked before generation", async (t) => {
-  const {w, e, command, planning} = await setup(t);
+  const { w, e, command, planning } = await setup(t);
   // The default workflow has no reflection rule: exercise unchanged baseline checks.
   planning.finish = { workflowRules: [], intent: "repair" };
-  const response = await command({type:"request", operationId:"repair", text:"修复完成失败", intent:"repair"});
+  const response = await command({
+    type: "request",
+    operationId: "repair",
+    text: "修复完成失败",
+    intent: "repair",
+  });
   assert.equal(response.status, 200);
   const result = await settled(e);
   assert.equal(result.run?.status, "blocked");
-  assert.match(result.run && "message" in result.run ? result.run.message : "", /无法复现|unreproduced/);
+  assert.match(
+    result.run && "message" in result.run ? result.run.message : "",
+    /无法复现|unreproduced/,
+  );
   assert.equal(result.candidates?.length, 0);
   assert.equal(w.composition().revision, 1);
 });
 
 test("A15: old published Unicode failure and candidate pass use identical assertions with protection regression", async (t) => {
-  const {w, e, planning, command} = await setup(t);
-  const rules = [{key:"reflection", label:"复盘", required:true, minLength:1, maxLength:5000}];
+  const { w, e, planning, command } = await setup(t);
+  const rules = [
+    {
+      key: "reflection",
+      label: "复盘",
+      required: true,
+      minLength: 1,
+      maxLength: 5000,
+    },
+  ];
   // Fault injection at the persisted artifact boundary: simulate a historical release
   // whose validator missed UTF-16 counting. No production task data is used.
-  const brokenSource = source("default", "轻快完成").replaceAll("[...value].length", "value.length");
-  const files = Object.fromEntries((JSON.parse(candidateSource(brokenSource)) as {files:{path:string;content:string}[]}).files.map((f) => [f.path,f.content]));
-  const {contract} = await import("../../src/server/evolution-domain.js");
-  const bundle = await w.release.buildBundle(files, contract, AbortSignal.timeout(15000));
+  const brokenSource = source("default", "轻快完成").replaceAll(
+    "[...value].length",
+    "value.length",
+  );
+  const files = Object.fromEntries(
+    (
+      JSON.parse(candidateSource(brokenSource)) as {
+        files: { path: string; content: string }[];
+      }
+    ).files.map((f) => [f.path, f.content]),
+  );
+  const { contract } = await import("../../src/server/evolution-domain.js");
+  const bundle = await w.release.buildBundle(
+    files,
+    contract,
+    AbortSignal.timeout(15000),
+  );
   const old = w.activeVersion();
-  const faulty = w.release.record({pluginId:old.pluginId, name:old.name, service:"workflow", contractVersion:"workflow/1", parentId:old.id,
-    source:JSON.stringify({files:Object.entries(files).map(([path,content])=>({path,content}))}), code:bundle.outputs["business/entry.js"], bundle,
-    definition:{...(old.definition as object), fields:[{key:"reflection", label:"复盘", type:"text", required:true}]}, evidence:{passed:true,rules,origin:"historical-fault-fixture"}});
-  await w.activate({versionId:faulty.id, compositionRevision:w.composition().revision, operationId:"fault-fixture"}, () => undefined);
-  planning.finish = {workflowRules:rules, writableScope:candidateScope, intent:"repair"};
-  assert.equal((await command({type:"request", operationId:"repair", text:"修复表情字符长度误判", intent:"repair"})).status, 200);
+  const faulty = w.release.record({
+    pluginId: old.pluginId,
+    name: old.name,
+    service: "workflow",
+    contractVersion: "workflow/1",
+    parentId: old.id,
+    source: JSON.stringify({
+      files: Object.entries(files).map(([path, content]) => ({
+        path,
+        content,
+      })),
+    }),
+    code: bundle.outputs["business/entry.js"],
+    bundle,
+    definition: {
+      ...(old.definition as object),
+      fields: [
+        { key: "reflection", label: "复盘", type: "text", required: true },
+      ],
+    },
+    evidence: { passed: true, rules, origin: "historical-fault-fixture" },
+  });
+  await w.activate(
+    {
+      versionId: faulty.id,
+      compositionRevision: w.composition().revision,
+      operationId: "fault-fixture",
+    },
+    () => undefined,
+  );
+  planning.finish = {
+    workflowRules: rules,
+    writableScope: candidateScope,
+    intent: "repair",
+  };
+  assert.equal(
+    (
+      await command({
+        type: "request",
+        operationId: "repair",
+        text: "修复表情字符长度误判",
+        intent: "repair",
+      })
+    ).status,
+    200,
+  );
   const ready = (await settled(e)).run!;
   assert.equal(ready.status, "ready", JSON.stringify(ready));
   if (ready.status !== "ready") return;
   assert.equal(ready.plan.repairEvidence?.baseVersion, faulty.id);
-  assert.match(ready.plan.repairEvidence?.diagnostic ?? "", /reflection:unicode-boundary/);
-  await e.command({type:"start", operationId:"start-repair", runId:ready.id, planId:ready.plan.id});
+  assert.match(
+    ready.plan.repairEvidence?.diagnostic ?? "",
+    /reflection:unicode-boundary/,
+  );
+  await e.command({
+    type: "start",
+    operationId: "start-repair",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
   const candidate = await settled(e);
-  assert.equal(candidate.run?.status, "awaiting-apply", JSON.stringify(candidate));
-  const evidence = w.release.get(candidate.run!.versionId!).evidence as {definitionHash:string; repairEvidence:unknown; checks:string[]; systemChecks:string[]};
-  assert.equal(evidence.definitionHash, ready.plan.repairEvidence!.definitionHash);
+  assert.equal(
+    candidate.run?.status,
+    "awaiting-apply",
+    JSON.stringify(candidate),
+  );
+  const evidence = w.release.get(candidate.run!.versionId!).evidence as {
+    definitionHash: string;
+    repairEvidence: unknown;
+    checks: string[];
+    systemChecks: string[];
+  };
+  assert.equal(
+    evidence.definitionHash,
+    ready.plan.repairEvidence!.definitionHash,
+  );
   assert.deepEqual(evidence.repairEvidence, ready.plan.repairEvidence);
   assert.ok(evidence.checks.includes("reflection:unicode-boundary"));
   assert.ok(evidence.systemChecks.includes("unknown-method-rejected"));
   assert.equal(w.activeVersion().id, faulty.id);
+});
+
+test("A09/A14: continue keeps the capability identity and old task fields while revising action assertions explicitly", async (t) => {
+  let delta = 1;
+  const { w, e, planning, command } = await setup(t, () => {
+    const code = source("default", "轻快完成")
+      .replace(
+        "],fields:[",
+        ",{id:'increment',label:'计数',from:['open']}],fields:[",
+      )
+      .replace(
+        "fields:[{key:'reflection'",
+        "fields:[{key:'count',label:'次数',type:'text'},{key:'reflection'",
+      )
+      .replace(
+        "  if ((action",
+        `  if(action==='increment') return task.state==='open' ? {kind:'commit',state:'open',fields:{...task.fields,count:String(Number(task.fields.count ?? '0')+${delta})}} : {kind:'reject',message:'不可用'};\n  if ((action`,
+      );
+    // describe fields follow the host contract: workflow fields before extensions.
+    const ordered = code.replace(
+      "fields:[{key:'count',label:'次数',type:'text'},{key:'reflection',label:'复盘',type:'text',required:true}]",
+      "fields:[{key:'reflection',label:'复盘',type:'text',required:true},{key:'count',label:'次数',type:'text'}]",
+    );
+    const args = JSON.parse(candidateSource(ordered)) as {
+      files: { path: string; content: string }[];
+    };
+    args.files.find((f) => f.path === "business/view.ts")!.content =
+      'export default {title:"复盘与计数",fields:["reflection","count"]};';
+    return args;
+  });
+  const extensions = (count: string) => ({
+    actions: [{ id: "increment", label: "计数", from: ["open"] }],
+    fields: [{ key: "count", label: "次数", type: "text" }],
+    cases: [
+      {
+        name: "累加",
+        state: "open",
+        fields: { count: "7" },
+        action: "increment",
+        input: {},
+        expected: { kind: "commit", state: "open", fields: { count } },
+      },
+      {
+        name: "完成后拒绝",
+        state: "done",
+        fields: {},
+        action: "increment",
+        input: {},
+        expected: { kind: "reject" },
+      },
+    ],
+  });
+  planning.finish = {
+    writableScope: candidateScope,
+    extensions: extensions("8"),
+  };
+  await e.command({
+    type: "request",
+    text: "增加计数并保留复盘",
+    operationId: "request",
+  });
+  const publish = async (operation: string) => {
+    const ready = (await settled(e)).run!;
+    assert.equal(ready.status, "ready", JSON.stringify(ready));
+    if (ready.status !== "ready") throw new Error("not ready");
+    await e.command({
+      type: "start",
+      runId: ready.id,
+      planId: ready.plan.id,
+      operationId: operation + "-start",
+    });
+    const candidate = await settled(e);
+    assert.equal(
+      candidate.run?.status,
+      "awaiting-apply",
+      JSON.stringify(candidate),
+    );
+    await e.command({
+      type: "apply",
+      runId: ready.id,
+      candidateId: candidate.candidates![0].id,
+      evidenceHash: candidate.candidates![0].evidenceHash!,
+      compositionRevision: w.composition().revision,
+      operationId: operation + "-apply",
+    });
+    return (await settled(e)).run!;
+  };
+  const parent = await publish("first");
+  const task = (
+    await w.command({
+      type: "create",
+      title: "已有任务",
+      operationId: "create",
+      compositionRevision: w.composition().revision,
+    })
+  ).task!;
+  const action = (actionId: string, input: Record<string, string> = {}) =>
+    w.command({
+      type: "action",
+      taskId: task.id,
+      actionId,
+      input,
+      expectedRevision: w.read(task.id).revision,
+      compositionRevision: w.composition().revision,
+      operationId: crypto.randomUUID(),
+    });
+  await action("increment");
+  const before = w.read(task.id);
+  assert.equal(before.fields.count, "1");
+  delta = 2;
+  planning.finish = {
+    ...planning.finish,
+    extensions: extensions("9"),
+    acceptanceReason: "用户把每次累加从一改为二",
+  };
+  assert.equal(
+    (
+      await command({
+        type: "continue",
+        runId: parent.id,
+        baseVersion: parent.versionId,
+        text: "每次计数加二",
+        operationId: "continue",
+      })
+    ).status,
+    200,
+  );
+  const pending = (await settled(e)).run!;
+  assert.equal(pending.status, "awaiting-acceptance", JSON.stringify(pending));
+  if (pending.status !== "awaiting-acceptance") return;
+  assert.equal(pending.plan.acceptanceChanges?.length, 1);
+  assert.equal(pending.plan.acceptanceChanges?.[0].rule, "累加");
+  await e.command({
+    type: "confirm-acceptance",
+    runId: pending.id,
+    planId: pending.plan.id,
+    revisionId: pending.acceptanceRevision.id,
+    operationId: "confirm",
+  });
+  await publish("second");
+  assert.deepEqual(w.read(task.id), before);
+  assert.equal(w.activeVersion().pluginId, "default");
+  const definition = w.activeVersion().definition as {
+    actions: { id: string }[];
+  };
+  assert.equal(
+    definition.actions.filter((a) => a.id === "increment").length,
+    1,
+  );
+  await action("increment");
+  await action("complete", { reflection: "保留复盘" });
+  assert.deepEqual(w.read(task.id).fields, {
+    count: "3",
+    reflection: "保留复盘",
+  });
+  await action("reopen");
+  assert.equal(w.read(task.id).state, "open");
 });

@@ -118,7 +118,8 @@ export function parseExtensions(
   }
   const extension = structuredClone(value) as BusinessExtensions;
   if (
-    new Set(extension.cases.map((c) => c.name)).size !== extension.cases.length ||
+    new Set(extension.cases.map((c) => c.name)).size !==
+      extension.cases.length ||
     new Set(extension.actions.map((a) => a.id)).size !==
       extension.actions.length ||
     new Set(extension.fields.map((f) => f.key)).size !== extension.fields.length
@@ -149,7 +150,9 @@ export function parseExtensions(
       ),
     ];
     extension.cases = [
-      ...previous.cases.map((old) => extension.cases.find((c) => c.name === old.name) ?? old),
+      ...previous.cases.map(
+        (old) => extension.cases.find((c) => c.name === old.name) ?? old,
+      ),
       ...extension.cases.filter(
         (c) => !previous.cases.some((old) => old.name === c.name),
       ),
