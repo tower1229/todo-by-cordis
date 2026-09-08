@@ -134,8 +134,13 @@ test("investigation, clarification, ready and start entry are available", async 
   };
   await expect(page.getByRole("region", { name: "待确认方案" })).toBeVisible();
   await expect(page.getByText("空复盘不能完成")).toBeVisible();
+  await expect(page.getByText("对现有数据的影响")).toBeVisible();
   await expect(page.getByRole("button", { name: "开始执行" })).toBeVisible();
   await expect(page.getByRole("button", { name: "确认执行" })).toHaveCount(0);
+  await expect(
+    page.getByText("未完成任务执行计数应从 7 增至 8，已完成任务计数应拒绝"),
+  ).toBeHidden();
+  await page.getByText("查看步骤、验收与调查细节").click();
   await expect(
     page.getByText("未完成任务执行计数应从 7 增至 8，已完成任务计数应拒绝"),
   ).toBeVisible();
@@ -207,4 +212,90 @@ test("AI connection loss shows the last known stage and cancellation uses the ru
   await page.getByRole("button", { name: "取消", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("已取消");
   expect(commands[0]).toMatchObject({ type: "cancel", runId: run.id });
+});
+
+test("blocked plan shows why start is unavailable without dumping technical details", async ({
+  page,
+}) => {
+  const technical =
+    "因不能真实调用外部 IO 及系统缺少定时提醒调度基础环境，到时间提醒将被报告为技术阻塞，等待维护者后续推进";
+  const plan = {
+    id: "blocked-plan",
+    compositionRevision: 1,
+    route: { kind: "application" as const },
+    summary: "为待办增加可选提醒时间",
+    changes: ["新增 business/scheduler.ts"],
+    outcome: "字段可记录，到点提醒尚不可用",
+    dataImpact: "新增 reminderTime 字段",
+    requestRevision: 1,
+    excluded: ["真实到点推送"],
+    evidence: [{ ref: "active-source", hash: "source-hash" }],
+    capabilityChanges: [
+      {
+        capability: "timer-scheduling",
+        provider: "business/scheduler.ts",
+        consumers: [],
+        change: "当前环境无可用定时器",
+      },
+    ],
+    cases: [],
+    workflowRules: [],
+    ruleChanges: [],
+    acceptance: [
+      '当 {"state":"open"}，执行 setReminder，应 commit',
+    ],
+    steps: [
+      {
+        id: "scheduler",
+        purpose: "声明调度器",
+        dependsOn: [],
+        artifact: "business/scheduler.ts",
+        evidence: "阻塞",
+      },
+    ],
+    writableScope: ["business/entry.ts", "business/scheduler.ts"],
+    compatibility: "旧数据不受影响",
+    rollback: "恢复上一版本",
+    preview: "隔离体验",
+    application: "需维护者能力",
+    restartImpact: "短暂停写",
+    dependencies: [],
+    unresolved: [technical],
+  };
+  const snapshot: AssistantSnapshot = {
+    availability: "ready",
+    run: {
+      id: "blocked-run",
+      request: "为待办增加可选的提醒时间，到时间提醒",
+      updatedAt: new Date().toISOString(),
+      status: "blocked",
+      message: technical,
+      userMessage:
+        "这项改进需要系统级能力（例如到点提醒、外部通知或宿主升级），当前不能自行完成。可改成不依赖这些能力的需求，或等待维护者补齐后再试。",
+      blockReason: "maintainer-capability",
+      plan,
+    },
+  };
+  await page.route("**/api/assistant**", (route) => {
+    if (route.request().url().includes("/commands")) return route.fallback();
+    return route.fulfill({ json: snapshot });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  await expect(page.getByRole("region", { name: "无法开始" })).toBeVisible();
+  await expect(page.getByText("暂时无法开始")).toBeVisible();
+  await expect(page.getByText(/系统级能力/)).toBeVisible();
+  await expect(page.getByText("因此还不能开始执行")).toBeVisible();
+  await expect(page.getByRole("button", { name: "开始执行" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "修改需求" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "放弃计划" })).toBeVisible();
+  const panel = page.getByRole("region", { name: "无法开始" });
+  await expect(
+    panel.locator("details").filter({ hasText: "查看调查摘要" }),
+  ).not.toHaveAttribute("open");
+  await expect(
+    panel.locator("details").filter({ hasText: "技术原因" }),
+  ).not.toHaveAttribute("open");
+  await panel.getByText("技术原因").click();
+  await expect(panel.getByText(technical, { exact: true })).toBeVisible();
 });

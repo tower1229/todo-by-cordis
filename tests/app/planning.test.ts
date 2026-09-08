@@ -8,6 +8,16 @@ import { Evolution } from "../../src/evolution/evolution.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { createApp } from "../../src/server/app.js";
 import type { Driver } from "../../src/evolution/driver.js";
+import { describeBlockers } from "../../src/shared/assistant.js";
+
+test("describeBlockers maps maintainer capability gaps to a short user message", () => {
+  const described = describeBlockers([
+    "因不能真实调用外部 IO 及系统缺少定时提醒调度基础环境，到时间提醒将被报告为技术阻塞",
+  ]);
+  assert.equal(described.blockReason, "maintainer-capability");
+  assert.match(described.userMessage, /系统级能力/);
+  assert.ok(!described.userMessage.includes("business/"));
+});
 
 const reply = (name: string, args: Record<string, unknown>) => ({
   text: "",
@@ -155,8 +165,11 @@ for (const [label, finish, message] of [
       await new Promise((r) => setTimeout(r, 10));
     const run = (await e.observe()).run!;
     assert.equal(run.status, "blocked");
-    if (run.status === "blocked")
+    if (run.status === "blocked") {
       assert.ok(run.message.includes(message), run.message);
+      assert.ok(run.userMessage.length > 0, run.userMessage);
+      assert.ok(run.blockReason);
+    }
     assert.equal(run.request, "保持原目标");
     assert.equal(w.composition().revision, 1);
     assert.equal(w.release.all().length, 2);
@@ -418,7 +431,11 @@ for (const name of ["active-contract", "active-acceptance"])
       await new Promise((r) => setTimeout(r, 10));
     const run = (await e.observe()).run!;
     assert.equal(run.status, "blocked");
-    if (run.status === "blocked") assert.ok(run.message.includes(name));
+    if (run.status === "blocked") {
+      assert.ok(run.message.includes(name));
+      assert.ok(run.userMessage);
+      assert.ok(run.blockReason);
+    }
     await e.command({ type: "cancel", runId: run.id, operationId: "cancel" });
     assert.equal((await e.observe()).run?.status, "cancelled");
   });

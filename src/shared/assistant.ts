@@ -119,6 +119,76 @@ type Run = {
     millisecondsRemaining: number;
   };
 };
+export const blockReasons = [
+  "maintainer-capability",
+  "missing-checker",
+  "investigation",
+  "protection",
+  "execution",
+  "other",
+] as const;
+export type BlockReason = (typeof blockReasons)[number];
+
+/** Map host blockers to a short user-facing explanation; keep full text in message. */
+export function describeBlockers(blockers: string[]): {
+  message: string;
+  userMessage: string;
+  blockReason: BlockReason;
+} {
+  const parts = blockers.map((b) => b.trim()).filter(Boolean);
+  const message = parts.join("；") || "当前无法开始执行";
+  const text = message;
+  if (
+    /维护者|外部\s*IO|外部IO|通知交付|定时|调度|推送|沙箱|控制协议|尚未分离的混合文件/.test(
+      text,
+    )
+  )
+    return {
+      message,
+      blockReason: "maintainer-capability",
+      userMessage:
+        "这项改进需要系统级能力（例如到点提醒、外部通知或宿主升级），当前不能自行完成。可改成不依赖这些能力的需求，或等待维护者补齐后再试。",
+    };
+  if (/缺少可靠.*检查器|验证能力补齐|检查器/.test(text))
+    return {
+      message,
+      blockReason: "missing-checker",
+      userMessage:
+        "当前还没有可靠方式验收这类行为，因此不能开始执行。请调整需求范围，或等待维护者补齐验收能力。",
+    };
+  if (/系统保护|保护范围|Agent 策略|伪造|未授权/.test(text))
+    return {
+      message,
+      blockReason: "protection",
+      userMessage:
+        "该改动触及受保护的控制能力，普通改进不能修改。请缩小到业务范围内的需求。",
+    };
+  if (
+    /调查证据|可写范围|尚未调查|基础版本已变化|依赖不可用|步骤依赖无效|业务规则修订必须说明/.test(
+      text,
+    )
+  )
+    return {
+      message,
+      blockReason: "investigation",
+      userMessage:
+        "调查尚未满足开始条件（证据、范围或依赖不完整）。请修改需求后重新规划。",
+    };
+  if (/冻结可写范围|保护验收|候选/.test(text))
+    return {
+      message,
+      blockReason: "execution",
+      userMessage:
+        "执行过程中遇到保护边界或不可继续的障碍，已停止。请查看详情后修改需求或放弃。",
+    };
+  return {
+    message,
+    blockReason: "other",
+    userMessage:
+      "当前还不能开始执行这次改进。请修改需求或放弃计划；技术细节可在下方展开查看。",
+  };
+}
+
 export type AssistantRun = Run &
   (
     | { status: "planning" }
@@ -128,7 +198,13 @@ export type AssistantRun = Run &
         plan: InvestigatedPlan;
         acceptanceRevision: AcceptanceRevision;
       }
-    | { status: "blocked"; message: string; plan?: InvestigatedPlan }
+    | {
+        status: "blocked";
+        message: string;
+        userMessage: string;
+        blockReason: BlockReason;
+        plan?: InvestigatedPlan;
+      }
     | { status: "interrupted"; message: string }
     | { status: "dismissed"; message: string }
     | { status: "awaiting-input"; question: string }

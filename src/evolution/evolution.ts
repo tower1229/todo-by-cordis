@@ -13,6 +13,7 @@ import type {
   InvestigatedPlan,
   PlanEvidence,
 } from "../shared/assistant.js";
+import { describeBlockers } from "../shared/assistant.js";
 import { AppError } from "../shared/contracts.js";
 import type { Investigation, InvestigationRead } from "../server/planning.js";
 import {
@@ -261,10 +262,24 @@ export class Evolution {
       .run(r.run.id, sequence, JSON.stringify(body));
     return body;
   }
+  private normalizeRun(run: AssistantRun | null): AssistantRun | null {
+    if (!run || run.status !== "blocked") return run;
+    if (run.userMessage && run.blockReason) return run;
+    const described = describeBlockers(
+      run.message ? run.message.split("；") : [],
+    );
+    return {
+      ...run,
+      message: run.message || described.message,
+      userMessage: run.userMessage ?? described.userMessage,
+      blockReason: run.blockReason ?? described.blockReason,
+    };
+  }
   private snapshot(
     run: AssistantRun | null,
     afterSequence = 0,
   ): AssistantSnapshot {
+    run = this.normalizeRun(run);
     if (!run)
       return { availability: "ready", run: null, events: [], eventCursor: 0 };
     const events = this.events(run.id, afterSequence);
@@ -1094,7 +1109,7 @@ export class Evolution {
               ? {
                   ...base,
                   status: "blocked",
-                  message: parsed.blockers.join("；"),
+                  ...describeBlockers(parsed.blockers),
                   plan,
                 }
               : plan.acceptanceChanges?.length
@@ -1241,7 +1256,7 @@ export class Evolution {
               ...this.base(r),
               status: "blocked",
               plan,
-              message: reason,
+              ...describeBlockers([reason]),
             };
             this.save(r);
             return;
@@ -1433,7 +1448,7 @@ export class Evolution {
                   ...this.base(r),
                   status: "blocked",
                   plan,
-                  message: diagnostic,
+                  ...describeBlockers([diagnostic]),
                 };
                 this.save(r);
                 return;
