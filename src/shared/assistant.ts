@@ -44,6 +44,7 @@ export type WorkflowRule = {
 };
 export type PlanEvidence = { ref: string; hash: string };
 export type InvestigatedPlan = AssistantPlan & {
+  extensions?: import("../server/business-verification.js").BusinessExtensions;
   requestRevision: number;
   workflowRules: WorkflowRule[];
   ruleChanges: string[];
@@ -114,7 +115,19 @@ export type AssistantRun = Run &
     | { status: "failed"; message: string; steps: AssistantStep[] }
     | { status: "cancelled" }
   );
+export type CandidateAttempt = {
+  id: string;
+  planId: string;
+  baseVersion: string;
+  attempt: number;
+  passed: boolean;
+  diagnostic?: string;
+  evidenceHash?: string;
+  versionId?: string;
+  sourceHash: string;
+};
 export type AssistantSnapshot = {
+  candidates?: CandidateAttempt[];
   availability: "ready" | "unconfigured";
   run: AssistantRun | null;
   events?: AssistantEvent[];

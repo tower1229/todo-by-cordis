@@ -17,8 +17,25 @@ const evolution = new Evolution(
   workspace.db,
   {
     async generate(request) {
-      if (request.tools?.some((t) => t.name === "submit_candidate"))
-        return new ExecutionDriver(planning).generate(request);
+      if (request.tools?.some((t) => t.name === "submit_candidate")) {
+        const result = await new ExecutionDriver(planning).generate(request);
+        if (
+          result.calls[0]?.name === "submit_candidate" &&
+          !JSON.stringify(request.history).includes("error")
+        )
+          return {
+            ...result,
+            calls: [
+              {
+                name: "submit_candidate",
+                args: {
+                  source: "const broken: string = 42; export default broken;",
+                },
+              },
+            ],
+          };
+        return result;
+      }
       if (request.message) {
         const input = JSON.parse(request.message) as { revisions: unknown[] };
         clarify = input.revisions.length === 1;

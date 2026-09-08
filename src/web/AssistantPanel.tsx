@@ -257,6 +257,30 @@ export function AssistantPanel({
             {Math.ceil(run.budget.millisecondsRemaining / 1000)} 秒
           </p>
         )}
+        {!!snapshot?.candidates?.length && (
+          <section aria-label="候选尝试" className="space-y-3 text-sm">
+            {snapshot.candidates.map((candidate) => (
+              <div
+                key={`${candidate.id}:${candidate.attempt}`}
+                className="rounded-lg border border-line p-3"
+              >
+                <p>
+                  第 {candidate.attempt} 次候选 ·{" "}
+                  {candidate.passed
+                    ? "独立验收通过"
+                    : candidate.diagnostic
+                      ? "未通过"
+                      : "验证中"}
+                </p>
+                {candidate.diagnostic && (
+                  <p className="mt-2 whitespace-pre-wrap break-words text-xs text-muted">
+                    {candidate.diagnostic}
+                  </p>
+                )}
+              </div>
+            ))}
+          </section>
+        )}
         {!!run?.revisions?.length &&
           run.status !== "executing" &&
           run.status !== "awaiting-apply" && (

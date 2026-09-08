@@ -12,3 +12,26 @@ const plugin: Plugin = {
  }
 }; export default plugin;`;
 }
+
+export const candidateScope = [
+  "business/entry.ts",
+  "business/view.ts",
+  "business/config.json",
+  "business/compatibility.json",
+];
+export function candidateSource(code: string) {
+  return JSON.stringify({
+    files: [
+      { path: "business/entry.ts", content: code },
+      {
+        path: "business/view.ts",
+        content: 'export default {title:"复盘",fields:["reflection"]};',
+      },
+      { path: "business/config.json", content: "{}" },
+      {
+        path: "business/compatibility.json",
+        content: '{"preserveUnknownFields":true}',
+      },
+    ],
+  });
+}

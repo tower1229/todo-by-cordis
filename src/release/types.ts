@@ -1,4 +1,11 @@
+export type BusinessBundle = {
+  files: Record<string, string>;
+  outputs: Record<string, string>;
+  lockHash: string;
+  builder: string;
+};
 export type Version = {
+  bundle?: BusinessBundle;
   id: string;
   pluginId: string;
   name: string;
@@ -13,6 +20,7 @@ export type Version = {
   entry: string;
 };
 export type RuntimeTarget = {
+  bundle?: BusinessBundle;
   entry: string;
   service: string;
   pluginId: string;

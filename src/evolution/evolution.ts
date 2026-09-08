@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { Driver, ModelReply, ModelRequest } from "./driver.js";
 import type {
+  CandidateAttempt,
   AssistantCommand,
   AssistantEvent,
   AssistantPlan,
@@ -13,6 +14,10 @@ import type {
 } from "../shared/assistant.js";
 import { AppError } from "../shared/contracts.js";
 import type { Investigation, InvestigationRead } from "../server/planning.js";
+import {
+  ProtectedCandidateError,
+  CandidateValidationError,
+} from "../release/business-bundle.js";
 import { hash } from "../release/storage.js";
 export type Target = {
   kind: "plugin";
@@ -184,11 +189,40 @@ export class Evolution {
       .run(r.run.id, sequence, JSON.stringify(body));
     return body;
   }
-  private snapshot(run: AssistantRun | null, afterSequence = 0): AssistantSnapshot {
-    if (!run) return { availability: "ready", run: null, events: [], eventCursor: 0 };
+  private snapshot(
+    run: AssistantRun | null,
+    afterSequence = 0,
+  ): AssistantSnapshot {
+    if (!run)
+      return { availability: "ready", run: null, events: [], eventCursor: 0 };
     const events = this.events(run.id, afterSequence);
     const cursor = events.at(-1)?.sequence ?? afterSequence;
-    return { availability: "ready", run, events, eventCursor: cursor };
+    const candidates = this.db
+      .prepare(
+        "SELECT body FROM evolution_candidates WHERE runId=? ORDER BY id",
+      )
+      .all(run.id)
+      .map((row) => {
+        const stored = JSON.parse(String(row.body)) as CandidateAttempt;
+        return {
+          id: stored.id,
+          planId: stored.planId,
+          baseVersion: stored.baseVersion,
+          attempt: stored.attempt,
+          passed: stored.passed,
+          diagnostic: stored.diagnostic,
+          evidenceHash: stored.evidenceHash,
+          versionId: stored.versionId,
+          sourceHash: stored.sourceHash,
+        };
+      });
+    return {
+      availability: "ready",
+      run,
+      events,
+      eventCursor: cursor,
+      candidates,
+    };
   }
   async observe(runId?: string, afterSequence = 0): Promise<AssistantSnapshot> {
     if (runId) return this.snapshot(this.get(runId).run, afterSequence);
@@ -267,10 +301,7 @@ export class Evolution {
       };
       if (command.runId) {
         const previous = this.get(command.runId);
-        if (
-          !editable(previous.run.status) ||
-          latest?.id !== previous.run.id
-        )
+        if (!editable(previous.run.status) || latest?.id !== previous.run.id)
           throw new AppError("PLAN_STALE", "请重新提出需求", 409);
         if (
           command.type === "answer" &&
@@ -513,9 +544,7 @@ export class Evolution {
       ...this.base(r),
       status: "executing",
       plan: r.plan as InvestigatedPlan,
-      steps: this.steps(r).map((s) =>
-        s.id === stepId ? { ...s, status } : s,
-      ),
+      steps: this.steps(r).map((s) => (s.id === stepId ? { ...s, status } : s)),
     };
     this.emit(r, {
       stepId,
@@ -696,6 +725,7 @@ export class Evolution {
       frozenAcceptance: plan.cases,
       frozenRules: plan.workflowRules,
     });
+    const failures = new Set<string>();
     while (r.candidates < this.limits.candidates) {
       if (!this.alive(r.run.id)) return;
       const attempt = r.candidates + 1;
@@ -717,6 +747,16 @@ export class Evolution {
             message,
             tools: [
               {
+                name: "report_blocker",
+                description:
+                  "Stop when frozen scope or protected controls must change; preserve all attempts",
+                parameters: {
+                  type: "object",
+                  properties: { reason: { type: "string" } },
+                  required: ["reason"],
+                },
+              },
+              {
                 name: "read_contract",
                 description: "Read the public contract",
                 parameters: { type: "object", properties: {} },
@@ -732,8 +772,23 @@ export class Evolution {
                   "Build and independently verify complete TypeScript source",
                 parameters: {
                   type: "object",
-                  properties: { source: { type: "string" } },
-                  required: ["source"],
+                  properties: {
+                    source: {
+                      type: "string",
+                      description: "Legacy single file; prefer files",
+                    },
+                    files: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          path: { type: "string" },
+                          content: { type: "string" },
+                        },
+                        required: ["path", "content"],
+                      },
+                    },
+                  },
                 },
               },
             ],
@@ -744,16 +799,35 @@ export class Evolution {
         message = undefined;
         if (!response.calls.length)
           throw new Error("模型没有提交候选或工具调用");
+        if (
+          response.calls.filter((c) => c.name === "submit_candidate").length > 1
+        )
+          throw new Error("每次模型回复只能封存一个候选");
         const parts: unknown[] = [];
         for (const call of response.calls) {
           signal.throwIfAborted();
           if (!this.alive(r.run.id)) return;
           let result: unknown;
-          if (call.name === "read_contract") {
+          if (call.name === "report_blocker") {
+            const reason = this.resultText(call.args.reason);
+            this.toolEvent(r, "report_blocker", "failed", attempt, reason);
+            r.run = {
+              ...this.base(r),
+              status: "blocked",
+              plan,
+              message: reason,
+            };
+            this.save(r);
+            return;
+          } else if (call.name === "read_contract") {
+            if (Object.keys(call.args).length)
+              throw new Error("读取契约参数无效");
             this.toolEvent(r, "read_contract", "started", attempt);
             result = { contract: context.contract };
             this.toolEvent(r, "read_contract", "succeeded", attempt);
           } else if (call.name === "read_current_source") {
+            if (Object.keys(call.args).length)
+              throw new Error("读取源码参数无效");
             this.toolEvent(r, "read_current_source", "started", attempt);
             result = { source: context.source };
             this.toolEvent(r, "read_current_source", "succeeded", attempt);
@@ -766,9 +840,7 @@ export class Evolution {
               attempt,
               "未授权工具：patch_candidate 不在当前执行阶段开放",
             );
-            throw new Error(
-              "未授权工具：patch_candidate 不在当前执行阶段开放",
-            );
+            throw new Error("未授权工具：patch_candidate 不在当前执行阶段开放");
           } else if (call.name === "submit_candidate") {
             submitted = true;
             this.toolEvent(r, "submit_candidate", "started", attempt);
@@ -783,10 +855,47 @@ export class Evolution {
               throw new Error(`已达到 ${this.limits.candidates} 个候选上限`);
             r.candidates++;
             this.save(r);
-            const source = String(call.args.source ?? "");
+            const source =
+              call.args.files !== undefined
+                ? JSON.stringify({ files: call.args.files })
+                : String(call.args.source ?? "");
+            const candidate: CandidateAttempt = {
+              id: hash({
+                source,
+                planId: plan.id,
+                baseVersion: target.baseVersion,
+              }),
+              planId: plan.id,
+              baseVersion: target.baseVersion,
+              attempt,
+              passed: false,
+              sourceHash: hash(source),
+            };
+            const entry = this.db
+              .prepare(
+                "INSERT INTO evolution_candidates(runId,body) VALUES(?,?)",
+              )
+              .run(r.run.id, JSON.stringify({ ...candidate, source }));
+            const saveAttempt = () =>
+              this.db
+                .prepare("UPDATE evolution_candidates SET body=? WHERE id=?")
+                .run(
+                  JSON.stringify({ ...candidate, source }),
+                  entry.lastInsertRowid,
+                );
             let buildId: string | null = null;
             let validateId: string | null = null;
             try {
+              if (
+                Object.keys(call.args).some(
+                  (key) => !["source", "files"].includes(key),
+                ) ||
+                (call.args.source !== undefined &&
+                  call.args.files !== undefined)
+              )
+                throw new ProtectedCandidateError(
+                  "候选不得提交验证报告或控制参数",
+                );
               r.versionId = await this.domain.candidate(
                 source,
                 target,
@@ -840,19 +949,15 @@ export class Evolution {
                 );
               this.toolEvent(r, "submit_candidate", "succeeded", attempt);
               this.save(r);
-              this.db
-                .prepare(
-                  "INSERT INTO evolution_candidates(runId,body) VALUES(?,?)",
-                )
-                .run(
-                  r.run.id,
-                  JSON.stringify({
-                    source,
-                    versionId: r.versionId,
-                    passed: true,
-                    attempt,
-                  }),
-                );
+              candidate.passed = true;
+              candidate.versionId = r.versionId;
+              candidate.evidenceHash = hash({
+                candidateId: candidate.id,
+                versionId: r.versionId,
+                cases: plan.cases,
+                rules: plan.workflowRules,
+              });
+              saveAttempt();
             } catch (error) {
               if (!this.alive(r.run.id)) {
                 r.versionId = undefined;
@@ -864,7 +969,13 @@ export class Evolution {
               result = { error: diagnostic };
               r.versionId = undefined;
               if (buildId)
-                this.endStep(r, buildId, "failed", diagnostic, "build_candidate");
+                this.endStep(
+                  r,
+                  buildId,
+                  "failed",
+                  diagnostic,
+                  "build_candidate",
+                );
               if (validateId)
                 this.endStep(
                   r,
@@ -880,19 +991,32 @@ export class Evolution {
                 attempt,
                 diagnostic,
               );
-              this.db
-                .prepare(
-                  "INSERT INTO evolution_candidates(runId,body) VALUES(?,?)",
-                )
-                .run(
-                  r.run.id,
-                  JSON.stringify({
-                    source,
-                    passed: false,
-                    diagnostic: result,
-                    attempt,
-                  }),
+              candidate.diagnostic = diagnostic;
+              if (error instanceof CandidateValidationError)
+                candidate.versionId = error.versionId;
+              saveAttempt();
+              const failure = hash({
+                diagnostic: diagnostic.replace(
+                  /candidate-[a-f0-9-]+/g,
+                  "candidate",
+                ),
+                source,
+              });
+              if (error instanceof ProtectedCandidateError) {
+                r.run = {
+                  ...this.base(r),
+                  status: "blocked",
+                  plan,
+                  message: diagnostic,
+                };
+                this.save(r);
+                return;
+              }
+              if (failures.has(failure))
+                throw new Error(
+                  `相同候选失败且没有新证据，停止修正：${diagnostic}`,
                 );
+              failures.add(failure);
             }
             if (r.versionId) {
               if (!this.alive(r.run.id)) {

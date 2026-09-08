@@ -178,6 +178,14 @@ export class Workspace {
   }
   composition(): Composition {
     const active = this.current();
+    const published = new Set([
+      active.versionId,
+      ...[...this.builtins.values()].map((version) => version.id),
+      ...this.db
+        .prepare("SELECT DISTINCT versionId FROM releases")
+        .all()
+        .map((row) => String(row.versionId)),
+    ]);
     return {
       revision: active.revision,
       workflow: this.release.get(active.versionId)
@@ -188,7 +196,10 @@ export class Workspace {
       buildHash: active.buildHash,
       retainedFields: this.release
         .all()
-        .filter((v) => (v.evidence as { passed?: boolean }).passed)
+        .filter(
+          (v) =>
+            published.has(v.id) && (v.evidence as { passed?: boolean }).passed,
+        )
         .flatMap(
           (v) => (v.definition as WorkflowDefinition | null)?.fields ?? [],
         ),

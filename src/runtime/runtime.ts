@@ -31,6 +31,7 @@ export class Runtime {
       [
         JSON.stringify({
           entry: target.entry,
+          modules: target.bundle?.outputs,
           service: target.service,
           pluginId: target.pluginId,
         }),
@@ -45,6 +46,7 @@ export class Runtime {
         ...{ windowsHide: true },
         execArgv: [
           "--max-old-space-size=128",
+          "--experimental-vm-modules",
           ...(extension === "ts" ? ["--import", "tsx"] : []),
         ],
       },

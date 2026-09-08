@@ -1,4 +1,8 @@
 import {
+  verifyExtensions,
+  type BusinessExtensions,
+} from "./business-verification.js";
+import {
   capture,
   planningInstruction,
   planningTools,
@@ -16,6 +20,11 @@ import {
   type Task,
 } from "../shared/contracts.js";
 import type { RuntimeLike, Version } from "../release/types.js";
+import {
+  parseBusinessFiles,
+  ProtectedCandidateError,
+  CandidateValidationError,
+} from "../release/business-bundle.js";
 import { hash } from "../release/storage.js";
 
 type Rule = {
@@ -25,12 +34,20 @@ type Rule = {
   minLength: number;
   maxLength: number;
 };
-type Goal = { pluginId: string; name: string; fields: Rule[] };
+type Goal = {
+  pluginId: string;
+  name: string;
+  fields: Rule[];
+  extensions?: BusinessExtensions;
+  scope?: string[];
+  capabilities?: InvestigatedPlan["capabilityChanges"];
+};
 const equal = (a: unknown, b: unknown) => hash(a) === hash(b);
 export const contract = `export type Task = { id:string; title:string; description:string; state:string; revision:number; createdAt:string; updatedAt:string; deletedAt:string|null; fields:Record<string,string> };
 export type Field = { key:string; label:string; type:"text"; required?:boolean; description?:string };
 export type WorkflowDefinition = { id:string; name:string; version:string; initialState:string; states:Record<string,{label:string;category:"open"|"done"}>; actions:{id:string;label:string;from:string[]}[]; fields:Field[] };
 export type WorkflowDecision = {kind:"reject";message:string}|{kind:"input-required";fields:Field[]}|{kind:"commit";state:string;fields:Record<string,string>};
+export type Workflow = { definition: WorkflowDefinition; decide(task:Task,action:string,input:Record<string,string>):WorkflowDecision };
 export type Plugin = { describe():WorkflowDefinition; decide(data:{task:Task; action:string; input:Record<string,string>}):WorkflowDecision };
 `;
 export class EvolutionDomain implements Domain {
@@ -57,6 +74,32 @@ export class EvolutionDomain implements Domain {
   }
   target(plan: InvestigatedPlan): Target {
     const base = this.workspace.release.get(plan.baseVersion!);
+    const priorCapabilities =
+      (
+        base.evidence as {
+          capabilities?: {
+            capability: string;
+            provider: string;
+            consumers: string[];
+          }[];
+        }
+      ).capabilities ?? [];
+    const capabilities = [
+      ...plan.capabilityChanges,
+      ...priorCapabilities
+        .filter(
+          (old) =>
+            !plan.capabilityChanges.some(
+              (c) => c.capability === old.capability,
+            ),
+        )
+        .map((old) => ({
+          capability: old.capability,
+          provider: old.provider,
+          consumers: old.consumers,
+          change: "保留已有能力",
+        })),
+    ];
     return {
       kind: "plugin",
       baseVersion: plan.baseVersion!,
@@ -64,6 +107,9 @@ export class EvolutionDomain implements Domain {
         pluginId: base.pluginId,
         name: base.name,
         fields: plan.workflowRules,
+        extensions: plan.extensions,
+        scope: plan.writableScope,
+        capabilities,
       },
     };
   }
@@ -79,7 +125,7 @@ export class EvolutionDomain implements Domain {
     return {
       contract,
       source: base.source,
-      instruction: `Implement the frozen investigated plan as one self-contained TypeScript plugin. First read_contract and read_current_source. Export default an object satisfying Plugin; only type imports from './contract.js' allowed. No dependencies, IO, globals, runtime imports, any or enum. Submit complete source using submit_candidate. Keep the exact pluginId from target.payload, existing task states open/done, actions complete/reopen, all unknown task.fields. describe must be deterministic with initialState open; preserve base state/action definitions. For complete: collect target.payload.fields in a form when required values are missing/blank; validate trimmed Unicode code point lengths against minLength/maxLength; reject invalid values; valid input commits done and merges fields, storing trimmed text. Do not reuse stored text to bypass required input. Reopen commits open and preserves fields. Unsupported action or wrong state rejects. Field definitions must match frozen goal key,label,type:text,required. No side effects. You cannot change acceptance rules, install dependencies, publish, or call apply. Diagnostics are from host protected tests. A successful candidate stops for separate user apply confirmation. Use Chinese concise labels/errors.`,
+      instruction: `Implement the frozen plan using submit_candidate with files [{path,content}]. Read read_contract and read_current_source first. The business artifact requires business/entry.ts (default Plugin), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed; business/contract.ts is supplied by the trusted host, never submit it. Imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. view fields must exactly match describe().fields keys in order. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
     };
   }
   async candidate(
@@ -91,19 +137,69 @@ export class EvolutionDomain implements Domain {
     const base = this.workspace.release.get(target.baseVersion);
     const goal = target.payload as Goal;
     stage("构建候选");
-    const code = await this.workspace.release.build(source, contract, signal);
+    if (
+      !source.startsWith('{"files":') &&
+      (!goal.scope?.includes("active-source") || !!base.bundle)
+    )
+      throw new ProtectedCandidateError(
+        "单源码入口未获冻结范围授权，请提交完整候选文件",
+      );
+    const files = source.startsWith('{"files":')
+      ? parseBusinessFiles((JSON.parse(source) as { files: unknown }).files)
+      : {
+          "business/entry.ts": source,
+          "business/view.ts": `export default ${JSON.stringify({ title: goal.name, fields: goal.fields.map((f) => f.key) })};`,
+          "business/config.json": "{}",
+          "business/compatibility.json": '{"preserveUnknownFields":true}',
+        };
+    if (
+      source.startsWith('{"files":') &&
+      goal.scope &&
+      [
+        ...new Set([
+          ...Object.keys(files),
+          ...Object.keys(base.bundle?.files ?? {}),
+        ]),
+      ].some(
+        (path) =>
+          path !== "business/contract.ts" &&
+          !goal.scope!.includes(path) &&
+          files[path] !== base.bundle?.files[path],
+      )
+    )
+      throw new ProtectedCandidateError(
+        "候选超出冻结可写范围，必须重新 Plan 和 start",
+      );
+    const bundle = await this.workspace.release.buildBundle(
+      files,
+      contract,
+      signal,
+    );
+    const code = bundle.outputs["business/entry.js"];
     signal.throwIfAborted();
     const definition: WorkflowDefinition = {
       ...(base.definition as WorkflowDefinition),
       id: goal.pluginId,
       name: goal.name,
       version: "generated",
-      fields: goal.fields.map((f) => ({
-        key: f.key,
-        label: f.label,
-        type: "text",
-        required: f.required,
-      })),
+      actions: [
+        ...(base.definition as WorkflowDefinition).actions,
+        ...(goal.extensions?.actions ?? []).filter(
+          (a) =>
+            !(base.definition as WorkflowDefinition).actions.some(
+              (old) => old.id === a.id,
+            ),
+        ),
+      ],
+      fields: [
+        ...goal.fields.map((f) => ({
+          key: f.key,
+          label: f.label,
+          type: "text" as const,
+          required: f.required,
+        })),
+        ...(goal.extensions?.fields ?? []),
+      ],
     };
     const candidate = this.workspace.release.record({
       pluginId: goal.pluginId,
@@ -113,15 +209,17 @@ export class EvolutionDomain implements Domain {
       contractVersion: "workflow/1",
       source,
       code,
+      bundle,
       definition,
       evidence: { passed: false, rules: goal.fields },
     });
     stage("验证行为");
     let actual: WorkflowDefinition = definition;
     let checks: string[] = [];
-    const prepared = await this.workspace.release.prepare(
-      candidate,
-      async (runtime) => {
+    let systemChecks: string[] = [];
+    let capabilities: unknown[] = [];
+    const prepared = await this.workspace.release
+      .prepare(candidate, async (runtime) => {
         const abort = () => {
           void runtime.close();
         };
@@ -129,13 +227,68 @@ export class EvolutionDomain implements Domain {
         try {
           signal.throwIfAborted();
           actual = await runtime.invoke<WorkflowDefinition>("describe");
+          const info = await runtime.invoke<{
+            presentation: { title: string; fields: string[] };
+            modules: { path: string; status: string; exports: string[] }[];
+          }>("__business_info");
+          if (
+            !info ||
+            typeof info.presentation?.title !== "string" ||
+            !equal(
+              info.presentation.fields,
+              actual.fields.map((f) => f.key),
+            )
+          )
+            throw new Error("前端资源与业务接口字段不一致");
+          capabilities = (goal.capabilities ?? []).map((c) => {
+            const provider =
+              c.provider === "active-source" ? "business/entry.ts" : c.provider;
+            if (!provider.startsWith("business/"))
+              return {
+                id: hash({ pluginId: goal.pluginId, capability: c.capability }),
+                declared: true,
+                ready: false,
+                provider,
+              };
+            const module = info.modules.find(
+              (m) => m.path === provider.replace(/\.ts$/, ".js"),
+            );
+            if (
+              !module ||
+              module.status !== "evaluated" ||
+              !module.exports.length
+            )
+              throw new Error(`能力提供者未实际加载：${provider}`);
+            return {
+              id: hash({ pluginId: goal.pluginId, capability: c.capability }),
+              capability: c.capability,
+              provider,
+              version: hash(bundle.outputs[provider.replace(/\.ts$/, ".js")]),
+              interface: module.exports,
+              dependencies: [
+                ...bundle.files[provider].matchAll(/from\s*["']([^"']+)["']/g),
+              ].map((m) => m[1]),
+              consumers: c.consumers,
+              declared: true,
+              ready: true,
+              evidence: candidate.id,
+            };
+          });
+          systemChecks = await verifyProtection(runtime, actual);
           checks = await verifyWorkflow(runtime, actual, base, goal);
+          if (goal.extensions)
+            checks.push(...(await verifyExtensions(runtime, goal.extensions)));
           signal.throwIfAborted();
         } finally {
           signal.removeEventListener("abort", abort);
         }
-      },
-    );
+      })
+      .catch((error: unknown) => {
+        throw new CandidateValidationError(
+          error instanceof Error ? error.message : "候选验证失败",
+          candidate.id,
+        );
+      });
     await prepared.runtime.close();
     const verified = this.workspace.release.record({
       pluginId: goal.pluginId,
@@ -145,11 +298,24 @@ export class EvolutionDomain implements Domain {
       contractVersion: "workflow/1",
       source,
       code,
+      bundle,
       definition: actual,
       evidence: {
         passed: true,
         rules: goal.fields,
+        extensions: goal.extensions,
         checks,
+        systemChecks,
+        capabilities,
+        definitionHash: hash({
+          rules: goal.fields,
+          extensions: goal.extensions,
+        }),
+        environment: {
+          node: process.version,
+          lockHash: bundle.lockHash,
+          builder: bundle.builder,
+        },
         verifier: "workspace/1",
         baseVersion: base.id,
       },
@@ -190,7 +356,12 @@ export async function verifyWorkflow(
     !definition.version ||
     definition.initialState !== expected.initialState ||
     !equal(definition.states, expected.states) ||
-    !equal(definition.actions, expected.actions) ||
+    !equal(definition.actions, [
+      ...expected.actions,
+      ...(goal.extensions?.actions ?? []).filter(
+        (a) => !expected.actions.some((old) => old.id === a.id),
+      ),
+    ]) ||
     !equal(
       definition.fields.map((f) => ({
         key: f.key,
@@ -198,12 +369,20 @@ export async function verifyWorkflow(
         type: f.type,
         required: !!f.required,
       })),
-      goal.fields.map((f) => ({
-        key: f.key,
-        label: f.label,
-        type: "text",
-        required: f.required,
-      })),
+      [
+        ...goal.fields.map((f) => ({
+          key: f.key,
+          label: f.label,
+          type: "text" as const,
+          required: f.required,
+        })),
+        ...(goal.extensions?.fields ?? []).map((f) => ({
+          key: f.key,
+          label: f.label,
+          type: f.type,
+          required: !!f.required,
+        })),
+      ],
     )
   )
     throw new Error("工作流定义不符合已确认契约");
@@ -307,4 +486,35 @@ export async function verifyWorkflow(
       `invalid:${state}:${action}`,
     );
   return checks;
+}
+
+// Independent host protection checks; candidate code cannot supply this report.
+async function verifyProtection(
+  runtime: RuntimeLike,
+  definition: WorkflowDefinition,
+) {
+  if (!equal(await runtime.invoke("describe"), definition))
+    throw new Error("保护验收失败：业务定义不稳定");
+  let rejected = false;
+  try {
+    await runtime.invoke("__host_unknown_method");
+  } catch {
+    rejected = true;
+  }
+  if (!rejected) throw new Error("保护验收失败：未知方法未拒绝");
+  for (const state of Object.keys(definition.states)) {
+    const result = await runtime.invoke<WorkflowDecision>("decide", {
+      task: { id: "protected", state, fields: { retained: "keep" } },
+      action: "__host_unknown_action",
+      input: {},
+    });
+    if (result.kind !== "reject")
+      throw new Error("保护验收失败：未知动作未拒绝");
+  }
+  return [
+    "deterministic-definition",
+    "unknown-method-rejected",
+    "unknown-actions-rejected",
+    "json-only-runtime-boundary",
+  ];
 }

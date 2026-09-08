@@ -3,8 +3,12 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 const dir = process.argv[2];
+const bundle = process.argv[3] === "bundle";
 try {
-  const source = readFileSync(join(dir, "candidate.ts"), "utf8");
+  const files = bundle
+    ? (JSON.parse(readFileSync(join(dir, "files.json"), "utf8")) as string[])
+    : ["candidate.ts", "contract.ts"];
+  const source = bundle ? "" : readFileSync(join(dir, "candidate.ts"), "utf8");
   // This is a dependency boundary, not an operating-system security sandbox.
   const stripped = source.replace(
     /import\s+type\s+[\s\S]*?from\s*["']\.\/contract\.js["'];?/g,
@@ -29,9 +33,11 @@ try {
         lib: ["ES2022"],
         skipLibCheck: true,
         noEmitOnError: true,
+        noResolve: bundle,
         outDir: "out",
+        rootDir: bundle ? "business" : ".",
       },
-      files: ["candidate.ts", "contract.ts"],
+      files,
     }),
   );
   const require = createRequire(import.meta.url);

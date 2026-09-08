@@ -6,7 +6,11 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
-import { source } from "./evolution-fixture.js";
+import {
+  source,
+  candidateSource,
+  candidateScope,
+} from "./evolution-fixture.js";
 // Release regression remains at the public candidate/activation boundary; old
 // Agent confirm-and-auto-apply is intentionally no longer a supported path.
 async function setup(t: TestContext) {
@@ -24,6 +28,7 @@ function target(w: Workspace, minimum = 1) {
     kind: "plugin" as const,
     baseVersion: w.activeVersion().id,
     payload: {
+      scope: candidateScope,
       pluginId: "reflection",
       name: "Reflection",
       fields: [
@@ -49,7 +54,7 @@ test("generated versions evolve in place; restart and restore preserve current d
     })
   ).task!;
   const first = await domain.candidate(
-    source("reflection"),
+    candidateSource(source("reflection")),
     target(w),
     new AbortController().signal,
     () => {},
@@ -72,7 +77,7 @@ test("generated versions evolve in place; restart and restore preserve current d
   await action({ reflection: "短文" });
   await action(undefined, "reopen");
   const second = await domain.candidate(
-    source("reflection", "Reflection", 10),
+    candidateSource(source("reflection", "Reflection", 10)),
     target(w, 10),
     new AbortController().signal,
     () => {},
@@ -107,7 +112,12 @@ for (const [name, code] of [
   test(`candidate ${name} failure retains active version`, async (t) => {
     const { w, domain } = await setup(t);
     await assert.rejects(
-      domain.candidate(code, target(w), new AbortController().signal, () => {}),
+      domain.candidate(
+        candidateSource(code),
+        target(w),
+        new AbortController().signal,
+        () => {},
+      ),
     );
     assert.equal(w.composition().revision, 1);
     assert.equal(w.composition().status, "ready");

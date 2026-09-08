@@ -81,7 +81,10 @@ test("investigation, clarification, ready and start entry are available", async 
     cases: [],
     workflowRules: [],
     ruleChanges: [],
-    acceptance: ["空复盘保持未完成"],
+    acceptance: [
+      "空复盘保持未完成",
+      "未完成任务执行计数应从 7 增至 8，已完成任务计数应拒绝",
+    ],
     steps: [
       {
         id: "workflow",
@@ -133,12 +136,15 @@ test("investigation, clarification, ready and start entry are available", async 
   await expect(page.getByText("空复盘不能完成")).toBeVisible();
   await expect(page.getByRole("button", { name: "开始执行" })).toBeVisible();
   await expect(page.getByRole("button", { name: "确认执行" })).toHaveCount(0);
+  await expect(
+    page.getByText("未完成任务执行计数应从 7 增至 8，已完成任务计数应拒绝"),
+  ).toBeVisible();
   await page.getByRole("button", { name: "开始执行", exact: true }).click();
   await expect(page.getByRole("region", { name: "执行进度" })).toBeVisible();
   await expect(page.getByRole("button", { name: "停止" })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "告诉 AI 你的需求" })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("textbox", { name: "告诉 AI 你的需求" }),
+  ).toHaveCount(0);
   expect(commands.map((c) => c.type)).toEqual(["request", "answer", "start"]);
 });
 

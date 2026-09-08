@@ -90,3 +90,60 @@ test("real backend restores clarification and investigated plan without changing
     await expect(page.getByRole("status")).toHaveText("已取消");
   }
 });
+
+test("failed candidate diagnostics survive correction and refresh in the real progress UI", async ({
+  page,
+  request,
+}) => {
+  const send = async (data: Record<string, unknown>) =>
+    (
+      await request.post("/api/assistant/commands", {
+        data: { ...data, operationId: crypto.randomUUID() },
+      })
+    ).json();
+  const before = await (await request.get("/api/composition")).json();
+  await send({ type: "request", text: "完成前填写复盘" });
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get("/api/assistant")).json()).run.status,
+    )
+    .toBe("awaiting-input");
+  const current = await (await request.get("/api/assistant")).json();
+  await send({ type: "answer", runId: current.run.id, text: "必填" });
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get("/api/assistant")).json()).run.status,
+    )
+    .toBe("ready");
+  const ready = await (await request.get("/api/assistant")).json();
+  await send({ type: "start", runId: ready.run.id, planId: ready.run.plan.id });
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get("/api/assistant")).json()).run.status,
+      { timeout: 15000 },
+    )
+    .toBe("awaiting-apply");
+  await page.goto("/");
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  const attempts = page.getByRole("region", { name: "候选尝试" });
+  await expect(
+    attempts.getByText("第 1 次候选 · 未通过", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    attempts.getByText("第 2 次候选 · 独立验收通过", { exact: true }),
+  ).toBeVisible();
+  await expect(attempts).toContainText("number");
+  await page.reload();
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  await expect(page.getByRole("region", { name: "候选尝试" })).toContainText(
+    "第 1 次候选",
+  );
+  const finished = await (await request.get("/api/assistant")).json();
+  expect(finished.run.id).toBe(ready.run.id);
+  expect(finished.run.budget.candidatesRemaining).toBe(1);
+  expect(await (await request.get("/api/composition")).json()).toEqual(before);
+  await send({ type: "cancel", runId: ready.run.id });
+});
