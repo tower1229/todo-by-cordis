@@ -1,14 +1,14 @@
 {
   "issue": "https://github.com/tower1229/todo-by-cordis/issues/8",
   "date": "2026-09-08",
-  "status": "partial-real-model-planning-blocked",
-  "parentSpecificationDelivered": false,
+  "status": "passed-local-synthetic-acceptance",
+  "parentSpecificationDelivered": true,
   "baseCommit": "df8489530924fcce09f83f5ef03630ed0647c5b9",
-  "evidenceScope": "本机合成数据验收记录；真实Gemini生成、模型桩回归、浏览器与故障注入分别列出，不表示生产数据或远程部署验收。",
+  "evidenceScope": "本机合成数据验收；三条主线闭合。真实Gemini生成、模型桩回归、浏览器与故障注入分别列出，不表示生产数据、远程部署或所有场景均经真实模型验证。",
   "checks": {
     "typecheck": "passed",
     "applicationTests": {
-      "passed": 77,
+      "passed": 81,
       "failed": 0,
       "command": "pnpm test"
     },
@@ -25,18 +25,20 @@
         768,
         1280
       ],
-      "realGeneratedArtifact": "output/playwright/issue-8/real-browser.json; Gemini生成计数与复盘在320px真实页面共同操作并保留值。"
+      "realGeneratedArtifact": "output/playwright/issue-8-final/real-browser.json; 本轮Gemini生成的计数与复盘在320px真实页面完成新增、计数、完成、重开与刷新，保留字段。"
     },
     "builtStartup": {
       "status": "passed",
+      "sourceCommit": "f8b8236c8167ac9a3c52816eb21cc73bac78467a",
+      "command": "DATABASE_PATH=.runtime/issue-8-real-model/browser-final/workspace.db PORT=4528 AI_DISABLED=1 node dist/server/main.js",
       "checks": [
-        "dist/server/main.js 监听本机端口",
-        "静态首页 HTTP 200",
-        "活动组合读取",
-        "合成任务写入并返回",
+        "首页 HTTP 200",
+        "活动组合 ready",
+        "真实浏览器新增合成任务、计数、复盘完成与重开",
+        "公开HTTP确认count=1、reflection=本轮真实复盘、state=open",
         "AI_DISABLED=1 下 assistant unconfigured"
       ],
-      "data": "临时数据库，已清理"
+      "data": "本轮合成验收数据库的隔离副本；.runtime/issue-8-real-model/browser-final"
     },
     "review": {
       "standardsFindings": 0,
@@ -89,7 +91,7 @@
         "tests/app/execution.test.ts",
         "tests/e2e/planning.spec.ts"
       ],
-      "realModel": "explicit start observed; repeat/locked revise covered by regression"
+      "realModel": "explicit start observed in all three runs; repeat/locked revise covered by regression"
     },
     "A05": {
       "localRegression": "passed",
@@ -97,7 +99,7 @@
         "tests/app/candidate.test.ts",
         "tests/e2e/planning.spec.ts"
       ],
-      "realModel": "see candidate attempts; deterministic correction and failure retention covered by application/browser regression"
+      "realModel": "real failed candidates repaired within the same runs; failed diagnostics and successful candidates retained, original budget not reset"
     },
     "A06": {
       "localRegression": "passed",
@@ -105,7 +107,7 @@
         "tests/app/apply.test.ts",
         "tests/e2e/planning.spec.ts"
       ],
-      "realModel": "staged successful evidence in attempts 3/4; final strict script did not complete; see issue-8-real-model.json"
+      "realModel": "passed in complete current strict run; see issue-8-real-model.json"
     },
     "A07": {
       "localRegression": "passed",
@@ -120,14 +122,14 @@
       "sources": [
         "tests/app/candidate.test.ts"
       ],
-      "realModel": "staged successful evidence in attempts 3/4; final strict script did not complete; see issue-8-real-model.json"
+      "realModel": "passed in complete current strict run; see issue-8-real-model.json"
     },
     "A09": {
       "localRegression": "passed",
       "sources": [
         "tests/app/continuation.test.ts"
       ],
-      "realModel": "staged successful evidence in attempts 3/4; final strict script did not complete; see issue-8-real-model.json"
+      "realModel": "passed in complete current strict run; see issue-8-real-model.json"
     },
     "A10": {
       "localRegression": "passed",
@@ -143,7 +145,8 @@
         "tests/app/execution.test.ts",
         "tests/e2e/planning.spec.ts"
       ],
-      "realModel": "not-run-this-turn"
+      "realModel": "not-run-this-turn",
+      "browser": "19 tests passed; current generated artifact additionally exercised in headed Chromium at 320px with reload and retained fields"
     },
     "A12": {
       "localRegression": "passed",
@@ -152,7 +155,7 @@
         "tests/app/execution.test.ts",
         "tests/e2e/recovery.spec.ts"
       ],
-      "realModel": "successful restart observed in staged attempt 4; final strict script did not reach restart; stop and commit-boundary failures covered separately by regression"
+      "realModel": "successful restart observed in current strict run; stop and commit-boundary failures covered separately by regression"
     },
     "A13": {
       "localRegression": "passed",
@@ -160,7 +163,7 @@
         "tests/app/recovery.test.ts",
         "tests/e2e/recovery.spec.ts"
       ],
-      "realModel": "staged successful evidence in attempts 3/4; final strict script did not complete; see issue-8-real-model.json"
+      "realModel": "passed in complete current strict run; see issue-8-real-model.json"
     },
     "A14": {
       "localRegression": "passed",
@@ -168,7 +171,7 @@
         "tests/app/continuation.test.ts",
         "tests/e2e/planning.spec.ts"
       ],
-      "realModel": "staged successful evidence in attempts 3/4; final strict script did not complete; see issue-8-real-model.json"
+      "realModel": "passed in complete current strict run; see issue-8-real-model.json"
     },
     "A15": {
       "localRegression": "passed",
@@ -179,31 +182,31 @@
     }
   },
   "realModel": {
-    "status": "blocked",
+    "status": "passed",
     "model": "gemini-3.1-pro-preview",
-    "sourceCommit": "20d4f0323885c662435810234c7dadc77f1b66ec",
+    "sourceCommit": "f8b8236c8167ac9a3c52816eb21cc73bac78467a",
     "sourceCleanAtStart": true,
     "command": "node --import tsx scripts/accept-m2.ts",
     "evidence": "docs/reports/issue-8-real-model.json",
-    "rawArtifacts": ".runtime/issue-8-real-model/final-20d4f03",
+    "rawArtifacts": ".runtime/issue-8-real-model/final-f8b8236",
     "runIds": [
-      "375f8d13-ed2f-486e-a9d0-730c92c0c743",
-      "3482cb7a-c476-4815-ae79-8be11839bb91"
+      "297fca36-4811-4572-bccb-ab69688d8f9f",
+      "ae158fdd-a179-40d2-9edb-fe44cbec2170",
+      "6808a7a0-cda8-4a61-b52c-c3b445e6935b"
     ],
     "usage": {
-      "promptTokenCount": 89154,
-      "candidatesTokenCount": 6207,
-      "thoughtsTokenCount": 15255,
-      "totalTokenCount": 110616
+      "promptTokenCount": 209586,
+      "candidatesTokenCount": 11349,
+      "thoughtsTokenCount": 26748,
+      "totalTokenCount": 247683
     }
   },
   "limitations": [
-    "最终严格脚本第二轮Plan被阻断，不能宣称Issue #8或父规格整体交付。",
-    "所有任务数据为合成数据，不代表生产数据验收。",
+    "所有任务数据为合成数据，不代表生产数据或远程部署验收。",
     "中文输入法通过composition事件测试，未操作macOS原生输入法。",
     "Node子进程与路径检查不是防任意恶意代码的强沙箱。",
-    "A01/A02/A03/A10/A11/A15的完整场景主要为模型桩/浏览器/故障注入，未全部重复调用真实模型。",
-    "此前失败、预算耗尽、工作区干扰和脚本误确认均保留，不计作最终通过。"
+    "A01/A02/A03/A10/A11/A15的完整场景使用模型桩/浏览器/故障注入，未全部重复调用真实模型。",
+    "此前失败、预算耗尽、工作区干扰和脚本误确认保留为历史，不计作通过；本次完整严格脚本独立通过。"
   ],
   "initialFailures": [
     "沙箱禁止 loopback listen，获执行权限后复跑通过。",
@@ -227,7 +230,7 @@
     "src/server/catalog.ts": "203a3659df7a98f8a8d635a95e459c151d99f1c6774526b964588315277dfe35",
     "src/server/evolution-domain.ts": "64e97e7eb5e8ae5340d2e2c7e48c5db3af158b55b7731f822d7ac06dd2b9bf69",
     "src/server/main.ts": "523226af2fd5fe2acb6f69d995f37b1e8cc9d481c106d93a3d0bda72fc05211c",
-    "src/server/planning.ts": "144d58ab66903d2a227e25adf0d23b4807566a60c140d8bf11c7a3775875a6d6",
+    "src/server/planning.ts": "6030160bd09b01a21ec0fb14a4d6993dd2f2e90f3c4a8ca10c05d4ac38f6c0fc",
     "src/server/plugins/default.ts": "62a4e8368cddc6741e001822502cbc3d120adc431c720fe2f74e680d9e894d8d",
     "src/server/plugins/review.ts": "5d3f183e29ef3c85e7d653a245efed0cf01223717cb8def5825b8cd318c0aab1",
     "src/server/workspace.ts": "918c9c8e433d0356bef98c7648b0340e5e5694d51a455049519915dbce037135",
@@ -255,7 +258,7 @@
     "tests/app/loop-fixture.mjs": "a97364e943de81557edfcf13df2ec8ed53a04b6c1a9466751c4338867e1ecf15",
     "tests/app/planning-fixture.ts": "952300e4bb2c63be49d56999e1bac8dea1a06f9a0d0b3a4b0d2ec88562b877b0",
     "tests/app/planning-server.ts": "5df552cee3b1be7c5acd908c447d426b11decdd9b97c5e0cb37636d936f81f1f",
-    "tests/app/planning.test.ts": "8259ffa8cb558de250458ec09cfbab6f9bdef56c7880022c111de77d8c331b99",
+    "tests/app/planning.test.ts": "8ed4e5b81ac71f377ed1d02a156b4951c614023e5ad51f57ca4456c5e0c50b14",
     "tests/app/recovery.test.ts": "57319eb205f2568b6fa9c82891d465bcbffadc7b95fb1b5fafd3fc7c597e9685",
     "tests/app/workspace.test.ts": "478aa5a43fef5d3299bc75799b1e3b4723b09d69cf17c4d76fbab3262b14f1d3",
     "tests/e2e/app.spec.ts": "58df05b5a5902db78752dd8beaf4962c94056fd31f19691dd3d4ccac7146fca0",
@@ -271,5 +274,5 @@
     "scripts/dev.mjs": "5b00ef51039a5af74bee30b6b6c894c639b97a044dbb1847258d4ba736a99be5",
     "scripts/e2e-server.mjs": "dd13d957f2e6630360ad3c105719e465d36a5c16e6759e9e2114d9353f8f4bbb"
   },
-  "verifiedSourceCommit": "20d4f0323885c662435810234c7dadc77f1b66ec"
+  "verifiedSourceCommit": "f8b8236c8167ac9a3c52816eb21cc73bac78467a"
 }
