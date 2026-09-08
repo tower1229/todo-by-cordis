@@ -46,7 +46,9 @@ function EventLog({ events }: { events: AssistantEvent[] }) {
       <ol className="mt-2 space-y-1">
         {events.map((event) => (
           <li key={event.sequence}>
-            #{event.sequence} {event.label} · {event.status}
+            #{event.sequence}
+            {event.tool ? ` · ${event.tool}` : ""} {event.label} ·{" "}
+            {event.status}
             {event.detail ? ` · ${event.detail}` : ""}
           </li>
         ))}

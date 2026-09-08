@@ -31,6 +31,7 @@ export type AssistantEvent = {
   attempt: number;
   label: string;
   status: "started" | "succeeded" | "failed";
+  tool?: string;
   detail?: string;
   at: string;
 };

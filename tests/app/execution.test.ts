@@ -93,6 +93,10 @@ test("A04: start freezes the plan, is idempotent, and rejects revise during exec
   assert.ok(w.release.all().length > 2);
   const observed = await e.observe(ready.id, 0);
   assert.ok((observed.events?.length ?? 0) > 0);
+  assert.ok(observed.events?.some((event) => event.tool === "read_contract"));
+  assert.ok(
+    observed.events?.some((event) => event.tool === "submit_candidate"),
+  );
   assert.ok((observed.eventCursor ?? 0) >= (observed.events?.length ?? 0));
   assert.ok(done.steps.some((s) => s.status === "succeeded"));
   assert.equal(done.budget?.candidatesRemaining, 2);
@@ -223,7 +227,80 @@ test("cancel during candidate build stops work and late results cannot apply", a
   assert.deepEqual(w.composition(), before);
 });
 
-test("A10: execution rejects unknown tools and protected path writes", async (t) => {
+test("late candidate success after cancel cannot enter awaiting-apply", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-exec-"));
+  const w = await Workspace.open(join(dir, "workspace.db"));
+  let releaseCandidate!: () => void;
+  const held = new Promise<void>((resolve) => {
+    releaseCandidate = resolve;
+  });
+  let enteredCandidate = false;
+  const base = new EvolutionDomain(w);
+  const domain = {
+    context: () => base.context(),
+    planningInstruction: base.planningInstruction,
+    planningTools: base.planningTools,
+    read: base.read.bind(base),
+    parse: base.parse.bind(base),
+    target: base.target.bind(base),
+    check: base.check.bind(base),
+    generation: base.generation.bind(base),
+    async candidate(
+      sourceText: string,
+      target: Parameters<EvolutionDomain["candidate"]>[1],
+      signal: AbortSignal,
+      stage: (label: string) => void,
+    ) {
+      enteredCandidate = true;
+      stage("构建候选");
+      await held;
+      signal.throwIfAborted();
+      return base.candidate(sourceText, target, signal, stage);
+    },
+  };
+  const e = new Evolution(
+    w.db,
+    new ExecutionDriver(new PlanningDriver()),
+    domain,
+  );
+  t.after(async () => {
+    await e.close();
+    await w.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const before = w.composition();
+  await e.command({
+    type: "request",
+    text: "完成前填写复盘",
+    operationId: "plan",
+  });
+  const ready = await settle(e, "ready");
+  if (ready.status !== "ready") throw new Error("expected ready");
+  await e.command({
+    type: "start",
+    operationId: "start",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  for (let i = 0; i < 200; i++) {
+    if (enteredCandidate) break;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  assert.equal(enteredCandidate, true);
+  await e.command({
+    type: "cancel",
+    runId: ready.id,
+    operationId: "stop-late",
+  });
+  releaseCandidate();
+  await e.close();
+  const run = (await e.observe(ready.id)).run;
+  assert.equal(run?.status, "cancelled");
+  assert.notEqual(run?.status, "awaiting-apply");
+  assert.equal(w.composition().versionId, before.versionId);
+});
+
+test("A10: execution rejects unknown tools, apply tools and unauthorized patch", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "cordis-exec-"));
   const w = await Workspace.open(join(dir, "workspace.db"));
   const planning = new PlanningDriver();
@@ -232,6 +309,14 @@ test("A10: execution rejects unknown tools and protected path writes", async (t)
     async generate(request) {
       if (!request.tools?.some((t) => t.name === "submit_candidate"))
         return planning.generate(request);
+      assert.equal(
+        request.tools?.some((t) => t.name === "apply_release"),
+        false,
+      );
+      assert.equal(
+        request.tools?.some((t) => t.name === "patch_candidate"),
+        false,
+      );
       if (mode === "unknown")
         return {
           text: "",
@@ -298,8 +383,7 @@ test("A10: execution rejects unknown tools and protected path writes", async (t)
   });
   const failed2 = await settle(e2);
   assert.equal(failed2.status, "failed");
-  if (failed2.status === "failed")
-    assert.match(failed2.message, /保护|路径|未授权|范围/);
+  if (failed2.status === "failed") assert.match(failed2.message, /未授权/);
 });
 
 test("Todo commands remain available while a candidate is generating", async (t) => {
@@ -438,5 +522,78 @@ test("A12: restart interrupts executing without apply and keeps awaiting-apply e
   e = new Evolution(w.db, held, new EvolutionDomain(w));
   const interrupted = await e.observe(ready2.id);
   assert.equal(interrupted.run?.status, "interrupted");
+  assert.equal(w.composition().versionId, before.versionId);
+});
+
+test("A12: persisted executing run is interrupted on host reopen without applying", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-exec-"));
+  const w = await Workspace.open(join(dir, "workspace.db"));
+  const before = w.composition();
+  let bootstrap = new Evolution(
+    w.db,
+    new ExecutionDriver(new PlanningDriver()),
+    new EvolutionDomain(w),
+  );
+  await bootstrap.close();
+  w.db
+    .prepare(
+      "INSERT INTO evolution_runs(id,body) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
+    )
+    .run(
+      "crash-exec",
+      JSON.stringify({
+        run: {
+          id: "crash-exec",
+          request: "完成前填写复盘",
+          updatedAt: "2026-01-01",
+          status: "executing",
+          plan: {
+            id: "p1",
+            compositionRevision: 1,
+            route: { kind: "application" },
+            summary: "复盘",
+            changes: [],
+            outcome: "复盘",
+            dataImpact: "无",
+            requestRevision: 1,
+            workflowRules: [],
+            ruleChanges: [],
+            excluded: [],
+            evidence: [],
+            capabilityChanges: [],
+            cases: [],
+            steps: [],
+            writableScope: ["active-source"],
+            compatibility: "",
+            rollback: "",
+            preview: "",
+            application: "",
+            restartImpact: "",
+            dependencies: [],
+            unresolved: [],
+          },
+          steps: [
+            { id: "s1", label: "生成候选", status: "running", attempt: 1 },
+          ],
+        },
+        history: [],
+        calls: 3,
+        candidates: 0,
+        elapsed: 10,
+        eventSequence: 0,
+      }),
+    );
+  const e = new Evolution(
+    w.db,
+    new ExecutionDriver(new PlanningDriver()),
+    new EvolutionDomain(w),
+  );
+  t.after(async () => {
+    await e.close();
+    await w.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const run = (await e.observe("crash-exec")).run;
+  assert.equal(run?.status, "interrupted");
   assert.equal(w.composition().versionId, before.versionId);
 });

@@ -141,6 +141,9 @@ export class Evolution {
   private steps(r: RecordRun): AssistantStep[] {
     return "steps" in r.run ? r.run.steps : [];
   }
+  private alive(id: string) {
+    return this.get(id).run.status === "executing";
+  }
   private save(r: RecordRun) {
     this.db
       .prepare(
@@ -274,11 +277,6 @@ export class Evolution {
           previous.run.status !== "awaiting-input"
         )
           throw new AppError("REQUEST_LOCKED", "当前不等待回答", 409);
-        if (
-          (command.type === "revise" || command.type === "answer") &&
-          ["executing", "awaiting-apply"].includes(previous.run.status)
-        )
-          throw new AppError("REQUEST_LOCKED", "需求已锁定，请先停止当前执行", 409);
         record = previous;
         const revision = (previous.run.requestRevision ?? 1) + 1;
         record.history = [];
@@ -331,7 +329,7 @@ export class Evolution {
       work = "execute";
     } else {
       throw new AppError(
-        "PLAN_ONLY",
+        "CONFIRM_DISABLED",
         "旧确认不能授予执行或应用授权，请使用开始执行",
         409,
       );
@@ -473,8 +471,13 @@ export class Evolution {
       throw new Error("调查结论文本无效");
     return value.trim();
   }
-  private beginStep(r: RecordRun, label: string, attempt: number) {
-    if (this.get(r.run.id).run.status === "cancelled") return null;
+  private beginStep(
+    r: RecordRun,
+    label: string,
+    attempt: number,
+    tool?: string,
+  ) {
+    if (!this.alive(r.run.id)) return null;
     const stepId = randomUUID();
     const steps = [
       ...this.steps(r),
@@ -491,6 +494,7 @@ export class Evolution {
       attempt,
       label,
       status: "started",
+      ...(tool ? { tool } : {}),
     });
     this.save(r);
     return stepId;
@@ -500,8 +504,9 @@ export class Evolution {
     stepId: string | null,
     status: "succeeded" | "failed",
     detail?: string,
+    tool?: string,
   ) {
-    if (!stepId) return;
+    if (!stepId || !this.alive(r.run.id)) return;
     const step = this.steps(r).find((s) => s.id === stepId);
     if (!step) return;
     r.run = {
@@ -517,6 +522,25 @@ export class Evolution {
       attempt: step.attempt ?? 1,
       label: step.label,
       status,
+      ...(tool ? { tool } : {}),
+      detail,
+    });
+    this.save(r);
+  }
+  private toolEvent(
+    r: RecordRun,
+    tool: string,
+    status: "started" | "succeeded" | "failed",
+    attempt: number,
+    detail?: string,
+  ) {
+    if (!this.alive(r.run.id)) return;
+    this.emit(r, {
+      stepId: `tool:${tool}:${attempt}:${status}`,
+      attempt,
+      label: tool,
+      status,
+      tool,
       detail,
     });
     this.save(r);
@@ -662,7 +686,7 @@ export class Evolution {
     const plan = r.plan as InvestigatedPlan;
     const revision = plan.compositionRevision;
     signal.throwIfAborted();
-    if (this.get(r.run.id).run.status === "cancelled") return;
+    if (!this.alive(r.run.id)) return;
     this.domain.check(target, revision);
     const context = this.domain.generation(target);
     let history: unknown[] = [];
@@ -673,15 +697,18 @@ export class Evolution {
       frozenRules: plan.workflowRules,
     });
     while (r.candidates < this.limits.candidates) {
-      if (this.get(r.run.id).run.status === "cancelled") return;
+      if (!this.alive(r.run.id)) return;
       const attempt = r.candidates + 1;
       const generateId = this.beginStep(
         r,
         r.candidates ? "修正候选" : "生成候选",
         attempt,
+        "submit_candidate",
       );
+      if (!generateId) return;
       let submitted = false;
       while (!submitted) {
+        if (!this.alive(r.run.id)) return;
         const response = await this.call(
           r,
           {
@@ -720,23 +747,39 @@ export class Evolution {
         const parts: unknown[] = [];
         for (const call of response.calls) {
           signal.throwIfAborted();
-          if (this.get(r.run.id).run.status === "cancelled") return;
+          if (!this.alive(r.run.id)) return;
           let result: unknown;
-          if (call.name === "read_contract")
+          if (call.name === "read_contract") {
+            this.toolEvent(r, "read_contract", "started", attempt);
             result = { contract: context.contract };
-          else if (call.name === "read_current_source")
+            this.toolEvent(r, "read_contract", "succeeded", attempt);
+          } else if (call.name === "read_current_source") {
+            this.toolEvent(r, "read_current_source", "started", attempt);
             result = { source: context.source };
-          else if (call.name === "patch_candidate") {
-            const path = String(call.args.path ?? "");
+            this.toolEvent(r, "read_current_source", "succeeded", attempt);
+          } else if (call.name === "patch_candidate") {
+            this.toolEvent(r, "patch_candidate", "started", attempt);
+            this.toolEvent(
+              r,
+              "patch_candidate",
+              "failed",
+              attempt,
+              "未授权工具：patch_candidate 不在当前执行阶段开放",
+            );
             throw new Error(
-              path.includes("evolution") || path.startsWith("src/")
-                ? "禁止修改受保护路径或超出候选可写范围"
-                : "未授权工具：patch_candidate 不在当前执行阶段开放",
+              "未授权工具：patch_candidate 不在当前执行阶段开放",
             );
           } else if (call.name === "submit_candidate") {
             submitted = true;
-            this.endStep(r, generateId, "succeeded");
-    if (r.candidates >= this.limits.candidates)
+            this.toolEvent(r, "submit_candidate", "started", attempt);
+            this.endStep(
+              r,
+              generateId,
+              "succeeded",
+              undefined,
+              "submit_candidate",
+            );
+            if (r.candidates >= this.limits.candidates)
               throw new Error(`已达到 ${this.limits.candidates} 个候选上限`);
             r.candidates++;
             this.save(r);
@@ -749,16 +792,53 @@ export class Evolution {
                 target,
                 signal,
                 (label) => {
+                  if (!this.alive(r.run.id)) return;
                   if (label === "构建候选")
-                    buildId = this.beginStep(r, label, attempt);
+                    buildId = this.beginStep(
+                      r,
+                      label,
+                      attempt,
+                      "build_candidate",
+                    );
                   else if (label === "验证行为") {
-                    if (buildId) this.endStep(r, buildId, "succeeded");
-                    validateId = this.beginStep(r, label, attempt);
+                    if (buildId)
+                      this.endStep(
+                        r,
+                        buildId,
+                        "succeeded",
+                        undefined,
+                        "build_candidate",
+                      );
+                    validateId = this.beginStep(
+                      r,
+                      label,
+                      attempt,
+                      "validate_candidate",
+                    );
                   } else this.beginStep(r, label, attempt);
                 },
               );
-              if (buildId) this.endStep(r, buildId, "succeeded");
-              if (validateId) this.endStep(r, validateId, "succeeded");
+              if (!this.alive(r.run.id)) {
+                r.versionId = undefined;
+                return;
+              }
+              if (buildId)
+                this.endStep(
+                  r,
+                  buildId,
+                  "succeeded",
+                  undefined,
+                  "build_candidate",
+                );
+              if (validateId)
+                this.endStep(
+                  r,
+                  validateId,
+                  "succeeded",
+                  undefined,
+                  "validate_candidate",
+                );
+              this.toolEvent(r, "submit_candidate", "succeeded", attempt);
               this.save(r);
               this.db
                 .prepare(
@@ -774,15 +854,32 @@ export class Evolution {
                   }),
                 );
             } catch (error) {
+              if (!this.alive(r.run.id)) {
+                r.versionId = undefined;
+                return;
+              }
               signal.throwIfAborted();
-              if (this.get(r.run.id).run.status === "cancelled") return;
               const diagnostic =
                 error instanceof Error ? error.message : "候选失败";
               result = { error: diagnostic };
               r.versionId = undefined;
-              if (buildId) this.endStep(r, buildId, "failed", diagnostic);
+              if (buildId)
+                this.endStep(r, buildId, "failed", diagnostic, "build_candidate");
               if (validateId)
-                this.endStep(r, validateId, "failed", diagnostic);
+                this.endStep(
+                  r,
+                  validateId,
+                  "failed",
+                  diagnostic,
+                  "validate_candidate",
+                );
+              this.toolEvent(
+                r,
+                "submit_candidate",
+                "failed",
+                attempt,
+                diagnostic,
+              );
               this.db
                 .prepare(
                   "INSERT INTO evolution_candidates(runId,body) VALUES(?,?)",
@@ -798,7 +895,10 @@ export class Evolution {
                 );
             }
             if (r.versionId) {
-              if (this.get(r.run.id).run.status === "cancelled") return;
+              if (!this.alive(r.run.id)) {
+                r.versionId = undefined;
+                return;
+              }
               r.run = {
                 ...this.base(r),
                 status: "awaiting-apply",
