@@ -6,6 +6,16 @@ export type {
   WorkflowDefinition,
   WorkflowDecision,
   Workflow,
+  ExtensionContribution,
+  ExtensionSummary,
+  ExtensionCapability,
+  BeforeCommitInput,
+  BeforeCommitResult,
+  TaskEvent,
+  TaskEventKind,
+  ScheduleRegistration,
+  MissPolicy,
+  Plugin,
 } from "../server/business/contracts.js";
 import type {
   Task,
@@ -13,6 +23,7 @@ import type {
   WorkflowDecision,
   WorkflowId,
   Field,
+  ExtensionSummary,
 } from "../server/business/contracts.js";
 export type Command = {
   operationId: string;
@@ -42,6 +53,7 @@ export type Composition = {
     at: string;
   };
   retainedFields: Field[];
+  extensions: ExtensionSummary;
   history: {
     id: number;
     workflowId: WorkflowId;

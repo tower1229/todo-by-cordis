@@ -19,6 +19,15 @@ import {
   type WorkflowDefinition,
   type WorkflowId,
 } from "../shared/contracts.js";
+import {
+  emptyContribution,
+  type BeforeCommitResult,
+  type ExtensionContribution,
+  type TaskEvent,
+  type TaskEventKind,
+} from "./business/contracts.js";
+import { ExtensionRegistry } from "./extensions/registry.js";
+import { OnlineScheduler } from "./extensions/scheduler.js";
 
 function text(value: unknown, max: number, required = false) {
   if (
@@ -51,6 +60,9 @@ export class Workspace {
   private publishing = false;
   private retiring = new Set<Promise<void>>();
   private launch: (version: Version) => Promise<RuntimeLike>;
+  private readonly extensions = new ExtensionRegistry();
+  private readonly scheduler = new OnlineScheduler();
+  private diagnosticsNotes: string[] = [];
   private constructor(
     filename: string,
     private options: Options,
@@ -230,8 +242,14 @@ export class Workspace {
     const runtime = await this.release.start(version);
     try {
       await runtime.invoke("describe");
+      if (this.runtime && this.runtime !== runtime) {
+        await this.teardownExtensions(this.runtime);
+        this.runtime.onFailure = undefined;
+        await this.runtime.close();
+      }
       this.runtime = runtime;
       this.bind(runtime);
+      await this.setupExtensions(runtime, version.pluginId);
       this.status = "ready";
       return runtime;
     } catch (error) {
@@ -243,18 +261,156 @@ export class Workspace {
     runtime.onFailure = () => {
       if (this.stopped || this.runtime !== runtime) return;
       this.status = "unavailable";
+      this.scheduler.cancelAll();
       if (!this.automaticRestartUsed) {
         this.automaticRestartUsed = true;
         void this.restart(false);
       }
     };
   }
+  private async invokeOptional<T>(
+    runtime: RuntimeLike,
+    method: string,
+    data?: unknown,
+  ): Promise<T | undefined> {
+    try {
+      return await runtime.invoke<T>(method, data);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        /Unknown service method/.test(error.message)
+      )
+        return undefined;
+      throw error;
+    }
+  }
+  private async setupExtensions(runtime: RuntimeLike, pluginId: string) {
+    const contribution =
+      (await this.invokeOptional<ExtensionContribution>(
+        runtime,
+        "contribute",
+      )) ?? emptyContribution();
+    this.extensions.install(pluginId, contribution);
+    const life = contribution.lifecycle;
+    if (life?.activate)
+      await this.invokeOptional(runtime, "lifecycleActivate", {});
+    if (life?.ready) await this.invokeOptional(runtime, "lifecycleReady", {});
+    this.armSchedules(runtime);
+  }
+  private async teardownExtensions(runtime: RuntimeLike) {
+    this.scheduler.cancelAll();
+    const life = this.extensions.current().lifecycle;
+    if (life?.quiesce)
+      await this.invokeOptional(runtime, "lifecycleQuiesce", {}).catch(
+        () => undefined,
+      );
+    if (life?.dispose)
+      await this.invokeOptional(runtime, "lifecycleDispose", {}).catch(
+        () => undefined,
+      );
+    this.extensions.clear();
+    this.diagnosticsNotes = [];
+  }
+  private armSchedules(runtime: RuntimeLike) {
+    this.scheduler.arm(this.extensions.schedules(), {
+      fire: async (job) => {
+        if (this.runtime !== runtime || this.status !== "ready") return;
+        try {
+          const task = this.read(job.onFire.taskId);
+          await this.command({
+            type: "action",
+            taskId: task.id,
+            actionId: job.onFire.commandId,
+            input: job.onFire.input ?? {},
+            expectedRevision: task.revision,
+            operationId: `schedule:${job.dedupeKey}:${job.at}`,
+            compositionRevision: this.current().revision,
+          });
+        } catch {
+          // Online fire is best-effort; failures do not take down the workspace.
+        }
+      },
+    });
+  }
+  private annotateDiagnostic(note: string) {
+    if (!this.extensions.hasDiagnostics()) return;
+    const trimmed = note.slice(0, 200);
+    this.diagnosticsNotes = [...this.diagnosticsNotes, trimmed].slice(-20);
+  }
+  diagnostics() {
+    return [...this.diagnosticsNotes];
+  }
+  extensionRegistry() {
+    return this.extensions;
+  }
+  schedulerState() {
+    return { armed: this.scheduler.armedCount() };
+  }
+  private async runBeforeCommit(
+    runtime: RuntimeLike,
+    task: Task,
+    draft: Task,
+    action: string,
+    input: Record<string, string>,
+    decision: Extract<WorkflowDecision, { kind: "commit" }>,
+  ) {
+    if (!this.extensions.hasBeforeCommit()) return;
+    const result = await this.invokeOptional<BeforeCommitResult>(
+      runtime,
+      "beforeCommit",
+      { task, draft, action, input, decision },
+    );
+    if (!result)
+      throw new AppError(
+        "INVALID_EXTENSION",
+        "已声明 beforeCommit 但未实现方法",
+      );
+    if (result.kind === "reject")
+      throw new AppError("ACTION_REJECTED", result.message);
+    if (result.kind !== "ok")
+      throw new AppError("INVALID_EXTENSION", "beforeCommit 返回无效结果");
+    if (result.fields) {
+      if (Object.values(result.fields).some((v) => typeof v !== "string"))
+        throw new AppError("INVALID_EXTENSION", "beforeCommit 字段无效");
+      draft.fields = result.fields;
+    }
+    if (result.state) {
+      if (!this.composition().workflow.states[result.state])
+        throw new AppError("INVALID_EXTENSION", "beforeCommit 状态无效");
+      draft.state = result.state;
+    }
+  }
+  private async dispatchTaskEvent(
+    runtime: RuntimeLike,
+    kind: TaskEventKind,
+    task: Task,
+    changedPaths: string[],
+  ) {
+    if (!this.extensions.subscribedEvents().has(kind)) return;
+    const event: TaskEvent = {
+      kind,
+      task,
+      changedPaths,
+      revision: task.revision,
+      source: this.extensions.activePluginId() ?? "workflow",
+    };
+    try {
+      await runtime.invoke("onTaskEvent", event);
+    } catch (error) {
+      this.annotateDiagnostic(
+        error instanceof Error ? error.message : "onTaskEvent failed",
+      );
+    }
+  }
   restart(manual = true): Promise<void> {
     if (this.recovering) return this.recovering;
     this.status = "recovering";
     this.recovering = this.serial(async () => {
       if (manual) this.automaticRestartUsed = false;
-      await this.runtime?.close();
+      if (this.runtime) {
+        await this.teardownExtensions(this.runtime).catch(() => undefined);
+        await this.runtime.close();
+      }
       this.runtime = undefined;
       const pending = this.activationPending();
       const active = this.release.get(this.current().versionId);
@@ -320,6 +476,7 @@ export class Workspace {
         .flatMap(
           (v) => (v.definition as WorkflowDefinition | null)?.fields ?? [],
         ),
+      extensions: this.extensions.summarize(),
       history: this.db
         .prepare(
           "SELECT id,workflowId,versionId,name,createdAt,pausedMs,preparationMs FROM releases ORDER BY id DESC LIMIT 20",
@@ -424,6 +581,8 @@ export class Workspace {
       const now = new Date().toISOString();
       let task: Task;
       let decision: WorkflowDecision | undefined;
+      let eventKind: TaskEventKind = "task.updated";
+      let changedPaths: string[] = [];
       if (command.type === "create") {
         task = {
           id: randomUUID(),
@@ -436,6 +595,8 @@ export class Workspace {
           deletedAt: null,
           fields: {},
         };
+        eventKind = "task.created";
+        changedPaths = ["title", "description", "state"];
       } else {
         task = this.read(command.taskId ?? "");
         if (task.revision !== command.expectedRevision)
@@ -449,9 +610,15 @@ export class Workspace {
         if (command.type === "edit") {
           task.title = text(command.title, 200, true);
           task.description = text(command.description ?? "", 5000);
-        } else if (command.type === "delete") task.deletedAt = now;
-        else if (command.type === "restore") task.deletedAt = null;
-        else if (command.type === "action") {
+          changedPaths = ["title", "description"];
+        } else if (command.type === "delete") {
+          task.deletedAt = now;
+          eventKind = "task.deleted";
+          changedPaths = ["deletedAt"];
+        } else if (command.type === "restore") {
+          task.deletedAt = null;
+          changedPaths = ["deletedAt"];
+        } else if (command.type === "action") {
           if (this.status !== "ready" || !this.runtime)
             throw new AppError(
               "RUNTIME_UNAVAILABLE",
@@ -460,12 +627,17 @@ export class Workspace {
             );
           const runtime = this.runtime;
           const definition = this.composition().workflow;
-          if (
-            !definition.actions.some(
+          const registered = this.extensions.commands();
+          const allowed =
+            definition.actions.some(
               (a) => a.id === command.actionId && a.from.includes(task.state),
-            )
-          )
-            throw new AppError("INVALID_ACTION", "当前动作不可用");
+            ) ||
+            registered.some(
+              (a) =>
+                a.id === command.actionId &&
+                (!a.from || a.from.includes(task.state)),
+            );
+          if (!allowed) throw new AppError("INVALID_ACTION", "当前动作不可用");
           const input = command.input ?? {};
           if (
             Object.values(input).some(
@@ -494,13 +666,39 @@ export class Workspace {
             Object.values(decision.fields).some((v) => typeof v !== "string")
           )
             throw new AppError("INVALID_DECISION", "流程返回了无效结果");
-          task.state = decision.state;
-          task.fields = decision.fields;
+          const draft: Task = {
+            ...task,
+            state: decision.state,
+            fields: decision.fields,
+          };
+          await this.runBeforeCommit(
+            runtime,
+            task,
+            draft,
+            command.actionId!,
+            input,
+            decision,
+          );
+          if (runtime !== this.runtime || this.status !== "ready")
+            throw new AppError(
+              "RUNTIME_CHANGED",
+              "运行环境已变化，请重试",
+              503,
+            );
+          task.state = draft.state;
+          task.fields = draft.fields;
+          decision = {
+            kind: "commit",
+            state: draft.state,
+            fields: draft.fields,
+          };
+          changedPaths = ["state", "fields"];
         } else throw new AppError("INVALID_COMMAND", "未知操作");
         task.revision++;
         task.updatedAt = now;
       }
       const result = decision ? { task, decision } : { task };
+      const runtime = this.runtime;
       this.transaction(() => {
         this.save(task);
         this.db
@@ -512,6 +710,8 @@ export class Workspace {
           );
         complete?.();
       });
+      if (runtime)
+        await this.dispatchTaskEvent(runtime, eventKind, task, changedPaths);
       return result;
     });
   }
@@ -631,15 +831,28 @@ export class Workspace {
             this.automaticRestartUsed = false;
             if (old && old !== priorRuntime) {
               old.onFailure = undefined;
-              const cleanup = old
-                .close()
-                .finally(() => this.retiring.delete(cleanup));
+              const cleanup = (async () => {
+                await this.teardownExtensions(old).catch(() => undefined);
+                await old.close();
+              })().finally(() => this.retiring.delete(cleanup));
               this.retiring.add(cleanup);
             }
             this.options.checkpoint?.("installed");
           },
-          beforeOpenWrites: () =>
-            this.options.beforeOpenWrites?.() ?? Promise.resolve(),
+          beforeOpenWrites: async () => {
+            if (priorRuntime && priorRuntime !== this.runtime) {
+              await this.teardownExtensions(priorRuntime).catch(() => undefined);
+            } else {
+              this.scheduler.cancelAll();
+              this.extensions.clear();
+            }
+            if (this.runtime)
+              await this.setupExtensions(
+                this.runtime,
+                prepared.version.pluginId,
+              );
+            await this.options.beforeOpenWrites?.();
+          },
           openWrites: () => {
             this.options.checkpoint?.("ready-check");
             this.status = "ready";
@@ -672,11 +885,19 @@ export class Workspace {
             });
             if (this.runtime && this.runtime !== priorRuntime) {
               this.runtime.onFailure = undefined;
+              const failedRuntime = this.runtime;
               this.runtime = undefined;
+              this.scheduler.cancelAll();
+              this.extensions.clear();
+              const cleanup = failedRuntime
+                .close()
+                .finally(() => this.retiring.delete(cleanup));
+              this.retiring.add(cleanup);
             }
             if (priorRuntime) {
               this.runtime = priorRuntime;
               this.bind(priorRuntime);
+              await this.setupExtensions(priorRuntime, restored.pluginId);
               this.status = "ready";
               return;
             }
@@ -697,7 +918,10 @@ export class Workspace {
   async close() {
     this.stopped = true;
     await this.queue;
-    await this.runtime?.close();
+    if (this.runtime) {
+      await this.teardownExtensions(this.runtime).catch(() => undefined);
+      await this.runtime.close();
+    }
     await Promise.all(this.retiring);
     this.db.close();
   }

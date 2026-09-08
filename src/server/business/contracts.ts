@@ -39,3 +39,137 @@ export type Workflow = {
     input: Record<string, string>,
   ): WorkflowDecision;
 };
+
+export const missPolicies = ["skip", "run-once"] as const;
+export type MissPolicy = (typeof missPolicies)[number];
+
+export const taskEventKinds = [
+  "task.created",
+  "task.updated",
+  "task.deleted",
+] as const;
+export type TaskEventKind = (typeof taskEventKinds)[number];
+
+export const extensionCapabilityStatuses = [
+  "active",
+  "stub",
+  "declared",
+] as const;
+export type ExtensionCapabilityStatus =
+  (typeof extensionCapabilityStatuses)[number];
+
+export const EXTENSIONS_CONTRACT = "extensions/1" as const;
+
+export type CommandRegistration = {
+  id: string;
+  label: string;
+  from?: string[];
+};
+
+export type ScheduleRegistration = {
+  id: string;
+  /** Absolute ISO-8601 fire time (online scheduler only). */
+  at: string;
+  timezone?: string;
+  dedupeKey: string;
+  onFire: {
+    type: "action";
+    commandId: string;
+    taskId: string;
+    input?: Record<string, string>;
+  };
+  missPolicy: MissPolicy;
+};
+
+export type LifecycleContribution = {
+  activate?: boolean;
+  ready?: boolean;
+  quiesce?: boolean;
+  dispose?: boolean;
+};
+
+export type UiSlotRegistration = {
+  id: string;
+  slot: string;
+  order?: number;
+};
+
+export type QueryFilterRegistration = {
+  id: string;
+  label: string;
+};
+
+export type QuerySortRegistration = {
+  id: string;
+  label: string;
+  primary?: boolean;
+};
+
+export type ServiceRegistration = {
+  id: string;
+  version: string;
+};
+
+export type ExtensionContribution = {
+  commands?: CommandRegistration[];
+  fields?: Field[];
+  beforeCommit?: boolean;
+  events?: TaskEventKind[];
+  schedules?: ScheduleRegistration[];
+  lifecycle?: LifecycleContribution;
+  uiSlots?: UiSlotRegistration[];
+  queryFilters?: QueryFilterRegistration[];
+  querySorts?: QuerySortRegistration[];
+  diagnostics?: boolean;
+  services?: ServiceRegistration[];
+};
+
+export type BeforeCommitInput = {
+  task: Task;
+  draft: Task;
+  action: string;
+  input: Record<string, string>;
+  decision: Extract<WorkflowDecision, { kind: "commit" }>;
+};
+
+export type BeforeCommitResult =
+  | { kind: "ok"; fields?: Record<string, string>; state?: string }
+  | { kind: "reject"; message: string };
+
+export type TaskEvent = {
+  kind: TaskEventKind;
+  task: Task;
+  changedPaths: string[];
+  revision: number;
+  source: string;
+};
+
+export type ExtensionCapability = {
+  interfaceId: string;
+  status: ExtensionCapabilityStatus;
+  providerId: string;
+  count: number;
+};
+
+export type ExtensionSummary = {
+  contractVersion: typeof EXTENSIONS_CONTRACT | null;
+  capabilities: ExtensionCapability[];
+};
+
+export const emptyContribution = (): ExtensionContribution => ({});
+
+export type Plugin = {
+  describe(): WorkflowDefinition;
+  decide(data: {
+    task: Task;
+    action: string;
+    input: Record<string, string>;
+  }): WorkflowDecision;
+  contribute?(): ExtensionContribution;
+  lifecycleActivate?(data?: Record<string, never>): void;
+  lifecycleReady?(data?: Record<string, never>): void;
+  lifecycleQuiesce?(data?: Record<string, never>): void;
+  lifecycleDispose?(data?: Record<string, never>): void;
+  beforeCommit?(data: BeforeCommitInput): BeforeCommitResult;
+  onTaskEvent?(data: TaskEvent): void;
+};
