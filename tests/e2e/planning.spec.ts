@@ -170,6 +170,30 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   const candidate = afterExperience.candidates.find(
     (c: { passed: boolean }) => c.passed,
   );
+  const badHash = await request.post("/api/assistant/commands", {
+    data: {
+      type: "apply",
+      operationId: "browser-apply-bad-hash",
+      runId: ready.run.id,
+      candidateId: candidate.id,
+      evidenceHash: "tampered-evidence",
+      compositionRevision: before.revision,
+    },
+  });
+  expect(badHash.status()).toBe(409);
+  const badRevision = await request.post("/api/assistant/commands", {
+    data: {
+      type: "apply",
+      operationId: "browser-apply-bad-revision",
+      runId: ready.run.id,
+      candidateId: candidate.id,
+      evidenceHash: candidate.evidenceHash,
+      compositionRevision: before.revision + 99,
+    },
+  });
+  expect(badRevision.status()).toBe(409);
+  expect(await (await request.get("/api/composition")).json()).toEqual(before);
+
   const applyBody = {
     type: "apply",
     operationId: "browser-apply-1",
@@ -182,10 +206,12 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
     await request.post("/api/assistant/commands", { data: applyBody })
   ).json();
   expect(["applying", "succeeded"]).toContain(applying.run.status);
-  const replay = await (
-    await request.post("/api/assistant/commands", { data: applyBody })
-  ).json();
-  expect(replay).toEqual(applying);
+  if (applying.run.status === "applying") {
+    const mid = await (
+      await request.post("/api/assistant/commands", { data: applyBody })
+    ).json();
+    expect(mid).toEqual(applying);
+  }
   await expect
     .poll(
       async () =>
@@ -196,4 +222,8 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   const composition = await (await request.get("/api/composition")).json();
   expect(composition.versionId).toBe(afterExperience.run.versionId);
   expect(composition.revision).toBeGreaterThan(before.revision);
+  const finalReplay = await (
+    await request.post("/api/assistant/commands", { data: applyBody })
+  ).json();
+  expect(finalReplay.run.status).toBe("succeeded");
 });

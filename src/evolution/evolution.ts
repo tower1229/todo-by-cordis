@@ -82,6 +82,7 @@ type RecordRun = {
   versionId?: string;
   eventSequence?: number;
   applyRevision?: number;
+  applyOperationId?: string;
 };
 const terminal = (status: string) =>
   [
@@ -294,6 +295,7 @@ export class Evolution {
     let record: RecordRun;
     let work: "plan" | "execute" | "apply" | undefined;
     let applyOp: string | undefined;
+    let refreshApplyReceipt = false;
     if (
       command.type === "request" ||
       command.type === "answer" ||
@@ -379,9 +381,26 @@ export class Evolution {
     } else if (command.type === "cancel") {
       record = this.get(command.runId);
       if (!terminal(record.run.status) || record.run.status === "blocked") {
+        const wasApplying = record.run.status === "applying";
         if (this.active?.id === record.run.id)
           this.active.controller.abort(new Error("已取消"));
-        record.run = { ...this.base(record), status: "cancelled" };
+        if (wasApplying) {
+          refreshApplyReceipt = true;
+          const versionId = record.versionId ?? record.run.versionId;
+          if (versionId && this.domain.isActiveVersion(versionId)) {
+            record.run = {
+              ...this.base(record),
+              status: "succeeded",
+              summary: "候选已正式应用（按发布事实恢复）",
+              steps: this.steps(record),
+              versionId,
+            };
+          } else {
+            record.run = { ...this.base(record), status: "cancelled" };
+          }
+        } else {
+          record.run = { ...this.base(record), status: "cancelled" };
+        }
       }
     } else if (command.type === "start") {
       record = this.get(command.runId);
@@ -452,6 +471,7 @@ export class Evolution {
       record.target = target;
       record.versionId = candidate.versionId;
       record.applyRevision = command.compositionRevision;
+      record.applyOperationId = command.operationId;
       record.run = {
         ...this.base(record),
         status: "applying",
@@ -490,7 +510,31 @@ export class Evolution {
       throw error;
     }
     if (work) this.start(record, work, applyOp);
+    if (refreshApplyReceipt && record.applyOperationId)
+      this.updateReceipt(record.applyOperationId, this.snapshot(record.run));
     return receipt;
+  }
+  private updateReceipt(operationId: string, snapshot: AssistantSnapshot) {
+    this.db
+      .prepare("UPDATE evolution_operations SET receipt=? WHERE id=?")
+      .run(JSON.stringify(snapshot), operationId);
+  }
+  private finishApply(
+    record: RecordRun,
+    versionId: string,
+    summary: string,
+    applyOperationId?: string,
+  ) {
+    record.run = {
+      ...this.base(record),
+      status: "succeeded",
+      summary,
+      steps: this.steps(record),
+      versionId,
+    };
+    this.save(record);
+    if (applyOperationId)
+      this.updateReceipt(applyOperationId, this.snapshot(record.run));
   }
   private candidateOf(runId: string, candidateId: string): CandidateAttempt {
     const row = this.db
@@ -526,7 +570,21 @@ export class Evolution {
           await this.execute(record, controller.signal);
         else {
           const current = this.get(record.run.id);
-          if (current.run.status !== "applying") return;
+          if (current.run.status !== "applying") {
+            const versionId = current.versionId ?? current.run.versionId;
+            if (
+              versionId &&
+              this.domain.isActiveVersion(versionId) &&
+              current.run.status !== "succeeded"
+            )
+              this.finishApply(
+                current,
+                versionId,
+                "候选已正式应用（按发布事实恢复）",
+                applyOperationId ?? current.applyOperationId,
+              );
+            return;
+          }
           const plan =
             "plan" in current.run
               ? current.run.plan
@@ -545,47 +603,51 @@ export class Evolution {
             controller.signal,
           );
           const after = this.get(record.run.id);
-          if (after.run.status !== "applying") return;
-          if (!this.domain.isActiveVersion(versionId))
+          if (!this.domain.isActiveVersion(versionId)) {
+            if (after.run.status !== "applying") return;
             throw new Error("应用提交后运行未就绪");
-          after.run = {
-            ...this.base(after),
-            status: "succeeded",
-            summary: "候选已正式应用",
-            steps: this.steps(after),
+          }
+          this.finishApply(
+            after,
             versionId,
-          };
-          this.save(after);
+            after.run.status === "applying"
+              ? "候选已正式应用"
+              : "候选已正式应用（按发布事实恢复）",
+            applyOperationId,
+          );
         }
       } catch (error) {
         const persisted = this.get(record.run.id);
-        if (kind === "apply" && persisted.run.status === "applying") {
+        if (kind === "apply") {
           const versionId = persisted.versionId ?? persisted.run.versionId;
+          const opId = applyOperationId ?? persisted.applyOperationId;
           if (versionId && this.domain.isActiveVersion(versionId)) {
-            persisted.run = {
-              ...this.base(persisted),
-              status: "succeeded",
-              summary: "候选已正式应用",
-              steps: this.steps(persisted),
-              versionId,
-            };
-            this.save(persisted);
+            if (persisted.run.status !== "succeeded")
+              this.finishApply(
+                persisted,
+                versionId,
+                "候选已正式应用（按发布事实恢复）",
+                opId,
+              );
             return;
           }
-          const plan =
-            "plan" in persisted.run
-              ? persisted.run.plan
-              : (persisted.plan as InvestigatedPlan);
-          record.run = {
-            ...this.base(persisted),
-            status: "awaiting-apply",
-            plan: plan as InvestigatedPlan,
-            steps: this.steps(persisted),
-            summary: `${plan && "outcome" in plan ? plan.outcome : "候选"}（候选已验证，尚未应用；上次应用未提交）`,
-            versionId,
-          };
-          this.save(record);
-          return;
+          if (persisted.run.status === "applying") {
+            const plan =
+              "plan" in persisted.run
+                ? persisted.run.plan
+                : (persisted.plan as InvestigatedPlan);
+            record.run = {
+              ...this.base(persisted),
+              status: "awaiting-apply",
+              plan: plan as InvestigatedPlan,
+              steps: this.steps(persisted),
+              summary: `${plan && "outcome" in plan ? plan.outcome : "候选"}（候选已验证，尚未应用；上次应用未提交）`,
+              versionId,
+            };
+            this.save(record);
+            if (opId) this.updateReceipt(opId, this.snapshot(record.run));
+            return;
+          }
         }
         if (!terminal(persisted.run.status)) {
           const message = error instanceof Error ? error.message : "运行失败";

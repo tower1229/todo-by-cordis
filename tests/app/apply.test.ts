@@ -150,7 +150,8 @@ test("A07: apply binds candidate evidence and base composition; mismatch and rep
     started.run &&
       (started.run.status === "applying" || started.run.status === "succeeded"),
   );
-  assert.deepEqual(await e.command(apply), started);
+  if (started.run?.status === "applying")
+    assert.deepEqual(await e.command(apply), started);
   await assert.rejects(
     e.command({ ...apply, evidenceHash: "other" }),
     /操作标识已用于其他请求/,
@@ -164,13 +165,17 @@ test("A07: apply binds candidate evidence and base composition; mismatch and rep
   assert.match(succeeded.summary, /已应用|正式/);
   assert.equal(succeeded.versionId, done.versionId);
 
+  const replayed = await e.command(apply);
+  assert.equal(replayed.run?.status, "succeeded");
+  assert.equal(replayed.run?.versionId, done.versionId);
+
   const lost = await app.request("/api/assistant/commands", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(apply),
   });
   assert.equal(lost.status, 200);
-  assert.deepEqual(await lost.json(), started);
+  assert.equal((await lost.json()).run.status, "succeeded");
 
   const parsed = parseAssistantCommand(apply);
   assert.equal(parsed.type, "apply");
@@ -212,6 +217,139 @@ test("apply failure before commit keeps the old composition and returns to await
   );
   const run = await settle(broken);
   assert.equal(run.status, "awaiting-apply");
+  assert.equal(w.composition().versionId, before.versionId);
+  assert.equal(w.composition().revision, before.revision);
+  const replay = await broken.command({
+    type: "apply",
+    operationId: "apply-fail",
+    runId: done.id,
+    candidateId: candidate.id,
+    evidenceHash: candidate.evidenceHash!,
+    compositionRevision: before.revision,
+  });
+  assert.equal(replay.run?.status, "awaiting-apply");
+  assert.equal(w.composition().versionId, before.versionId);
+});
+
+test("cancel during apply after commit keeps succeeded by publish fact", async (t) => {
+  const { w, before, done, candidate } = await awaitingApply(t);
+  const domain = new EvolutionDomain(w);
+  let releaseGate!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  let committed = false;
+  const e = new Evolution(w.db, new ExecutionDriver(new PlanningDriver()), {
+    context: () => domain.context(),
+    planningInstruction: domain.planningInstruction,
+    planningTools: domain.planningTools,
+    read: domain.read.bind(domain),
+    parse: domain.parse.bind(domain),
+    target: domain.target.bind(domain),
+    check: domain.check.bind(domain),
+    isActiveVersion: domain.isActiveVersion.bind(domain),
+    generation: domain.generation.bind(domain),
+    candidate: domain.candidate.bind(domain),
+    experience: domain.experience.bind(domain),
+    apply: async (versionId, target, revision, operationId, complete, signal) => {
+      await domain.apply(versionId, target, revision, operationId, complete, signal);
+      committed = true;
+      await gate;
+      signal.throwIfAborted();
+    },
+  });
+  t.after(async () => {
+    releaseGate();
+    await e.close();
+  });
+  await e.command({
+    type: "apply",
+    operationId: "apply-hold",
+    runId: done.id,
+    candidateId: candidate.id,
+    evidenceHash: candidate.evidenceHash!,
+    compositionRevision: before.revision,
+  });
+  for (let i = 0; i < 200; i++) {
+    if (committed) break;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  assert.equal(committed, true);
+  assert.equal(w.composition().versionId, done.versionId);
+  const cancelled = await e.command({
+    type: "cancel",
+    operationId: "cancel-after-commit",
+    runId: done.id,
+  });
+  assert.equal(cancelled.run?.status, "succeeded");
+  releaseGate();
+  const settled = await settle(e, "succeeded");
+  assert.equal(settled.status, "succeeded");
+  assert.equal(w.composition().versionId, done.versionId);
+  const replay = await e.command({
+    type: "apply",
+    operationId: "apply-hold",
+    runId: done.id,
+    candidateId: candidate.id,
+    evidenceHash: candidate.evidenceHash!,
+    compositionRevision: before.revision,
+  });
+  assert.equal(replay.run?.status, "succeeded");
+});
+
+test("cancel during apply before commit leaves cancelled and old composition", async (t) => {
+  const { w, before, done, candidate } = await awaitingApply(t);
+  const domain = new EvolutionDomain(w);
+  let releaseGate!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  let entered = false;
+  const e = new Evolution(w.db, new ExecutionDriver(new PlanningDriver()), {
+    context: () => domain.context(),
+    planningInstruction: domain.planningInstruction,
+    planningTools: domain.planningTools,
+    read: domain.read.bind(domain),
+    parse: domain.parse.bind(domain),
+    target: domain.target.bind(domain),
+    check: domain.check.bind(domain),
+    isActiveVersion: domain.isActiveVersion.bind(domain),
+    generation: domain.generation.bind(domain),
+    candidate: domain.candidate.bind(domain),
+    experience: domain.experience.bind(domain),
+    apply: async (versionId, target, revision, operationId, complete, signal) => {
+      entered = true;
+      await gate;
+      signal.throwIfAborted();
+      await domain.apply(versionId, target, revision, operationId, complete, signal);
+    },
+  });
+  t.after(async () => {
+    releaseGate();
+    await e.close();
+  });
+  await e.command({
+    type: "apply",
+    operationId: "apply-pre-cancel",
+    runId: done.id,
+    candidateId: candidate.id,
+    evidenceHash: candidate.evidenceHash!,
+    compositionRevision: before.revision,
+  });
+  for (let i = 0; i < 200; i++) {
+    if (entered) break;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  assert.equal(entered, true);
+  const cancelled = await e.command({
+    type: "cancel",
+    operationId: "cancel-before-commit",
+    runId: done.id,
+  });
+  assert.equal(cancelled.run?.status, "cancelled");
+  releaseGate();
+  await e.close();
+  assert.equal((await e.observe(done.id)).run?.status, "cancelled");
   assert.equal(w.composition().versionId, before.versionId);
   assert.equal(w.composition().revision, before.revision);
 });

@@ -1,6 +1,6 @@
 # 自迭代 Agent 重构详细设计
 
-日期：2026-09-07。状态：调查与执行进度已部分落地；候选体验与正式 apply 未验收。
+日期：2026-09-07。状态：调查、执行进度、候选体验（隔离探针）与绑定式 apply 已有公开命令与测试验收；体验为临时 Runtime 探针而非完整独立数据平面；持续迭代与恢复主线另票。
 
 本文是当前 Agent 重构的实施依据，覆盖原 PRD、V1 工程方案和 V2 中冲突的 Agent 职责、执行策略可修改性、确认流程与生成范围。其他未冲突的本地单所有者、四个深模块、数据保留和极简界面约束继续有效。决策依据见 [ADR 0001](../adr/0001-evolution-scope-and-application-confirmation.md)、[ADR 0002](../adr/0002-protect-independent-evolution-controls.md)、[ADR 0003](../adr/0003-complete-capability-gaps-within-one-change.md)、[ADR 0004](../adr/0004-freeze-request-and-show-execution-progress.md)；术语见 [CONTEXT.md](../../CONTEXT.md)。
 
