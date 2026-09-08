@@ -137,6 +137,10 @@ export class Evolution {
       ) {
         record.run = {
           ...this.base(record),
+          ...(["awaiting-confirmation"].includes(record.run.status) &&
+          "plan" in record.run
+            ? { historicalPlan: record.run.plan }
+            : {}),
           status: "interrupted",
           message:
             "旧计划须重新调查或宿主重启，未完成的运行已中断。请重新提出需求。",
@@ -145,8 +149,7 @@ export class Evolution {
       } else if (record.run.status === "applying") {
         const versionId = record.versionId ?? record.run.versionId;
         const ready = !!versionId && this.domain.isReadyVersion(versionId);
-        const committed =
-          !!versionId && this.domain.isActiveVersion(versionId);
+        const committed = !!versionId && this.domain.isActiveVersion(versionId);
         const plan =
           "plan" in record.run
             ? (record.run as Extract<AssistantRun, { status: "applying" }>).plan
@@ -178,6 +181,7 @@ export class Evolution {
   }
   private base(r: RecordRun) {
     return {
+      historicalPlan: r.run.historicalPlan,
       diagnostics: [
         ...new Set([
           ...(r.run.diagnostics ?? []),
@@ -595,11 +599,7 @@ export class Evolution {
       applyOp = command.operationId;
       work = "apply";
     } else {
-      throw new AppError(
-        "CONFIRM_DISABLED",
-        "旧确认不能授予执行或应用授权，请使用开始执行",
-        409,
-      );
+      throw new AppError("INVALID_INPUT", "AI 请求格式无效");
     }
     this.db.exec("BEGIN IMMEDIATE");
     let receipt: AssistantSnapshot;

@@ -1,6 +1,6 @@
 // The host owns routing, plan identity and execution state. The UI never infers
 // plugin intent from keywords or advances execution using elapsed time.
-// Legacy task/plugin variants remain readable in persisted historical plans.
+// Historical plans are retained as records, not executable routing commands.
 export type AssistantRoute =
   | { kind: "application" }
   | { kind: "task" }
@@ -96,6 +96,7 @@ export type RequestRevision = {
   createdAt: string;
 };
 type Run = {
+  historicalPlan?: AssistantPlan;
   diagnostics?: string[];
   intent?: "improve" | "repair";
   acceptanceRevisions?: AcceptanceRevision[];
@@ -131,7 +132,6 @@ export type AssistantRun = Run &
     | { status: "interrupted"; message: string }
     | { status: "dismissed"; message: string }
     | { status: "awaiting-input"; question: string }
-    | { status: "awaiting-confirmation"; plan: AssistantPlan }
     | { status: "executing"; plan: InvestigatedPlan; steps: AssistantStep[] }
     | {
         status: "awaiting-apply";
@@ -205,13 +205,6 @@ export type AssistantCommand =
       operationId: string;
       runId: string;
       planId: string;
-    }
-  | {
-      type: "confirm";
-      operationId: string;
-      runId: string;
-      planId: string;
-      compositionRevision: number;
     }
   | {
       type: "answer" | "revise";

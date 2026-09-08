@@ -277,6 +277,18 @@ test("new provider and consumer implement an additional action with frozen indep
   assert.match(snapshot.candidates![0].diagnostic!, /新增计数/);
   assert.ok(snapshot.candidates![0].versionId);
   assert.ok(w.release.get(snapshot.candidates![0].versionId!).bundle);
+  const experience = await e.command({
+    type: "experience",
+    operationId: "preview-counter",
+    runId: ready.id,
+    candidateId: snapshot.candidates!.find((c) => c.passed)!.id,
+  });
+  assert.equal(experience.run?.status, "awaiting-apply");
+  if (experience.run?.status !== "awaiting-apply")
+    throw new Error("expected candidate");
+  assert.ok(experience.run.experience?.checks.includes("extension:保留并累加"));
+  assert.equal(w.composition().revision, 1);
+  assert.equal(w.query().total, 0);
   const runtime = await w.release.start(
     w.release.get(snapshot.run!.versionId!),
   );

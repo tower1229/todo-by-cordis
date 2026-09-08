@@ -413,6 +413,16 @@ export class EvolutionDomain implements Domain {
         `fields:${info.presentation.fields.join(",")}`,
         `decide:${sample.kind}`,
       ];
+      const evidence = version.evidence as { extensions?: BusinessExtensions };
+      if (evidence.extensions) {
+        signal.throwIfAborted();
+        checks.push(
+          ...(await verifyExtensions(runtime, evidence.extensions)).map(
+            (name) => `extension:${name}`,
+          ),
+        );
+      }
+      signal.throwIfAborted();
       return {
         candidateId,
         marked: "not-applied",

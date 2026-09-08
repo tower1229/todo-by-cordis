@@ -4,15 +4,22 @@ test.use({ baseURL: "http://127.0.0.1:4519" });
 test("real backend restores clarification and investigated plan without changing tasks", async ({
   page,
   request,
+  context,
 }, info) => {
-  await page.setViewportSize({ width: 390, height: 850 });
+  await page.setViewportSize({ width: 320, height: 850 });
   const before = await (await request.get("/api/composition")).json();
   await page.goto("/");
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
-  await page
-    .getByRole("textbox", { name: "告诉 AI 你的需求" })
-    .fill("完成前填写复盘");
-  await page.getByRole("button", { name: "发送需求" }).click();
+  const composer = page.getByRole("textbox", { name: "告诉 AI 你的需求" });
+  await expect(composer).toBeFocused();
+  await composer.dispatchEvent("compositionstart", { data: "完成" });
+  await composer.fill("完成前填写复盘");
+  await composer.press("Enter");
+  expect((await (await request.get("/api/assistant")).json()).run).toBeNull();
+  await composer.dispatchEvent("compositionend", { data: "完成前填写复盘" });
+  await composer.press("Tab");
+  await expect(page.getByRole("button", { name: "发送需求" })).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect(page.getByText("复盘是必填还是选填？")).toBeVisible();
   await expect(
     page.getByRole("checkbox", { name: "修复已有问题（先复现旧版失败）" }),
@@ -69,6 +76,18 @@ test("real backend restores clarification and investigated plan without changing
   const locked = await revise.json();
   expect(locked.code).toBe("REQUEST_LOCKED");
 
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("button", { name: "改进应用", exact: true }),
+  ).toBeFocused();
+  await context.setOffline(true);
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("alert")).toBeVisible({ timeout: 10000 });
+  await context.setOffline(false);
+  await expect(page.getByRole("alert")).toHaveCount(0, { timeout: 10000 });
+  expect((await (await request.get("/api/assistant")).json()).run.id).toBe(
+    first.run.id,
+  );
   await page.reload();
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await expect(

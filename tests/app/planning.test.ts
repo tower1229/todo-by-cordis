@@ -248,7 +248,7 @@ test("clarification and revision keep one run, retained plans and remaining budg
       compositionRevision: 1,
     }),
   });
-  assert.equal(rejected.status, 409);
+  assert.equal(rejected.status, 400);
   assert.equal(w.release.all().length, 2);
 });
 
@@ -466,6 +466,27 @@ test("old pending confirmation is interrupted without replay and historical run 
       elapsed: 0,
     }),
   );
+  const publishedRun = {
+    id: "legacy-published",
+    request: "历史已发布需求",
+    updatedAt: "2026-01-01",
+    status: "succeeded",
+    summary: "历史发布成功",
+    steps: [],
+    versionId: w.activeVersion().id,
+  };
+  w.db
+    .prepare("INSERT INTO evolution_runs VALUES(?,?)")
+    .run(
+      publishedRun.id,
+      JSON.stringify({
+        run: publishedRun,
+        history: [],
+        calls: 4,
+        candidates: 1,
+        elapsed: 100,
+      }),
+    );
   const driver = new PlanningDriver();
   const e = new Evolution(w.db, driver, new EvolutionDomain(w));
   t.after(async () => {
@@ -473,19 +494,45 @@ test("old pending confirmation is interrupted without replay and historical run 
     await w.close();
     rmSync(dir, { recursive: true, force: true });
   });
+  assert.deepEqual((await e.observe(publishedRun.id)).run, publishedRun);
   const snapshot = await e.observe("legacy");
   assert.equal(snapshot.run?.status, "interrupted");
   assert.equal(snapshot.run?.request, "旧需求");
+  assert.equal(snapshot.run?.historicalPlan?.id, "old-plan");
   assert.equal(driver.requests.length, 0);
+  const app = createApp(w, e);
+  for (const type of ["confirm", "task"]) {
+    const rejected = await app.request("/api/assistant/commands", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        type,
+        runId: "legacy",
+        planId: "old-plan",
+        compositionRevision: 1,
+        operationId: `legacy-${type}`,
+      }),
+    });
+    assert.equal(rejected.status, 400);
+    assert.equal((await rejected.json()).code, "INVALID_INPUT");
+  }
   await assert.rejects(
     e.command({
-      type: "confirm",
+      type: "start",
       runId: "legacy",
       planId: "old-plan",
-      compositionRevision: 1,
-      operationId: "legacy-confirm",
+      operationId: "legacy-start",
     }),
-    /旧确认不能授予/,
+  );
+  await assert.rejects(
+    e.command({
+      type: "apply",
+      runId: "legacy",
+      candidateId: "old-plan",
+      evidenceHash: "old",
+      compositionRevision: 1,
+      operationId: "legacy-apply",
+    }),
   );
   assert.equal(w.composition().revision, 1);
 });

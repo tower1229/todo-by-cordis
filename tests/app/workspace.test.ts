@@ -281,11 +281,10 @@ test("assistant stays unavailable without a provider and never changes workspace
   for (const command of [
     { type: "request", operationId: randomUUID(), text: "创建一个复盘插件" },
     {
-      type: "confirm",
+      type: "start",
       operationId: randomUUID(),
       runId: "run",
       planId: "plan",
-      compositionRevision: 1,
     },
   ]) {
     const response = await app.request("/api/assistant/commands", {

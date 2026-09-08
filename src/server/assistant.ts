@@ -5,7 +5,6 @@ import type {
 } from "../shared/assistant.js";
 
 // Public assistant boundary. Commands persist revisions and operation receipts.
-// Legacy confirm is parsed only to return an explicit refusal, never apply.
 export type AssistantService = {
   observe(runId?: string, afterSequence?: number): Promise<AssistantSnapshot>;
   command(command: AssistantCommand): Promise<AssistantSnapshot>;
@@ -120,21 +119,6 @@ export function parseAssistantCommand(value: unknown): AssistantCommand {
       evidenceHash: input.evidenceHash,
       compositionRevision: input.compositionRevision,
     };
-  if (
-    input.type === "confirm" &&
-    id(input.planId) &&
-    typeof input.compositionRevision === "number" &&
-    Number.isSafeInteger(input.compositionRevision) &&
-    input.compositionRevision > 0
-  ) {
-    return {
-      type: "confirm",
-      operationId: input.operationId,
-      runId: input.runId,
-      planId: input.planId,
-      compositionRevision: input.compositionRevision,
-    };
-  }
   throw invalid();
 }
 

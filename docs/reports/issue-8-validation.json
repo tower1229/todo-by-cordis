@@ -1,0 +1,262 @@
+{
+  "issue": "https://github.com/tower1229/todo-by-cordis/issues/8",
+  "date": "2026-09-08",
+  "status": "partial-awaiting-real-model-authorization",
+  "parentSpecificationDelivered": false,
+  "baseCommit": "df8489530924fcce09f83f5ef03630ed0647c5b9",
+  "evidenceScope": "本轮本机合成数据验收。下列控制流和业务源码使用模型桩，不构成真实模型自迭代交付。源码哈希绑定受测内容，提交后可复核。",
+  "checks": {
+    "typecheck": "passed",
+    "applicationTests": {
+      "passed": 73,
+      "failed": 0,
+      "command": "pnpm test"
+    },
+    "build": "passed",
+    "browserTests": {
+      "passed": 18,
+      "failed": 0,
+      "command": "pnpm test:e2e",
+      "backend": "真实 HTTP/Evolution/SQLite，规划服务仅替换模型；部分 UI 状态测试使用 HTTP fixture。",
+      "inputMethod": "合成 compositionstart/compositionend 事件和 Chromium 键盘验证，未操作 macOS 原生输入法。",
+      "viewports": [
+        320,
+        390,
+        768,
+        1280
+      ]
+    },
+    "builtStartup": {
+      "status": "passed",
+      "checks": [
+        "dist/server/main.js 监听本机端口",
+        "静态首页 HTTP 200",
+        "活动组合读取",
+        "合成任务写入并返回",
+        "AI_DISABLED=1 下 assistant unconfigured"
+      ],
+      "data": "临时数据库，已清理"
+    },
+    "review": {
+      "standardsFindings": 0,
+      "specFindings": 0,
+      "resolvedSpecFindings": 2
+    }
+  },
+  "compatibility": {
+    "tests": [
+      "tests/app/planning.test.ts",
+      "tests/app/evolution.test.ts",
+      "tests/app/workspace.test.ts"
+    ],
+    "checks": [
+      "历史待确认运行中断且保留只读计划",
+      "已完成历史运行仍可查询",
+      "旧 confirm/task HTTP 入口删除",
+      "旧计划不能 start/apply",
+      "M1任务字段与操作回执保留",
+      "单工作流版本读取和撤回保数据",
+      "新生成产物使用完整 bundle"
+    ]
+  },
+  "matrix": {
+    "A01": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/planning.test.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    },
+    "A02": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/planning.test.ts",
+        "tests/e2e/planning.spec.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    },
+    "A03": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/planning.test.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    },
+    "A04": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/execution.test.ts",
+        "tests/e2e/planning.spec.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    },
+    "A05": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/candidate.test.ts",
+        "tests/e2e/planning.spec.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    },
+    "A06": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/apply.test.ts",
+        "tests/e2e/planning.spec.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    },
+    "A07": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/apply.test.ts",
+        "tests/e2e/planning.spec.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    },
+    "A08": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/candidate.test.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    },
+    "A09": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/continuation.test.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    },
+    "A10": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/candidate.test.ts",
+        "tests/app/execution.test.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    },
+    "A11": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/execution.test.ts",
+        "tests/e2e/planning.spec.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    },
+    "A12": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/recovery.test.ts",
+        "tests/app/execution.test.ts",
+        "tests/e2e/recovery.spec.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    },
+    "A13": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/recovery.test.ts",
+        "tests/e2e/recovery.spec.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    },
+    "A14": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/continuation.test.ts",
+        "tests/e2e/planning.spec.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    },
+    "A15": {
+      "localRegression": "passed",
+      "sources": [
+        "tests/app/continuation.test.ts"
+      ],
+      "realModel": "not-run-this-turn"
+    }
+  },
+  "realModel": {
+    "status": "not-run-awaiting-explicit-authorization",
+    "command": "node --import tsx scripts/accept-m2.ts",
+    "dataBoundary": "临时合成工作区；Gemini接收合成需求、相关源码/契约与诊断，产生API费用；不发送正式任务或密钥内容。",
+    "preparedScenarios": [
+      "先生成必填文本复盘",
+      "继续增加独立 increment 非文本动作并验证共存及隔离体验",
+      "继续修订复盘下限1到3并独立确认",
+      "重启后读取成功运行，撤回并保留数据"
+    ],
+    "outputs": "脚本打印临时目录，保留 evidence.json、逐版本完整源码产物和 workspace.db 中的计划/调用/候选记录。脚本未运行，尚无这些现场证据。"
+  },
+  "limitations": [
+    "未获真实模型调用授权，不宣称 Issue #8 或父规格完成。",
+    "路径扫描与 Node 子进程不是防御任意恶意代码的强沙箱。"
+  ],
+  "initialFailures": [
+    "沙箱禁止 loopback listen，获执行权限后复跑通过。",
+    "断网测试初版未触发页面观察、导致后续场景受占用运行影响；修正为关闭侧栏后断网键盘重开，复跑通过。"
+  ],
+  "sourceManifest": {
+    "src/evolution/driver.ts": "b44949339e80236fdba03551e9645850bb19fd4bfbfde0252d7284ded61c4ea6",
+    "src/evolution/evolution.ts": "8475d3aa5f5a94e194318e0d99857830e4a2119850eb6d76e7cd49823b300878",
+    "src/evolution/gemini.ts": "00a4232f42e65de6aa2c606fc78a7dd54ee3e458ad3893368cbdd54329794a07",
+    "src/release/build-child.ts": "e8ced9c1ed459718f9586bb0f620f5bd23f0253057e3e23fb8f9da114ef1da07",
+    "src/release/business-bundle.ts": "59a2f1a5caf90d0f47f06517a2fd2a5b6f48f1f5a272e3cce9d6e2bd6c3e8346",
+    "src/release/release.ts": "63f68ed8dc9def6ca6e00d7307aba68e9907f4cc23b977f412e2455b9b6e8900",
+    "src/release/storage.ts": "25d8822301689a0456475dd819ff13cfe6652ceb898e545a1ea8dc24cb1ecca2",
+    "src/release/types.ts": "8dba63d1274442f9198187d5349dee867cbd4a5d4523ef37efdb63949a4453b2",
+    "src/runtime/child.ts": "373f42d25da0b8644abe76608cfb9779065d7a337f5e2eecccf0a50b1a34c872",
+    "src/runtime/runtime.ts": "be619e9d85d3e2e241bc34a5ceb12928a43e09be6b29cfe0a993ab063c6df202",
+    "src/server/app.ts": "7ca9f59e02c3b6ae155c630c67064e514a41aa9fd141e6d98f717ec4f47e76f3",
+    "src/server/assistant.ts": "c03cc18c9156b6b637c94afde60ad48ab176d9a0af518b29681602943604fdec",
+    "src/server/business/contracts.ts": "4b9ee1b437bd3d73e8d1e20c4e0e71ba6d5c7b2c38e7d3b1dc3d913a23b582f6",
+    "src/server/business-verification.ts": "9661fbc5d70fcc50116f20591edc155ef49265cc9a0fffdc275f101d06b30396",
+    "src/server/catalog.ts": "203a3659df7a98f8a8d635a95e459c151d99f1c6774526b964588315277dfe35",
+    "src/server/evolution-domain.ts": "64e97e7eb5e8ae5340d2e2c7e48c5db3af158b55b7731f822d7ac06dd2b9bf69",
+    "src/server/main.ts": "523226af2fd5fe2acb6f69d995f37b1e8cc9d481c106d93a3d0bda72fc05211c",
+    "src/server/planning.ts": "f56c598da58953a4be7d53aaf38ebffdc682a4126507976f34df523b07826c5e",
+    "src/server/plugins/default.ts": "62a4e8368cddc6741e001822502cbc3d120adc431c720fe2f74e680d9e894d8d",
+    "src/server/plugins/review.ts": "5d3f183e29ef3c85e7d653a245efed0cf01223717cb8def5825b8cd318c0aab1",
+    "src/server/workspace.ts": "918c9c8e433d0356bef98c7648b0340e5e5694d51a455049519915dbce037135",
+    "src/shared/assistant.ts": "990a5858cf555aba372474d4114bb1e044b02a3cc6944e4d09c3e4e56c08f26a",
+    "src/shared/contracts.ts": "057e69df5a0e5a66c019c72a3b60fd5c372095edff2aa42f7a4a1a10999305ba",
+    "src/web/ActionForm.tsx": "ddd71ca6b9fdaee0e74b0680d7c378057de445be042f5a1c930d26974d1fef7c",
+    "src/web/AssistantPanel.tsx": "a38d0aa22f084182d5843b0d1106110838a2c5dbf7a0ef7115bccbed85209555",
+    "src/web/TaskEditor.tsx": "af2ea9e1d12178c87239b1f2ce72f2032780f0c4fd69492bb4a944e696ad3bb0",
+    "src/web/WorkspacePanel.tsx": "3cce113cfe25aba5775d2d30359d74d9d879efd938f372c925f4e1d5efbe83dd",
+    "src/web/api.ts": "60af499261181d24be23ff3893705eb95c89d73cd20a41f757bf736b25da178a",
+    "src/web/env.d.ts": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5",
+    "src/web/main.tsx": "384a9b7a3a83a0f17849e4a1f0ba8a7fe3da4494adf76cbb0ed8d668f32d37af",
+    "src/web/style.css": "7856bbe1f893727c88da76fa6371d4be0f42551dec6f113a1ab1cbc3db0ff5ef",
+    "src/web/ui.tsx": "ba5d4b41142210013c90247c00a887b32c7f5c5e6086d51a920762b2dc523e9b",
+    "src/web/useAssistant.ts": "85bf97a9439998cfeb11716dd611870deb05aee56bcf24016694b835888624bb",
+    "tests/app/apply.test.ts": "fb1f23758b876386487ab95bd2eeb048b9b56b81506e7cee4973edce4003df3a",
+    "tests/app/candidate.test.ts": "7815ee0d790f2b0bb1b449a6c6604fbaa1d6a3a8b41d15d653ff46b29c3dfb43",
+    "tests/app/continuation.test.ts": "327eb464a53cd58bcd92c993915bd13937d2b801963c4800b717a521c5f7f81e",
+    "tests/app/crash-fixture.ts": "dee3b159860d708ee90121342ca3b1a72b306d8d1dfbf92f282da75eaef3daf2",
+    "tests/app/evolution-crash-fixture.ts": "fd6b4a0e066e6f7ac876371df4fb42bc9229eb37baddbc789b5391aeab1f813e",
+    "tests/app/evolution-fixture.ts": "59c6d4ed64a5d2b090d7d514e55b1e64db3ea0b1d8522e9f4e6fe3acb044193e",
+    "tests/app/evolution.test.ts": "9e5d8c4c0d7e25586da92453796cff8cfba126cc90f00e19e22030480237a93b",
+    "tests/app/execution-fixture.ts": "3c4c63eadcbd1a0c05673b2a0c24e380233c3159d73a8e8e7d9784584441c906",
+    "tests/app/execution.test.ts": "b5c8c9d196e4808da00a0beca67845d872604846f904f00304b181513aec7608",
+    "tests/app/loop-fixture.mjs": "a97364e943de81557edfcf13df2ec8ed53a04b6c1a9466751c4338867e1ecf15",
+    "tests/app/planning-fixture.ts": "952300e4bb2c63be49d56999e1bac8dea1a06f9a0d0b3a4b0d2ec88562b877b0",
+    "tests/app/planning-server.ts": "5df552cee3b1be7c5acd908c447d426b11decdd9b97c5e0cb37636d936f81f1f",
+    "tests/app/planning.test.ts": "521da4adbcb7f1556450f56e9875dd82057b4a01614644f87e499323d255aa24",
+    "tests/app/recovery.test.ts": "57319eb205f2568b6fa9c82891d465bcbffadc7b95fb1b5fafd3fc7c597e9685",
+    "tests/app/workspace.test.ts": "478aa5a43fef5d3299bc75799b1e3b4723b09d69cf17c4d76fbab3262b14f1d3",
+    "tests/e2e/app.spec.ts": "774d686d9b8fb262d0b8e42b2dd6496ad6c8c30018f609c7f73ef21ce6114455",
+    "tests/e2e/assistant.spec.ts": "116d5f48b4553b64d6c0eeaf7f72e75bb2447c657c7af1c793c8bac57982c582",
+    "tests/e2e/planning.spec.ts": "3a70fd0fdad028a392416f21bf35a9a0e8dff2c31fe561eabe96996f1895dea1",
+    "tests/e2e/recovery.spec.ts": "469fc542ac6ceeddaeb780c419a8ec724fc413d0fd5ec6a34ee7f3214699c549",
+    "tests/e2e/retry.spec.ts": "f64b09c566a56ca0802c616e4c66d9bbb400965cd10fb82dd6e5d0347a13f74a",
+    "tests/e2e/visual.spec.ts": "5b6efbc092facec63cf0c3db580c01a058a41f55e40ccf48c9e9776bafaaba1b",
+    "scripts/accept-continuation.ts": "8a1acb1fb896f4a627b140c17923e34b4770c747eadaaac992b7227b12a6a540",
+    "scripts/accept-m2.ts": "bb3b258317c17216c99974b118e2e750bd43aebbde5d883075b1a0a4ee4de910",
+    "scripts/accept-plan.ts": "31859876f0ebc4272a622921777ede0ae9884cce83d0319af9157a7fb3866519",
+    "scripts/benchmark.mjs": "5e2ce1bba5ad51967e24d838dfe0f68323fdcdc4958abb9edc013bdc160ee532",
+    "scripts/dev.mjs": "5b00ef51039a5af74bee30b6b6c894c639b97a044dbb1847258d4ba736a99be5",
+    "scripts/e2e-server.mjs": "dd13d957f2e6630360ad3c105719e465d36a5c16e6759e9e2114d9353f8f4bbb"
+  }
+}

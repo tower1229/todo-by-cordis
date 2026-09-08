@@ -311,9 +311,6 @@ export function AssistantPanel({
             </Button>
           </section>
         )}
-        {run?.status === "awaiting-confirmation" && (
-          <p>旧方案需要重新调查，不能作为执行或应用授权。</p>
-        )}
         {run?.parentRunId && (
           <details className="text-xs leading-6 text-muted break-words">
             <summary>关联运行与基础版本</summary>

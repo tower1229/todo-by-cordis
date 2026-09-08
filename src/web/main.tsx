@@ -215,7 +215,6 @@ function App() {
     (run?.status === "ready" ||
       run?.status === "blocked" ||
       run?.status === "dismissed" ||
-      run?.status === "awaiting-confirmation" ||
       run?.status === "awaiting-input" ||
       run?.status === "awaiting-apply" ||
       run?.status === "applying" ||

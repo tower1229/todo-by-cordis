@@ -15,7 +15,11 @@ async function settle(e: Evolution, status?: string) {
   for (let i = 0; i < 200; i++) {
     const run = (await e.observe()).run;
     if (!run) throw new Error("missing run");
-    if (status ? run.status === status : !["planning", "executing"].includes(run.status))
+    if (
+      status
+        ? run.status === status
+        : !["planning", "executing"].includes(run.status)
+    )
       return run;
     await new Promise((r) => setTimeout(r, 20));
   }
@@ -80,11 +84,12 @@ test("A04: start freezes the plan, is idempotent, and rejects revise during exec
       compositionRevision: ready.plan.compositionRevision,
     }),
   });
-  assert.equal(rejected.status, 409);
-  assert.match((await rejected.json()).message, /旧确认不能授予/);
+  assert.equal(rejected.status, 400);
+  assert.equal((await rejected.json()).code, "INVALID_INPUT");
   const done = await settle(e);
   assert.equal(done.status, "awaiting-apply");
-  if (done.status !== "awaiting-apply") throw new Error("expected awaiting-apply");
+  if (done.status !== "awaiting-apply")
+    throw new Error("expected awaiting-apply");
   assert.equal(done.plan.id, frozen.id);
   assert.deepEqual(done.plan.workflowRules, frozen.workflowRules);
   assert.ok(done.versionId);
