@@ -51,12 +51,18 @@ export function createApp(
     c.json(await assistant.command(parseAssistantCommand(await c.req.json()))),
   );
   app.post("/api/runtime/restore", async (c) => {
-    const { operationId, compositionRevision, versionId } = await c.req.json();
+    const { operationId, compositionRevision, versionId, workflowId } =
+      await c.req.json();
     return c.json(
       await workspace.activate({
         operationId,
         compositionRevision,
-        versionId: versionId ?? workspace.previousVersionId(),
+        ...(versionId || workflowId
+          ? {
+              ...(versionId ? { versionId } : {}),
+              ...(workflowId ? { workflowId } : {}),
+            }
+          : { versionId: workspace.previousVersionId() }),
       }),
     );
   });

@@ -4,7 +4,7 @@ import type {
   AssistantSnapshot,
 } from "../../src/shared/assistant.js";
 
-// A12/A13 browser seams: interrupted recovery UI, cancel identity, workspace restore entry.
+// A12/A13 browser seams: interrupted recovery UI, cancel identity, real restore.
 
 test("A12: interrupted run shows recovery actions and replan entry", async ({
   page,
@@ -62,50 +62,24 @@ test("A12: succeeded card exposes version receipt and rollback guidance", async 
   await expect(page.getByRole("button", { name: "继续修改" })).toBeVisible();
 });
 
-test("A13: workspace panel can initiate restore while keeping listed tasks", async ({
+test("A13: real restore keeps tasks and fields after publishing another workflow", async ({
   page,
   request,
 }) => {
-  const title = `A13保留任务 ${Date.now()}`;
-  const real = await (await request.get("/api/composition")).json();
-  let restoreBody: unknown;
-  await page.route("**/api/composition", async (route) => {
-    if (route.request().method() !== "GET") return route.fallback();
-    await route.fulfill({
-      json: {
-        ...real,
-        previousVersionId: real.previousVersionId ?? "previous-version",
-        history: real.history?.length
-          ? real.history
-          : [
-              {
-                id: 2,
-                workflowId: "review",
-                versionId: real.versionId,
-                name: "复盘",
-                createdAt: new Date().toISOString(),
-                pausedMs: 0,
-                preparationMs: 1,
-              },
-              {
-                id: 1,
-                workflowId: "default",
-                versionId: "previous-version",
-                name: "默认流程",
-                createdAt: new Date().toISOString(),
-                pausedMs: 0,
-                preparationMs: 1,
-              },
-            ],
-      },
-    });
+  const title = `A13保留字段 ${Date.now()}`;
+  const before = await (await request.get("/api/composition")).json();
+  const published = await request.post("/api/runtime/restore", {
+    data: {
+      operationId: crypto.randomUUID(),
+      compositionRevision: before.revision,
+      workflowId: "review",
+    },
   });
-  await page.route("**/api/runtime/restore", async (route) => {
-    restoreBody = route.request().postDataJSON();
-    await route.fulfill({
-      json: { revision: real.revision + 1, versionId: "previous-version" },
-    });
-  });
+  expect(published.status()).toBe(200);
+  const afterPublish = await (await request.get("/api/composition")).json();
+  expect(afterPublish.workflow.id).toBe("review");
+  expect(afterPublish.previousVersionId).toBeTruthy();
+  const baselineVersion = afterPublish.previousVersionId as string;
 
   await page.goto("/");
   await page
@@ -115,22 +89,38 @@ test("A13: workspace panel can initiate restore while keeping listed tasks", asy
   await expect(
     page.getByRole("button", { name: `编辑 ${title}`, exact: true }),
   ).toBeVisible();
+  await page.getByRole("button", { name: `完成 ${title}`, exact: true }).click();
+  await page
+    .getByLabel("这次，有什么收获？", { exact: true })
+    .fill("发布后新增字段值");
+  await page.getByRole("button", { name: "完成", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 
   await page.getByRole("button", { name: "更多选项" }).click();
   await page.getByRole("menuitem", { name: "工作区设置" }).click();
   await expect(page.getByText("撤回版本，保留已有任务和字段。")).toBeVisible();
   await page.getByRole("button", { name: "撤回上个版本" }).click();
   await expect
-    .poll(() => restoreBody)
-    .toMatchObject({ compositionRevision: real.revision });
+    .poll(
+      async () =>
+        (await (await request.get("/api/composition")).json()).versionId,
+    )
+    .toBe(baselineVersion);
+  const restored = await (await request.get("/api/composition")).json();
+  expect(restored.workflow.id).toBe("default");
   await page.getByRole("button", { name: "关闭工作区设置" }).click();
+  await page.getByRole("button", { name: "已完成", exact: true }).click();
   await expect(
     page.getByRole("button", { name: `编辑 ${title}`, exact: true }),
   ).toBeVisible();
   const tasks = await (
-    await request.get(`/api/tasks?search=${encodeURIComponent(title)}`)
+    await request.get(
+      `/api/tasks?category=done&search=${encodeURIComponent(title)}`,
+    )
   ).json();
   expect(tasks.total).toBe(1);
+  expect(tasks.tasks[0].fields.review).toBe("发布后新增字段值");
+  expect(tasks.tasks[0].state).toBe("done");
 });
 
 test("A12: cancel during executing keeps run identity without late apply command", async ({

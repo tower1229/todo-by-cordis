@@ -331,7 +331,6 @@ test("public demonstration installer is removed; recovery retains legacy task fi
     body: JSON.stringify({
       operationId: randomUUID(),
       compositionRevision: 2,
-      workflowId: "review",
     }),
   });
   assert.equal(restored.status, 200);

@@ -30,6 +30,7 @@ export type Activation = {
     metrics: { pausedMs: number; preparationMs: number },
   ): void;
   install(runtime: RuntimeLike): void;
+  beforeOpenWrites?: () => Promise<void>;
   openWrites(): void;
   compensate(failed: Version, reason: string): Promise<void>;
 };
@@ -241,6 +242,7 @@ export class Release {
   }
   async activate(prepared: Prepared, host: Activation, signal?: AbortSignal) {
     let opened = false;
+    let committed = false;
     try {
       return await host.serial(async () => {
         signal?.throwIfAborted();
@@ -254,16 +256,38 @@ export class Release {
           preparationMs: prepared.preparationMs,
           pausedMs: performance.now() - paused,
         });
+        committed = true;
         host.install(prepared.runtime);
         try {
           // Post-commit readiness while writes stay frozen; failure compensates.
           await prepared.runtime.invoke("describe");
+          signal?.throwIfAborted();
+          await host.beforeOpenWrites?.();
           signal?.throwIfAborted();
           host.openWrites();
           opened = true;
         } catch (error) {
           const reason =
             error instanceof Error ? error.message : "提交后就绪检查失败";
+          // Cancel after commit must not undo publish; continue readiness/openWrites.
+          if (signal?.aborted && committed) {
+            try {
+              await prepared.runtime.invoke("describe");
+              await host.beforeOpenWrites?.();
+              host.openWrites();
+              opened = true;
+              return;
+            } catch (readyError) {
+              const readyReason =
+                readyError instanceof Error
+                  ? readyError.message
+                  : "提交后就绪检查失败";
+              await host.compensate(prepared.version, readyReason);
+              throw readyError instanceof Error
+                ? readyError
+                : new Error(readyReason);
+            }
+          }
           await host.compensate(prepared.version, reason);
           throw error instanceof Error ? error : new Error(reason);
         }

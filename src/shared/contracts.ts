@@ -33,6 +33,7 @@ export type Composition = {
   buildHash: string;
   versionId: string;
   previousVersionId?: string;
+  activationPending?: boolean;
   recovery?: {
     attemptedVersionId: string;
     restoredVersionId: string;

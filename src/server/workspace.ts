@@ -35,6 +35,7 @@ function text(value: unknown, max: number, required = false) {
 type Options = {
   launch?: (version: Version) => Promise<RuntimeLike>;
   checkpoint?: (stage: string) => void;
+  beforeOpenWrites?: () => Promise<void>;
 };
 
 export class Workspace {
@@ -82,6 +83,10 @@ export class Workspace {
       this.db.exec("ALTER TABLE workspace ADD COLUMN versionId TEXT");
     if (!columns("workspace").includes("recovery"))
       this.db.exec("ALTER TABLE workspace ADD COLUMN recovery TEXT");
+    if (!columns("workspace").includes("activationPending"))
+      this.db.exec(
+        "ALTER TABLE workspace ADD COLUMN activationPending INTEGER NOT NULL DEFAULT 0",
+      );
     if (!columns("releases").includes("versionId"))
       this.db.exec(
         "ALTER TABLE releases ADD COLUMN versionId TEXT; ALTER TABLE releases ADD COLUMN name TEXT",
@@ -143,7 +148,16 @@ export class Workspace {
       buildHash: string;
       versionId: string;
       recovery: string | null;
+      activationPending: number | null;
     };
+  }
+  private activationPending() {
+    return !!this.current().activationPending;
+  }
+  private setActivationPending(pending: boolean) {
+    this.db
+      .prepare("UPDATE workspace SET activationPending=? WHERE id=1")
+      .run(pending ? 1 : 0);
   }
   private readRecovery(): Composition["recovery"] | undefined {
     const raw = this.current().recovery;
@@ -158,6 +172,72 @@ export class Workspace {
     this.db
       .prepare("UPDATE workspace SET recovery=? WHERE id=1")
       .run(recovery ? JSON.stringify(recovery) : null);
+  }
+  private writePointer(
+    version: Version,
+    revision: number,
+    metrics: { pausedMs: number; preparationMs: number },
+    name = version.name,
+    at = new Date().toISOString(),
+  ) {
+    this.db
+      .prepare(
+        "UPDATE workspace SET revision=?,workflowId=?,buildHash=?,versionId=? WHERE id=1",
+      )
+      .run(revision, version.pluginId, hash(version.code), version.id);
+    this.db
+      .prepare(
+        "INSERT INTO releases(id,workflowId,createdAt,pausedMs,preparationMs,buildHash,versionId,name) VALUES(?,?,?,?,?,?,?,?)",
+      )
+      .run(
+        revision,
+        version.pluginId,
+        at,
+        metrics.pausedMs,
+        metrics.preparationMs,
+        hash(version.code),
+        version.id,
+        name,
+      );
+  }
+  /** Compensate to a prior composition after post-commit readiness failure. */
+  private restoreComposition(
+    attempted: Version,
+    restored: Version,
+    reason: string,
+  ): NonNullable<Composition["recovery"]> {
+    const revision = this.current().revision + 1;
+    const at = new Date().toISOString();
+    const recovery: NonNullable<Composition["recovery"]> = {
+      attemptedVersionId: attempted.id,
+      restoredVersionId: restored.id,
+      reason,
+      revision,
+      at,
+    };
+    this.writePointer(
+      restored,
+      revision,
+      { pausedMs: 0, preparationMs: 0 },
+      `${restored.name}（补偿恢复）`,
+      at,
+    );
+    this.setActivationPending(false);
+    this.writeRecovery(recovery);
+    return recovery;
+  }
+  private async startVersion(version: Version) {
+    const runtime = await this.release.start(version);
+    try {
+      await runtime.invoke("describe");
+      this.runtime = runtime;
+      this.bind(runtime);
+      this.status = "ready";
+      return runtime;
+    } catch (error) {
+      await runtime.close();
+      throw error;
+    }
   }
   private bind(runtime: RuntimeLike) {
     runtime.onFailure = () => {
@@ -175,18 +255,35 @@ export class Workspace {
     this.recovering = this.serial(async () => {
       if (manual) this.automaticRestartUsed = false;
       await this.runtime?.close();
-      let runtime: RuntimeLike | undefined;
+      this.runtime = undefined;
+      const pending = this.activationPending();
+      const active = this.release.get(this.current().versionId);
       try {
-        runtime = await this.release.start(
-          this.release.get(this.current().versionId),
-        );
-        await runtime.invoke("describe");
-        this.runtime = runtime;
-        this.bind(runtime);
-        this.status = "ready";
+        await this.startVersion(active);
+        if (pending) this.setActivationPending(false);
       } catch {
-        await runtime?.close();
-        this.status = "unavailable";
+        if (!pending) {
+          this.status = "unavailable";
+          return;
+        }
+        const priorId = this.previousVersionId();
+        if (!priorId) {
+          this.status = "unavailable";
+          return;
+        }
+        const restored = this.release.get(priorId);
+        this.transaction(() => {
+          this.restoreComposition(
+            active,
+            restored,
+            "重启时提交后就绪失败，已补偿回上一组合",
+          );
+        });
+        try {
+          await this.startVersion(restored);
+        } catch {
+          this.status = "unavailable";
+        }
       }
     }).finally(() => {
       this.recovering = undefined;
@@ -212,6 +309,7 @@ export class Workspace {
       previousVersionId: this.previousVersionId(),
       status: this.status,
       buildHash: active.buildHash,
+      ...(this.activationPending() ? { activationPending: true } : {}),
       ...(recovery ? { recovery } : {}),
       retainedFields: this.release
         .all()
@@ -510,30 +608,8 @@ export class Workspace {
           commit: (version, metrics) => {
             this.options.checkpoint?.("prepared");
             this.transaction(() => {
-              this.db
-                .prepare(
-                  "UPDATE workspace SET revision=?,workflowId=?,buildHash=?,versionId=? WHERE id=1",
-                )
-                .run(
-                  result.revision,
-                  version.pluginId,
-                  hash(version.code),
-                  version.id,
-                );
-              this.db
-                .prepare(
-                  "INSERT INTO releases(id,workflowId,createdAt,pausedMs,preparationMs,buildHash,versionId,name) VALUES(?,?,?,?,?,?,?,?)",
-                )
-                .run(
-                  result.revision,
-                  version.pluginId,
-                  new Date().toISOString(),
-                  metrics.pausedMs,
-                  metrics.preparationMs,
-                  hash(version.code),
-                  version.id,
-                  version.name,
-                );
+              this.writePointer(version, result.revision, metrics);
+              this.setActivationPending(true);
               this.db
                 .prepare("INSERT INTO operations VALUES(?,?,?)")
                 .run(
@@ -560,10 +636,14 @@ export class Workspace {
                 .finally(() => this.retiring.delete(cleanup));
               this.retiring.add(cleanup);
             }
+            this.options.checkpoint?.("installed");
           },
+          beforeOpenWrites: () =>
+            this.options.beforeOpenWrites?.() ?? Promise.resolve(),
           openWrites: () => {
             this.options.checkpoint?.("ready-check");
             this.status = "ready";
+            this.setActivationPending(false);
             this.writeRecovery(undefined);
             if (priorRuntime && priorRuntime !== this.runtime) {
               priorRuntime.onFailure = undefined;
@@ -574,42 +654,14 @@ export class Workspace {
             }
           },
           compensate: async (failed, reason) => {
-            const restoredRevision = result.revision + 1;
             const restored = this.release.get(prior.versionId);
-            const at = new Date().toISOString();
-            const recovery = {
-              attemptedVersionId: failed.id,
-              restoredVersionId: restored.id,
-              reason,
-              revision: restoredRevision,
-              at,
-            };
             this.transaction(() => {
-              this.db
-                .prepare(
-                  "UPDATE workspace SET revision=?,workflowId=?,buildHash=?,versionId=? WHERE id=1",
-                )
-                .run(
-                  restoredRevision,
-                  restored.pluginId,
-                  hash(restored.code),
-                  restored.id,
-                );
-              this.db
-                .prepare(
-                  "INSERT INTO releases(id,workflowId,createdAt,pausedMs,preparationMs,buildHash,versionId,name) VALUES(?,?,?,?,?,?,?,?)",
-                )
-                .run(
-                  restoredRevision,
-                  restored.pluginId,
-                  at,
-                  0,
-                  0,
-                  hash(restored.code),
-                  restored.id,
-                  `${restored.name}（补偿恢复）`,
-                );
-              result.revision = restoredRevision;
+              const recovery = this.restoreComposition(
+                failed,
+                restored,
+                reason,
+              );
+              result.revision = recovery.revision;
               result.compensated = true;
               result.versionId = restored.id;
               result.attemptedVersionId = failed.id;
@@ -617,7 +669,6 @@ export class Workspace {
               this.db
                 .prepare("UPDATE operations SET result=? WHERE id=?")
                 .run(JSON.stringify(result), request.operationId);
-              this.writeRecovery(recovery);
             });
             if (this.runtime && this.runtime !== priorRuntime) {
               this.runtime.onFailure = undefined;
@@ -630,11 +681,7 @@ export class Workspace {
               return;
             }
             try {
-              const runtime = await this.release.start(restored);
-              await runtime.invoke("describe");
-              this.runtime = runtime;
-              this.bind(runtime);
-              this.status = "ready";
+              await this.startVersion(restored);
             } catch {
               this.status = "unavailable";
             }
