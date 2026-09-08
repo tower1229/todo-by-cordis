@@ -86,9 +86,9 @@ export function useAssistant(onCompleted: () => Promise<void>) {
     const run = snapshot?.run;
     if (
       (run?.status === "succeeded" || run?.status === "awaiting-apply") &&
-      completed.current !== run.id
+      completed.current !== `${run.id}:${run.status}`
     ) {
-      completed.current = run.id;
+      completed.current = `${run.id}:${run.status}`;
       void onCompletedRef.current();
     }
   }, [snapshot]);

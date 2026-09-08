@@ -226,4 +226,32 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
     await request.post("/api/assistant/commands", { data: applyBody })
   ).json();
   expect(finalReplay.run.status).toBe("succeeded");
+
+  await page.reload();
+  await page.getByRole("button", {name:"改进应用", exact:true}).click();
+  await page.getByRole("button", {name:"继续修改", exact:true}).click();
+  await page.getByRole("textbox", {name:"告诉 AI 你的需求"}).fill("复盘至少三个字");
+  await page.getByRole("button", {name:"发送需求"}).click();
+  await expect(page.getByRole("button", {name:"确认业务验收修订", exact:true})).toBeVisible();
+  await expect(page.getByRole("button", {name:"开始执行", exact:true})).toHaveCount(0);
+  const comparison = page.getByLabel("规则比较");
+  await expect(comparison).toContainText('旧规则：');
+  await expect(comparison).toContainText('"minLength":1');
+  await expect(comparison).toContainText('"minLength":3');
+  await expect(comparison).toContainText("用户要求复盘至少三个字");
+  const pending = await (await request.get("/api/assistant")).json();
+  expect(pending.run.parentRunId).toBe(ready.run.id);
+  expect(pending.run.baseVersion).toBe(composition.versionId);
+  await page.reload();
+  await page.getByRole("button", {name:"改进应用", exact:true}).click();
+  await expect(page.getByLabel("规则比较")).toContainText("旧规则");
+  await page.getByRole("button", {name:"确认业务验收修订", exact:true}).click();
+  await expect(page.getByRole("button", {name:"开始执行", exact:true})).toBeVisible();
+  expect((await (await request.get("/api/assistant")).json()).run.acceptanceRevisions).toHaveLength(1);
+  expect((await (await request.get("/api/composition")).json()).versionId).toBe(composition.versionId);
+  await page.getByRole("button", {name:"开始执行", exact:true}).click();
+  await expect(page.getByRole("region", {name:"候选结果"})).toBeVisible({timeout:15000});
+  await page.getByRole("button", {name:"应用", exact:true}).click();
+  await expect(page.getByRole("button", {name:"继续修改", exact:true})).toBeVisible({timeout:15000});
+  expect((await (await request.get("/api/composition")).json()).versionId).not.toBe(composition.versionId);
 });

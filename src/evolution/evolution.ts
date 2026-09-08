@@ -43,6 +43,7 @@ export interface Domain {
     blockers: string[];
     retryable: boolean;
   };
+  reproduce?(plan: InvestigatedPlan, signal: AbortSignal): Promise<NonNullable<InvestigatedPlan["repairEvidence"]> | undefined>;
   target(plan: InvestigatedPlan): Target;
   check(target: Target, revision: number): void;
   isActiveVersion(versionId: string): boolean;
@@ -94,7 +95,7 @@ const terminal = (status: string) =>
     "interrupted",
   ].includes(status);
 const editable = (status: string) =>
-  ["awaiting-input", "ready", "blocked"].includes(status);
+  ["awaiting-input", "awaiting-acceptance", "ready", "blocked"].includes(status);
 export class Evolution {
   private active?: {
     id: string;
@@ -109,6 +110,7 @@ export class Evolution {
   ) {
     db.exec(`CREATE TABLE IF NOT EXISTS evolution_runs(id TEXT PRIMARY KEY,body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS evolution_operations(id TEXT PRIMARY KEY,hash TEXT NOT NULL,runId TEXT NOT NULL,receipt TEXT);
+      CREATE TABLE IF NOT EXISTS evolution_acceptance_revisions(id TEXT PRIMARY KEY,runId TEXT NOT NULL,body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS evolution_calls(id INTEGER PRIMARY KEY,runId TEXT NOT NULL,body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS evolution_candidates(id INTEGER PRIMARY KEY,runId TEXT NOT NULL,body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS evolution_events(id INTEGER PRIMARY KEY,runId TEXT NOT NULL,sequence INTEGER NOT NULL,body TEXT NOT NULL);
@@ -165,6 +167,12 @@ export class Evolution {
   }
   private base(r: RecordRun) {
     return {
+      intent: r.run.intent,
+      acceptanceRevisions: r.run.acceptanceRevisions ?? [],
+      parentRunId: r.run.parentRunId,
+      baseVersion: r.run.baseVersion,
+      capabilityId: r.run.capabilityId,
+      parent: r.run.parent,
       id: r.run.id,
       request: r.run.request,
       requestRevision: r.run.requestRevision ?? 1,
@@ -297,6 +305,7 @@ export class Evolution {
     let applyOp: string | undefined;
     let refreshApplyReceipt = false;
     if (
+      command.type === "continue" ||
       command.type === "request" ||
       command.type === "answer" ||
       command.type === "revise"
@@ -326,6 +335,7 @@ export class Evolution {
       record = {
         run: {
           id: randomUUID(),
+          intent: "intent" in command ? command.intent : undefined,
           request: command.text,
           updatedAt: new Date().toISOString(),
           status: "planning",
@@ -347,7 +357,21 @@ export class Evolution {
         elapsed: 0,
         eventSequence: 0,
       };
-      if (command.runId) {
+      if (command.type === "continue") {
+        const previous = this.get(command.runId);
+        if (!terminal(previous.run.status))
+          throw new AppError("REQUEST_LOCKED", "请先停止当前运行，再重新规划", 409);
+        const context = this.domain.context();
+        if (command.baseVersion !== context.versionId ||
+          (previous.run.status === "succeeded" && previous.run.versionId !== context.versionId) ||
+          (previous.run.capabilityId && previous.run.capabilityId !== context.pluginId))
+          throw new AppError("PLAN_STALE", "已发布版本或能力已变化，请基于当前版本重新提出需求", 409);
+        record.run = { ...record.run, parentRunId: previous.run.id,
+          baseVersion: context.versionId, capabilityId: context.pluginId,
+          parent: { status: previous.run.status,
+            ...("message" in previous.run ? { message: previous.run.message } : {}),
+            budget: previous.run.budget } };
+      } else if (command.runId) {
         const previous = this.get(command.runId);
         if (!editable(previous.run.status) || latest?.id !== previous.run.id)
           throw new AppError("PLAN_STALE", "请重新提出需求", 409);
@@ -356,6 +380,8 @@ export class Evolution {
           previous.run.status !== "awaiting-input"
         )
           throw new AppError("REQUEST_LOCKED", "当前不等待回答", 409);
+        if (previous.candidates > 0 || previous.run.status === "blocked" && previous.target)
+          throw new AppError("REQUEST_LOCKED", "执行后调整需求须通过 continue 重新规划和开始", 409);
         record = previous;
         const revision = (previous.run.requestRevision ?? 1) + 1;
         record.history = [];
@@ -402,6 +428,15 @@ export class Evolution {
           record.run = { ...this.base(record), status: "cancelled" };
         }
       }
+    } else if (command.type === "confirm-acceptance") {
+      record = this.get(command.runId);
+      if (record.run.status !== "awaiting-acceptance" || record.run.plan.id !== command.planId || record.run.acceptanceRevision.id !== command.revisionId)
+        throw new AppError("ACCEPTANCE_STALE", "验收修订已变化或需求已锁定，请重新比较规则", 409);
+      const plan = record.run.plan;
+      this.domain.check(this.domain.target(plan), plan.compositionRevision);
+      const revision = { ...record.run.acceptanceRevision, confirmedAt: new Date().toISOString() };
+      record.run = { ...this.base(record), status: "ready", plan: { ...plan, acceptanceRevision: revision },
+        acceptanceRevisions: [...(record.run.acceptanceRevisions ?? []), revision] };
     } else if (command.type === "start") {
       record = this.get(command.runId);
       if (record.run.status !== "ready" || !("plan" in record.run))
@@ -493,6 +528,10 @@ export class Evolution {
     let receipt: AssistantSnapshot;
     try {
       this.save(record);
+      if (command.type === "confirm-acceptance" && record.run.status === "ready") {
+        const revision = record.run.plan.acceptanceRevision!;
+        this.db.prepare("INSERT INTO evolution_acceptance_revisions VALUES(?,?,?)").run(revision.id, record.run.id, JSON.stringify(revision));
+      }
       receipt = this.snapshot(record.run);
       this.db
         .prepare(
@@ -824,7 +863,15 @@ export class Evolution {
   }
   private async plan(r: RecordRun, signal: AbortSignal) {
     const context = this.domain.context();
+    if (r.run.baseVersion && (r.run.baseVersion !== context.versionId || r.run.capabilityId !== context.pluginId))
+      throw new Error("基础版本已变化，请重新规划");
+    r.run.baseVersion = context.versionId;
+    r.run.capabilityId = context.pluginId;
     let message: string | undefined = JSON.stringify({
+      intent: r.run.intent,
+      parent: r.run.parent,
+      parentRunId: r.run.parentRunId,
+      baseVersion: context.versionId,
       request: r.run.request,
       revisions: r.run.revisions,
       previousPlans: r.run.plans,
@@ -881,11 +928,26 @@ export class Evolution {
               parsed.blockers.push(
                 "调查已耗尽模型调用预算，需要新的运行重新规划",
               );
-            const plan = {
+            const plan: InvestigatedPlan = {
               ...parsed.plan,
+              intent: r.run.intent === "repair" ? "repair" : parsed.plan.intent,
               id: randomUUID(),
               requestRevision: r.run.requestRevision ?? 1,
             };
+            if (!parsed.blockers.length && plan.intent === "repair") {
+              parsed.retryable = false;
+              if (plan.acceptanceChanges?.length) parsed.blockers.push("修复不能替换已有业务规则；要求变化须另行修订和规划");
+              else if (!this.domain.reproduce) parsed.blockers.push("缺少可靠故障检查器，无法复现");
+              else {
+                try {
+                  plan.repairEvidence = await this.domain.reproduce(plan, signal);
+                  if (!plan.repairEvidence) parsed.blockers.push("unreproduced：旧版未出现相同断言失败，无法复现，不生成修复候选");
+                } catch (error) {
+                  signal.throwIfAborted();
+                  parsed.blockers.push(`故障检查未可靠完成，不能证明修复：${error instanceof Error ? error.message : "检查失败"}`);
+                }
+              }
+            }
             const base = {
               ...this.base(r),
               plans: [...(r.run.plans ?? []), plan],
@@ -935,7 +997,10 @@ export class Evolution {
                   message: parsed.blockers.join("；"),
                   plan,
                 }
-              : { ...base, status: "ready", plan };
+              : plan.acceptanceChanges?.length
+                ? { ...base, status: "awaiting-acceptance", plan,
+                    acceptanceRevision: { id: hash({planId: plan.id, baseVersion: plan.baseVersion, changes: plan.acceptanceChanges}), planId: plan.id, baseVersion: plan.baseVersion!, changes: plan.acceptanceChanges } }
+                : { ...base, status: "ready", plan };
           }
           this.save(r);
           return;

@@ -8,6 +8,8 @@ import type {
 import type { RuntimeLike } from "../release/types.js";
 import { hash } from "../release/storage.js";
 
+export class BusinessAssertionError extends Error {}
+
 export type BusinessExtensions = {
   actions: Action[];
   fields: Field[];
@@ -116,6 +118,7 @@ export function parseExtensions(
   }
   const extension = structuredClone(value) as BusinessExtensions;
   if (
+    new Set(extension.cases.map((c) => c.name)).size !== extension.cases.length ||
     new Set(extension.actions.map((a) => a.id)).size !==
       extension.actions.length ||
     new Set(extension.fields.map((f) => f.key)).size !== extension.fields.length
@@ -133,13 +136,6 @@ export function parseExtensions(
       throw new Error("每个新增动作必须有正例和反例");
   }
   if (previous) {
-    for (const old of previous.cases) {
-      const replacement = extension.cases.find((c) => c.name === old.name);
-      if (replacement && hash(replacement) !== hash(old))
-        throw new Error(
-          "已有业务案例不能由候选计划削弱；业务规则修订需要维护者支持",
-        );
-    }
     extension.actions = [
       ...previous.actions,
       ...extension.actions.filter(
@@ -153,7 +149,7 @@ export function parseExtensions(
       ),
     ];
     extension.cases = [
-      ...previous.cases,
+      ...previous.cases.map((old) => extension.cases.find((c) => c.name === old.name) ?? old),
       ...extension.cases.filter(
         (c) => !previous.cases.some((old) => old.name === c.name),
       ),
@@ -205,7 +201,7 @@ export async function verifyExtensions(
         ? d.kind !== "reject"
         : hash(d) !== hash(expected)
     )
-      throw new Error(
+      throw new BusinessAssertionError(
         `业务验收失败：${c.name}；预期 ${JSON.stringify(expected)}；实际 ${JSON.stringify(d)}`,
       );
     checks.push(c.name);

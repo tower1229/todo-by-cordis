@@ -1,4 +1,5 @@
 import {
+  BusinessAssertionError,
   verifyExtensions,
   type BusinessExtensions,
 } from "./business-verification.js";
@@ -43,6 +44,8 @@ type Goal = {
   name: string;
   fields: Rule[];
   extensions?: BusinessExtensions;
+  repairEvidence?: InvestigatedPlan["repairEvidence"];
+  acceptanceRevision?: InvestigatedPlan["acceptanceRevision"];
   scope?: string[];
   capabilities?: InvestigatedPlan["capabilityChanges"];
 };
@@ -75,6 +78,29 @@ export class EvolutionDomain implements Domain {
     if (hash(current.files) !== hash(context.files))
       parsed.blockers.push("调查期间实现资料已变化，请重新调查");
     return parsed;
+  }
+  async reproduce(plan: InvestigatedPlan, signal: AbortSignal) {
+    const base = this.workspace.release.get(plan.baseVersion!);
+    this.check(this.target(plan), plan.compositionRevision);
+    const runtime = await this.workspace.release.start(base);
+    const abort = () => { void runtime.close(); };
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      signal.throwIfAborted();
+      const definition = await runtime.invoke<WorkflowDefinition>("describe");
+      try {
+        await verifyWorkflow(runtime, definition, base, this.target(plan).payload as Goal);
+        if (plan.extensions) await verifyExtensions(runtime, plan.extensions);
+      } catch (error) {
+        signal.throwIfAborted();
+        if (!(error instanceof BusinessAssertionError)) throw error;
+        return { baseVersion: base.id, definitionHash: hash({rules: plan.workflowRules, extensions: plan.extensions}), diagnostic: error.message };
+      }
+      return undefined;
+    } finally {
+      signal.removeEventListener("abort", abort);
+      await runtime.close();
+    }
   }
   target(plan: InvestigatedPlan): Target {
     const base = this.workspace.release.get(plan.baseVersion!);
@@ -110,6 +136,8 @@ export class EvolutionDomain implements Domain {
       payload: {
         pluginId: base.pluginId,
         name: base.name,
+        repairEvidence: plan.repairEvidence,
+        acceptanceRevision: plan.acceptanceRevision,
         fields: plan.workflowRules,
         extensions: plan.extensions,
         scope: plan.writableScope,
@@ -143,6 +171,8 @@ export class EvolutionDomain implements Domain {
   ) {
     const base = this.workspace.release.get(target.baseVersion);
     const goal = target.payload as Goal;
+    if (goal.repairEvidence && (goal.repairEvidence.baseVersion !== base.id || goal.repairEvidence.definitionHash !== hash({rules: goal.fields, extensions: goal.extensions})))
+      throw new ProtectedCandidateError("修复断言与旧版证据不一致");
     stage("构建候选");
     if (
       !source.startsWith('{"files":') &&
@@ -309,6 +339,8 @@ export class EvolutionDomain implements Domain {
       definition: actual,
       evidence: {
         passed: true,
+        acceptanceRevision: goal.acceptanceRevision,
+        repairEvidence: goal.repairEvidence,
         rules: goal.fields,
         extensions: goal.extensions,
         checks,
@@ -463,7 +495,7 @@ export async function verifyWorkflow(
     ]),
   );
   const assert = (ok: boolean, name: string) => {
-    if (!ok) throw new Error(`行为验收失败：${name}`);
+    if (!ok) throw new BusinessAssertionError(`行为验收失败：${name}`);
     checks.push(name);
   };
   for (const f of goal.fields) {
