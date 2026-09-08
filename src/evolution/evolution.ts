@@ -980,6 +980,51 @@ export class Evolution {
     });
     r.history = [];
     const rejections = new Set<string>();
+    const conclusions = [
+      "redirect_request",
+      "request_clarification",
+      "propose_plan",
+    ] as const;
+    const conclusionAlone =
+      "redirect_request、request_clarification、propose_plan 必须单独一轮提交且该轮只能有这一个调用。请先批量完成只读调查，再单独提交结论。";
+    const retryProtocol = (
+      response: ModelReply,
+      error: string,
+      instruction: string,
+    ) => {
+      if (r.calls >= this.limits.calls)
+        throw new Error(`已达到 ${this.limits.calls} 次模型调用上限`);
+      if (!response.calls.length) {
+        message = JSON.stringify({
+          error,
+          instruction,
+          budget: this.base(r).budget,
+        });
+      } else {
+        r.history = [
+          ...r.history,
+          {
+            role: "user",
+            parts: response.calls.map((call) => ({
+              functionResponse: {
+                ...(call.id ? { id: call.id } : {}),
+                name: call.name,
+                response: {
+                  result: {
+                    accepted: false,
+                    error,
+                    instruction,
+                    budget: this.base(r).budget,
+                  },
+                },
+              },
+            })),
+          },
+        ];
+      }
+      r.run = { ...this.base(r), status: "planning" };
+      this.save(r);
+    };
     investigation: while (true) {
       const response = await this.call(
         r,
@@ -992,20 +1037,27 @@ export class Evolution {
         signal,
       );
       message = undefined;
-      if (!response.calls.length || response.calls.length > 16)
-        throw new Error("模型没有返回有效调查工具调用");
+      if (!response.calls.length || response.calls.length > 16) {
+        retryProtocol(
+          response,
+          "模型没有返回有效调查工具调用",
+          `请返回 1 到 16 个工具调用。${conclusionAlone}`,
+        );
+        continue investigation;
+      }
+      if (
+        response.calls.some((call) =>
+          (conclusions as readonly string[]).includes(call.name),
+        ) &&
+        response.calls.length !== 1
+      ) {
+        retryProtocol(response, "调查结论须单独提交", conclusionAlone);
+        continue investigation;
+      }
       const parts: unknown[] = [];
       for (const call of response.calls) {
         signal.throwIfAborted();
-        if (
-          [
-            "redirect_request",
-            "request_clarification",
-            "propose_plan",
-          ].includes(call.name)
-        ) {
-          if (response.calls.length !== 1)
-            throw new Error("调查结论须单独提交");
+        if ((conclusions as readonly string[]).includes(call.name)) {
           if (call.name === "redirect_request") {
             r.run = {
               ...this.base(r),
@@ -1013,8 +1065,16 @@ export class Evolution {
               message: this.resultText(call.args.message),
             };
           } else if (call.name === "request_clarification") {
-            if (!r.run.evidence?.some((e) => e.ref === "inspect_application"))
-              throw new Error("澄清前必须调查应用");
+            if (
+              !r.run.evidence?.some((e) => e.ref === "inspect_application")
+            ) {
+              retryProtocol(
+                response,
+                "澄清前必须调查应用",
+                "请先调用 inspect_application，再在单独一轮中 request_clarification。",
+              );
+              continue investigation;
+            }
             r.run = {
               ...this.base(r),
               status: "awaiting-input",

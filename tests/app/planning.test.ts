@@ -641,6 +641,50 @@ test("rejected proposal returns diagnostics so the same bounded investigation ca
   assert.ok(JSON.stringify(fixture.requests).includes("缺少调查证据"));
 });
 
+test("mixed conclusion tools are retried internally instead of failing the run", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-plan-"));
+  const w = await Workspace.open(join(dir, "workspace.db"));
+  const fixture = new PlanningDriver();
+  let mixed = false;
+  const driver: Driver = {
+    async generate(request) {
+      const result = await fixture.generate(request);
+      if (result.calls[0].name === "propose_plan" && !mixed) {
+        mixed = true;
+        return {
+          ...result,
+          calls: [
+            { name: "read_source", args: { ref: "active-source" } },
+            result.calls[0],
+          ],
+        };
+      }
+      return result;
+    },
+  };
+  const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+  t.after(async () => {
+    await e.close();
+    await w.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  await e.command({
+    type: "request",
+    text: "完成前填写复盘",
+    operationId: "request",
+  });
+  for (
+    let i = 0;
+    i < 100 && (await e.observe()).run?.status === "planning";
+    i++
+  )
+    await new Promise((r) => setTimeout(r, 10));
+  const run = (await e.observe()).run!;
+  assert.equal(run.status, "ready");
+  assert.equal(mixed, true);
+  assert.ok(JSON.stringify(fixture.requests).includes("调查结论须单独提交"));
+});
+
 test("unavailable catalog source is a diagnostic, never read evidence or a crashed investigation", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "cordis-plan-"));
   const w = await Workspace.open(join(dir, "workspace.db"));
