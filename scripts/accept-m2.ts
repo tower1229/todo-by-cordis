@@ -67,24 +67,43 @@ async function settled(): Promise<AssistantSnapshot> {
 }
 async function publish(requireRevision = false) {
   let snapshot = await settled();
-  if (requireRevision)
-    assert.equal(
-      snapshot.run?.status,
-      "awaiting-acceptance",
-      "changed rules require independent confirmation",
+  assert.equal(
+    snapshot.run?.status,
+    requireRevision ? "awaiting-acceptance" : "ready",
+    "only the requested rule revision may require confirmation",
+  );
+  const planned = snapshot.run;
+  if (
+    planned?.status === "ready" ||
+    planned?.status === "awaiting-acceptance"
+  ) {
+    const rule = planned.plan.workflowRules.find(
+      (rule) => rule.key === "reflection",
     );
+    assert.ok(rule, "reflection requirement must be present");
+    assert.equal(rule.required, true, "reflection must remain required");
+    assert.equal(
+      rule.minLength,
+      requireRevision ? 3 : 1,
+      "only the requested minimum may change",
+    );
+    assert.equal(rule.maxLength, 5000, "existing maximum must remain 5000");
+  }
   if (snapshot.run?.status === "awaiting-acceptance") {
     const run = snapshot.run;
-    if (requireRevision) {
-      assert.ok(
-        run.acceptanceRevision.changes.some(
-          (change) =>
-            change.before.includes('"minLength":1') &&
-            change.after.includes('"minLength":3') &&
-            change.reason.trim(),
-        ),
-      );
-    }
+    assert.equal(
+      run.acceptanceRevision.changes.length,
+      1,
+      "no additional revisions are authorized",
+    );
+    const change = run.acceptanceRevision.changes[0];
+    assert.equal(change.rule, "reflection");
+    assert.ok(change.reason.trim());
+    const before: unknown = JSON.parse(change.before);
+    const after: unknown = JSON.parse(change.after);
+    assert.ok(before && typeof before === "object" && "minLength" in before);
+    assert.equal(before.minLength, 1);
+    assert.deepEqual(after, { ...before, minLength: 3 });
     console.log(
       "confirming compared business rules",
       JSON.stringify(run.acceptanceRevision.changes),
@@ -174,7 +193,7 @@ try {
   await command({
     type: "request",
     operationId: randomUUID(),
-    text: "改进应用：完成任务时必须填写 reflection 复盘，去除首尾空白后按 Unicode 码点计 1 到 5000 字。保留原有 complete/reopen、任务和未知字段。保持工作流稳定身份和名称，无外部服务或依赖。",
+    text: "改进应用：完成任务时必须填写 reflection 复盘，显示名称固定为“复盘”，去除首尾空白后按 Unicode 码点计 1 到 5000 字。保留原有 complete/reopen、任务和未知字段。保持工作流稳定身份和名称，无外部服务或依赖。",
   });
   const textRun = await publish();
   const action = async (actionId: string, input: Record<string, string> = {}) =>
@@ -194,7 +213,7 @@ try {
     operationId: randomUUID(),
     runId: textRun.id,
     baseVersion: textRun.versionId!,
-    text: "增加独立计数能力：新增 increment 动作，仅 open 状态可用，将任务 count 字段的非负整数字符串加 1，缺省为 0，done 状态拒绝。新动作在界面可操作。保留 reflection 必填复盘、complete/reopen 和所有已有字段、工作流身份及名称。无外部服务或依赖。用 business-actions/1 的正反例与已有 count 7 加到 8 验证新动作，workflow/1 回归现有工作流。extensions.cases 仅包含 increment 案例。",
+    text: "增加独立计数能力：新增 increment 动作，仅 open 状态可用，将任务 count 字段的非负整数字符串加 1，缺省为 0，done 状态拒绝。新动作在界面可操作。保留 reflection 显示名称“复盘”和必填复盘：去除首尾空白后必须为 1 到 5000 个 Unicode 码点，不能更改其上下限。保留 complete/reopen 和所有已有字段、工作流身份及名称。无外部服务或依赖。用 business-actions/1 的正反例与已有 count 7 加到 8 验证新动作，workflow/1 回归现有工作流。extensions.cases 仅包含 increment 案例。",
   });
   const first = await publish();
   await action("increment");
