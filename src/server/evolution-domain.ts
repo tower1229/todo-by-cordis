@@ -10,7 +10,11 @@ import {
   parsePlan,
   type Investigation,
 } from "./planning.js";
-import type { PlanEvidence, InvestigatedPlan } from "../shared/assistant.js";
+import type {
+  PlanEvidence,
+  InvestigatedPlan,
+  ExperienceReport,
+} from "../shared/assistant.js";
 import type { Domain, Target } from "../evolution/evolution.js";
 import { Workspace } from "./workspace.js";
 import {
@@ -119,6 +123,9 @@ export class EvolutionDomain implements Domain {
       this.workspace.activeVersion().id !== target.baseVersion
     )
       throw new AppError("PLAN_STALE", "基础版本已变化，请重新规划并确认", 409);
+  }
+  isActiveVersion(versionId: string) {
+    return this.workspace.activeVersion().id === versionId;
   }
   generation(target: Target) {
     const base = this.workspace.release.get(target.baseVersion);
@@ -321,6 +328,46 @@ export class EvolutionDomain implements Domain {
       },
     });
     return verified.id;
+  }
+  async experience(
+    versionId: string,
+    candidateId: string,
+    signal: AbortSignal,
+  ): Promise<ExperienceReport> {
+    const version = this.workspace.release.get(versionId);
+    const runtime = await this.workspace.release.start(version);
+    try {
+      signal.throwIfAborted();
+      const definition = await runtime.invoke<WorkflowDefinition>("describe");
+      const info = await runtime.invoke<{
+        presentation: { title: string; fields: string[] };
+      }>("__business_info");
+      const sample = await runtime.invoke<WorkflowDecision>("decide", {
+        task: {
+          state: definition.initialState,
+          fields: { retained: "preview-only" },
+        },
+        action: "complete",
+        input: {},
+      });
+      const checks = [
+        `describe:${definition.id}`,
+        `presentation:${info.presentation.title}`,
+        `fields:${info.presentation.fields.join(",")}`,
+        `decide:${sample.kind}`,
+      ];
+      return {
+        candidateId,
+        marked: "not-applied",
+        isolated: true,
+        simulated: true,
+        checks,
+        presentation: info.presentation,
+        note: "候选体验使用隔离环境与模拟数据，结果已标注为尚未应用，未写入正式任务。",
+      };
+    } finally {
+      await runtime.close();
+    }
   }
   async apply(
     versionId: string,

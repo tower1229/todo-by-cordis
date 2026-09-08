@@ -244,7 +244,10 @@ test("late candidate success after cancel cannot enter awaiting-apply", async (t
     parse: base.parse.bind(base),
     target: base.target.bind(base),
     check: base.check.bind(base),
+    isActiveVersion: base.isActiveVersion.bind(base),
     generation: base.generation.bind(base),
+    experience: base.experience.bind(base),
+    apply: base.apply.bind(base),
     async candidate(
       sourceText: string,
       target: Parameters<EvolutionDomain["candidate"]>[1],

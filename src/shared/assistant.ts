@@ -110,11 +110,27 @@ export type AssistantRun = Run &
         plan: InvestigatedPlan;
         steps: AssistantStep[];
         summary: string;
+        experience?: ExperienceReport;
+      }
+    | {
+        status: "applying";
+        plan: InvestigatedPlan;
+        steps: AssistantStep[];
+        summary: string;
       }
     | { status: "succeeded"; summary: string; steps: AssistantStep[] }
     | { status: "failed"; message: string; steps: AssistantStep[] }
     | { status: "cancelled" }
   );
+export type ExperienceReport = {
+  candidateId: string;
+  marked: "not-applied";
+  isolated: true;
+  simulated: true;
+  checks: string[];
+  presentation?: { title: string; fields: string[] };
+  note: string;
+};
 export type CandidateAttempt = {
   id: string;
   planId: string;
@@ -154,8 +170,26 @@ export type AssistantCommand =
       runId: string;
       text: string;
     }
-  | { type: "cancel"; operationId: string; runId: string };
+  | { type: "cancel"; operationId: string; runId: string }
+  | {
+      type: "experience";
+      operationId: string;
+      runId: string;
+      candidateId: string;
+    }
+  | {
+      type: "apply";
+      operationId: string;
+      runId: string;
+      candidateId: string;
+      evidenceHash: string;
+      compositionRevision: number;
+    };
 
 export function isAssistantWorking(run: AssistantRun | null | undefined) {
-  return run?.status === "planning" || run?.status === "executing";
+  return (
+    run?.status === "planning" ||
+    run?.status === "executing" ||
+    run?.status === "applying"
+  );
 }

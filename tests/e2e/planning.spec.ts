@@ -145,5 +145,55 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   expect(finished.run.id).toBe(ready.run.id);
   expect(finished.run.budget.candidatesRemaining).toBe(1);
   expect(await (await request.get("/api/composition")).json()).toEqual(before);
-  await send({ type: "cancel", runId: ready.run.id });
+
+  await expect(
+    page.getByRole("button", { name: "体验", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "应用", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "调整后重新规划", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "放弃候选", exact: true }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "体验", exact: true }).click();
+  await expect(page.getByRole("region", { name: "体验结果" })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "体验结果" }).getByText("隔离体验结果（模拟）"),
+  ).toBeVisible();
+  expect(await (await request.get("/api/composition")).json()).toEqual(before);
+
+  const afterExperience = await (await request.get("/api/assistant")).json();
+  const candidate = afterExperience.candidates.find(
+    (c: { passed: boolean }) => c.passed,
+  );
+  const applyBody = {
+    type: "apply",
+    operationId: "browser-apply-1",
+    runId: ready.run.id,
+    candidateId: candidate.id,
+    evidenceHash: candidate.evidenceHash,
+    compositionRevision: before.revision,
+  };
+  const applying = await (
+    await request.post("/api/assistant/commands", { data: applyBody })
+  ).json();
+  expect(["applying", "succeeded"]).toContain(applying.run.status);
+  const replay = await (
+    await request.post("/api/assistant/commands", { data: applyBody })
+  ).json();
+  expect(replay).toEqual(applying);
+  await expect
+    .poll(
+      async () =>
+        (await (await request.get("/api/assistant")).json()).run.status,
+      { timeout: 15000 },
+    )
+    .toBe("succeeded");
+  const composition = await (await request.get("/api/composition")).json();
+  expect(composition.versionId).toBe(afterExperience.run.versionId);
+  expect(composition.revision).toBeGreaterThan(before.revision);
 });

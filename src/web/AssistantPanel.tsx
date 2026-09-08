@@ -59,8 +59,10 @@ function EventLog({ events }: { events: AssistantEvent[] }) {
 
 export function AssistantPanel({
   controller,
+  compositionRevision,
 }: {
   controller: AssistantController;
+  compositionRevision: number;
 }) {
   const { snapshot, error, busy, draft, setDraft, command, working } =
     controller;
@@ -69,7 +71,9 @@ export function AssistantPanel({
   const [editing, setEditing] = useState(false);
   const unconfigured = snapshot?.availability === "unconfigured";
   const locked =
-    run?.status === "executing" || run?.status === "awaiting-apply";
+    run?.status === "executing" ||
+    run?.status === "awaiting-apply" ||
+    run?.status === "applying";
   const hideComposer = (run?.status === "ready" && !editing) || locked;
   const canSend =
     snapshot?.availability === "ready" &&
@@ -77,6 +81,7 @@ export function AssistantPanel({
     !working &&
     !hideComposer &&
     Boolean(draft.trim());
+  const passedCandidate = snapshot?.candidates?.find((c) => c.passed);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex-1 space-y-6 overflow-y-auto p-5">
@@ -283,7 +288,8 @@ export function AssistantPanel({
         )}
         {!!run?.revisions?.length &&
           run.status !== "executing" &&
-          run.status !== "awaiting-apply" && (
+          run.status !== "awaiting-apply" &&
+          run.status !== "applying" && (
             <details className="text-sm">
               <summary>需求与计划历史</summary>
               {run.revisions.map((r) => (
@@ -322,17 +328,84 @@ export function AssistantPanel({
               <Check className="mt-1 size-4 shrink-0 text-accent" />
               {run.summary}
             </p>
-            <p className="text-xs text-muted">
-              候选已验证且尚未应用到正式环境。正式应用入口将在后续版本开放。
+            <p className="rounded-md border border-line bg-canvas px-3 py-2 text-xs leading-5 text-muted">
+              候选已验证且尚未应用到正式环境。
+              {run.experience
+                ? ` ${run.experience.note}`
+                : " 可先隔离体验，再单独确认应用。"}
             </p>
+            {run.experience && (
+              <section className="space-y-2 text-sm" aria-label="体验结果">
+                <p className="font-medium">隔离体验结果（模拟）</p>
+                <ul className="list-disc space-y-1 pl-5 text-muted">
+                  {run.experience.checks.map((check) => (
+                    <li key={check}>{check}</li>
+                  ))}
+                </ul>
+                {run.experience.presentation && (
+                  <p className="text-xs text-muted">
+                    界面：{run.experience.presentation.title} ·{" "}
+                    {run.experience.presentation.fields.join("、")}
+                  </p>
+                )}
+              </section>
+            )}
             <Steps steps={run.steps} />
             <EventLog events={snapshot?.events ?? []} />
-            <Button
-              disabled={busy}
-              onClick={() => command({ type: "cancel", runId: run.id })}
-            >
-              放弃候选
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={busy || !passedCandidate}
+                onClick={() =>
+                  passedCandidate &&
+                  command({
+                    type: "experience",
+                    runId: run.id,
+                    candidateId: passedCandidate.id,
+                  })
+                }
+              >
+                体验
+              </Button>
+              <Button
+                disabled={busy || !passedCandidate?.evidenceHash}
+                onClick={() =>
+                  passedCandidate?.evidenceHash &&
+                  command({
+                    type: "apply",
+                    runId: run.id,
+                    candidateId: passedCandidate.id,
+                    evidenceHash: passedCandidate.evidenceHash,
+                    compositionRevision,
+                  })
+                }
+              >
+                应用
+              </Button>
+              <Button
+                disabled={busy}
+                onClick={async () => {
+                  const ok = await command({ type: "cancel", runId: run.id });
+                  if (ok) setDraft(run.request);
+                }}
+              >
+                调整后重新规划
+              </Button>
+              <Button
+                disabled={busy}
+                onClick={() => command({ type: "cancel", runId: run.id })}
+              >
+                放弃候选
+              </Button>
+            </div>
+          </section>
+        )}
+        {run?.status === "applying" && (
+          <section className="space-y-5" aria-label="正在应用">
+            <p role="status" className="flex items-center gap-3 text-sm">
+              <Spinner />
+              {run.summary}
+            </p>
+            <Steps steps={run.steps} />
           </section>
         )}
         {run?.status === "succeeded" && (

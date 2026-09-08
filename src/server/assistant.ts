@@ -60,6 +60,29 @@ export function parseAssistantCommand(value: unknown): AssistantCommand {
       runId: input.runId,
       planId: input.planId,
     };
+  if (input.type === "experience" && id(input.candidateId))
+    return {
+      type: "experience",
+      operationId: input.operationId,
+      runId: input.runId,
+      candidateId: input.candidateId,
+    };
+  if (
+    input.type === "apply" &&
+    id(input.candidateId) &&
+    id(input.evidenceHash) &&
+    typeof input.compositionRevision === "number" &&
+    Number.isSafeInteger(input.compositionRevision) &&
+    input.compositionRevision > 0
+  )
+    return {
+      type: "apply",
+      operationId: input.operationId,
+      runId: input.runId,
+      candidateId: input.candidateId,
+      evidenceHash: input.evidenceHash,
+      compositionRevision: input.compositionRevision,
+    };
   if (
     input.type === "confirm" &&
     id(input.planId) &&

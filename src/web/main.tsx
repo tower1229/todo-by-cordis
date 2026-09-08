@@ -218,6 +218,7 @@ function App() {
       run?.status === "awaiting-confirmation" ||
       run?.status === "awaiting-input" ||
       run?.status === "awaiting-apply" ||
+      run?.status === "applying" ||
       run?.status === "succeeded" ||
       run?.status === "failed");
   const navigation = (mobile = false) => (
@@ -563,7 +564,10 @@ function App() {
           />
         )}
         {panel?.kind === "assistant" && (
-          <AssistantPanel controller={assistant} />
+          <AssistantPanel
+            controller={assistant}
+            compositionRevision={composition?.revision ?? 1}
+          />
         )}
         {panel?.kind === "workspace" && (
           <WorkspacePanel composition={composition} refreshed={refresh} />

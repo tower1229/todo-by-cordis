@@ -9,6 +9,7 @@ import type {
   AssistantRun,
   AssistantSnapshot,
   AssistantStep,
+  ExperienceReport,
   InvestigatedPlan,
   PlanEvidence,
 } from "../shared/assistant.js";
@@ -44,6 +45,7 @@ export interface Domain {
   };
   target(plan: InvestigatedPlan): Target;
   check(target: Target, revision: number): void;
+  isActiveVersion(versionId: string): boolean;
   generation(target: Target): {
     instruction: string;
     contract: string;
@@ -55,6 +57,19 @@ export interface Domain {
     signal: AbortSignal,
     stage: (label: string) => void,
   ): Promise<string>;
+  experience(
+    versionId: string,
+    candidateId: string,
+    signal: AbortSignal,
+  ): Promise<ExperienceReport>;
+  apply(
+    versionId: string,
+    target: Target,
+    revision: number,
+    operationId: string,
+    complete: () => void,
+    signal: AbortSignal,
+  ): Promise<void>;
 }
 type RecordRun = {
   run: AssistantRun;
@@ -66,6 +81,7 @@ type RecordRun = {
   elapsed: number;
   versionId?: string;
   eventSequence?: number;
+  applyRevision?: number;
 };
 const terminal = (status: string) =>
   [
@@ -116,6 +132,32 @@ export class Evolution {
           message:
             "旧计划须重新调查或宿主重启，未完成的运行已中断。请重新提出需求。",
         };
+        this.save(record);
+      } else if (record.run.status === "applying") {
+        const versionId = record.versionId ?? record.run.versionId;
+        const committed =
+          !!versionId && this.domain.isActiveVersion(versionId);
+        const plan =
+          "plan" in record.run
+            ? (record.run as Extract<
+                AssistantRun,
+                { status: "applying" }
+              >).plan
+            : record.plan;
+        record.run = committed
+          ? {
+              ...this.base(record),
+              status: "succeeded",
+              summary: "候选已正式应用",
+              steps: this.steps(record),
+            }
+          : {
+              ...this.base(record),
+              status: "awaiting-apply",
+              plan: plan as InvestigatedPlan,
+              steps: this.steps(record),
+              summary: `${plan && "outcome" in plan ? plan.outcome : "候选"}（应用中断，尚未提交，可重新确认）`,
+            };
         this.save(record);
       }
     }
@@ -210,10 +252,12 @@ export class Evolution {
           baseVersion: stored.baseVersion,
           attempt: stored.attempt,
           passed: stored.passed,
-          diagnostic: stored.diagnostic,
-          evidenceHash: stored.evidenceHash,
-          versionId: stored.versionId,
           sourceHash: stored.sourceHash,
+          ...(stored.diagnostic ? { diagnostic: stored.diagnostic } : {}),
+          ...(stored.evidenceHash
+            ? { evidenceHash: stored.evidenceHash }
+            : {}),
+          ...(stored.versionId ? { versionId: stored.versionId } : {}),
         };
       });
     return {
@@ -248,7 +292,8 @@ export class Evolution {
         : this.snapshot(this.get(String(prior.runId)).run);
     }
     let record: RecordRun;
-    let work: "plan" | "execute" | undefined;
+    let work: "plan" | "execute" | "apply" | undefined;
+    let applyOp: string | undefined;
     if (
       command.type === "request" ||
       command.type === "answer" ||
@@ -270,7 +315,8 @@ export class Evolution {
           command.type === "revise" || command.type === "answer"
             ? "REQUEST_LOCKED"
             : "EVOLUTION_BUSY",
-          latest && ["executing", "awaiting-apply"].includes(latest.status)
+          latest &&
+            ["executing", "awaiting-apply", "applying"].includes(latest.status)
             ? "需求已锁定，请先停止当前执行"
             : "请先完成或取消当前方案",
           409,
@@ -358,6 +404,64 @@ export class Evolution {
       };
       delete record.run.versionId;
       work = "execute";
+    } else if (command.type === "experience") {
+      record = this.get(command.runId);
+      if (record.run.status !== "awaiting-apply" || !("plan" in record.run))
+        throw new AppError("PLAN_STALE", "没有可体验的候选", 409);
+      const candidate = this.candidateOf(record.run.id, command.candidateId);
+      if (
+        !candidate.passed ||
+        !candidate.versionId ||
+        candidate.versionId !== (record.versionId ?? record.run.versionId)
+      )
+        throw new AppError(
+          "CANDIDATE_MISMATCH",
+          "候选已过期或不匹配，请重新规划",
+          409,
+        );
+      const report = await this.domain.experience(
+        candidate.versionId,
+        candidate.id,
+        AbortSignal.timeout(15_000),
+      );
+      record.run = {
+        ...record.run,
+        experience: report,
+        updatedAt: new Date().toISOString(),
+      };
+    } else if (command.type === "apply") {
+      record = this.get(command.runId);
+      if (record.run.status !== "awaiting-apply" || !("plan" in record.run))
+        throw new AppError("PLAN_STALE", "没有可应用的候选", 409);
+      const plan = record.run.plan as InvestigatedPlan;
+      const candidate = this.candidateOf(record.run.id, command.candidateId);
+      if (
+        !candidate.passed ||
+        !candidate.evidenceHash ||
+        candidate.evidenceHash !== command.evidenceHash ||
+        !candidate.versionId ||
+        candidate.versionId !== (record.versionId ?? record.run.versionId)
+      )
+        throw new AppError(
+          "CANDIDATE_MISMATCH",
+          "候选或证据摘要不匹配或已过期，请重新规划",
+          409,
+        );
+      const target = record.target ?? this.domain.target(plan);
+      this.domain.check(target, command.compositionRevision);
+      record.target = target;
+      record.versionId = candidate.versionId;
+      record.applyRevision = command.compositionRevision;
+      record.run = {
+        ...this.base(record),
+        status: "applying",
+        plan: structuredClone(plan),
+        steps: this.steps(record),
+        summary: "正在应用已验证候选…",
+        versionId: candidate.versionId,
+      };
+      applyOp = command.operationId;
+      work = "apply";
     } else {
       throw new AppError(
         "CONFIRM_DISABLED",
@@ -385,10 +489,30 @@ export class Evolution {
       this.db.exec("ROLLBACK");
       throw error;
     }
-    if (work) this.start(record, work);
+    if (work) this.start(record, work, applyOp);
     return receipt;
   }
-  private start(record: RecordRun, kind: "plan" | "execute") {
+  private candidateOf(runId: string, candidateId: string): CandidateAttempt {
+    const row = this.db
+      .prepare(
+        "SELECT body FROM evolution_candidates WHERE runId=? ORDER BY id",
+      )
+      .all(runId)
+      .map((item) => JSON.parse(String(item.body)) as CandidateAttempt)
+      .find((item) => item.id === candidateId);
+    if (!row)
+      throw new AppError(
+        "CANDIDATE_MISMATCH",
+        "候选已过期或不匹配，请重新规划",
+        409,
+      );
+    return row;
+  }
+  private start(
+    record: RecordRun,
+    kind: "plan" | "execute" | "apply",
+    applyOperationId?: string,
+  ) {
     const controller = new AbortController();
     const started = performance.now();
     const timer = setTimeout(
@@ -398,9 +522,71 @@ export class Evolution {
     const promise = Promise.resolve().then(async () => {
       try {
         if (kind === "plan") await this.plan(record, controller.signal);
-        else await this.execute(record, controller.signal);
+        else if (kind === "execute")
+          await this.execute(record, controller.signal);
+        else {
+          const current = this.get(record.run.id);
+          if (current.run.status !== "applying") return;
+          const plan =
+            "plan" in current.run
+              ? current.run.plan
+              : (current.plan as InvestigatedPlan);
+          const target = current.target ?? this.domain.target(plan);
+          const versionId = current.versionId ?? current.run.versionId;
+          const revision = current.applyRevision;
+          if (!versionId || !applyOperationId || revision === undefined)
+            throw new Error("缺少应用所需的候选、修订或操作标识");
+          await this.domain.apply(
+            versionId,
+            target,
+            revision,
+            applyOperationId,
+            () => undefined,
+            controller.signal,
+          );
+          const after = this.get(record.run.id);
+          if (after.run.status !== "applying") return;
+          if (!this.domain.isActiveVersion(versionId))
+            throw new Error("应用提交后运行未就绪");
+          after.run = {
+            ...this.base(after),
+            status: "succeeded",
+            summary: "候选已正式应用",
+            steps: this.steps(after),
+            versionId,
+          };
+          this.save(after);
+        }
       } catch (error) {
         const persisted = this.get(record.run.id);
+        if (kind === "apply" && persisted.run.status === "applying") {
+          const versionId = persisted.versionId ?? persisted.run.versionId;
+          if (versionId && this.domain.isActiveVersion(versionId)) {
+            persisted.run = {
+              ...this.base(persisted),
+              status: "succeeded",
+              summary: "候选已正式应用",
+              steps: this.steps(persisted),
+              versionId,
+            };
+            this.save(persisted);
+            return;
+          }
+          const plan =
+            "plan" in persisted.run
+              ? persisted.run.plan
+              : (persisted.plan as InvestigatedPlan);
+          record.run = {
+            ...this.base(persisted),
+            status: "awaiting-apply",
+            plan: plan as InvestigatedPlan,
+            steps: this.steps(persisted),
+            summary: `${plan && "outcome" in plan ? plan.outcome : "候选"}（候选已验证，尚未应用；上次应用未提交）`,
+            versionId,
+          };
+          this.save(record);
+          return;
+        }
         if (!terminal(persisted.run.status)) {
           const message = error instanceof Error ? error.message : "运行失败";
           const interrupted = message.includes("宿主停止");
