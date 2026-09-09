@@ -13,9 +13,10 @@ import { dirname, join, resolve } from "node:path";
 import { fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { Runtime } from "../runtime/runtime.js";
-import type { BusinessBundle, RuntimeLike, Version } from "./types.js";
+import type { BusinessBundle, LaunchTarget, RuntimeLike, Version } from "./types.js";
 import { hash } from "./storage.js";
 import { checkBusinessImports } from "./business-bundle.js";
+import { resolveRuntimePlugins } from "../server/composition.js";
 
 export type Prepared = {
   version: Version;
@@ -38,7 +39,7 @@ export class Release {
   constructor(
     private db: DatabaseSync,
     readonly directory: string,
-    private launch = (version: Version): Promise<RuntimeLike> =>
+    private launch = (version: LaunchTarget): Promise<RuntimeLike> =>
       Runtime.start(version),
   ) {
     mkdirSync(directory, { recursive: true });
@@ -94,7 +95,7 @@ export class Release {
       .run(id, JSON.stringify(version));
     return this.get(id);
   }
-  async start(version: Version) {
+  private verifyArtifacts(version: Version) {
     const root = realpathSync(resolve(this.directory));
     for (const path of [
       "plugin.mjs",
@@ -122,7 +123,15 @@ export class Release {
           content
         )
           throw new Error("组合产物校验失败");
-    return this.launch(version);
+  }
+  async start(version: Version) {
+    this.verifyArtifacts(version);
+    const plugins = resolveRuntimePlugins(version, (id) => {
+      const member = this.get(id);
+      if (member.id !== version.id) this.verifyArtifacts(member);
+      return member;
+    });
+    return this.launch({ ...version, plugins });
   }
   async prepare(
     version: Version,

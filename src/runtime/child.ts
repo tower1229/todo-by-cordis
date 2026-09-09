@@ -2,21 +2,42 @@ import { createContext, SourceTextModule, Script } from "node:vm";
 import { posix } from "node:path";
 import { Context, FiberState } from "cordis";
 import { pathToFileURL } from "node:url";
-import type { RuntimeTarget } from "../release/types.js";
+import type { RuntimePluginTarget } from "../release/types.js";
 
-const target = JSON.parse(process.argv[2]) as RuntimeTarget & {
+type ChildPlugin = RuntimePluginTarget & {
   modules?: Record<string, string>;
 };
+
+const payload = JSON.parse(process.argv[2]) as {
+  plugins?: ChildPlugin[];
+  entry?: string;
+  modules?: Record<string, string>;
+  service?: string;
+  pluginId?: string;
+};
+
+const plugins: ChildPlugin[] = payload.plugins?.length
+  ? payload.plugins
+  : [
+      {
+        pluginId: payload.pluginId!,
+        entry: payload.entry!,
+        service: payload.service!,
+        modules: payload.modules,
+        role: "workflow",
+      },
+    ];
+
 let businessInfo: unknown;
-async function loadBusiness() {
-  if (!target.modules)
-    return (await import(pathToFileURL(target.entry).href)).default as unknown;
-  // Capability-limited JS realm inside the supervised child; not an OS security sandbox.
+
+async function loadPlugin(plugin: ChildPlugin) {
+  if (!plugin.modules)
+    return (await import(pathToFileURL(plugin.entry).href)).default as unknown;
   const realm = createContext(Object.create(null), {
     codeGeneration: { strings: false, wasm: false },
   });
   const modules = new Map<string, SourceTextModule>();
-  for (const [path, code] of Object.entries(target.modules))
+  for (const [path, code] of Object.entries(plugin.modules))
     modules.set(
       path,
       new SourceTextModule(code, { context: realm, identifier: path }),
@@ -44,15 +65,16 @@ async function loadBusiness() {
       timeout: 1000,
     }) as string,
   ) as unknown;
-  businessInfo = {
-    presentation,
-    modules: [...modules].map(([path, module]) => ({
-      path,
-      status: module.status,
-      exports:
-        module.status === "evaluated" ? Object.keys(module.namespace) : [],
-    })),
-  };
+  if (plugin.role === "workflow")
+    businessInfo = {
+      presentation,
+      modules: [...modules].map(([path, module]) => ({
+        path,
+        status: module.status,
+        exports:
+          module.status === "evaluated" ? Object.keys(module.namespace) : [],
+      })),
+    };
   realm.service = (entry.namespace as { default: unknown }).default;
   const methods = JSON.parse(
     new Script(
@@ -63,7 +85,6 @@ async function loadBusiness() {
     methods.map((method) => [
       method,
       (data: unknown) => {
-        // Only JSON crosses the realm boundary; no host function, process or database is injected.
         realm.request = JSON.stringify({ method, data });
         const result = new Script(`(() => {
         const {method, data} = JSON.parse(request);
@@ -77,42 +98,75 @@ async function loadBusiness() {
     ]),
   );
 }
-const loaded = await loadBusiness();
-if (!loaded || typeof loaded !== "object")
-  throw new Error("Invalid service export");
-const service = loaded as Record<string, unknown>;
+
+const loadedServices = new Map<string, Record<string, unknown>>();
+const workflowPlugin =
+  plugins.find((p) => p.role === "workflow") ?? plugins[0]!;
+
+for (const plugin of plugins) {
+  const loaded = await loadPlugin(plugin);
+  if (!loaded || typeof loaded !== "object")
+    throw new Error("Invalid service export");
+  loadedServices.set(plugin.pluginId, loaded as Record<string, unknown>);
+}
+
 const ctx = new Context();
-const provider = ctx.plugin((local) => {
-  local.provide(target.service, service);
-});
-let invoke: (method: string, data: unknown) => unknown = () => {
-  throw new Error("Not ready");
-};
-const consumer = ctx.inject([target.service], (local) => {
-  const active = local.get(target.service) as Record<string, unknown>;
-  invoke = (method, data) => {
-    if (!Object.hasOwn(active, method) || typeof active[method] !== "function")
-      throw new Error("Unknown service method");
-    return (active[method] as (data: unknown) => unknown).call(active, data);
-  };
-});
-await provider.await();
-await consumer.await();
+type Fiber = ReturnType<Context["plugin"]>;
+const providers: Fiber[] = [];
+for (const plugin of plugins) {
+  const service = loadedServices.get(plugin.pluginId)!;
+  providers.push(
+    ctx.plugin((local) => {
+      local.provide(plugin.service, service);
+    }),
+  );
+}
+const invokers = new Map<string, (method: string, data: unknown) => unknown>();
+const consumers: Fiber[] = [];
+for (const plugin of plugins) {
+  consumers.push(
+    ctx.inject([plugin.service], (local) => {
+      const active = local.get(plugin.service) as Record<string, unknown>;
+      invokers.set(plugin.pluginId, (method, data) => {
+        if (
+          !Object.hasOwn(active, method) ||
+          typeof active[method] !== "function"
+        )
+          throw new Error("Unknown service method");
+        return (active[method] as (data: unknown) => unknown).call(
+          active,
+          data,
+        );
+      });
+    }),
+  );
+}
+for (const provider of providers) await provider.await();
+for (const consumer of consumers) await consumer.await();
 if (
-  provider.state !== FiberState.ACTIVE ||
-  consumer.state !== FiberState.ACTIVE
+  providers.some((p) => p.state !== FiberState.ACTIVE) ||
+  consumers.some((c) => c.state !== FiberState.ACTIVE)
 )
   throw new Error("Service not active");
+
 process.on("disconnect", () => process.exit(0));
 process.on("message", async (raw: unknown) => {
   if (!raw || typeof raw !== "object") return;
-  const message = raw as { id: number; method: string; data?: unknown };
+  const message = raw as {
+    id: number;
+    method: string;
+    data?: unknown;
+    pluginId?: string;
+  };
   if (message.method === "close") {
-    await consumer.dispose();
-    await provider.dispose();
+    for (const consumer of consumers) await consumer.dispose();
+    for (const provider of providers) await provider.dispose();
     process.exit(0);
   }
   try {
+    const targetId = message.pluginId ?? workflowPlugin.pluginId;
+    const invoke = invokers.get(targetId);
+    if (!invoke) throw new Error(`Unknown plugin: ${targetId}`);
     process.send?.({
       id: message.id,
       value:

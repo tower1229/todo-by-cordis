@@ -16,8 +16,14 @@ export type Field = {
   type: "text";
   required?: boolean;
   description?: string;
+  providerId?: string;
 };
-export type Action = { id: string; label: string; from: string[] };
+export type Action = {
+  id: string;
+  label: string;
+  from: string[];
+  providerId?: string;
+};
 export type WorkflowDefinition = {
   id: WorkflowId;
   name: string;

@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { randomUUID, createHash } from "node:crypto";
 import { stripTypeScriptTypes } from "node:module";
 import { Release, type Prepared } from "../release/release.js";
-import type { Version, RuntimeLike } from "../release/types.js";
+import type { Version, RuntimeLike, LaunchTarget, VersionMemberRole } from "../release/types.js";
 import { hash, operationHash } from "../release/storage.js";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -23,6 +23,7 @@ import {
   emptyContribution,
   type BeforeCommitResult,
   type ExtensionContribution,
+  type Field,
   type HookAnnotations,
   type ScheduleRegistration,
   type TaskEvent,
@@ -31,6 +32,12 @@ import {
 } from "./business/contracts.js";
 import { ExtensionRegistry } from "./extensions/registry.js";
 import { OnlineScheduler } from "./extensions/scheduler.js";
+import {
+  compositionMembers,
+  resolveVersionMembers,
+  validateCompositionMembers,
+  workflowPluginId,
+} from "./composition.js";
 
 function text(value: unknown, max: number, required = false) {
   if (
@@ -45,7 +52,7 @@ function text(value: unknown, max: number, required = false) {
   return required ? value.trim() : value;
 }
 type Options = {
-  launch?: (version: Version) => Promise<RuntimeLike>;
+  launch?: (version: LaunchTarget) => Promise<RuntimeLike>;
   checkpoint?: (stage: string) => void;
   beforeOpenWrites?: () => Promise<void>;
 };
@@ -62,7 +69,7 @@ export class Workspace {
   private automaticRestartUsed = false;
   private publishing = false;
   private retiring = new Set<Promise<void>>();
-  private launch: (version: Version) => Promise<RuntimeLike>;
+  private launch: (version: LaunchTarget) => Promise<RuntimeLike>;
   private readonly extensions = new ExtensionRegistry();
   private readonly scheduler = new OnlineScheduler();
   private diagnosticsNotes: string[] = [];
@@ -242,9 +249,11 @@ export class Workspace {
     return recovery;
   }
   private async startVersion(version: Version) {
+    validateCompositionMembers(version);
     const runtime = await this.release.start(version);
     try {
-      await runtime.invoke("describe");
+      const workflowId = workflowPluginId(version);
+      await runtime.invoke("describe", undefined, workflowId);
       if (this.runtime && this.runtime !== runtime) {
         await this.teardownExtensions(this.runtime);
         this.runtime.onFailure = undefined;
@@ -252,7 +261,7 @@ export class Workspace {
       }
       this.runtime = runtime;
       this.bind(runtime);
-      await this.setupExtensions(runtime, version.pluginId);
+      await this.setupExtensions(runtime, version);
       this.status = "ready";
       return runtime;
     } catch (error) {
@@ -275,9 +284,10 @@ export class Workspace {
     runtime: RuntimeLike,
     method: string,
     data?: unknown,
+    pluginId?: string,
   ): Promise<T | undefined> {
     try {
-      return await runtime.invoke<T>(method, data);
+      return await runtime.invoke<T>(method, data, pluginId);
     } catch (error) {
       if (
         error instanceof Error &&
@@ -287,52 +297,80 @@ export class Workspace {
       throw error;
     }
   }
-  private async setupExtensions(runtime: RuntimeLike, pluginId: string) {
+  private async setupExtensions(runtime: RuntimeLike, version: Version) {
+    validateCompositionMembers(version);
+    const workflowId = workflowPluginId(version);
     const definition = (await runtime.invoke(
       "describe",
+      undefined,
+      workflowId,
     )) as WorkflowDefinition;
-    const contribution =
-      (await this.invokeOptional<ExtensionContribution>(
-        runtime,
-        "contribute",
-      )) ?? emptyContribution();
-    this.extensions.install(pluginId, contribution, definition.fields);
-    const life = contribution.lifecycle;
-    if (life?.activate)
+    if (definition.id !== workflowId) throw new Error("候选身份不一致");
+    const installs: Array<{
+      pluginId: string;
+      contribution: ExtensionContribution;
+      role: VersionMemberRole;
+      workflowFields?: Field[];
+      workflowActions?: WorkflowDefinition["actions"];
+    }> = [];
+    for (const member of resolveVersionMembers(version)) {
+      if (!member.enabled) continue;
+      const contribution =
+        (await this.invokeOptional<ExtensionContribution>(
+          runtime,
+          "contribute",
+          undefined,
+          member.pluginId,
+        )) ?? emptyContribution();
+      installs.push({
+        pluginId: member.pluginId,
+        contribution,
+        role: member.role,
+        workflowFields:
+          member.role === "workflow" ? definition.fields : undefined,
+        workflowActions:
+          member.role === "workflow" ? definition.actions : undefined,
+      });
+    }
+    this.extensions.installAll(installs);
+    for (const pluginId of this.extensions.lifecycleProviders("activate"))
       this.recordAnnotations(
         await this.invokeOptional<HookAnnotations>(
           runtime,
           "lifecycleActivate",
           {},
+          pluginId,
         ),
       );
-    if (life?.ready)
+    for (const pluginId of this.extensions.lifecycleProviders("ready"))
       this.recordAnnotations(
         await this.invokeOptional<HookAnnotations>(
           runtime,
           "lifecycleReady",
           {},
+          pluginId,
         ),
       );
     this.armSchedules(runtime);
   }
   private async teardownExtensions(runtime: RuntimeLike) {
     this.scheduler.cancelAll();
-    const life = this.extensions.current().lifecycle;
-    if (life?.quiesce)
+    for (const pluginId of this.extensions.lifecycleProviders("quiesce"))
       this.recordAnnotations(
         await this.invokeOptional<HookAnnotations>(
           runtime,
           "lifecycleQuiesce",
           {},
+          pluginId,
         ).catch(() => undefined),
       );
-    if (life?.dispose)
+    for (const pluginId of this.extensions.lifecycleProviders("dispose"))
       this.recordAnnotations(
         await this.invokeOptional<HookAnnotations>(
           runtime,
           "lifecycleDispose",
           {},
+          pluginId,
         ).catch(() => undefined),
       );
     this.extensions.clear();
@@ -425,31 +463,33 @@ export class Workspace {
     input: Record<string, string>,
     decision: Extract<WorkflowDecision, { kind: "commit" }>,
   ) {
-    if (!this.extensions.hasBeforeCommit()) return;
-    const result = await this.invokeOptional<BeforeCommitResult>(
-      runtime,
-      "beforeCommit",
-      { task, draft, action, input, decision },
-    );
-    if (!result)
-      throw new AppError(
-        "INVALID_EXTENSION",
-        "已声明 beforeCommit 但未实现方法",
+    for (const pluginId of this.extensions.beforeCommitProviders()) {
+      const result = await this.invokeOptional<BeforeCommitResult>(
+        runtime,
+        "beforeCommit",
+        { task, draft, action, input, decision },
+        pluginId,
       );
-    if (result.kind === "reject")
-      throw new AppError("ACTION_REJECTED", result.message);
-    if (result.kind !== "ok")
-      throw new AppError("INVALID_EXTENSION", "beforeCommit 返回无效结果");
-    this.recordAnnotations(result);
-    if (result.fields) {
-      if (Object.values(result.fields).some((v) => typeof v !== "string"))
-        throw new AppError("INVALID_EXTENSION", "beforeCommit 字段无效");
-      draft.fields = result.fields;
-    }
-    if (result.state) {
-      if (!this.composition().workflow.states[result.state])
-        throw new AppError("INVALID_EXTENSION", "beforeCommit 状态无效");
-      draft.state = result.state;
+      if (!result)
+        throw new AppError(
+          "INVALID_EXTENSION",
+          "已声明 beforeCommit 但未实现方法",
+        );
+      if (result.kind === "reject")
+        throw new AppError("ACTION_REJECTED", result.message);
+      if (result.kind !== "ok")
+        throw new AppError("INVALID_EXTENSION", "beforeCommit 返回无效结果");
+      this.recordAnnotations(result);
+      if (result.fields) {
+        if (Object.values(result.fields).some((v) => typeof v !== "string"))
+          throw new AppError("INVALID_EXTENSION", "beforeCommit 字段无效");
+        draft.fields = result.fields;
+      }
+      if (result.state) {
+        if (!this.composition().workflow.states[result.state])
+          throw new AppError("INVALID_EXTENSION", "beforeCommit 状态无效");
+        draft.state = result.state;
+      }
     }
   }
   private async dispatchTaskEvent(
@@ -458,18 +498,19 @@ export class Workspace {
     task: Task,
     changedPaths: string[],
   ) {
-    if (this.extensions.subscribedEvents().has(kind)) {
+    for (const pluginId of this.extensions.eventProviders(kind)) {
       const event: TaskEvent = {
         kind,
         task,
         changedPaths,
         revision: task.revision,
-        source: this.extensions.activePluginId() ?? "workflow",
+        source: pluginId,
       };
       try {
         const result = await runtime.invoke<TaskEventResult>(
           "onTaskEvent",
           event,
+          pluginId,
         );
         this.recordAnnotations(result);
       } catch (error) {
@@ -564,6 +605,7 @@ export class Workspace {
       buildHash: active.buildHash,
       ...(this.activationPending() ? { activationPending: true } : {}),
       ...(recovery ? { recovery } : {}),
+      members: compositionMembers(this.release.get(active.versionId)),
       retainedFields: retained,
       extensions: this.extensions.summarize(),
       history: this.db
@@ -734,11 +776,19 @@ export class Workspace {
             )
           )
             throw new AppError("INVALID_INPUT", "表单内容无效");
-          decision = await runtime.invoke<WorkflowDecision>("decide", {
-            task,
-            action: command.actionId,
-            input,
-          });
+          const providerId =
+            this.extensions.commandProvider(command.actionId!) ??
+            this.extensions.activePluginId() ??
+            undefined;
+          decision = await runtime.invoke<WorkflowDecision>(
+            "decide",
+            {
+              task,
+              action: command.actionId,
+              input,
+            },
+            providerId,
+          );
           if (runtime !== this.runtime || this.status !== "ready")
             throw new AppError(
               "RUNTIME_CHANGED",
@@ -847,8 +897,43 @@ export class Workspace {
     if (!(version.evidence as { passed?: boolean })?.passed)
       throw new AppError("UNVERIFIED_VERSION", "候选尚未通过验证");
     const prepared = await this.release.prepare(version, async (runtime) => {
-      const definition = await runtime.invoke<WorkflowDefinition>("describe");
-      if (definition.id !== version.pluginId) throw new Error("候选身份不一致");
+      validateCompositionMembers(version);
+      const workflowId = workflowPluginId(version);
+      const definition = await runtime.invoke<WorkflowDefinition>(
+        "describe",
+        undefined,
+        workflowId,
+      );
+      if (definition.id !== workflowId) throw new Error("候选身份不一致");
+      // Collect contributions early so exclusive conflicts fail before commit.
+      const installs: Array<{
+        pluginId: string;
+        contribution: ExtensionContribution;
+        role: VersionMemberRole;
+        workflowFields?: Field[];
+        workflowActions?: WorkflowDefinition["actions"];
+      }> = [];
+      for (const member of resolveVersionMembers(version)) {
+        if (!member.enabled) continue;
+        const contribution =
+          (await this.invokeOptional<ExtensionContribution>(
+            runtime,
+            "contribute",
+            undefined,
+            member.pluginId,
+          )) ?? emptyContribution();
+        installs.push({
+          pluginId: member.pluginId,
+          contribution,
+          role: member.role,
+          workflowFields:
+            member.role === "workflow" ? definition.fields : undefined,
+          workflowActions:
+            member.role === "workflow" ? definition.actions : undefined,
+        });
+      }
+      const probe = new ExtensionRegistry();
+      probe.installAll(installs);
     });
     return this.publish(prepared, request, complete, signal);
   }
@@ -936,10 +1021,7 @@ export class Workspace {
               this.extensions.clear();
             }
             if (this.runtime)
-              await this.setupExtensions(
-                this.runtime,
-                prepared.version.pluginId,
-              );
+              await this.setupExtensions(this.runtime, prepared.version);
             await this.options.beforeOpenWrites?.();
           },
           openWrites: () => {
@@ -986,7 +1068,7 @@ export class Workspace {
             if (priorRuntime) {
               this.runtime = priorRuntime;
               this.bind(priorRuntime);
-              await this.setupExtensions(priorRuntime, restored.pluginId);
+              await this.setupExtensions(priorRuntime, restored);
               this.status = "ready";
               return;
             }

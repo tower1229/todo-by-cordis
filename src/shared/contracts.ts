@@ -39,6 +39,11 @@ export type Command = {
   input?: Record<string, string>;
 };
 export type CommandResult = { task?: Task; decision?: WorkflowDecision };
+export type CompositionMember = {
+  pluginId: string;
+  versionId: string;
+  enabled: boolean;
+};
 export type Composition = {
   revision: number;
   workflow: WorkflowDefinition;
@@ -54,6 +59,7 @@ export type Composition = {
     revision: number;
     at: string;
   };
+  members: CompositionMember[];
   retainedFields: Field[];
   extensions: ExtensionSummary;
   history: {

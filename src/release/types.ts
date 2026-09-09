@@ -4,6 +4,18 @@ export type BusinessBundle = {
   lockHash: string;
   builder: string;
 };
+
+export const versionMemberRoles = ["workflow", "auxiliary"] as const;
+export type VersionMemberRole = (typeof versionMemberRoles)[number];
+
+/** Lock entry for a composition; omit versionId to mean this Version.id. */
+export type VersionMember = {
+  pluginId: string;
+  versionId?: string;
+  enabled: boolean;
+  role: VersionMemberRole;
+};
+
 export type Version = {
   bundle?: BusinessBundle;
   id: string;
@@ -18,15 +30,38 @@ export type Version = {
   evidence: unknown;
   createdAt: string;
   entry: string;
+  /** Absent => single-element composition of this version. */
+  members?: VersionMember[];
 };
+
+export type RuntimePluginTarget = {
+  pluginId: string;
+  entry: string;
+  service: string;
+  bundle?: BusinessBundle;
+  role: VersionMemberRole;
+};
+
 export type RuntimeTarget = {
   bundle?: BusinessBundle;
   entry: string;
   service: string;
   pluginId: string;
+  /** When present, all enabled plugins loaded in one child; includes primary. */
+  plugins?: RuntimePluginTarget[];
 };
+
 export type RuntimeLike = {
-  invoke<T = unknown>(method: string, data?: unknown): Promise<T>;
+  invoke<T = unknown>(
+    method: string,
+    data?: unknown,
+    pluginId?: string,
+  ): Promise<T>;
   close(): Promise<void>;
   onFailure?: () => void;
+};
+
+/** Version plus resolved runtime plugins for child launch. */
+export type LaunchTarget = Version & {
+  plugins?: RuntimePluginTarget[];
 };

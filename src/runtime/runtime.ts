@@ -26,14 +26,32 @@ export class Runtime {
     entry?: URL,
   ) {
     const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
+    const plugins = target.plugins?.length
+      ? target.plugins
+      : [
+          {
+            pluginId: target.pluginId,
+            entry: target.entry,
+            service: target.service,
+            bundle: target.bundle,
+            role: "workflow" as const,
+          },
+        ];
     this.child = fork(
       entry ?? new URL(`./child.${extension}`, import.meta.url),
       [
         JSON.stringify({
-          entry: target.entry,
-          modules: target.bundle?.outputs,
-          service: target.service,
-          pluginId: target.pluginId,
+          plugins: plugins.map((plugin) => ({
+            pluginId: plugin.pluginId,
+            entry: plugin.entry,
+            service: plugin.service,
+            modules:
+              plugin.bundle?.outputs ??
+              (plugin.pluginId === target.pluginId
+                ? target.bundle?.outputs
+                : undefined),
+            role: plugin.role,
+          })),
         }),
       ],
       {
@@ -113,7 +131,7 @@ export class Runtime {
       throw error;
     }
   }
-  invoke<T>(method: string, data?: unknown): Promise<T> {
+  invoke<T>(method: string, data?: unknown, pluginId?: string): Promise<T> {
     if (this.exited || this.closing)
       return Promise.reject(new Error("运行环境不可用"));
     return new Promise((resolve, reject) => {
@@ -128,7 +146,7 @@ export class Runtime {
         reject,
         timer,
       });
-      this.child.send({ id, method, data }, (error) => {
+      this.child.send({ id, method, data, pluginId }, (error) => {
         if (error) {
           clearTimeout(timer);
           this.pending.delete(id);
