@@ -226,6 +226,8 @@ export type AssistantRun = Run &
     | { status: "failed"; message: string; steps: AssistantStep[] }
     | { status: "cancelled" }
   );
+import type { ResolvedUiContribution } from "../server/business/contracts.js";
+
 export type ExperienceReport = {
   candidateId: string;
   marked: "not-applied";
@@ -233,6 +235,7 @@ export type ExperienceReport = {
   simulated: true;
   checks: string[];
   presentation?: { title: string; fields: string[] };
+  uiContributions?: ResolvedUiContribution[];
   note: string;
 };
 export type CandidateAttempt = {

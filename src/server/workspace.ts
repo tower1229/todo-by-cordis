@@ -627,6 +627,7 @@ export class Workspace {
       members: compositionMembers(this.release.get(active.versionId)),
       retainedFields: retained,
       extensions: this.extensions.summarize(),
+      uiContributions: this.extensions.uiContributions(base.actions),
       history: this.db
         .prepare(
           "SELECT id,workflowId,versionId,name,createdAt,pausedMs,preparationMs FROM releases ORDER BY id DESC LIMIT 20",

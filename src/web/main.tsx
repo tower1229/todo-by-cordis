@@ -37,7 +37,7 @@ const filters = [
 type Category = (typeof filters)[number]["id"];
 type Panel =
   | { kind: "task"; task: Task }
-  | { kind: "action"; form: ActionForm }
+  | { kind: "action"; form: ActionForm; returnTask?: Task }
   | { kind: "assistant" }
   | { kind: "workspace" };
 
@@ -50,6 +50,7 @@ function App() {
   const [panel, setPanel] = useState<Panel>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [contributionError, setContributionError] = useState("");
   const [undo, setUndo] = useState<Task>();
   const [seenMessage, setSeenMessage] = useState(
     () => localStorage.getItem("assistant-seen") ?? "",
@@ -63,6 +64,7 @@ function App() {
   const returnFocus = useRef<HTMLElement | null>(null);
   const addInput = useRef<HTMLInputElement>(null);
   const aiTrigger = useRef<HTMLButtonElement>(null);
+  const actionReturnTask = useRef<Task | undefined>(undefined);
   const refresh = useCallback(async () => {
     const request = ++latest.current;
     const [pages, next] = await Promise.all([
@@ -122,6 +124,7 @@ function App() {
     trigger: HTMLElement | null = document.activeElement as HTMLElement,
   ) {
     returnFocus.current = trigger;
+    if (next.kind === "task") setContributionError("");
     setPanel(next);
   }
   async function write(operation: () => Promise<void>) {
@@ -162,8 +165,50 @@ function App() {
     task: Task,
     action: { id: string; label: string },
     trigger: HTMLElement,
+    options?: { keepTaskPanel?: boolean },
   ) {
     if (!composition) return;
+    if (options?.keepTaskPanel) {
+      if (locked.current) return;
+      locked.current = true;
+      setBusy(true);
+      setContributionError("");
+      try {
+        const result = await sendCommand({
+          type: "action",
+          taskId: task.id,
+          actionId: action.id,
+          expectedRevision: task.revision,
+          compositionRevision: composition.revision,
+        });
+        if (result.decision?.kind === "input-required")
+          openPanel(
+            {
+              kind: "action",
+              form: {
+                task,
+                actionId: action.id,
+                label: action.label,
+                fields: result.decision.fields,
+                revision: composition.revision,
+              },
+              returnTask: task,
+            },
+            trigger,
+          );
+        else {
+          await refreshAfterWrite();
+          if (result.task) setPanel({ kind: "task", task: result.task });
+        }
+      } catch (error) {
+        setContributionError(errorMessage(error));
+        await refresh().catch(() => {});
+      } finally {
+        locked.current = false;
+        setBusy(false);
+      }
+      return;
+    }
     await write(async () => {
       const result = await sendCommand({
         type: "action",
@@ -567,17 +612,48 @@ function App() {
             task={panel.task}
             revision={composition?.revision ?? 1}
             fields={composition?.retainedFields ?? []}
+            contributions={composition?.uiContributions ?? []}
+            availableActionIds={
+              new Set(
+                (composition?.workflow.actions ?? [])
+                  .filter((action) => action.from.includes(panel.task.state))
+                  .map((action) => action.id),
+              )
+            }
             saved={refreshAfterWrite}
             close={() => setPanel(undefined)}
             remove={() => remove(panel.task)}
+            contributionBusy={busy}
+            contributionError={contributionError}
+            onContributionAction={(action, trigger) =>
+              act(panel.task, action, trigger, { keepTaskPanel: true })
+            }
           />
         )}
         {panel?.kind === "action" && (
           <InputForm
             key={`${panel.form.task.id}:${panel.form.revision}`}
             form={panel.form}
-            done={refreshAfterWrite}
-            cancel={() => setPanel(undefined)}
+            done={async () => {
+              await refreshAfterWrite();
+              if (panel.returnTask) {
+                try {
+                  actionReturnTask.current = await api<Task>(
+                    `/tasks/${panel.returnTask.id}`,
+                  );
+                } catch {
+                  actionReturnTask.current = undefined;
+                }
+              } else actionReturnTask.current = undefined;
+            }}
+            cancel={() => {
+              const latest = actionReturnTask.current;
+              actionReturnTask.current = undefined;
+              if (latest) setPanel({ kind: "task", task: latest });
+              else if (panel.returnTask)
+                setPanel({ kind: "task", task: panel.returnTask });
+              else setPanel(undefined);
+            }}
           />
         )}
         {panel?.kind === "assistant" && (

@@ -31,6 +31,9 @@ import {
   CandidateValidationError,
 } from "../release/business-bundle.js";
 import { hash } from "../release/storage.js";
+import type { ExtensionContribution } from "./business/contracts.js";
+import { emptyContribution } from "./business/contracts.js";
+import { resolveUiContributions } from "./extensions/ui-slots.js";
 
 type Rule = {
   key: string;
@@ -64,7 +67,7 @@ export type ExtensionContribution = {
   events?:TaskEventKind[];
   schedules?:{id:string;at:string;atKind?:"absolute"|"field";timezone?:string;dedupeKey:string;onFire:{type:"action";commandId:string;taskId?:string;input?:Record<string,string>};missPolicy:MissPolicy}[];
   lifecycle?:{activate?:boolean;ready?:boolean;quiesce?:boolean;dispose?:boolean};
-  uiSlots?:{id:string;slot:string;order?:number}[];
+  uiSlots?:{id:string;slot:string;title?:string;body?:string;actions?:{commandId:string;label:string}[];fields?:{key:string;label:string}[];order?:number}[];
   queryFilters?:{id:string;label:string}[];
   querySorts?:{id:string;label:string;primary?:boolean}[];
   diagnostics?:boolean;
@@ -425,9 +428,34 @@ export class EvolutionDomain implements Domain {
     try {
       signal.throwIfAborted();
       const definition = await runtime.invoke<WorkflowDefinition>("describe");
-      const info = await runtime.invoke<{
-        presentation: { title: string; fields: string[] };
-      }>("__business_info");
+      let presentation = {
+        title: definition.name,
+        fields: definition.fields.map((f) => f.label),
+      };
+      try {
+        const info = await runtime.invoke<{
+          presentation?: { title: string; fields: string[] };
+        } | null>("__business_info");
+        if (info?.presentation?.title)
+          presentation = {
+            title: info.presentation.title,
+            fields: info.presentation.fields ?? [],
+          };
+      } catch {
+        // File-entry fixtures may omit business/view; UI contributions stay separate.
+      }
+      const contribution = await runtime
+        .invoke<ExtensionContribution>("contribute")
+        .catch(() => emptyContribution());
+      const known = new Set([
+        ...definition.actions.map((a) => a.id),
+        ...(contribution.commands ?? []).map((c) => c.id),
+      ]);
+      const { valid: uiContributions } = resolveUiContributions(
+        contribution,
+        known,
+        version.pluginId,
+      );
       const sample = await runtime.invoke<WorkflowDecision>("decide", {
         task: {
           state: definition.initialState,
@@ -438,10 +466,40 @@ export class EvolutionDomain implements Domain {
       });
       const checks = [
         `describe:${definition.id}`,
-        `presentation:${info.presentation.title}`,
-        `fields:${info.presentation.fields.join(",")}`,
+        `presentation:${presentation.title}`,
+        `fields:${presentation.fields.join(",")}`,
         `decide:${sample.kind}`,
       ];
+      if (uiContributions.length) {
+        checks.push("ui.slot:active");
+        const proof = uiContributions[0]!;
+        checks.push(`ui.contribution:${proof.id}`);
+        const action = proof.actions[0];
+        if (action) {
+          checks.push(`ui.action:${action.commandId}`);
+          signal.throwIfAborted();
+          const write = await runtime.invoke<WorkflowDecision>("decide", {
+            task: {
+              id: "experience-task",
+              title: "体验任务",
+              description: "",
+              state: definition.initialState,
+              revision: 1,
+              createdAt: new Date(0).toISOString(),
+              updatedAt: new Date(0).toISOString(),
+              deletedAt: null,
+              fields: { retained: "preview-only" },
+            } satisfies Task,
+            action: action.commandId,
+            input: {},
+          });
+          checks.push(
+            write.kind === "commit"
+              ? `ui.write:commit`
+              : `ui.write:${write.kind}`,
+          );
+        }
+      }
       const evidence = version.evidence as { extensions?: BusinessExtensions };
       if (evidence.extensions) {
         signal.throwIfAborted();
@@ -458,7 +516,8 @@ export class EvolutionDomain implements Domain {
         isolated: true,
         simulated: true,
         checks,
-        presentation: info.presentation,
+        presentation,
+        ...(uiContributions.length ? { uiContributions } : {}),
         note: "候选体验使用隔离环境与模拟数据，结果已标注为尚未应用，未写入正式任务。",
       };
     } finally {

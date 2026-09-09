@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Trash2 } from "lucide-react";
-import type { Task, Field } from "../shared/contracts.js";
+import type { Task, Field, ResolvedUiContribution } from "../shared/contracts.js";
 import {
   api,
   errorMessage,
@@ -9,21 +9,35 @@ import {
   sendCommand,
 } from "./api.js";
 import { Button, ErrorMessage, Spinner } from "./ui.js";
+import { TaskDetailContributions } from "./TaskDetailContributions.js";
 
 export function Editor({
   task,
   revision,
   fields,
+  contributions = [],
+  availableActionIds,
   saved,
   close,
   remove,
+  onContributionAction,
+  contributionBusy = false,
+  contributionError = "",
 }: {
   task: Task;
   revision: number;
   fields: Field[];
+  contributions?: ResolvedUiContribution[];
+  availableActionIds?: ReadonlySet<string>;
   saved: () => Promise<void>;
   close: () => void;
   remove: () => Promise<void>;
+  onContributionAction?: (
+    action: { id: string; label: string },
+    trigger: HTMLElement,
+  ) => void;
+  contributionBusy?: boolean;
+  contributionError?: string;
 }) {
   const key = `draft:${task.id}`;
   const [draft, setDraft] = useState(() => {
@@ -103,7 +117,14 @@ export function Editor({
             }
           />
         </div>
-        {Object.entries(task.fields).map(([key, value]) => (
+        {Object.entries(task.fields)
+          .filter(
+            ([key]) =>
+              !contributions.some((item) =>
+                item.fields.some((field) => field.key === key),
+              ),
+          )
+          .map(([key, value]) => (
           <div key={key} className="space-y-2">
             <p className="field-label">
               {fields.find((field) => field.key === key)?.label ?? key}
@@ -113,6 +134,16 @@ export function Editor({
             </p>
           </div>
         ))}
+        {onContributionAction && (
+          <TaskDetailContributions
+            task={task}
+            contributions={contributions}
+            availableActionIds={availableActionIds}
+            busy={contributionBusy || busy}
+            error={contributionError}
+            onAction={onContributionAction}
+          />
+        )}
         <ErrorMessage message={error} />
         {error && (
           <Button

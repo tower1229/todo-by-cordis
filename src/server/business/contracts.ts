@@ -99,10 +99,34 @@ export type LifecycleContribution = {
   dispose?: boolean;
 };
 
+export type UiContributionAction = {
+  commandId: string;
+  label: string;
+};
+
+export type UiContributionField = {
+  key: string;
+  label: string;
+};
+
 export type UiSlotRegistration = {
   id: string;
   slot: string;
+  title?: string;
+  body?: string;
+  actions?: UiContributionAction[];
+  fields?: UiContributionField[];
   order?: number;
+};
+
+export type ResolvedUiContribution = {
+  id: string;
+  slot: "task.detail";
+  title: string;
+  body?: string;
+  actions: UiContributionAction[];
+  fields: UiContributionField[];
+  providerId: string;
 };
 
 export type QueryFilterRegistration = {

@@ -515,6 +515,19 @@ export function AssistantPanel({
                     {run.experience.presentation.fields.join("、")}
                   </p>
                 )}
+                {run.experience.uiContributions &&
+                  run.experience.uiContributions.length > 0 && (
+                    <div className="space-y-2" aria-label="体验 UI 贡献">
+                      {run.experience.uiContributions.map((item) => (
+                        <p key={`${item.providerId}:${item.id}`} className="text-xs text-muted">
+                          UI 贡献：{item.title}
+                          {item.actions.length
+                            ? ` · ${item.actions.map((a) => a.label).join("、")}`
+                            : ""}
+                        </p>
+                      ))}
+                    </div>
+                  )}
               </section>
             )}
             <Steps steps={run.steps} />

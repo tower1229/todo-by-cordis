@@ -18,6 +18,7 @@ export type {
   ScheduleRegistration,
   MissPolicy,
   Plugin,
+  ResolvedUiContribution,
 } from "../server/business/contracts.js";
 import type {
   Task,
@@ -26,6 +27,7 @@ import type {
   WorkflowId,
   Field,
   ExtensionSummary,
+  ResolvedUiContribution,
 } from "../server/business/contracts.js";
 export type Command = {
   operationId: string;
@@ -62,6 +64,7 @@ export type Composition = {
   members: CompositionMember[];
   retainedFields: Field[];
   extensions: ExtensionSummary;
+  uiContributions: ResolvedUiContribution[];
   history: {
     id: number;
     workflowId: WorkflowId;

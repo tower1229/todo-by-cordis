@@ -8,11 +8,13 @@ import {
   type ExtensionContribution,
   type ExtensionSummary,
   type Field,
+  type ResolvedUiContribution,
   type ScheduleRegistration,
   type TaskEventKind,
   type WorkflowDefinition,
 } from "../business/contracts.js";
 import type { VersionMemberRole } from "../../release/types.js";
+import { resolveUiContributions } from "./ui-slots.js";
 
 type InstalledPlugin = {
   pluginId: string;
@@ -22,9 +24,11 @@ type InstalledPlugin = {
 
 export class ExtensionRegistry {
   private plugins: InstalledPlugin[] = [];
+  private workflowActions: Action[] = [];
 
   clear() {
     this.plugins = [];
+    this.workflowActions = [];
   }
 
   install(
@@ -54,6 +58,7 @@ export class ExtensionRegistry {
       workflow?.workflowFields ?? [],
       workflow?.workflowActions ?? [],
     );
+    this.workflowActions = workflow?.workflowActions ?? [];
     this.plugins = installs.map((i) => ({
       pluginId: i.pluginId,
       role: i.role,
@@ -127,6 +132,26 @@ export class ExtensionRegistry {
 
   schedules(): ScheduleRegistration[] {
     return this.plugins.flatMap((p) => p.contribution.schedules ?? []);
+  }
+
+  knownCommandIds(workflowActions: Action[] = this.workflowActions): Set<string> {
+    const ids = new Set(workflowActions.map((a) => a.id));
+    for (const command of this.commands()) ids.add(command.id);
+    return ids;
+  }
+
+  uiContributions(
+    workflowActions: Action[] = this.workflowActions,
+  ): ResolvedUiContribution[] {
+    const known = this.knownCommandIds(workflowActions);
+    return this.plugins.flatMap((plugin) => {
+      const { valid } = resolveUiContributions(
+        plugin.contribution,
+        known,
+        plugin.pluginId,
+      );
+      return valid;
+    });
   }
 
   hasFieldSchedules() {
@@ -204,6 +229,9 @@ export class ExtensionRegistry {
         ? Object.values(c.lifecycle).filter(Boolean).length
         : 0;
       const uiSlots = c.uiSlots?.length ?? 0;
+      const known = this.knownCommandIds();
+      const resolvedUi = resolveUiContributions(c, known, providerId).valid
+        .length;
       const filters = c.queryFilters?.length ?? 0;
       const sorts = c.querySorts?.length ?? 0;
       const services = c.services?.length ?? 0;
@@ -253,9 +281,9 @@ export class ExtensionRegistry {
         },
         {
           interfaceId: "ui.slot",
-          status: uiSlots ? "stub" : "declared",
+          status: resolvedUi ? "active" : uiSlots ? "stub" : "declared",
           providerId,
-          count: uiSlots,
+          count: resolvedUi || uiSlots,
         },
         {
           interfaceId: "query.filter",
