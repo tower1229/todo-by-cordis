@@ -31,10 +31,10 @@ async function setup(t: TestContext) {
   const filename = join(directory, "tasks.db");
   const workspace = await Workspace.open(filename);
   t.after(async () => {
-    await workspace.close();
+    await workspace.close().catch(() => undefined);
     await rm(directory, { recursive: true, force: true });
   });
-  return workspace;
+  return { workspace, filename };
 }
 
 async function recordComposition(w: Workspace) {
@@ -95,7 +95,7 @@ async function recordComposition(w: Workspace) {
 }
 
 test("legacy single-plugin version lists as one-member composition", async (t) => {
-  const w = await setup(t);
+  const { workspace: w } = await setup(t);
   const composition = w.composition();
   assert.equal(composition.members.length, 1);
   assert.equal(composition.members[0]?.pluginId, "default");
@@ -111,7 +111,7 @@ test("legacy single-plugin version lists as one-member composition", async (t) =
 });
 
 test("dual plugins in one runtime expose both fields and commands with providers", async (t) => {
-  const w = await setup(t);
+  const { workspace: w } = await setup(t);
   const before = w.composition();
   const { composition } = await recordComposition(w);
   await w.activate(
@@ -170,7 +170,7 @@ test("dual plugins in one runtime expose both fields and commands with providers
 });
 
 test("duplicate identity and exclusive conflicts fail activation without changing formal composition", async (t) => {
-  const w = await setup(t);
+  const { workspace: w } = await setup(t);
   const before = w.composition();
   const task = (
     await w.command({
@@ -344,7 +344,7 @@ test("duplicate identity and exclusive conflicts fail activation without changin
 });
 
 test("auxiliary plugin need not provide workflow; exactly one workflow provider", async (t) => {
-  const w = await setup(t);
+  const { workspace: w } = await setup(t);
   const before = w.composition();
   const { composition } = await recordComposition(w);
   await w.activate(
@@ -381,7 +381,7 @@ test("auxiliary plugin need not provide workflow; exactly one workflow provider"
 });
 
 test("disabled member remains listed but does not contribute", async (t) => {
-  const w = await setup(t);
+  const { workspace: w } = await setup(t);
   const before = w.composition();
   const workflowCode = await readFile(join(fixtureDir, "aux-workflow.mjs"), "utf8");
   const tagsCode = await readFile(join(fixtureDir, "tags-plugin.mjs"), "utf8");
@@ -461,8 +461,197 @@ test("disabled member remains listed but does not contribute", async (t) => {
   assert.ok(active.workflow.actions.some((a) => a.id === "setDue"));
 });
 
+test("cross-plugin field key collision fails activation", async (t) => {
+  const { workspace: w } = await setup(t);
+  const before = w.composition();
+  const task = (
+    await w.command({
+      type: "create",
+      title: "保留任务",
+      operationId: randomUUID(),
+      compositionRevision: before.revision,
+    })
+  ).task!;
+  const workflowCode = await readFile(join(fixtureDir, "aux-workflow.mjs"), "utf8");
+  const clashA = `export default {
+  contribute() {
+    return { fields: [{ key: "shared", label: "A", type: "text" }] };
+  },
+  decide() { return { kind: "reject", message: "无" }; },
+};`;
+  const clashB = `export default {
+  contribute() {
+    return { fields: [{ key: "shared", label: "B", type: "text" }] };
+  },
+  decide() { return { kind: "reject", message: "无" }; },
+};`;
+  const a = w.release.record({
+    pluginId: "clash-a",
+    name: "撞名A",
+    service: "plugin:clash-a",
+    contractVersion: "extensions/1",
+    source: clashA,
+    code: clashA,
+    definition: { id: "clash-a" },
+    evidence: { passed: true, origin: "test" },
+  });
+  const b = w.release.record({
+    pluginId: "clash-b",
+    name: "撞名B",
+    service: "plugin:clash-b",
+    contractVersion: "extensions/1",
+    source: clashB,
+    code: clashB,
+    definition: { id: "clash-b" },
+    evidence: { passed: true, origin: "test" },
+  });
+  const composition = w.release.record({
+    pluginId: "aux-workflow",
+    name: "字段撞名",
+    service: "workflow",
+    contractVersion: "workflow/1",
+    source: workflowCode,
+    code: workflowCode,
+    definition: workflowDefinition,
+    evidence: { passed: true, origin: "test" },
+    members: [
+      { pluginId: "aux-workflow", enabled: true, role: "workflow" },
+      {
+        pluginId: "clash-a",
+        versionId: a.id,
+        enabled: true,
+        role: "auxiliary",
+      },
+      {
+        pluginId: "clash-b",
+        versionId: b.id,
+        enabled: true,
+        role: "auxiliary",
+      },
+    ],
+  });
+  await assert.rejects(
+    w.activate(
+      {
+        versionId: composition.id,
+        compositionRevision: before.revision,
+        operationId: randomUUID(),
+      },
+      () => undefined,
+    ),
+    /字段重复/,
+  );
+  assert.equal(w.composition().versionId, before.versionId);
+  assert.equal(w.read(task.id).title, "保留任务");
+});
+
+test("auxiliary command colliding with workflow action fails activation", async (t) => {
+  const { workspace: w } = await setup(t);
+  const before = w.composition();
+  const workflowCode = await readFile(join(fixtureDir, "aux-workflow.mjs"), "utf8");
+  const hijack = `export default {
+  contribute() {
+    return { commands: [{ id: "complete", label: "劫持完成", from: ["open"] }] };
+  },
+  decide() { return { kind: "reject", message: "无" }; },
+};`;
+  const hijacker = w.release.record({
+    pluginId: "hijack",
+    name: "命令撞名",
+    service: "plugin:hijack",
+    contractVersion: "extensions/1",
+    source: hijack,
+    code: hijack,
+    definition: { id: "hijack" },
+    evidence: { passed: true, origin: "test" },
+  });
+  const composition = w.release.record({
+    pluginId: "aux-workflow",
+    name: "命令撞名组合",
+    service: "workflow",
+    contractVersion: "workflow/1",
+    source: workflowCode,
+    code: workflowCode,
+    definition: workflowDefinition,
+    evidence: { passed: true, origin: "test" },
+    members: [
+      { pluginId: "aux-workflow", enabled: true, role: "workflow" },
+      {
+        pluginId: "hijack",
+        versionId: hijacker.id,
+        enabled: true,
+        role: "auxiliary",
+      },
+    ],
+  });
+  await assert.rejects(
+    w.activate(
+      {
+        versionId: composition.id,
+        compositionRevision: before.revision,
+        operationId: randomUUID(),
+      },
+      () => undefined,
+    ),
+    /命令与流程定义冲突/,
+  );
+  assert.equal(w.composition().versionId, before.versionId);
+});
+
+test("multi-plugin composition survives workspace reopen", async (t) => {
+  const { workspace: first, filename } = await setup(t);
+  const before = first.composition();
+  const { composition } = await recordComposition(first);
+  await first.activate(
+    {
+      versionId: composition.id,
+      compositionRevision: before.revision,
+      operationId: randomUUID(),
+    },
+    () => undefined,
+  );
+  const created = await first.command({
+    type: "create",
+    title: "重开任务",
+    operationId: randomUUID(),
+    compositionRevision: first.composition().revision,
+  });
+  await first.command({
+    type: "action",
+    taskId: created.task!.id,
+    actionId: "setTags",
+    expectedRevision: created.task!.revision,
+    input: { tags: "keep" },
+    operationId: randomUUID(),
+    compositionRevision: first.composition().revision,
+  });
+  await first.close();
+  const second = await Workspace.open(filename);
+  t.after(async () => {
+    await second.close().catch(() => undefined);
+  });
+  const active = second.composition();
+  assert.equal(active.versionId, composition.id);
+  assert.equal(active.members.length, 3);
+  assert.ok(active.workflow.fields.some((f) => f.key === "tags"));
+  assert.ok(active.workflow.fields.some((f) => f.key === "dueAt"));
+  const task = second.read(created.task!.id);
+  assert.equal(task.fields.tags, "keep");
+  const dated = await second.command({
+    type: "action",
+    taskId: task.id,
+    actionId: "setDue",
+    expectedRevision: task.revision,
+    input: { dueAt: "2026-09-11T00:00:00Z" },
+    operationId: randomUUID(),
+    compositionRevision: active.revision,
+  });
+  assert.equal(dated.task?.fields.dueAt, "2026-09-11T00:00:00Z");
+  assert.equal(dated.task?.fields.tags, "keep");
+});
+
 test("single-element composition activate, query, restore still works", async (t) => {
-  const w = await setup(t);
+  const { workspace: w } = await setup(t);
   const baseline = w.composition();
   assert.equal(baseline.members.length, 1);
 

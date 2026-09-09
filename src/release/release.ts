@@ -16,7 +16,7 @@ import { Runtime } from "../runtime/runtime.js";
 import type { BusinessBundle, LaunchTarget, RuntimeLike, Version } from "./types.js";
 import { hash } from "./storage.js";
 import { checkBusinessImports } from "./business-bundle.js";
-import { resolveRuntimePlugins } from "../server/composition.js";
+import { resolveRuntimePlugins } from "./composition.js";
 
 export type Prepared = {
   version: Version;

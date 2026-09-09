@@ -76,14 +76,6 @@ export class ExtensionRegistry {
     );
   }
 
-  providers() {
-    return this.plugins.map((p) => ({
-      pluginId: p.pluginId,
-      role: p.role,
-      contribution: p.contribution,
-    }));
-  }
-
   commandProvider(commandId: string): string | null {
     for (const plugin of this.plugins) {
       if ((plugin.contribution.commands ?? []).some((c) => c.id === commandId))

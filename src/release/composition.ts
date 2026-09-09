@@ -1,10 +1,11 @@
 import { AppError } from "../shared/contracts.js";
 import type { CompositionMember } from "../shared/contracts.js";
+import { hash } from "./storage.js";
 import type {
   RuntimePluginTarget,
   Version,
   VersionMember,
-} from "../release/types.js";
+} from "./types.js";
 
 export function resolveVersionMembers(version: Version): VersionMember[] {
   if (version.members?.length) return version.members;
@@ -26,7 +27,10 @@ export function compositionMembers(version: Version): CompositionMember[] {
   }));
 }
 
-export function validateCompositionMembers(version: Version) {
+export function validateCompositionMembers(
+  version: Version,
+  getVersion?: (id: string) => Version,
+) {
   const members = resolveVersionMembers(version);
   const ids = new Set<string>();
   let workflowCount = 0;
@@ -44,6 +48,16 @@ export function validateCompositionMembers(version: Version) {
       member.pluginId !== version.pluginId
     )
       throw new AppError("INVALID_COMPOSITION", "辅助插件缺少精确版本");
+    if (getVersion) {
+      const targetId = member.versionId ?? version.id;
+      const target =
+        targetId === version.id ? version : getVersion(targetId);
+      if (target.pluginId !== member.pluginId)
+        throw new AppError(
+          "EXTENSION_CONFLICT",
+          `成员身份与版本不一致：${member.pluginId}`,
+        );
+    }
   }
   if (workflowCount !== 1)
     throw new AppError(
@@ -56,17 +70,12 @@ export function resolveRuntimePlugins(
   version: Version,
   getVersion: (id: string) => Version,
 ): RuntimePluginTarget[] {
-  validateCompositionMembers(version);
+  validateCompositionMembers(version, getVersion);
   const plugins: RuntimePluginTarget[] = [];
   for (const member of resolveVersionMembers(version)) {
     if (!member.enabled) continue;
     const targetId = member.versionId ?? version.id;
     const target = targetId === version.id ? version : getVersion(targetId);
-    if (target.pluginId !== member.pluginId)
-      throw new AppError(
-        "EXTENSION_CONFLICT",
-        `成员身份与版本不一致：${member.pluginId}`,
-      );
     plugins.push({
       pluginId: target.pluginId,
       entry: target.entry,
@@ -85,4 +94,24 @@ export function workflowPluginId(version: Version): string {
   if (!member)
     throw new AppError("EXTENSION_CONFLICT", "组合缺少主工作流提供者");
   return member.pluginId;
+}
+
+/** Stable digest of the full composition lock, including disabled members. */
+export function compositionBuildHash(
+  version: Version,
+  getVersion: (id: string) => Version,
+): string {
+  const entries = resolveVersionMembers(version).map((member) => {
+    const targetId = member.versionId ?? version.id;
+    const target = targetId === version.id ? version : getVersion(targetId);
+    return {
+      pluginId: member.pluginId,
+      versionId: target.id,
+      enabled: member.enabled,
+      role: member.role,
+      code: target.code,
+      lockHash: target.bundle?.lockHash ?? null,
+    };
+  });
+  return hash(entries);
 }

@@ -33,11 +33,12 @@ import {
 import { ExtensionRegistry } from "./extensions/registry.js";
 import { OnlineScheduler } from "./extensions/scheduler.js";
 import {
+  compositionBuildHash,
   compositionMembers,
   resolveVersionMembers,
   validateCompositionMembers,
   workflowPluginId,
-} from "./composition.js";
+} from "../release/composition.js";
 
 function text(value: unknown, max: number, required = false) {
   if (
@@ -202,11 +203,14 @@ export class Workspace {
     name = version.name,
     at = new Date().toISOString(),
   ) {
+    const buildHash = compositionBuildHash(version, (id) =>
+      this.release.get(id),
+    );
     this.db
       .prepare(
         "UPDATE workspace SET revision=?,workflowId=?,buildHash=?,versionId=? WHERE id=1",
       )
-      .run(revision, version.pluginId, hash(version.code), version.id);
+      .run(revision, version.pluginId, buildHash, version.id);
     this.db
       .prepare(
         "INSERT INTO releases(id,workflowId,createdAt,pausedMs,preparationMs,buildHash,versionId,name) VALUES(?,?,?,?,?,?,?,?)",
@@ -217,7 +221,7 @@ export class Workspace {
         at,
         metrics.pausedMs,
         metrics.preparationMs,
-        hash(version.code),
+        buildHash,
         version.id,
         name,
       );
@@ -249,7 +253,7 @@ export class Workspace {
     return recovery;
   }
   private async startVersion(version: Version) {
-    validateCompositionMembers(version);
+    validateCompositionMembers(version, (id) => this.release.get(id));
     const runtime = await this.release.start(version);
     try {
       const workflowId = workflowPluginId(version);
@@ -297,8 +301,19 @@ export class Workspace {
       throw error;
     }
   }
-  private async setupExtensions(runtime: RuntimeLike, version: Version) {
-    validateCompositionMembers(version);
+  private async collectInstalls(
+    runtime: RuntimeLike,
+    version: Version,
+  ): Promise<
+    Array<{
+      pluginId: string;
+      contribution: ExtensionContribution;
+      role: VersionMemberRole;
+      workflowFields?: Field[];
+      workflowActions?: WorkflowDefinition["actions"];
+    }>
+  > {
+    validateCompositionMembers(version, (id) => this.release.get(id));
     const workflowId = workflowPluginId(version);
     const definition = (await runtime.invoke(
       "describe",
@@ -332,6 +347,10 @@ export class Workspace {
           member.role === "workflow" ? definition.actions : undefined,
       });
     }
+    return installs;
+  }
+  private async setupExtensions(runtime: RuntimeLike, version: Version) {
+    const installs = await this.collectInstalls(runtime, version);
     this.extensions.installAll(installs);
     for (const pluginId of this.extensions.lifecycleProviders("activate"))
       this.recordAnnotations(
@@ -897,41 +916,7 @@ export class Workspace {
     if (!(version.evidence as { passed?: boolean })?.passed)
       throw new AppError("UNVERIFIED_VERSION", "候选尚未通过验证");
     const prepared = await this.release.prepare(version, async (runtime) => {
-      validateCompositionMembers(version);
-      const workflowId = workflowPluginId(version);
-      const definition = await runtime.invoke<WorkflowDefinition>(
-        "describe",
-        undefined,
-        workflowId,
-      );
-      if (definition.id !== workflowId) throw new Error("候选身份不一致");
-      // Collect contributions early so exclusive conflicts fail before commit.
-      const installs: Array<{
-        pluginId: string;
-        contribution: ExtensionContribution;
-        role: VersionMemberRole;
-        workflowFields?: Field[];
-        workflowActions?: WorkflowDefinition["actions"];
-      }> = [];
-      for (const member of resolveVersionMembers(version)) {
-        if (!member.enabled) continue;
-        const contribution =
-          (await this.invokeOptional<ExtensionContribution>(
-            runtime,
-            "contribute",
-            undefined,
-            member.pluginId,
-          )) ?? emptyContribution();
-        installs.push({
-          pluginId: member.pluginId,
-          contribution,
-          role: member.role,
-          workflowFields:
-            member.role === "workflow" ? definition.fields : undefined,
-          workflowActions:
-            member.role === "workflow" ? definition.actions : undefined,
-        });
-      }
+      const installs = await this.collectInstalls(runtime, version);
       const probe = new ExtensionRegistry();
       probe.installAll(installs);
     });
