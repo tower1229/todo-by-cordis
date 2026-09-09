@@ -81,6 +81,7 @@ export function WorkspacePanel({
           <ul className="divide-y divide-line border-y border-line">
             {composition.members.map((member) => {
               const isWorkflow = member.role === "workflow" && member.enabled;
+              const actionLabel = member.enabled ? "停用" : "启用";
               return (
                 <li
                   className="flex items-center justify-between gap-3 py-3"
@@ -93,6 +94,7 @@ export function WorkspacePanel({
                     </p>
                   </div>
                   <Button
+                    aria-label={`${actionLabel} ${member.pluginId}`}
                     disabled={
                       busy ||
                       composition.status !== "ready" ||
@@ -103,7 +105,7 @@ export function WorkspacePanel({
                     }
                   >
                     {busy && <Spinner />}
-                    {member.enabled ? "停用" : "启用"}
+                    {actionLabel}
                   </Button>
                 </li>
               );
@@ -111,6 +113,7 @@ export function WorkspacePanel({
           </ul>
         </div>
       )}
+      <ErrorMessage message={error} />
       {composition?.status !== "ready" && (
         <Button disabled={busy || !composition} onClick={() => recover()}>
           {busy && <Spinner />}重试运行环境
@@ -133,7 +136,6 @@ export function WorkspacePanel({
           </Button>
         </div>
       )}
-      <ErrorMessage message={error} />
       <details className="border-t border-line pt-4">
         <summary className="cursor-pointer font-medium">版本记录</summary>
         {!composition?.history.length ? (
