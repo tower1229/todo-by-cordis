@@ -139,29 +139,51 @@ test("stale member disable shows readable reason and keeps protected shell", asy
   const activated = await activateMemberUi(request);
   expect(activated.uiContributions?.some((c: { id: string }) => c.id === "note-panel")).toBeTruthy();
 
+  const plan = {
+    id: "plan-member",
+    compositionRevision: activated.revision,
+    route: { kind: "application" as const },
+    summary: "外壳",
+    changes: [],
+    outcome: "",
+    dataImpact: "",
+    requestRevision: 1,
+    excluded: [],
+    evidence: [],
+    capabilityChanges: [],
+    acceptance: [],
+  };
   let snapshot: AssistantSnapshot = {
     availability: "ready",
     run: {
       id: "run-member-shell",
       request: "证明外壳",
       updatedAt: new Date().toISOString(),
-      status: "executing",
-      plan: {
-        id: "plan-member",
-        compositionRevision: activated.revision,
-        route: { kind: "application" },
-        summary: "外壳",
-        changes: [],
-        outcome: "",
-        dataImpact: "",
-        requestRevision: 1,
-        excluded: [],
-        evidence: [],
-        capabilityChanges: [],
-        acceptance: [],
+      status: "awaiting-apply",
+      plan,
+      steps: [],
+      summary: "候选已验证",
+      experience: {
+        candidateId: "cand-1",
+        marked: "not-applied",
+        isolated: true,
+        simulated: true,
+        checks: ["ui.slot:active"],
+        note: "隔离模拟",
       },
-      steps: [{ id: "gen", label: "生成候选", status: "running", attempt: 1 }],
     },
+    candidates: [
+      {
+        id: "cand-1",
+        planId: plan.id,
+        baseVersion: "base",
+        attempt: 1,
+        passed: true,
+        evidenceHash: "evidence",
+        versionId: "v1",
+        sourceHash: "src",
+      },
+    ],
   };
   await page.route("**/api/assistant**", (route) => {
     if (route.request().url().includes("/commands")) return route.fallback();
@@ -208,10 +230,26 @@ test("stale member disable shows readable reason and keeps protected shell", asy
   await expect(
     page.getByRole("alert").getByText("流程已变化，请刷新后重试；草稿已保留"),
   ).toBeVisible();
+  await expect(panelRow.getByText("已停用", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "撤回上个版本", exact: true })).toBeEnabled();
   await expect(page.getByText("版本记录", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "关闭工作区设置", exact: true }).click();
 
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  await expect(page.getByRole("button", { name: "应用", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "关闭改进应用", exact: true }).click();
+
+  snapshot = {
+    availability: "ready",
+    run: {
+      id: "run-member-shell",
+      request: "证明外壳",
+      updatedAt: new Date().toISOString(),
+      status: "executing",
+      plan,
+      steps: [{ id: "gen", label: "生成候选", status: "running", attempt: 1 }],
+    },
+  };
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await expect(page.getByRole("button", { name: "停止", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "停止", exact: true }).click();

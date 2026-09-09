@@ -43,6 +43,7 @@ export function WorkspacePanel({
       await refreshed();
     } catch (error) {
       setError(errorMessage(error));
+      await refreshed().catch(() => undefined);
     } finally {
       setBusy(false);
     }
