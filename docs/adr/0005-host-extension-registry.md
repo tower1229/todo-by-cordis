@@ -10,7 +10,7 @@ status: accepted
 
 `composition.workflow.fields/actions` 为 describe 与 contribute 的合并视图（撞名字段安装失败；扩展 command 缺省 `from:["open"]`）；`retainedFields` 含当前扩展字段。钩子可返回 `annotations`，在声明 `diagnostics` 时由宿主限长收录，不覆盖 version/trace。
 
-活动组合可含多个 `members`（稳定 `pluginId`、精确 `versionId`、`enabled`）；缺省或旧单插件版本视为单元素组合。同一业务 Runtime 子进程按 pluginId 装载多个模块；宿主对每个已启用成员分别采集 `contribute()`，合并字段与命令并标注 `providerId`。重复身份、双主工作流、双主排序及跨插件字段/命令撞名在激活前失败，正式组合与数据不变。辅助插件不必提供工作流；组合内有且仅有一个主工作流提供者。停用/启用的公开发布路径与类型化字段/查询 UI 仍属后续事项。
+活动组合可含多个 `members`（稳定 `pluginId`、精确 `versionId`、`enabled`）；缺省或旧单插件版本视为单元素组合。同一业务 Runtime 子进程按 pluginId 装载多个模块；宿主对每个已启用成员分别采集 `contribute()`，合并字段与命令并标注 `providerId`。重复身份、双主工作流、双主排序及跨插件字段/命令撞名在激活前失败，正式组合与数据不变。辅助插件不必提供工作流；组合内有且仅有一个主工作流提供者。组合成员启用状态经 Workspace 公开发布路径（`setMemberEnabled` → 新组合修订 → publish）变更；类型化字段与查询 UI 仍属后续事项。
 
 ## UI 贡献（2026-09-09）
 

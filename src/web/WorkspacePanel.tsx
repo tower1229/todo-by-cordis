@@ -29,6 +29,24 @@ export function WorkspacePanel({
       setBusy(false);
     }
   }
+  async function setMemberEnabled(pluginId: string, enabled: boolean) {
+    if (!composition || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await sendOperation("/composition/members", {
+        compositionRevision: composition.revision,
+        versionId: composition.versionId,
+        pluginId,
+        enabled,
+      });
+      await refreshed();
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div className="space-y-7 overflow-y-auto p-5 text-sm">
       <dl className="space-y-4">
@@ -57,6 +75,43 @@ export function WorkspacePanel({
           </dd>
         </div>
       </dl>
+      {composition && composition.members.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-xs leading-5 text-muted">组合成员</p>
+          <ul className="divide-y divide-line border-y border-line">
+            {composition.members.map((member) => {
+              const isWorkflow =
+                member.pluginId === composition.workflow.id && member.enabled;
+              return (
+                <li
+                  className="flex items-center justify-between gap-3 py-3"
+                  key={member.pluginId}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{member.pluginId}</p>
+                    <p className="text-xs text-muted">
+                      {member.enabled ? "已启用" : "已停用"}
+                    </p>
+                  </div>
+                  <Button
+                    disabled={
+                      busy ||
+                      composition.status !== "ready" ||
+                      isWorkflow
+                    }
+                    onClick={() =>
+                      setMemberEnabled(member.pluginId, !member.enabled)
+                    }
+                  >
+                    {busy && <Spinner />}
+                    {member.enabled ? "停用" : "启用"}
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
       {composition?.status !== "ready" && (
         <Button disabled={busy || !composition} onClick={() => recover()}>
           {busy && <Spinner />}重试运行环境

@@ -39,6 +39,18 @@ export function createApp(
     c.json(workspace.operation(c.req.param("id"))),
   );
   app.get("/api/composition", (c) => c.json(workspace.composition()));
+  app.post("/api/composition/members", async (c) => {
+    const body = await c.req.json();
+    return c.json(
+      await workspace.setMemberEnabled({
+        operationId: body.operationId,
+        compositionRevision: body.compositionRevision,
+        versionId: body.versionId,
+        pluginId: body.pluginId,
+        enabled: body.enabled,
+      }),
+    );
+  });
   app.get("/api/assistant", async (c) =>
     c.json(
       await assistant.observe(

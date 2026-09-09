@@ -110,6 +110,10 @@ export class Workspace {
       this.db.exec(
         "ALTER TABLE workspace ADD COLUMN activationPending INTEGER NOT NULL DEFAULT 0",
       );
+    if (!columns("workspace").includes("retainedExtensionFields"))
+      this.db.exec(
+        "ALTER TABLE workspace ADD COLUMN retainedExtensionFields TEXT",
+      );
     if (!columns("releases").includes("versionId"))
       this.db.exec(
         "ALTER TABLE releases ADD COLUMN versionId TEXT; ALTER TABLE releases ADD COLUMN name TEXT",
@@ -195,6 +199,34 @@ export class Workspace {
     this.db
       .prepare("UPDATE workspace SET recovery=? WHERE id=1")
       .run(recovery ? JSON.stringify(recovery) : null);
+  }
+  private readRetainedExtensionFields(): Field[] {
+    const row = this.db
+      .prepare("SELECT retainedExtensionFields FROM workspace WHERE id=1")
+      .get() as { retainedExtensionFields?: string | null } | undefined;
+    if (!row?.retainedExtensionFields) return [];
+    try {
+      const parsed = JSON.parse(row.retainedExtensionFields) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(
+        (field): field is Field =>
+          !!field &&
+          typeof field === "object" &&
+          typeof (field as Field).key === "string" &&
+          typeof (field as Field).label === "string",
+      );
+    } catch {
+      return [];
+    }
+  }
+  private rememberExtensionFields(fields: Field[]) {
+    const map = new Map(
+      this.readRetainedExtensionFields().map((field) => [field.key, field]),
+    );
+    for (const field of fields) map.set(field.key, field);
+    this.db
+      .prepare("UPDATE workspace SET retainedExtensionFields=? WHERE id=1")
+      .run(JSON.stringify([...map.values()]));
   }
   private writePointer(
     version: Version,
@@ -352,6 +384,7 @@ export class Workspace {
   private async setupExtensions(runtime: RuntimeLike, version: Version) {
     const installs = await this.collectInstalls(runtime, version);
     this.extensions.installAll(installs);
+    this.rememberExtensionFields(this.extensions.fields());
     for (const pluginId of this.extensions.lifecycleProviders("activate"))
       this.recordAnnotations(
         await this.invokeOptional<HookAnnotations>(
@@ -614,7 +647,15 @@ export class Workspace {
       );
     const retainedKeys = new Set(retained.map((f) => f.key));
     for (const field of this.extensions.fields())
-      if (!retainedKeys.has(field.key)) retained.push(field);
+      if (!retainedKeys.has(field.key)) {
+        retainedKeys.add(field.key);
+        retained.push(field);
+      }
+    for (const field of this.readRetainedExtensionFields())
+      if (!retainedKeys.has(field.key)) {
+        retainedKeys.add(field.key);
+        retained.push(field);
+      }
     return {
       revision: active.revision,
       workflow,
@@ -924,6 +965,95 @@ export class Workspace {
     });
     return this.publish(prepared, request, complete, signal);
   }
+  /**
+   * Public enable/disable for a composition member. Creates a forward composition
+   * revision and activates it through the same publish transaction as activate.
+   */
+  async setMemberEnabled(
+    request: {
+      operationId: string;
+      compositionRevision: number;
+      versionId: string;
+      pluginId: string;
+      enabled: boolean;
+    },
+    complete?: () => void,
+    signal?: AbortSignal,
+  ) {
+    const replay = this.replay(request.operationId, request);
+    if (replay) return replay;
+    if (
+      typeof request.pluginId !== "string" ||
+      !request.pluginId ||
+      request.pluginId.length > 100
+    )
+      throw new AppError("INVALID_INPUT", "插件标识无效");
+    if (typeof request.enabled !== "boolean")
+      throw new AppError("INVALID_INPUT", "启用状态无效");
+    if (
+      typeof request.versionId !== "string" ||
+      !request.versionId ||
+      request.versionId.length > 200
+    )
+      throw new AppError("INVALID_INPUT", "组合版本无效");
+    this.revision(request.compositionRevision);
+    const current = this.current();
+    if (request.versionId !== current.versionId)
+      throw new AppError(
+        "COMPOSITION_MISMATCH",
+        "组合版本绑定不一致，请刷新后重试",
+        409,
+      );
+    const active = this.release.get(current.versionId);
+    const members = resolveVersionMembers(active);
+    const target = members.find((member) => member.pluginId === request.pluginId);
+    if (!target)
+      throw new AppError("UNKNOWN_PLUGIN", "组合中不存在该插件");
+    const nextMembers = members.map((member) => {
+      if (member.pluginId !== request.pluginId) return { ...member };
+      return { ...member, enabled: request.enabled };
+    });
+    const recordedMembers = nextMembers.map((member) => {
+      if (
+        member.pluginId === active.pluginId &&
+        (!member.versionId || member.versionId === active.id)
+      )
+        return {
+          pluginId: member.pluginId,
+          enabled: member.enabled,
+          role: member.role,
+        };
+      return {
+        pluginId: member.pluginId,
+        versionId: member.versionId ?? active.id,
+        enabled: member.enabled,
+        role: member.role,
+      };
+    });
+    validateCompositionMembers(
+      { ...active, members: recordedMembers },
+      (id) => this.release.get(id),
+    );
+    const next = this.release.record({
+      pluginId: active.pluginId,
+      name: `${active.name}（${request.enabled ? "启用" : "停用"} ${request.pluginId}）`,
+      parentId: active.id,
+      service: active.service,
+      contractVersion: active.contractVersion,
+      source: active.source,
+      code: active.code,
+      definition: active.definition,
+      evidence: active.evidence,
+      ...(active.bundle ? { bundle: active.bundle } : {}),
+      members: recordedMembers,
+    });
+    const prepared = await this.release.prepare(next, async (runtime) => {
+      const installs = await this.collectInstalls(runtime, next);
+      const probe = new ExtensionRegistry();
+      probe.installAll(installs);
+    });
+    return this.publish(prepared, request, complete, signal);
+  }
   async publish(
     prepared: Prepared,
     request: {
@@ -931,6 +1061,8 @@ export class Workspace {
       compositionRevision: number;
       versionId?: string;
       workflowId?: string;
+      pluginId?: string;
+      enabled?: boolean;
     },
     complete?: () => void,
     signal?: AbortSignal,
