@@ -34,6 +34,7 @@ import { hash } from "../release/storage.js";
 import type { ExtensionContribution } from "./business/contracts.js";
 import { emptyContribution } from "./business/contracts.js";
 import { resolveUiContributions } from "./extensions/ui-slots.js";
+import { resolveVersionMembers } from "../release/composition.js";
 
 type Rule = {
   key: string;
@@ -424,6 +425,11 @@ export class EvolutionDomain implements Domain {
     signal: AbortSignal,
   ): Promise<ExperienceReport> {
     const version = this.workspace.release.get(versionId);
+    const memberExperience = this.memberEnabledExperience(
+      version,
+      candidateId,
+    );
+    if (memberExperience) return memberExperience;
     const runtime = await this.workspace.release.start(version);
     try {
       signal.throwIfAborted();
@@ -523,6 +529,89 @@ export class EvolutionDomain implements Domain {
     } finally {
       await runtime.close();
     }
+  }
+  /** Composition-level summary when the candidate only flips member enabled flags. */
+  private memberEnabledExperience(
+    version: Version,
+    candidateId: string,
+  ): ExperienceReport | undefined {
+    if (!version.parentId) return undefined;
+    let base: Version;
+    try {
+      base = this.workspace.release.get(version.parentId);
+    } catch {
+      return undefined;
+    }
+    if (
+      version.pluginId !== base.pluginId ||
+      version.source !== base.source ||
+      version.code !== base.code ||
+      version.service !== base.service ||
+      !equal(version.definition, base.definition) ||
+      !equal(version.evidence, base.evidence)
+    )
+      return undefined;
+    const before = new Map(
+      resolveVersionMembers(base).map((m) => [m.pluginId, m.enabled] as const),
+    );
+    const after = resolveVersionMembers(version);
+    if (
+      before.size !== after.length ||
+      after.some((member) => !before.has(member.pluginId))
+    )
+      return undefined;
+    const flips = after.filter(
+      (member) => before.get(member.pluginId) !== member.enabled,
+    );
+    if (!flips.length) return undefined;
+    if (
+      after.some((member) => {
+        const prior = resolveVersionMembers(base).find(
+          (m) => m.pluginId === member.pluginId,
+        );
+        if (!prior || prior.role !== member.role) return true;
+        const priorVid = prior.versionId ?? base.id;
+        const nextVid = member.versionId ?? version.id;
+        const priorIsRoot = priorVid === base.id;
+        const nextIsRoot = nextVid === version.id;
+        return priorIsRoot !== nextIsRoot || (!priorIsRoot && priorVid !== nextVid);
+      })
+    )
+      return undefined;
+    const checks = flips.map(
+      (member) =>
+        `member.enabled:${member.pluginId}:${before.get(member.pluginId)}->${member.enabled}`,
+    );
+    for (const member of flips) {
+      checks.push(
+        member.enabled
+          ? `contribution.restore:${member.pluginId}`
+          : `contribution.exit:${member.pluginId}`,
+      );
+    }
+    checks.push("retained.fields:kept");
+    checks.push("formal:unchanged-until-apply");
+    const disabled = flips.filter((m) => !m.enabled).map((m) => m.pluginId);
+    const enabled = flips.filter((m) => m.enabled).map((m) => m.pluginId);
+    const titleParts = [
+      ...(disabled.length ? [`停用 ${disabled.join(", ")}`] : []),
+      ...(enabled.length ? [`启用 ${enabled.join(", ")}`] : []),
+    ];
+    return {
+      candidateId,
+      marked: "not-applied",
+      isolated: true,
+      simulated: true,
+      checks,
+      presentation: {
+        title: `${titleParts.join("；")}（尚未应用到正式环境）`,
+        fields: after.map(
+          (member) =>
+            `${member.pluginId}:${member.enabled ? "启用" : "停用（字段值保留）"}`,
+        ),
+      },
+      note: "启用状态变更候选体验：摘要基于候选组合修订，结果已标注为尚未应用到正式环境；停用不删除任务字段值，未写入正式组合。",
+    };
   }
   async apply(
     versionId: string,

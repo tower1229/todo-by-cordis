@@ -980,6 +980,59 @@ export class Workspace {
     return this.publish(prepared, request, complete, signal);
   }
   /**
+   * Record a forward composition version that only flips one member's enabled
+   * flag. Shared by Workspace public setMemberEnabled and self-iteration apply
+   * fixtures; does not publish or change the formal composition.
+   */
+  recordMemberEnabledVersion(pluginId: string, enabled: boolean): Version {
+    if (typeof pluginId !== "string" || !pluginId || pluginId.length > 100)
+      throw new AppError("INVALID_INPUT", "插件标识无效");
+    if (typeof enabled !== "boolean")
+      throw new AppError("INVALID_INPUT", "启用状态无效");
+    const active = this.release.get(this.current().versionId);
+    const members = resolveVersionMembers(active);
+    const target = members.find((member) => member.pluginId === pluginId);
+    if (!target) throw new AppError("UNKNOWN_PLUGIN", "组合中不存在该插件");
+    if (target.enabled === enabled)
+      throw new AppError("INVALID_INPUT", "成员已是目标启用状态");
+    const recordedMembers = members.map((member) => {
+      const nextEnabled =
+        member.pluginId === pluginId ? enabled : member.enabled;
+      if (
+        member.pluginId === active.pluginId &&
+        (!member.versionId || member.versionId === active.id)
+      )
+        return {
+          pluginId: member.pluginId,
+          enabled: nextEnabled,
+          role: member.role,
+        };
+      return {
+        pluginId: member.pluginId,
+        versionId: member.versionId ?? active.id,
+        enabled: nextEnabled,
+        role: member.role,
+      };
+    });
+    validateCompositionMembers(
+      { ...active, members: recordedMembers },
+      (id) => this.release.get(id),
+    );
+    return this.release.record({
+      pluginId: active.pluginId,
+      name: `${active.name}（${enabled ? "启用" : "停用"} ${pluginId}）`,
+      parentId: active.id,
+      service: active.service,
+      contractVersion: active.contractVersion,
+      source: active.source,
+      code: active.code,
+      definition: active.definition,
+      evidence: active.evidence,
+      ...(active.bundle ? { bundle: active.bundle } : {}),
+      members: recordedMembers,
+    });
+  }
+  /**
    * Public enable/disable for a composition member. Creates a forward composition
    * revision and activates it through the same publish transaction as activate.
    */
@@ -1037,44 +1090,10 @@ export class Workspace {
       });
       return result;
     }
-    const nextMembers = members.map((member) => {
-      if (member.pluginId !== request.pluginId) return { ...member };
-      return { ...member, enabled: request.enabled };
-    });
-    const recordedMembers = nextMembers.map((member) => {
-      if (
-        member.pluginId === active.pluginId &&
-        (!member.versionId || member.versionId === active.id)
-      )
-        return {
-          pluginId: member.pluginId,
-          enabled: member.enabled,
-          role: member.role,
-        };
-      return {
-        pluginId: member.pluginId,
-        versionId: member.versionId ?? active.id,
-        enabled: member.enabled,
-        role: member.role,
-      };
-    });
-    validateCompositionMembers(
-      { ...active, members: recordedMembers },
-      (id) => this.release.get(id),
+    const next = this.recordMemberEnabledVersion(
+      request.pluginId,
+      request.enabled,
     );
-    const next = this.release.record({
-      pluginId: active.pluginId,
-      name: `${active.name}（${request.enabled ? "启用" : "停用"} ${request.pluginId}）`,
-      parentId: active.id,
-      service: active.service,
-      contractVersion: active.contractVersion,
-      source: active.source,
-      code: active.code,
-      definition: active.definition,
-      evidence: active.evidence,
-      ...(active.bundle ? { bundle: active.bundle } : {}),
-      members: recordedMembers,
-    });
     const prepared = await this.prepareForPublish(next);
     return this.publish(prepared, request, complete, signal);
   }
