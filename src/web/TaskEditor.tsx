@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Trash2 } from "lucide-react";
-import type { Task, Field, ResolvedUiContribution } from "../shared/contracts.js";
+import type {
+  Task,
+  Field,
+  ResolvedUiContribution,
+  UiContributionFault,
+} from "../shared/contracts.js";
 import {
   api,
   errorMessage,
@@ -16,6 +21,7 @@ export function Editor({
   revision,
   fields,
   contributions = [],
+  faults = [],
   availableActionIds,
   saved,
   close,
@@ -28,6 +34,7 @@ export function Editor({
   revision: number;
   fields: Field[];
   contributions?: ResolvedUiContribution[];
+  faults?: UiContributionFault[];
   availableActionIds?: ReadonlySet<string>;
   saved: () => Promise<void>;
   close: () => void;
@@ -134,14 +141,20 @@ export function Editor({
             </p>
           </div>
         ))}
-        {onContributionAction && (
+        {(contributions.length > 0 ||
+          faults.length > 0 ||
+          onContributionAction) && (
           <TaskDetailContributions
             task={task}
             contributions={contributions}
+            faults={faults}
             availableActionIds={availableActionIds}
             busy={contributionBusy || busy}
             error={contributionError}
-            onAction={onContributionAction}
+            onAction={
+              onContributionAction ??
+              ((_action, _trigger) => undefined)
+            }
           />
         )}
         <ErrorMessage message={error} />

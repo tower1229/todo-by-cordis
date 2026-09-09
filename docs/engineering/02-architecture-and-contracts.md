@@ -125,7 +125,7 @@ interface EvolutionDriver {
 | task.created/updated/deleted | 已提交事实、changedPaths、revision、source | DB outbox 至少一次；订阅者幂等；观察者失败不撤销任务 |
 | query.filter | 受控表达式 AST | 多选交集；空值规则显式；不接收 raw SQL |
 | query.sort | 字段＋方向＋稳定 ID 次序 | 一个主排序提供者，冲突拒绝或明确选择 |
-| ui.slot | Badge/Form/Menu/Panel 等描述 | 顺序稳定；每插件配额；失败显示替代态 |
+| ui.slot | 可序列化 UI 贡献（本期白名单仅 `task.detail`，见 ADR 0005） | 顺序稳定（order/id）；非法 task.detail 替代态或跳过；未知 slot 跳过；失败不拖垮外壳 |
 | service.provide | 接口版本、方法 Schema、权限 | 依赖锁、单提供者或显式多注册表 |
 | workflow.provide | 状态类别、动作、decide、兼容映射 | 独占；不可同时让两个流程处理同一命令 |
 | schedule.register | 时间/时区/幂等键 | P0 在线进程任务；恢复后到期任务按声明 skip 或 run-once，不承诺系统推送 |

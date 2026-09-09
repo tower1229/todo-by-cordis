@@ -168,48 +168,9 @@ function App() {
     options?: { keepTaskPanel?: boolean },
   ) {
     if (!composition) return;
-    if (options?.keepTaskPanel) {
-      if (locked.current) return;
-      locked.current = true;
-      setBusy(true);
-      setContributionError("");
-      try {
-        const result = await sendCommand({
-          type: "action",
-          taskId: task.id,
-          actionId: action.id,
-          expectedRevision: task.revision,
-          compositionRevision: composition.revision,
-        });
-        if (result.decision?.kind === "input-required")
-          openPanel(
-            {
-              kind: "action",
-              form: {
-                task,
-                actionId: action.id,
-                label: action.label,
-                fields: result.decision.fields,
-                revision: composition.revision,
-              },
-              returnTask: task,
-            },
-            trigger,
-          );
-        else {
-          await refreshAfterWrite();
-          if (result.task) setPanel({ kind: "task", task: result.task });
-        }
-      } catch (error) {
-        setContributionError(errorMessage(error));
-        await refresh().catch(() => {});
-      } finally {
-        locked.current = false;
-        setBusy(false);
-      }
-      return;
-    }
-    await write(async () => {
+    const keep = !!options?.keepTaskPanel;
+    if (keep) setContributionError("");
+    const run = async () => {
       const result = await sendCommand({
         type: "action",
         taskId: task.id,
@@ -228,11 +189,31 @@ function App() {
               fields: result.decision.fields,
               revision: composition.revision,
             },
+            ...(keep ? { returnTask: task } : {}),
           },
           trigger,
         );
-      else await refreshAfterWrite();
-    });
+      else {
+        await refreshAfterWrite();
+        if (keep && result.task) setPanel({ kind: "task", task: result.task });
+      }
+    };
+    if (!keep) {
+      await write(run);
+      return;
+    }
+    if (locked.current) return;
+    locked.current = true;
+    setBusy(true);
+    try {
+      await run();
+    } catch (error) {
+      setContributionError(errorMessage(error));
+      await refresh().catch(() => {});
+    } finally {
+      locked.current = false;
+      setBusy(false);
+    }
   }
   async function remove(task: Task) {
     if (!composition) return;
@@ -613,6 +594,7 @@ function App() {
             revision={composition?.revision ?? 1}
             fields={composition?.retainedFields ?? []}
             contributions={composition?.uiContributions ?? []}
+            faults={composition?.uiContributionFaults ?? []}
             availableActionIds={
               new Set(
                 (composition?.workflow.actions ?? [])

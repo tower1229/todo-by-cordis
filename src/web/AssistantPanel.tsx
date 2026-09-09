@@ -517,15 +517,50 @@ export function AssistantPanel({
                 )}
                 {run.experience.uiContributions &&
                   run.experience.uiContributions.length > 0 && (
-                    <div className="space-y-2" aria-label="体验 UI 贡献">
+                    <div className="space-y-3" aria-label="体验 UI 贡献">
+                      <p className="text-xs text-muted">
+                        以下为与任务详情同结构的只读摘要；写入已在隔离环境模拟，未落正式任务。
+                      </p>
                       {run.experience.uiContributions.map((item) => (
-                        <p key={`${item.providerId}:${item.id}`} className="text-xs text-muted">
-                          UI 贡献：{item.title}
-                          {item.actions.length
-                            ? ` · ${item.actions.map((a) => a.label).join("、")}`
-                            : ""}
-                        </p>
+                        <article
+                          key={`${item.providerId}:${item.id}`}
+                          className="space-y-2 rounded-md border border-line bg-canvas px-3 py-2"
+                          aria-label={item.title}
+                        >
+                          <h3 className="text-sm font-medium">{item.title}</h3>
+                          {item.body && (
+                            <p className="text-xs leading-5 text-muted">
+                              {item.body}
+                            </p>
+                          )}
+                          {item.fields.map((field) => (
+                            <div key={field.key} className="space-y-0.5">
+                              <p className="field-label">{field.label}</p>
+                              <p className="text-xs text-muted">（体验只读）</p>
+                            </div>
+                          ))}
+                          {item.actions.length > 0 && (
+                            <ul className="flex flex-wrap gap-2 text-xs text-muted">
+                              {item.actions.map((action) => (
+                                <li key={action.commandId}>
+                                  动作：{action.label}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </article>
                       ))}
+                      {run.experience.checks
+                        .filter((check) => check.startsWith("ui.write:"))
+                        .map((check) => (
+                          <p
+                            key={check}
+                            className="text-xs text-muted"
+                            role="status"
+                          >
+                            模拟写入结果：{check}
+                          </p>
+                        ))}
                     </div>
                   )}
               </section>

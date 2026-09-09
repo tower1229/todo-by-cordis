@@ -20,6 +20,7 @@ export type {
   Plugin,
   ResolvedUiContribution,
 } from "../server/business/contracts.js";
+export type { UiContributionFault } from "../server/extensions/ui-slots.js";
 import type {
   Task,
   WorkflowDefinition,
@@ -29,6 +30,7 @@ import type {
   ExtensionSummary,
   ResolvedUiContribution,
 } from "../server/business/contracts.js";
+import type { UiContributionFault } from "../server/extensions/ui-slots.js";
 export type Command = {
   operationId: string;
   compositionRevision: number;
@@ -65,6 +67,7 @@ export type Composition = {
   retainedFields: Field[];
   extensions: ExtensionSummary;
   uiContributions: ResolvedUiContribution[];
+  uiContributionFaults: UiContributionFault[];
   history: {
     id: number;
     workflowId: WorkflowId;

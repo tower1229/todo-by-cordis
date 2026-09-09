@@ -1,9 +1,8 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
 import { ExtensionRegistry } from "../../src/server/extensions/registry.js";
@@ -11,25 +10,11 @@ import {
   HOST_UI_SLOTS,
   resolveUiContributions,
 } from "../../src/server/extensions/ui-slots.js";
-import type { WorkflowDefinition } from "../../src/shared/contracts.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
-
-const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "../fixtures");
-const definition: WorkflowDefinition = {
-  id: "ui-detail",
-  name: "UI 贡献证明",
-  version: "1.0.0",
-  initialState: "open",
-  states: {
-    open: { label: "未完成", category: "open" },
-    done: { label: "已完成", category: "done" },
-  },
-  actions: [
-    { id: "complete", label: "完成", from: ["open"] },
-    { id: "reopen", label: "重新打开", from: ["done"] },
-  ],
-  fields: [],
-};
+import {
+  uiDetailDefinition,
+  uiDetailReleaseInput,
+} from "../fixtures/ui-detail.js";
 
 async function setup(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), "cordis-ui-"));
@@ -43,17 +28,7 @@ async function setup(t: TestContext) {
 }
 
 async function activateUiDetail(w: Workspace) {
-  const code = await readFile(join(fixtureDir, "ui-detail-plugin.mjs"), "utf8");
-  const version = w.release.record({
-    pluginId: "ui-detail",
-    name: "UI 贡献证明",
-    service: "workflow",
-    contractVersion: "workflow/1",
-    source: code,
-    code,
-    definition,
-    evidence: { passed: true, origin: "test" },
-  });
+  const version = w.release.record(await uiDetailReleaseInput("test"));
   const before = w.composition();
   await w.activate(
     {
@@ -70,17 +45,25 @@ test("host whitelist includes only task.detail", () => {
   assert.deepEqual([...HOST_UI_SLOTS], ["task.detail"]);
 });
 
-test("resolveUiContributions keeps valid task.detail and skips illegal entries", () => {
+test("resolveUiContributions keeps valid task.detail, faults claimed-slot failures, skips unknown slots", () => {
   const known = new Set(["markProof", "complete"]);
-  const { valid, invalid } = resolveUiContributions(
+  const { valid, invalid, faults } = resolveUiContributions(
     {
       uiSlots: [
         {
           id: "proof-panel",
           slot: "task.detail",
           title: "扩展证明",
+          order: 2,
           actions: [{ commandId: "markProof", label: "打证明标记" }],
           fields: [{ key: "proofMark", label: "证明标记" }],
+        },
+        {
+          id: "first",
+          slot: "task.detail",
+          title: "靠前",
+          order: 1,
+          actions: [{ commandId: "markProof", label: "打证明标记" }],
         },
         {
           id: "row",
@@ -104,12 +87,18 @@ test("resolveUiContributions keeps valid task.detail and skips illegal entries",
     known,
     "ui-detail",
   );
-  assert.equal(valid.length, 1);
-  assert.equal(valid[0]?.id, "proof-panel");
-  assert.equal(valid[0]?.providerId, "ui-detail");
+  assert.equal(valid.length, 2);
+  assert.deepEqual(
+    valid.map((item) => item.id),
+    ["first", "proof-panel"],
+  );
   assert.ok(invalid.some((item) => item.id === "row"));
-  assert.ok(invalid.some((item) => item.id === "bad-cmd"));
-  assert.ok(invalid.some((item) => item.id === "no-title"));
+  assert.ok(faults.some((item) => item.id === "bad-cmd"));
+  assert.ok(faults.some((item) => item.id === "no-title"));
+  assert.equal(
+    faults.some((item) => item.id === "row"),
+    false,
+  );
 });
 
 test("registry marks ui.slot active when host can render task.detail contributions", () => {
@@ -129,7 +118,7 @@ test("registry marks ui.slot active when host can render task.detail contributio
     },
     [],
     "workflow",
-    definition.actions,
+    uiDetailDefinition.actions,
   );
   const ui = registry
     .summarize()
@@ -141,7 +130,7 @@ test("registry marks ui.slot active when host can render task.detail contributio
 
 test("registry keeps stub for non-host slots and declared without contributions", () => {
   const empty = new ExtensionRegistry();
-  empty.install("p", {}, [], "workflow", definition.actions);
+  empty.install("p", {}, [], "workflow", uiDetailDefinition.actions);
   assert.equal(
     empty.summarize().capabilities.find((c) => c.interfaceId === "ui.slot")
       ?.status,
@@ -154,7 +143,7 @@ test("registry keeps stub for non-host slots and declared without contributions"
     { uiSlots: [{ id: "badge", slot: "task-row" }] },
     [],
     "workflow",
-    definition.actions,
+    uiDetailDefinition.actions,
   );
   assert.equal(
     stub.summarize().capabilities.find((c) => c.interfaceId === "ui.slot")
@@ -162,6 +151,37 @@ test("registry keeps stub for non-host slots and declared without contributions"
     "stub",
   );
   assert.equal(stub.uiContributions().length, 0);
+  assert.equal(stub.uiContributionFaults().length, 0);
+});
+
+test("registry exposes faults for invalid task.detail registrations", () => {
+  const registry = new ExtensionRegistry();
+  registry.install(
+    "ui-detail",
+    {
+      commands: [{ id: "markProof", label: "打证明标记", from: ["open"] }],
+      uiSlots: [
+        {
+          id: "ok",
+          slot: "task.detail",
+          title: "可用",
+          actions: [{ commandId: "markProof", label: "打证明标记" }],
+        },
+        {
+          id: "bad",
+          slot: "task.detail",
+          title: "坏",
+          actions: [{ commandId: "missing", label: "无" }],
+        },
+      ],
+    },
+    [],
+    "workflow",
+    uiDetailDefinition.actions,
+  );
+  assert.equal(registry.uiContributions().length, 1);
+  assert.equal(registry.uiContributionFaults().length, 1);
+  assert.equal(registry.uiContributionFaults()[0]?.id, "bad");
 });
 
 test("activated fixture exposes task.detail contributions and persists via proof command", async (t) => {
@@ -174,11 +194,10 @@ test("activated fixture exposes task.detail contributions and persists via proof
     "active",
   );
   assert.equal(composition.uiContributions.length, 1);
+  assert.equal(composition.uiContributionFaults.length, 0);
   assert.equal(composition.uiContributions[0]?.slot, "task.detail");
   assert.equal(composition.uiContributions[0]?.title, "扩展证明");
-  assert.ok(
-    composition.workflow.actions.some((a) => a.id === "markProof"),
-  );
+  assert.ok(composition.workflow.actions.some((a) => a.id === "markProof"));
 
   const created = await w.command({
     type: "create",
@@ -214,6 +233,7 @@ test("switching away clears ui contributions and proof command", async (t) => {
   const restored = w.composition();
   assert.equal(restored.workflow.id, "default");
   assert.equal(restored.uiContributions.length, 0);
+  assert.equal(restored.uiContributionFaults.length, 0);
   assert.equal(
     restored.extensions.capabilities.find((c) => c.interfaceId === "ui.slot")
       ?.status,
@@ -236,6 +256,8 @@ test("isolated experience surfaces ui contributions and simulates a write", asyn
   );
   assert.equal(report.isolated, true);
   assert.ok(report.uiContributions?.some((c) => c.id === "proof-panel"));
+  assert.equal(report.uiContributions?.[0]?.title, "扩展证明");
+  assert.ok(report.uiContributions?.[0]?.actions.some((a) => a.commandId === "markProof"));
   assert.ok(report.checks.some((c) => c.includes("ui.slot:active")));
   assert.ok(report.checks.some((c) => c.includes("ui.action:markProof")));
   assert.ok(report.checks.some((c) => /ui\.write:commit|ui\.write:ok/.test(c)));

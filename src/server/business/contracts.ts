@@ -127,6 +127,7 @@ export type ResolvedUiContribution = {
   actions: UiContributionAction[];
   fields: UiContributionField[];
   providerId: string;
+  order?: number;
 };
 
 export type QueryFilterRegistration = {

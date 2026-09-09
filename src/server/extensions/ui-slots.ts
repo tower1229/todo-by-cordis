@@ -4,8 +4,19 @@ import type {
   UiSlotRegistration,
 } from "../business/contracts.js";
 
+/**
+ * Host-implemented UI slots. This whitelist is the sole gate for `ui.slot: active`:
+ * keep in sync with task-detail rendering in `src/web/TaskDetailContributions.tsx`.
+ */
 export const HOST_UI_SLOTS = ["task.detail"] as const;
 export type HostUiSlot = (typeof HOST_UI_SLOTS)[number];
+
+export type UiContributionFault = {
+  id: string;
+  slot: HostUiSlot;
+  reason: string;
+  providerId: string;
+};
 
 export type InvalidUiContribution = {
   id: string;
@@ -22,19 +33,46 @@ function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function sortKey(order: number | undefined, id: string) {
+  return `${String(order ?? 0).padStart(8, "0")}:${id}`;
+}
+
 export function resolveUiContributions(
   contribution: ExtensionContribution,
   knownCommandIds: ReadonlySet<string>,
   providerId: string,
-): { valid: ResolvedUiContribution[]; invalid: InvalidUiContribution[] } {
+): {
+  valid: ResolvedUiContribution[];
+  faults: UiContributionFault[];
+  invalid: InvalidUiContribution[];
+} {
   const valid: ResolvedUiContribution[] = [];
+  const faults: UiContributionFault[] = [];
   const invalid: InvalidUiContribution[] = [];
-  for (const slot of contribution.uiSlots ?? []) {
+  const raw = [...(contribution.uiSlots ?? [])];
+  for (const slot of raw) {
     const result = resolveOne(slot, knownCommandIds, providerId);
-    if (result.ok) valid.push(result.value);
-    else invalid.push(result.value);
+    if (result.ok) {
+      valid.push(result.value);
+      continue;
+    }
+    invalid.push(result.value);
+    // Claimed host slot but failed validation → substitute fault; unknown slots skip only.
+    if (result.value.slot && isHostSlot(result.value.slot))
+      faults.push({
+        id: result.value.id || "(missing)",
+        slot: result.value.slot,
+        reason: result.value.reason,
+        providerId,
+      });
   }
-  return { valid, invalid };
+  return {
+    valid: valid.sort((a, b) =>
+      sortKey(a.order, a.id).localeCompare(sortKey(b.order, b.id)),
+    ),
+    faults,
+    invalid,
+  };
 }
 
 function resolveOne(
@@ -114,6 +152,7 @@ function resolveOne(
       actions,
       fields,
       providerId,
+      order: slot.order ?? 0,
     },
   };
 }

@@ -14,7 +14,10 @@ import {
   type WorkflowDefinition,
 } from "../business/contracts.js";
 import type { VersionMemberRole } from "../../release/types.js";
-import { resolveUiContributions } from "./ui-slots.js";
+import {
+  resolveUiContributions,
+  type UiContributionFault,
+} from "./ui-slots.js";
 
 type InstalledPlugin = {
   pluginId: string;
@@ -144,13 +147,32 @@ export class ExtensionRegistry {
     workflowActions: Action[] = this.workflowActions,
   ): ResolvedUiContribution[] {
     const known = this.knownCommandIds(workflowActions);
-    return this.plugins.flatMap((plugin) => {
+    const items = this.plugins.flatMap((plugin) => {
       const { valid } = resolveUiContributions(
         plugin.contribution,
         known,
         plugin.pluginId,
       );
       return valid;
+    });
+    return items.sort((a, b) =>
+      `${String(a.order ?? 0).padStart(8, "0")}:${a.id}`.localeCompare(
+        `${String(b.order ?? 0).padStart(8, "0")}:${b.id}`,
+      ),
+    );
+  }
+
+  uiContributionFaults(
+    workflowActions: Action[] = this.workflowActions,
+  ): UiContributionFault[] {
+    const known = this.knownCommandIds(workflowActions);
+    return this.plugins.flatMap((plugin) => {
+      const { faults } = resolveUiContributions(
+        plugin.contribution,
+        known,
+        plugin.pluginId,
+      );
+      return faults;
     });
   }
 
