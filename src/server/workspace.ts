@@ -656,6 +656,17 @@ export class Workspace {
         retainedKeys.add(field.key);
         retained.push(field);
       }
+    const members = compositionMembers(this.release.get(active.versionId));
+    const extensions = this.extensions.summarize();
+    for (const member of members) {
+      if (member.enabled) continue;
+      extensions.capabilities.push({
+        interfaceId: "member.register",
+        status: "declared",
+        providerId: member.pluginId,
+        count: 0,
+      });
+    }
     return {
       revision: active.revision,
       workflow,
@@ -665,9 +676,9 @@ export class Workspace {
       buildHash: active.buildHash,
       ...(this.activationPending() ? { activationPending: true } : {}),
       ...(recovery ? { recovery } : {}),
-      members: compositionMembers(this.release.get(active.versionId)),
+      members,
       retainedFields: retained,
-      extensions: this.extensions.summarize(),
+      extensions,
       uiContributions: this.extensions.uiContributions(base.actions),
       uiContributionFaults: this.extensions.uiContributionFaults(base.actions),
       history: this.db
@@ -931,6 +942,13 @@ export class Workspace {
         ? this.builtins.get("default")?.id
         : undefined;
   }
+  private async prepareForPublish(version: Version) {
+    return this.release.prepare(version, async (runtime) => {
+      const installs = await this.collectInstalls(runtime, version);
+      const probe = new ExtensionRegistry();
+      probe.installAll(installs);
+    });
+  }
   async activate(
     request: {
       workflowId?: string;
@@ -958,11 +976,7 @@ export class Workspace {
     const version = this.release.get(versionId);
     if (!(version.evidence as { passed?: boolean })?.passed)
       throw new AppError("UNVERIFIED_VERSION", "候选尚未通过验证");
-    const prepared = await this.release.prepare(version, async (runtime) => {
-      const installs = await this.collectInstalls(runtime, version);
-      const probe = new ExtensionRegistry();
-      probe.installAll(installs);
-    });
+    const prepared = await this.prepareForPublish(version);
     return this.publish(prepared, request, complete, signal);
   }
   /**
@@ -1009,6 +1023,20 @@ export class Workspace {
     const target = members.find((member) => member.pluginId === request.pluginId);
     if (!target)
       throw new AppError("UNKNOWN_PLUGIN", "组合中不存在该插件");
+    if (target.enabled === request.enabled) {
+      const result = { revision: current.revision, unchanged: true as const };
+      this.transaction(() => {
+        this.db
+          .prepare("INSERT INTO operations VALUES(?,?,?)")
+          .run(
+            request.operationId,
+            operationHash(request),
+            JSON.stringify(result),
+          );
+        complete?.();
+      });
+      return result;
+    }
     const nextMembers = members.map((member) => {
       if (member.pluginId !== request.pluginId) return { ...member };
       return { ...member, enabled: request.enabled };
@@ -1047,11 +1075,7 @@ export class Workspace {
       ...(active.bundle ? { bundle: active.bundle } : {}),
       members: recordedMembers,
     });
-    const prepared = await this.release.prepare(next, async (runtime) => {
-      const installs = await this.collectInstalls(runtime, next);
-      const probe = new ExtensionRegistry();
-      probe.installAll(installs);
-    });
+    const prepared = await this.prepareForPublish(next);
     return this.publish(prepared, request, complete, signal);
   }
   async publish(

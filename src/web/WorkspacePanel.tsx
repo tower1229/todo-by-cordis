@@ -80,8 +80,7 @@ export function WorkspacePanel({
           <p className="text-xs leading-5 text-muted">组合成员</p>
           <ul className="divide-y divide-line border-y border-line">
             {composition.members.map((member) => {
-              const isWorkflow =
-                member.pluginId === composition.workflow.id && member.enabled;
+              const isWorkflow = member.role === "workflow" && member.enabled;
               return (
                 <li
                   className="flex items-center justify-between gap-3 py-3"

@@ -144,9 +144,14 @@ test("public disable then enable keeps fields, drops contributions, other plugin
   const tagsMember = afterDisable.members.find((m) => m.pluginId === "tags");
   assert.ok(tagsMember);
   assert.equal(tagsMember.enabled, false);
+  assert.equal(tagsMember.role, "auxiliary");
   assert.equal(
     afterDisable.members.find((m) => m.pluginId === "due")?.enabled,
     true,
+  );
+  assert.equal(
+    afterDisable.members.find((m) => m.pluginId === "aux-workflow")?.role,
+    "workflow",
   );
   assert.equal(
     afterDisable.workflow.fields.some((f) => f.key === "tags"),
@@ -159,10 +164,40 @@ test("public disable then enable keeps fields, drops contributions, other plugin
   assert.ok(afterDisable.workflow.fields.some((f) => f.key === "dueAt"));
   assert.ok(afterDisable.workflow.actions.some((a) => a.id === "setDue"));
   assert.ok(afterDisable.retainedFields.some((f) => f.key === "tags"));
+  assert.ok(
+    afterDisable.extensions.capabilities.some(
+      (c) =>
+        c.interfaceId === "member.register" &&
+        c.status === "declared" &&
+        c.providerId === "tags",
+    ),
+  );
+  assert.equal(
+    afterDisable.extensions.capabilities.some(
+      (c) =>
+        c.interfaceId === "fields.register" &&
+        c.providerId === "tags" &&
+        c.status === "active",
+    ),
+    false,
+  );
+  assert.ok(
+    afterDisable.extensions.capabilities.some(
+      (c) =>
+        c.interfaceId === "fields.register" &&
+        c.providerId === "due" &&
+        c.status === "active",
+    ),
+  );
 
   const stored = w.read(created.task!.id);
   assert.equal(stored.fields.tags, "keep-me");
   assert.equal(stored.fields.dueAt, "2026-09-20T00:00:00Z");
+  const listed = w.query();
+  assert.equal(listed.total, 1);
+  assert.equal(listed.tasks[0]?.id, stored.id);
+  assert.equal(listed.tasks[0]?.fields.tags, "keep-me");
+  assert.equal(listed.revision, afterDisable.revision);
 
   await assert.rejects(
     w.command({
@@ -295,6 +330,44 @@ test("setMemberEnabled is idempotent on operationId and rejects mismatched input
   );
 });
 
+test("already-at-target enable state returns unchanged without new revision", async (t) => {
+  const { workspace: w } = await setup(t);
+  await activateDual(w);
+  const before = w.composition();
+  await w.setMemberEnabled({
+    operationId: randomUUID(),
+    compositionRevision: before.revision,
+    versionId: before.versionId,
+    pluginId: "tags",
+    enabled: false,
+  });
+  const disabled = w.composition();
+  const operationId = randomUUID();
+  const noopRequest = {
+    operationId,
+    compositionRevision: disabled.revision,
+    versionId: disabled.versionId,
+    pluginId: "tags",
+    enabled: false,
+  };
+  const first = await w.setMemberEnabled(noopRequest);
+  assert.equal(first.revision, disabled.revision);
+  assert.equal(
+    (first as { unchanged?: boolean }).unchanged,
+    true,
+  );
+  assert.equal(w.composition().revision, disabled.revision);
+  assert.equal(w.composition().versionId, disabled.versionId);
+
+  const replayed = await w.setMemberEnabled(noopRequest);
+  assert.deepEqual(replayed, first);
+
+  await assert.rejects(
+    w.setMemberEnabled({ ...noopRequest, enabled: true }),
+    /重新提交/,
+  );
+});
+
 test("confirmed enable state survives workspace reopen", async (t) => {
   const { workspace: first, filename } = await setup(t);
   await activateDual(first);
@@ -320,6 +393,18 @@ test("confirmed enable state survives workspace reopen", async (t) => {
   assert.equal(
     active.members.find((m) => m.pluginId === "tags")?.enabled,
     false,
+  );
+  assert.equal(
+    active.members.find((m) => m.pluginId === "tags")?.role,
+    "auxiliary",
+  );
+  assert.ok(
+    active.extensions.capabilities.some(
+      (c) =>
+        c.interfaceId === "member.register" &&
+        c.providerId === "tags" &&
+        c.status === "declared",
+    ),
   );
   assert.equal(
     active.workflow.fields.some((f) => f.key === "tags"),

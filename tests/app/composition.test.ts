@@ -101,6 +101,7 @@ test("legacy single-plugin version lists as one-member composition", async (t) =
   assert.equal(composition.members[0]?.pluginId, "default");
   assert.equal(composition.members[0]?.versionId, composition.versionId);
   assert.equal(composition.members[0]?.enabled, true);
+  assert.equal(composition.members[0]?.role, "workflow");
   const created = await w.command({
     type: "create",
     title: "兼容任务",

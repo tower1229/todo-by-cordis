@@ -24,6 +24,7 @@ export function compositionMembers(version: Version): CompositionMember[] {
     pluginId: member.pluginId,
     versionId: member.versionId ?? version.id,
     enabled: member.enabled,
+    role: member.role,
   }));
 }
 

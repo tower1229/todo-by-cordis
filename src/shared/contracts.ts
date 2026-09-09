@@ -43,10 +43,13 @@ export type Command = {
   input?: Record<string, string>;
 };
 export type CommandResult = { task?: Task; decision?: WorkflowDecision };
+export const compositionMemberRoles = ["workflow", "auxiliary"] as const;
+export type CompositionMemberRole = (typeof compositionMemberRoles)[number];
 export type CompositionMember = {
   pluginId: string;
   versionId: string;
   enabled: boolean;
+  role: CompositionMemberRole;
 };
 export type Composition = {
   revision: number;
