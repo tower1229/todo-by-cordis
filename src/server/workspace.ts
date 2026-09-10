@@ -52,6 +52,14 @@ function text(value: unknown, max: number, required = false) {
     );
   return required ? value.trim() : value;
 }
+
+function assertMemberEnabledArgs(pluginId: unknown, enabled: unknown) {
+  if (typeof pluginId !== "string" || !pluginId || pluginId.length > 100)
+    throw new AppError("INVALID_INPUT", "插件标识无效");
+  if (typeof enabled !== "boolean")
+    throw new AppError("INVALID_INPUT", "启用状态无效");
+}
+
 type Options = {
   launch?: (version: LaunchTarget) => Promise<RuntimeLike>;
   checkpoint?: (stage: string) => void;
@@ -985,10 +993,7 @@ export class Workspace {
    * fixtures; does not publish or change the formal composition.
    */
   recordMemberEnabledVersion(pluginId: string, enabled: boolean): Version {
-    if (typeof pluginId !== "string" || !pluginId || pluginId.length > 100)
-      throw new AppError("INVALID_INPUT", "插件标识无效");
-    if (typeof enabled !== "boolean")
-      throw new AppError("INVALID_INPUT", "启用状态无效");
+    assertMemberEnabledArgs(pluginId, enabled);
     const active = this.release.get(this.current().versionId);
     const members = resolveVersionMembers(active);
     const target = members.find((member) => member.pluginId === pluginId);
@@ -1049,14 +1054,7 @@ export class Workspace {
   ) {
     const replay = this.replay(request.operationId, request);
     if (replay) return replay;
-    if (
-      typeof request.pluginId !== "string" ||
-      !request.pluginId ||
-      request.pluginId.length > 100
-    )
-      throw new AppError("INVALID_INPUT", "插件标识无效");
-    if (typeof request.enabled !== "boolean")
-      throw new AppError("INVALID_INPUT", "启用状态无效");
+    assertMemberEnabledArgs(request.pluginId, request.enabled);
     if (
       typeof request.versionId !== "string" ||
       !request.versionId ||

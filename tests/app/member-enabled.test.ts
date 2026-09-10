@@ -7,25 +7,10 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
 import { createApp } from "../../src/server/app.js";
-import type { WorkflowDefinition } from "../../src/shared/contracts.js";
+import { activateDual, dualWorkflowDefinition } from "./dual-composition-fixture.js";
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "../fixtures");
-
-const workflowDefinition: WorkflowDefinition = {
-  id: "aux-workflow",
-  name: "组合主流程",
-  version: "1.0.0",
-  initialState: "open",
-  states: {
-    open: { label: "未完成", category: "open" },
-    done: { label: "已完成", category: "done" },
-  },
-  actions: [
-    { id: "complete", label: "完成", from: ["open"] },
-    { id: "reopen", label: "重新打开", from: ["done"] },
-  ],
-  fields: [],
-};
+const workflowDefinition = dualWorkflowDefinition;
 
 async function setup(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), "cordis-member-"));
@@ -36,67 +21,6 @@ async function setup(t: TestContext) {
     await rm(directory, { recursive: true, force: true });
   });
   return { workspace, filename, directory };
-}
-
-async function activateDual(w: Workspace) {
-  const workflowCode = await readFile(join(fixtureDir, "aux-workflow.mjs"), "utf8");
-  const tagsCode = await readFile(join(fixtureDir, "tags-plugin.mjs"), "utf8");
-  const dueCode = await readFile(join(fixtureDir, "due-plugin.mjs"), "utf8");
-  const tags = w.release.record({
-    pluginId: "tags",
-    name: "标签插件",
-    service: "plugin:tags",
-    contractVersion: "extensions/1",
-    source: tagsCode,
-    code: tagsCode,
-    definition: { id: "tags" },
-    evidence: { passed: true, origin: "test" },
-  });
-  const due = w.release.record({
-    pluginId: "due",
-    name: "截止日期插件",
-    service: "plugin:due",
-    contractVersion: "extensions/1",
-    source: dueCode,
-    code: dueCode,
-    definition: { id: "due" },
-    evidence: { passed: true, origin: "test" },
-  });
-  const composition = w.release.record({
-    pluginId: "aux-workflow",
-    name: "双贡献组合",
-    service: "workflow",
-    contractVersion: "workflow/1",
-    source: workflowCode,
-    code: workflowCode,
-    definition: workflowDefinition,
-    evidence: { passed: true, origin: "test" },
-    members: [
-      { pluginId: "aux-workflow", enabled: true, role: "workflow" },
-      {
-        pluginId: "tags",
-        versionId: tags.id,
-        enabled: true,
-        role: "auxiliary",
-      },
-      {
-        pluginId: "due",
-        versionId: due.id,
-        enabled: true,
-        role: "auxiliary",
-      },
-    ],
-  });
-  const before = w.composition();
-  await w.activate(
-    {
-      versionId: composition.id,
-      compositionRevision: before.revision,
-      operationId: randomUUID(),
-    },
-    () => undefined,
-  );
-  return { composition, tags, due };
 }
 
 test("public disable then enable keeps fields, drops contributions, other plugin stays", async (t) => {

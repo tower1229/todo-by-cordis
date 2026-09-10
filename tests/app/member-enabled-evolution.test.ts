@@ -1,9 +1,8 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
 import { Evolution } from "../../src/evolution/evolution.js";
@@ -12,28 +11,10 @@ import { PlanningDriver } from "./planning-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
 import { hash } from "../../src/release/storage.js";
 import type { InvestigatedPlan } from "../../src/shared/assistant.js";
-import type { WorkflowDefinition } from "../../src/shared/contracts.js";
+import { activateDual } from "./dual-composition-fixture.js";
 
 // Seams: Evolution experience/apply + observe; Workspace composition/query/command/read.
 // Enable-status candidates share recordMemberEnabledVersion with Workspace public path.
-
-const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "../fixtures");
-
-const workflowDefinition: WorkflowDefinition = {
-  id: "aux-workflow",
-  name: "组合主流程",
-  version: "1.0.0",
-  initialState: "open",
-  states: {
-    open: { label: "未完成", category: "open" },
-    done: { label: "已完成", category: "done" },
-  },
-  actions: [
-    { id: "complete", label: "完成", from: ["open"] },
-    { id: "reopen", label: "重新打开", from: ["done"] },
-  ],
-  fields: [],
-};
 
 async function settle(e: Evolution, status?: string) {
   for (let i = 0; i < 200; i++) {
@@ -48,67 +29,6 @@ async function settle(e: Evolution, status?: string) {
     await new Promise((r) => setTimeout(r, 20));
   }
   throw new Error(`timeout: ${JSON.stringify((await e.observe()).run)}`);
-}
-
-async function activateDual(w: Workspace) {
-  const workflowCode = await readFile(join(fixtureDir, "aux-workflow.mjs"), "utf8");
-  const tagsCode = await readFile(join(fixtureDir, "tags-plugin.mjs"), "utf8");
-  const dueCode = await readFile(join(fixtureDir, "due-plugin.mjs"), "utf8");
-  const tags = w.release.record({
-    pluginId: "tags",
-    name: "标签插件",
-    service: "plugin:tags",
-    contractVersion: "extensions/1",
-    source: tagsCode,
-    code: tagsCode,
-    definition: { id: "tags" },
-    evidence: { passed: true, origin: "test" },
-  });
-  const due = w.release.record({
-    pluginId: "due",
-    name: "截止日期插件",
-    service: "plugin:due",
-    contractVersion: "extensions/1",
-    source: dueCode,
-    code: dueCode,
-    definition: { id: "due" },
-    evidence: { passed: true, origin: "test" },
-  });
-  const composition = w.release.record({
-    pluginId: "aux-workflow",
-    name: "双贡献组合",
-    service: "workflow",
-    contractVersion: "workflow/1",
-    source: workflowCode,
-    code: workflowCode,
-    definition: workflowDefinition,
-    evidence: { passed: true, origin: "test" },
-    members: [
-      { pluginId: "aux-workflow", enabled: true, role: "workflow" },
-      {
-        pluginId: "tags",
-        versionId: tags.id,
-        enabled: true,
-        role: "auxiliary",
-      },
-      {
-        pluginId: "due",
-        versionId: due.id,
-        enabled: true,
-        role: "auxiliary",
-      },
-    ],
-  });
-  const before = w.composition();
-  await w.activate(
-    {
-      versionId: composition.id,
-      compositionRevision: before.revision,
-      operationId: randomUUID(),
-    },
-    () => undefined,
-  );
-  return { composition, tags, due };
 }
 
 function memberEnabledPlan(
@@ -294,8 +214,9 @@ test("enable-status change enters awaiting-apply; experience summarizes and mark
     ),
   );
   assert.ok(
-    first.run.experience.checks.some((c) => /保留|retained|contribution/i.test(c)),
+    first.run.experience.checks.some((c) => /retained\.fields:policy|contribution/i.test(c)),
   );
+  assert.match(first.run.experience.note, /未读写正式任务|宿主保留规则/);
   assert.deepEqual(await e.command(experience), first);
 
   assert.equal(w.composition().versionId, before.versionId);
@@ -592,10 +513,14 @@ test("self-iteration apply re-enable restores contributions with retained field 
 });
 
 test("ordinary self-iteration enable-status path does not alter system protection constraints", async (t) => {
-  const { w, e, before, runId, candidate, plan } =
+  const { w, e, before, runId, candidate, candidateVersion, plan } =
     await awaitingMemberEnabledApply(t);
   assert.ok(plan.excluded.some((item) => /发布|验证|恢复|执行策略/.test(item)));
   assert.deepEqual(plan.writableScope, []);
+  const base = w.release.get(before.versionId);
+  assert.equal(hash(candidateVersion.evidence), hash(base.evidence));
+  assert.equal(candidateVersion.source, base.source);
+  assert.equal(candidateVersion.code, base.code);
 
   await e.command({
     type: "apply",
@@ -624,4 +549,152 @@ test("ordinary self-iteration enable-status path does not alter system protectio
     w.composition().members.find((m) => m.pluginId === "tags")?.enabled,
     true,
   );
+});
+
+test("experience rejects when formal composition drifted from candidate parent", async (t) => {
+  const { w, e, before, runId, candidate } = await awaitingMemberEnabledApply(t);
+  await w.setMemberEnabled({
+    operationId: randomUUID(),
+    compositionRevision: before.revision,
+    versionId: before.versionId,
+    pluginId: "due",
+    enabled: false,
+  });
+  const drifted = w.composition();
+  assert.notEqual(drifted.versionId, before.versionId);
+
+  await assert.rejects(
+    e.command({
+      type: "experience",
+      operationId: "experience-stale-parent",
+      runId,
+      candidateId: candidate.id,
+    }),
+    /基础版本|重新规划/,
+  );
+  assert.equal(w.composition().versionId, drifted.versionId);
+  assert.equal(w.composition().revision, drifted.revision);
+  assert.equal(
+    w.composition().members.find((m) => m.pluginId === "tags")?.enabled,
+    true,
+  );
+  assert.equal(
+    w.composition().members.find((m) => m.pluginId === "due")?.enabled,
+    false,
+  );
+});
+
+test("impure enable-status candidate does not take member-enabled experience shortcut", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-member-impure-"));
+  const w = await Workspace.open(join(directory, "workspace.db"));
+  t.after(async () => {
+    await w.close().catch(() => undefined);
+    await rm(directory, { recursive: true, force: true });
+  });
+  await activateDual(w);
+  const before = w.composition();
+  const pure = w.recordMemberEnabledVersion("tags", false);
+  const base = w.release.get(before.versionId);
+  const impure = w.release.record({
+    pluginId: base.pluginId,
+    name: `${base.name}（杂质候选）`,
+    parentId: base.id,
+    service: base.service,
+    contractVersion: base.contractVersion,
+    source: `${base.source}\n// impure-marker`,
+    code: base.code,
+    definition: base.definition,
+    evidence: { ...(base.evidence as object), forgedReport: true, passed: true },
+    ...(base.bundle ? { bundle: base.bundle } : {}),
+    members: pure.members!,
+  });
+  const plan = memberEnabledPlan(before.versionId, before.revision);
+  const candidateId = "cand-member-impure";
+  const evidenceHash = hash({
+    candidateId,
+    versionId: impure.id,
+    cases: plan.cases,
+    rules: plan.workflowRules,
+  });
+  const runId = "run-member-impure";
+  const bootstrap = new Evolution(
+    w.db,
+    new ExecutionDriver(new PlanningDriver()),
+    new EvolutionDomain(w),
+  );
+  await bootstrap.close();
+  w.db
+    .prepare(
+      "INSERT INTO evolution_runs(id,body) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
+    )
+    .run(
+      runId,
+      JSON.stringify({
+        run: {
+          id: runId,
+          request: "杂质启用态候选",
+          updatedAt: new Date().toISOString(),
+          status: "awaiting-apply",
+          plan,
+          steps: [],
+          summary: `${plan.outcome}（候选已验证，尚未应用）`,
+          versionId: impure.id,
+        },
+        target: {
+          kind: "plugin",
+          baseVersion: before.versionId,
+          payload: { kind: "member-enabled", pluginId: "tags", enabled: false },
+        },
+        plan,
+        versionId: impure.id,
+        history: [],
+        calls: 1,
+        candidates: 1,
+        elapsed: 10,
+        eventSequence: 0,
+      }),
+    );
+  w.db
+    .prepare("INSERT INTO evolution_candidates(runId,body) VALUES(?,?)")
+    .run(
+      runId,
+      JSON.stringify({
+        id: candidateId,
+        planId: plan.id,
+        baseVersion: before.versionId,
+        attempt: 1,
+        passed: true,
+        evidenceHash,
+        versionId: impure.id,
+        sourceHash: hash({ impure: true }),
+      }),
+    );
+  const e = new Evolution(
+    w.db,
+    new ExecutionDriver(new PlanningDriver()),
+    new EvolutionDomain(w),
+  );
+  t.after(async () => {
+    await e.close();
+  });
+
+  const experienced = await e.command({
+    type: "experience",
+    operationId: "experience-impure",
+    runId,
+    candidateId,
+  });
+  assert.equal(experienced.run?.status, "awaiting-apply");
+  if (experienced.run?.status !== "awaiting-apply")
+    throw new Error("expected awaiting-apply");
+  assert.equal(experienced.run.experience?.marked, "not-applied");
+  assert.equal(
+    experienced.run.experience?.checks.some((c) => c.includes("member.enabled:")),
+    false,
+  );
+  assert.ok(
+    experienced.run.experience?.checks.some((c) => c.startsWith("describe:")),
+  );
+  assert.equal(w.composition().versionId, before.versionId);
+  assert.equal(w.composition().revision, before.revision);
 });

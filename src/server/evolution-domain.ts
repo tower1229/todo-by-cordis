@@ -542,17 +542,26 @@ export class EvolutionDomain implements Domain {
     } catch {
       return undefined;
     }
+    if (this.workspace.activeVersion().id !== base.id)
+      throw new AppError(
+        "PLAN_STALE",
+        "基础版本已变化，请重新规划并确认",
+        409,
+      );
     if (
       version.pluginId !== base.pluginId ||
       version.source !== base.source ||
       version.code !== base.code ||
       version.service !== base.service ||
+      version.contractVersion !== base.contractVersion ||
       !equal(version.definition, base.definition) ||
-      !equal(version.evidence, base.evidence)
+      !equal(version.evidence, base.evidence) ||
+      !equal(version.bundle, base.bundle)
     )
       return undefined;
+    const baseMembers = resolveVersionMembers(base);
     const before = new Map(
-      resolveVersionMembers(base).map((m) => [m.pluginId, m.enabled] as const),
+      baseMembers.map((m) => [m.pluginId, m.enabled] as const),
     );
     const after = resolveVersionMembers(version);
     if (
@@ -566,9 +575,7 @@ export class EvolutionDomain implements Domain {
     if (!flips.length) return undefined;
     if (
       after.some((member) => {
-        const prior = resolveVersionMembers(base).find(
-          (m) => m.pluginId === member.pluginId,
-        );
+        const prior = baseMembers.find((m) => m.pluginId === member.pluginId);
         if (!prior || prior.role !== member.role) return true;
         const priorVid = prior.versionId ?? base.id;
         const nextVid = member.versionId ?? version.id;
@@ -589,7 +596,7 @@ export class EvolutionDomain implements Domain {
           : `contribution.exit:${member.pluginId}`,
       );
     }
-    checks.push("retained.fields:kept");
+    checks.push("retained.fields:policy");
     checks.push("formal:unchanged-until-apply");
     const disabled = flips.filter((m) => !m.enabled).map((m) => m.pluginId);
     const enabled = flips.filter((m) => m.enabled).map((m) => m.pluginId);
@@ -607,10 +614,10 @@ export class EvolutionDomain implements Domain {
         title: `${titleParts.join("；")}（尚未应用到正式环境）`,
         fields: after.map(
           (member) =>
-            `${member.pluginId}:${member.enabled ? "启用" : "停用（字段值保留）"}`,
+            `${member.pluginId}:${member.enabled ? "启用" : "停用（按保留规则）"}`,
         ),
       },
-      note: "启用状态变更候选体验：摘要基于候选组合修订，结果已标注为尚未应用到正式环境；停用不删除任务字段值，未写入正式组合。",
+      note: "启用状态变更候选体验：摘要基于候选组合修订，结果已标注为尚未应用到正式环境；停用按宿主保留规则保留字段值，本体验未读写正式任务。",
     };
   }
   async apply(
