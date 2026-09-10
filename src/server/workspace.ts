@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { randomUUID, createHash } from "node:crypto";
 import { stripTypeScriptTypes } from "node:module";
 import { Release, type Prepared } from "../release/release.js";
-import type { Version, RuntimeLike, LaunchTarget, VersionMemberRole } from "../release/types.js";
+import type { Version, RuntimeLike, LaunchTarget, VersionMember, VersionMemberRole } from "../release/types.js";
 import { hash, operationHash } from "../release/storage.js";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -992,12 +992,20 @@ export class Workspace {
    * flag. Shared by Workspace public setMemberEnabled and self-iteration apply
    * fixtures; does not publish or change the formal composition.
    */
-  recordMemberEnabledVersion(pluginId: string, enabled: boolean): Version {
-    assertMemberEnabledArgs(pluginId, enabled);
+  private requireCompositionMember(pluginId: string): {
+    active: Version;
+    members: VersionMember[];
+    target: VersionMember;
+  } {
     const active = this.release.get(this.current().versionId);
     const members = resolveVersionMembers(active);
     const target = members.find((member) => member.pluginId === pluginId);
     if (!target) throw new AppError("UNKNOWN_PLUGIN", "组合中不存在该插件");
+    return { active, members, target };
+  }
+  recordMemberEnabledVersion(pluginId: string, enabled: boolean): Version {
+    assertMemberEnabledArgs(pluginId, enabled);
+    const { active, members, target } = this.requireCompositionMember(pluginId);
     if (target.enabled === enabled)
       throw new AppError("INVALID_INPUT", "成员已是目标启用状态");
     const recordedMembers = members.map((member) => {
@@ -1069,11 +1077,7 @@ export class Workspace {
         "组合版本绑定不一致，请刷新后重试",
         409,
       );
-    const active = this.release.get(current.versionId);
-    const members = resolveVersionMembers(active);
-    const target = members.find((member) => member.pluginId === request.pluginId);
-    if (!target)
-      throw new AppError("UNKNOWN_PLUGIN", "组合中不存在该插件");
+    const { target } = this.requireCompositionMember(request.pluginId);
     if (target.enabled === request.enabled) {
       const result = { revision: current.revision, unchanged: true as const };
       this.transaction(() => {

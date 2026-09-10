@@ -3,25 +3,11 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import type { Workspace } from "../../src/server/workspace.js";
-import type { WorkflowDefinition } from "../../src/shared/contracts.js";
+import { memberUiWorkflowDefinition } from "../fixtures/member-ui.js";
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "../fixtures");
 
-export const dualWorkflowDefinition: WorkflowDefinition = {
-  id: "aux-workflow",
-  name: "组合主流程",
-  version: "1.0.0",
-  initialState: "open",
-  states: {
-    open: { label: "未完成", category: "open" },
-    done: { label: "已完成", category: "done" },
-  },
-  actions: [
-    { id: "complete", label: "完成", from: ["open"] },
-    { id: "reopen", label: "重新打开", from: ["done"] },
-  ],
-  fields: [],
-};
+export const dualWorkflowDefinition = memberUiWorkflowDefinition;
 
 /** Dual-plugin composition fixture shared by Workspace and Evolution enable tests. */
 export async function activateDual(w: Workspace) {

@@ -8,9 +8,9 @@ status: accepted
 
 宿主在版本激活时采集 `contribute()`（缺省为空），装入 `ExtensionRegistry`，并按声明调用 lifecycle：`activate → ready`；切换或关闭前 `quiesce → dispose`。`task.beforeCommit` 在 `decide` 得到 commit 之后、写库之前串行调用；`task.created|updated|deleted` 在提交成功后派发，观察者失败只记诊断、不回滚。`schedule.register` 仅支持当前进程在线武装：`atKind` 为 `absolute`（ISO）或 `field`（任务字段值）；可选 IANA `timezone` 解释无 offset 的墙钟时间；错过策略为 `skip`/`run-once`；触发已注册 action command。不承诺系统推送或关页后可靠提醒。
 
-`composition.workflow.fields/actions` 为 describe 与 contribute 的合并视图（撞名字段安装失败；扩展 command 缺省 `from:["open"]`）；`retainedFields` 含当前扩展字段。钩子可返回 `annotations`，在声明 `diagnostics` 时由宿主限长收录，不覆盖 version/trace。
+`composition.workflow.fields/actions` 为 describe 与 contribute 的合并视图（撞名字段安装失败；扩展 command 缺省 `from:["open"]`）；`retainedFields` 含当前 live 扩展字段，以及曾启用 contribute 后经宿主 `retainedExtensionFields` 记忆、停用后仍需保留展示/导出的字段定义。钩子可返回 `annotations`，在声明 `diagnostics` 时由宿主限长收录，不覆盖 version/trace。
 
-活动组合可含多个 `members`（稳定 `pluginId`、精确 `versionId`、`enabled`）；缺省或旧单插件版本视为单元素组合。同一业务 Runtime 子进程按 pluginId 装载多个模块；宿主对每个已启用成员分别采集 `contribute()`，合并字段与命令并标注 `providerId`。重复身份、双主工作流、双主排序及跨插件字段/命令撞名在激活前失败，正式组合与数据不变。辅助插件不必提供工作流；组合内有且仅有一个主工作流提供者。组合成员启用状态经两条正式路径变更，共用同一记版与数据保留约束：日常 Workspace 公开入口为 `setMemberEnabled` → 新组合修订 → publish；自迭代路径为 `recordMemberEnabledVersion`（与公开路径同记版约束）→ 既有 `experience`/`apply` 精确绑定 → `activate`/publish。普通自迭代不得借此修改 Evolution 执行策略或发布/验证/恢复等系统保护约束。类型化字段与查询 UI 仍属后续事项。
+活动组合可含多个 `members`（稳定 `pluginId`、精确 `versionId`、`enabled`）；缺省或旧单插件版本视为单元素组合。同一业务 Runtime 子进程按 pluginId 装载多个模块；宿主对每个已启用成员分别采集 `contribute()`，合并字段与命令并标注 `providerId`。重复身份、双主工作流、双主排序及跨插件字段/命令撞名在激活前失败，正式组合与数据不变。辅助插件不必提供工作流；组合内有且仅有一个主工作流提供者。组合成员启用状态经两条正式路径变更，共用校验、前进记版、publish/apply 与数据保留约束：日常 Workspace 公开入口为 `setMemberEnabled` → 新组合修订 → publish；自迭代路径为 `recordMemberEnabledVersion` → 既有 `experience`/`apply` 精确绑定 → `activate`/publish。已是目标启用状态时分流：`setMemberEnabled` 返回无变更幂等回执且不产生新修订；`recordMemberEnabledVersion` 必须实际翻转 `enabled`，否则拒绝（记版层不允许无意义候选）。能力摘要中，宿主可为 `enabled=false` 的成员合成 `member.register`（`declared`）条目，表明仍登记于组合但未贡献；该 interfaceId 非插件自声明扩展点，真实启用态以 `members[].enabled` 为准。普通自迭代不得借此修改 Evolution 执行策略或发布/验证/恢复等系统保护约束。类型化字段与查询 UI 仍属后续事项。
 
 ## UI 贡献（2026-09-09）
 

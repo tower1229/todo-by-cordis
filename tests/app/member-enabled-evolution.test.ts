@@ -12,6 +12,7 @@ import { ExecutionDriver } from "./execution-fixture.js";
 import { hash } from "../../src/release/storage.js";
 import type { InvestigatedPlan } from "../../src/shared/assistant.js";
 import { activateDual } from "./dual-composition-fixture.js";
+import { memberEnabledDataImpact } from "../../src/release/composition.js";
 
 // Seams: Evolution experience/apply + observe; Workspace composition/query/command/read.
 // Enable-status candidates share recordMemberEnabledVersion with Workspace public path.
@@ -42,7 +43,7 @@ function memberEnabledPlan(
     summary: "停用标签插件",
     changes: ["将 tags 成员 enabled 设为 false"],
     outcome: "停用 tags",
-    dataImpact: "停用不删除任务字段值；贡献退出活动组合",
+    dataImpact: memberEnabledDataImpact,
     baseVersion,
     requestRevision: 1,
     workflowRules: [],
@@ -216,7 +217,8 @@ test("enable-status change enters awaiting-apply; experience summarizes and mark
   assert.ok(
     first.run.experience.checks.some((c) => /retained\.fields:policy|contribution/i.test(c)),
   );
-  assert.match(first.run.experience.note, /未读写正式任务|宿主保留规则/);
+  assert.match(first.run.experience.note, /未读写正式任务/);
+  assert.match(first.run.experience.note, /停用不删除任务字段值/);
   assert.deepEqual(await e.command(experience), first);
 
   assert.equal(w.composition().versionId, before.versionId);

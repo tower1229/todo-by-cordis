@@ -26,6 +26,10 @@ import {
 } from "../shared/contracts.js";
 import type { RuntimeLike, Version } from "../release/types.js";
 import {
+  memberEnabledDataImpact,
+  resolveVersionMembers,
+} from "../release/composition.js";
+import {
   parseBusinessFiles,
   ProtectedCandidateError,
   CandidateValidationError,
@@ -34,7 +38,6 @@ import { hash } from "../release/storage.js";
 import type { ExtensionContribution } from "./business/contracts.js";
 import { emptyContribution } from "./business/contracts.js";
 import { resolveUiContributions } from "./extensions/ui-slots.js";
-import { resolveVersionMembers } from "../release/composition.js";
 
 type Rule = {
   key: string;
@@ -617,7 +620,7 @@ export class EvolutionDomain implements Domain {
             `${member.pluginId}:${member.enabled ? "启用" : "停用（按保留规则）"}`,
         ),
       },
-      note: "启用状态变更候选体验：摘要基于候选组合修订，结果已标注为尚未应用到正式环境；停用按宿主保留规则保留字段值，本体验未读写正式任务。",
+      note: `启用状态变更候选体验：摘要基于候选组合修订，结果已标注为尚未应用到正式环境；${memberEnabledDataImpact}；本体验未读写正式任务。`,
     };
   }
   async apply(

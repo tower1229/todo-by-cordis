@@ -7,6 +7,10 @@ import type {
   VersionMember,
 } from "./types.js";
 
+/** Host-declared data impact for member enable-status changes (planning / experience). */
+export const memberEnabledDataImpact =
+  "停用不删除任务字段值；贡献退出活动组合；再启用按当前成员版本契约解释";
+
 export function resolveVersionMembers(version: Version): VersionMember[] {
   if (version.members?.length) return version.members;
   return [

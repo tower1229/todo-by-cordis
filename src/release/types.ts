@@ -1,3 +1,8 @@
+import {
+  compositionMemberRoles,
+  type CompositionMemberRole,
+} from "../shared/contracts.js";
+
 export type BusinessBundle = {
   files: Record<string, string>;
   outputs: Record<string, string>;
@@ -5,8 +10,8 @@ export type BusinessBundle = {
   builder: string;
 };
 
-export const versionMemberRoles = ["workflow", "auxiliary"] as const;
-export type VersionMemberRole = (typeof versionMemberRoles)[number];
+export const versionMemberRoles = compositionMemberRoles;
+export type VersionMemberRole = CompositionMemberRole;
 
 /** Lock entry for a composition; omit versionId to mean this Version.id. */
 export type VersionMember = {

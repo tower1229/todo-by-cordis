@@ -320,6 +320,184 @@ test("already-at-target enable state returns unchanged without new revision", as
   );
 });
 
+test("recordMemberEnabledVersion rejects already-at-target without changing formal composition", async (t) => {
+  const { workspace: w } = await setup(t);
+  await activateDual(w);
+  const before = w.composition();
+  assert.throws(
+    () => w.recordMemberEnabledVersion("tags", true),
+    /目标启用状态|已是/,
+  );
+  assert.equal(w.composition().revision, before.revision);
+  assert.equal(w.composition().versionId, before.versionId);
+  assert.equal(
+    w.composition().members.find((m) => m.pluginId === "tags")?.enabled,
+    true,
+  );
+});
+
+test("disable, upgrade member version, re-enable uses current contract and keeps fields", async (t) => {
+  const { workspace: w } = await setup(t);
+  const { tags: tagsV1, due } = await activateDual(w);
+  const active = w.composition();
+  const created = await w.command({
+    type: "create",
+    title: "升级保留",
+    operationId: randomUUID(),
+    compositionRevision: active.revision,
+  });
+  await w.command({
+    type: "action",
+    taskId: created.task!.id,
+    actionId: "setTags",
+    expectedRevision: created.task!.revision,
+    input: { tags: "legacy-value" },
+    operationId: randomUUID(),
+    compositionRevision: active.revision,
+  });
+
+  await w.setMemberEnabled({
+    operationId: randomUUID(),
+    compositionRevision: w.composition().revision,
+    versionId: w.composition().versionId,
+    pluginId: "tags",
+    enabled: false,
+  });
+  const disabled = w.composition();
+  assert.equal(w.read(created.task!.id).fields.tags, "legacy-value");
+  assert.ok(disabled.retainedFields.some((f) => f.key === "tags"));
+  assert.equal(
+    disabled.workflow.actions.some((a) => a.id === "setTags"),
+    false,
+  );
+
+  const tagsV2Code = `export default {
+  contribute() {
+    return {
+      fields: [{ key: "tags", label: "标签V2", type: "text" }],
+      commands: [
+        { id: "setTags", label: "设标签", from: ["open", "done"] },
+        { id: "appendTag", label: "追加标签", from: ["open", "done"] },
+      ],
+    };
+  },
+  decide(data) {
+    const { task, action, input } = data;
+    if (action === "setTags")
+      return {
+        kind: "commit",
+        state: task.state,
+        fields: { ...task.fields, tags: input?.tags ?? "" },
+      };
+    if (action === "appendTag")
+      return {
+        kind: "commit",
+        state: task.state,
+        fields: {
+          ...task.fields,
+          tags: [task.fields.tags, input?.tag].filter(Boolean).join(","),
+        },
+      };
+    return { kind: "reject", message: "未知动作" };
+  },
+};`;
+  const tagsV2 = w.release.record({
+    pluginId: "tags",
+    name: "标签插件 V2",
+    service: "plugin:tags",
+    contractVersion: "extensions/1",
+    source: tagsV2Code,
+    code: tagsV2Code,
+    definition: { id: "tags" },
+    evidence: { passed: true, origin: "test" },
+  });
+  assert.notEqual(tagsV2.id, tagsV1.id);
+  const workflowCode = await readFile(join(fixtureDir, "aux-workflow.mjs"), "utf8");
+  const upgradedWhileDisabled = w.release.record({
+    pluginId: "aux-workflow",
+    name: "双贡献组合（升级停用 tags）",
+    service: "workflow",
+    contractVersion: "workflow/1",
+    source: workflowCode,
+    code: workflowCode,
+    definition: workflowDefinition,
+    evidence: { passed: true, origin: "test" },
+    members: [
+      { pluginId: "aux-workflow", enabled: true, role: "workflow" },
+      {
+        pluginId: "tags",
+        versionId: tagsV2.id,
+        enabled: false,
+        role: "auxiliary",
+      },
+      {
+        pluginId: "due",
+        versionId: due.id,
+        enabled: true,
+        role: "auxiliary",
+      },
+    ],
+  });
+  await w.activate(
+    {
+      versionId: upgradedWhileDisabled.id,
+      compositionRevision: disabled.revision,
+      operationId: randomUUID(),
+    },
+    () => undefined,
+  );
+  const afterUpgrade = w.composition();
+  assert.equal(
+    afterUpgrade.members.find((m) => m.pluginId === "tags")?.enabled,
+    false,
+  );
+  assert.equal(
+    afterUpgrade.members.find((m) => m.pluginId === "tags")?.versionId,
+    tagsV2.id,
+  );
+  assert.equal(w.read(created.task!.id).fields.tags, "legacy-value");
+  assert.ok(afterUpgrade.retainedFields.some((f) => f.key === "tags"));
+  assert.equal(
+    afterUpgrade.workflow.actions.some((a) => a.id === "appendTag"),
+    false,
+  );
+
+  await w.setMemberEnabled({
+    operationId: randomUUID(),
+    compositionRevision: afterUpgrade.revision,
+    versionId: afterUpgrade.versionId,
+    pluginId: "tags",
+    enabled: true,
+  });
+  const reenabled = w.composition();
+  assert.equal(
+    reenabled.members.find((m) => m.pluginId === "tags")?.enabled,
+    true,
+  );
+  assert.equal(
+    reenabled.members.find((m) => m.pluginId === "tags")?.versionId,
+    tagsV2.id,
+  );
+  assert.ok(reenabled.workflow.actions.some((a) => a.id === "appendTag"));
+  assert.ok(
+    reenabled.workflow.fields.some(
+      (f) => f.key === "tags" && f.label === "标签V2",
+    ),
+  );
+  const stored = w.read(created.task!.id);
+  assert.equal(stored.fields.tags, "legacy-value");
+  const appended = await w.command({
+    type: "action",
+    taskId: stored.id,
+    actionId: "appendTag",
+    expectedRevision: stored.revision,
+    input: { tag: "v2" },
+    operationId: randomUUID(),
+    compositionRevision: reenabled.revision,
+  });
+  assert.equal(appended.task?.fields.tags, "legacy-value,v2");
+});
+
 test("confirmed enable state survives workspace reopen", async (t) => {
   const { workspace: first, filename } = await setup(t);
   await activateDual(first);
