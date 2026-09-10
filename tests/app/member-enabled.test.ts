@@ -65,6 +65,13 @@ test("public disable then enable keeps fields, drops contributions, other plugin
   const afterDisable = w.composition();
   assert.equal(afterDisable.revision, disabled.revision);
   assert.equal(afterDisable.versionId !== beforeDisable.versionId, true);
+  assert.ok(
+    afterDisable.history.some(
+      (item) =>
+        item.versionId === afterDisable.versionId &&
+        /停用.*tags/.test(item.name),
+    ),
+  );
   const tagsMember = afterDisable.members.find((m) => m.pluginId === "tags");
   assert.ok(tagsMember);
   assert.equal(tagsMember.enabled, false);
@@ -127,6 +134,20 @@ test("public disable then enable keeps fields, drops contributions, other plugin
     w.command({
       type: "action",
       taskId: stored.id,
+      actionId: "setDue",
+      expectedRevision: stored.revision,
+      input: { dueAt: "2026-09-22T00:00:00Z" },
+      operationId: randomUUID(),
+      compositionRevision: beforeDisable.revision,
+    }),
+    /流程已变化|刷新/,
+  );
+  assert.equal(w.read(stored.id).fields.dueAt, "2026-09-20T00:00:00Z");
+
+  await assert.rejects(
+    w.command({
+      type: "action",
+      taskId: stored.id,
       actionId: "setTags",
       expectedRevision: stored.revision,
       input: { tags: "nope" },
@@ -161,6 +182,13 @@ test("public disable then enable keeps fields, drops contributions, other plugin
   assert.equal(
     afterEnable.members.find((m) => m.pluginId === "tags")?.enabled,
     true,
+  );
+  assert.ok(
+    afterEnable.history.some(
+      (item) =>
+        item.versionId === afterEnable.versionId &&
+        /启用.*tags/.test(item.name),
+    ),
   );
   assert.ok(afterEnable.workflow.fields.some((f) => f.key === "tags"));
   assert.ok(afterEnable.workflow.actions.some((a) => a.id === "setTags"));
