@@ -225,6 +225,135 @@ test("只改工作流 A 并应用确认后，辅助成员 B 的身份版本启�
   assert.equal(redated.task?.fields.tags, "still-works");
 });
 
+test("先停用 tags 再只改工作流，应用后 tags 仍为停用且字段保留、due 仍可用", async (t) => {
+  const ctx = await dualWithTaggedTask(t);
+  const { w, tags, due, taskId } = ctx;
+  await w.setMemberEnabled({
+    operationId: randomUUID(),
+    compositionRevision: ctx.before.revision,
+    versionId: ctx.before.versionId,
+    pluginId: "tags",
+    enabled: false,
+  });
+  const before = w.composition();
+  const tagsBefore = before.members.find((m) => m.pluginId === "tags");
+  const dueBefore = before.members.find((m) => m.pluginId === "due");
+  assert.ok(tagsBefore);
+  assert.ok(dueBefore);
+  assert.equal(tagsBefore.enabled, false);
+  assert.equal(tagsBefore.versionId, tags.id);
+  assert.equal(dueBefore.enabled, true);
+  assert.equal(dueBefore.versionId, due.id);
+  assert.equal(w.read(taskId).fields.tags, "inherit-me");
+
+  const activeName = w.activeVersion().name;
+  const e = new Evolution(
+    w.db,
+    new ExecutionDriver(new PlanningDriver(), "aux-workflow", activeName),
+    new EvolutionDomain(w),
+  );
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "完成前填写复盘",
+    operationId: "plan-disabled",
+  });
+  const ready = await settle(e, "ready");
+  assert.equal(ready.status, "ready");
+  if (ready.status !== "ready") throw new Error("expected ready");
+  await e.command({
+    type: "start",
+    operationId: "start-disabled",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  const done = await settle(e, "awaiting-apply");
+  assert.equal(done.status, "awaiting-apply");
+  if (done.status !== "awaiting-apply")
+    throw new Error("expected awaiting-apply");
+  const snapshot = await e.observe();
+  const candidate = snapshot.candidates?.find((c) => c.passed);
+  assert.ok(candidate, "real generation must produce a passed candidate");
+  assert.ok(candidate.evidenceHash);
+
+  await e.command({
+    type: "apply",
+    operationId: "apply-disabled",
+    runId: done.id,
+    candidateId: candidate.id,
+    evidenceHash: candidate.evidenceHash!,
+    compositionRevision: before.revision,
+  });
+  const succeeded = await settle(e, "succeeded");
+  assert.equal(succeeded.status, "succeeded");
+
+  const after = w.composition();
+  const tagsAfter = after.members.find((m) => m.pluginId === "tags");
+  const dueAfter = after.members.find((m) => m.pluginId === "due");
+  assert.deepEqual(
+    {
+      pluginId: tagsAfter?.pluginId,
+      versionId: tagsAfter?.versionId,
+      enabled: tagsAfter?.enabled,
+      role: tagsAfter?.role,
+    },
+    {
+      pluginId: "tags",
+      versionId: tags.id,
+      enabled: false,
+      role: "auxiliary",
+    },
+  );
+  assert.deepEqual(
+    {
+      pluginId: dueAfter?.pluginId,
+      versionId: dueAfter?.versionId,
+      enabled: dueAfter?.enabled,
+      role: dueAfter?.role,
+    },
+    {
+      pluginId: "due",
+      versionId: due.id,
+      enabled: true,
+      role: "auxiliary",
+    },
+  );
+
+  const task = w.read(taskId);
+  assert.equal(task.fields.tags, "inherit-me");
+  assert.equal(
+    w.query().tasks.find((row) => row.id === taskId)?.fields.tags,
+    "inherit-me",
+  );
+  await assert.rejects(
+    w.command({
+      type: "action",
+      taskId,
+      actionId: "setTags",
+      expectedRevision: task.revision,
+      input: { tags: "nope" },
+      operationId: randomUUID(),
+      compositionRevision: after.revision,
+    }),
+    /不可用|无效/,
+  );
+  assert.equal(w.read(taskId).fields.tags, "inherit-me");
+
+  const redated = await w.command({
+    type: "action",
+    taskId,
+    actionId: "setDue",
+    expectedRevision: task.revision,
+    input: { dueAt: "2026-09-22T00:00:00Z" },
+    operationId: randomUUID(),
+    compositionRevision: after.revision,
+  });
+  assert.equal(redated.task?.fields.dueAt, "2026-09-22T00:00:00Z");
+  assert.equal(redated.task?.fields.tags, "inherit-me");
+});
+
 test("真实候选业务验收失败时正式组合与任务相对开始前不变", async (t) => {
   const ctx = await dualWithTaggedTask(t);
   const membersBefore = memberSnapshot(ctx.before);
