@@ -47,6 +47,19 @@ function seedTask(
   return workspace.read(taskId);
 }
 
+function assertTaskUnchanged(
+  probe: Workspace,
+  taskId: string,
+  before: { state: string; fields: Record<string, string> },
+  caseName: string,
+) {
+  const stayed = probe.read(taskId);
+  if (stayed.state !== before.state || hash(stayed.fields) !== hash(before.fields))
+    throw new BusinessAssertionError(
+      `业务验收失败：${caseName}；预期拒绝写入，任务已被改动`,
+    );
+}
+
 /**
  * Trusted business acceptance: open an isolated Workspace, activate the full
  * candidate composition, and assert command/query final facts (including
@@ -58,9 +71,12 @@ export async function verifyViaIsolatedWorkspace(
   cases: WorkspaceAcceptanceCase[],
   signal: AbortSignal,
 ): Promise<string[]> {
-  if (!cases.length) return [];
+  if (!cases.length)
+    throw new BusinessAssertionError("缺少隔离 Workspace 业务验收用例");
   const directory = await mkdtemp(join(tmpdir(), "cordis-accept-probe-"));
-  const probe = await Workspace.open(join(directory, "workspace.db"));
+  const probe = await Workspace.open(join(directory, "workspace.db"), {
+    acceptanceProbe: true,
+  });
   const checks: string[] = [];
   try {
     signal.throwIfAborted();
@@ -102,11 +118,7 @@ export async function verifyViaIsolatedWorkspace(
         });
         if (c.expected.kind === "reject") {
           if (result.decision?.kind === "input-required") {
-            const stayed = probe.read(task.id);
-            if (stayed.state !== task.state || hash(stayed.fields) !== hash(task.fields))
-              throw new BusinessAssertionError(
-                `业务验收失败：${c.name}；预期拒绝写入，任务已被改动`,
-              );
+            assertTaskUnchanged(probe, task.id, task, c.name);
             checks.push(c.name);
             continue;
           }
@@ -131,11 +143,7 @@ export async function verifyViaIsolatedWorkspace(
           error instanceof AppError &&
           (error.code === "ACTION_REJECTED" || error.code === "INVALID_ACTION")
         ) {
-          const stayed = probe.read(task.id);
-          if (stayed.state !== task.state || hash(stayed.fields) !== hash(task.fields))
-            throw new BusinessAssertionError(
-              `业务验收失败：${c.name}；拒绝后任务状态被改动`,
-            );
+          assertTaskUnchanged(probe, task.id, task, c.name);
           checks.push(c.name);
           continue;
         }

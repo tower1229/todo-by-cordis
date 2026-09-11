@@ -65,6 +65,8 @@ type Options = {
   launch?: (version: LaunchTarget) => Promise<RuntimeLike>;
   checkpoint?: (stage: string) => void;
   beforeOpenWrites?: () => Promise<void>;
+  /** When true, activateForAcceptance may publish without evidence.passed. */
+  acceptanceProbe?: boolean;
 };
 
 export class Workspace {
@@ -990,9 +992,16 @@ export class Workspace {
   }
   /**
    * Host-owned acceptance probe: activate a candidate composition without the
-   * evidence.passed gate. Only for disposable isolated workspaces.
+   * evidence.passed gate. Refuses unless this Workspace was opened with
+   * acceptanceProbe: true.
    */
   async activateForAcceptance(versionId: string, signal?: AbortSignal) {
+    if (!this.options.acceptanceProbe)
+      throw new AppError(
+        "FORBIDDEN",
+        "仅隔离验收探针工作区可跳过验证门闩",
+        403,
+      );
     const version = this.release.get(versionId);
     const prepared = await this.prepareForPublish(version);
     return this.publish(
