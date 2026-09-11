@@ -1,18 +1,38 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
 import { Evolution } from "../../src/evolution/evolution.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
-import { toolReply } from "./planning-fixture.js";
+import type { WorkflowDefinition } from "../../src/shared/contracts.js";
+import { PlanningDriver, toolReply } from "./planning-fixture.js";
 import { activateDual } from "./dual-composition-fixture.js";
 
 // Seam: Evolution investigation → inspect_application externally visible content.
 // Asserts live composition members + extension registry facts, not private assemblers.
+
+const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "../fixtures");
+
+const hookedDefinition: WorkflowDefinition = {
+  id: "hooked",
+  name: "钩子夹具",
+  version: "1.0.0",
+  initialState: "open",
+  states: {
+    open: { label: "未完成", category: "open" },
+    done: { label: "已完成", category: "done" },
+  },
+  actions: [
+    { id: "complete", label: "完成", from: ["open"] },
+    { id: "reopen", label: "重新打开", from: ["done"] },
+  ],
+  fields: [],
+};
 
 type InspectContent = {
   members?: {
@@ -95,6 +115,29 @@ function capturingInspectDriver(bag: {
       });
     },
   };
+}
+
+async function activateHooked(w: Workspace) {
+  const code = await readFile(join(fixtureDir, "hooked-plugin.mjs"), "utf8");
+  const hooked = w.release.record({
+    pluginId: "hooked",
+    name: "钩子夹具",
+    service: "workflow",
+    contractVersion: "workflow/1",
+    source: code,
+    code,
+    definition: hookedDefinition,
+    evidence: { passed: true, origin: "test" },
+  });
+  await w.activate(
+    {
+      versionId: hooked.id,
+      compositionRevision: w.composition().revision,
+      operationId: randomUUID(),
+    },
+    () => undefined,
+  );
+  return hooked;
 }
 
 test("inspect_application surfaces live members and extension registry after disable", async (t) => {
@@ -205,9 +248,107 @@ test("inspect_application surfaces live members and extension registry after dis
         c.status === "active",
     ),
   );
+  const dueMember = live.members.find((m) => m.pluginId === "due");
+  assert.ok(dueMember);
+  assert.ok(
+    (inspect.capabilities ?? []).some(
+      (c) =>
+        c.interfaceId === "fields.register" &&
+        c.providerId === "due" &&
+        c.artifactVersion === dueMember.versionId &&
+        c.ready === true,
+    ),
+    "capability artifactVersion must use member versionId",
+  );
+  assert.ok(
+    (inspect.capabilities ?? []).some(
+      (c) =>
+        c.interfaceId === "workflow.provide" &&
+        c.id === "workflow" &&
+        c.contract === "active-contract",
+    ),
+    "workflow.provide keeps stable id workflow with contract refs",
+  );
   assert.ok(
     inspect.checkers?.some((c) => c.id === "workflow/1"),
     "reliable checkers remain listed",
+  );
+});
+
+test("inspect_application surfaces events schedules and ui registration facts", async (t) => {
+  const w = await setup(t);
+  await activateHooked(w);
+  const live = w.composition();
+
+  const bag: { requests: ModelRequest[]; inspect?: InspectContent } = {
+    requests: [],
+  };
+  const e = new Evolution(
+    w.db,
+    capturingInspectDriver(bag),
+    new EvolutionDomain(w),
+  );
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "查看扩展注册",
+    operationId: "discover-hooks",
+  });
+  const run = await settle(e);
+  assert.equal(run.status, "dismissed", JSON.stringify(run));
+
+  const inspect = bag.inspect!;
+  assert.deepEqual(
+    inspect.extensions!.capabilities
+      .map((c) => `${c.interfaceId}:${c.providerId}:${c.status}:${c.count}`)
+      .sort(),
+    live.extensions.capabilities
+      .map((c) => `${c.interfaceId}:${c.providerId}:${c.status}:${c.count}`)
+      .sort(),
+  );
+  const caps = inspect.extensions!.capabilities;
+  assert.ok(
+    caps.some(
+      (c) =>
+        c.interfaceId === "task.events" &&
+        c.providerId === "hooked" &&
+        c.status === "active",
+    ),
+  );
+  assert.ok(
+    caps.some(
+      (c) =>
+        c.interfaceId === "schedule.register" &&
+        c.providerId === "hooked" &&
+        c.status === "active",
+    ),
+  );
+  assert.ok(
+    caps.some(
+      (c) =>
+        c.interfaceId === "ui.slot" &&
+        c.providerId === "hooked" &&
+        c.status === "stub",
+    ),
+    "non-whitelist ui slot remains a registration fact (stub)",
+  );
+  assert.ok(
+    caps.some(
+      (c) =>
+        c.interfaceId === "command.register" &&
+        c.providerId === "hooked" &&
+        c.status === "active",
+    ),
+  );
+  assert.ok(
+    caps.some(
+      (c) =>
+        c.interfaceId === "fields.register" &&
+        c.providerId === "hooked" &&
+        c.status === "active",
+    ),
   );
 });
 
@@ -287,19 +428,15 @@ test("inspect_application does not treat evidence-only ready as currently callab
   assert.ok(bag.inspect!.extensions?.capabilities);
 
   const catalog = bag.inspect!.capabilities ?? [];
-  const forgedCallable = catalog.some((c) => {
-    const id = c.id;
-    const capability = c.capability;
-    const interfaceId = c.interfaceId;
-    return (
-      (id === "forged-service" ||
-        capability === "service.provide" ||
-        interfaceId === "service.provide") &&
-      c.ready === true
-    );
-  });
   assert.equal(
-    forgedCallable,
+    catalog.some((c) => c.id === "forged-service"),
+    false,
+    "forged evidence capability id must not appear in live catalog",
+  );
+  assert.equal(
+    catalog.some(
+      (c) => c.interfaceId === "service.provide" && c.ready === true,
+    ),
     false,
     "forged evidence ready must not make service currently callable",
   );
@@ -312,4 +449,35 @@ test("inspect_application does not treat evidence-only ready as currently callab
     ),
     false,
   );
+});
+
+test("unknown checker still blocks after live catalog homology", async (t) => {
+  const w = await setup(t);
+  await activateDual(w);
+  const e = new Evolution(
+    w.db,
+    new PlanningDriver({
+      summary: "离线提醒",
+      acceptance: [
+        {
+          given: "离线",
+          when: "到期",
+          then: "通知",
+          checker: "notification/1",
+        },
+      ],
+    }),
+    new EvolutionDomain(w),
+  );
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "到点提醒",
+    operationId: "discover-checker",
+  });
+  const run = await settle(e);
+  assert.equal(run.status, "blocked", JSON.stringify(run));
+  assert.match(run.message ?? "", /检查器/);
 });

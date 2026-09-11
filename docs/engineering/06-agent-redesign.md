@@ -97,7 +97,7 @@ Plan 是有预算的只读工具循环，可以读取当前版本、相关文件
 
 候选工作副本从已发布的完整应用源码产物建立，不直接编辑开发者当前 checkout，也不覆盖正在使用的静态资源。复用现有 TypeScript、React/Vite、Cordis 和锁定依赖。固定构建入口不执行模型提供的 package scripts；不允许修改依赖锁来引入任意安装行为。
 
-能力目录由活动组合生成，提供能力身份、提供者精确版本、接口、依赖、实际就绪状态及相关源码/验收引用。不能把 manifest 声明等同于实际可用。只读摘要后按需取得详细材料。
+能力目录由活动组合的 `members` 与宿主扩展注册摘要（`composition.extensions`）同源生成：提供成员身份/启用/角色、已登记扩展点（命令、字段、事件、调度、UI 槽位等）、提供者成员精确 `versionId`，以及 `ready`（仅当注册状态为 `active` 且组合 ready）。不能把 manifest 声明、证据缓存的 capabilities，或「模块已求值且有导出」单独等同于当前可调用。主工作流 `workflow.provide` 条目可附带 `active-contract` / `active-source` / `active-acceptance` 引用；其他扩展点当前不附源码/验收引用。只读摘要后按需取得详细材料。
 
 内部工具按阶段开放，名称为拟实施契约，不是现有 API：
 
