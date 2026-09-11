@@ -68,6 +68,16 @@ async function dualWithTaggedTask(t: TestContext) {
     compositionRevision: before.revision,
   });
   assert.equal(tagged.task?.fields.tags, "inherit-me");
+  const dated = await w.command({
+    type: "action",
+    taskId: created.task!.id,
+    actionId: "setDue",
+    expectedRevision: tagged.task!.revision,
+    input: { dueAt: "2026-09-20T00:00:00Z" },
+    operationId: randomUUID(),
+    compositionRevision: before.revision,
+  });
+  assert.equal(dated.task?.fields.dueAt, "2026-09-20T00:00:00Z");
   return {
     w,
     before: w.composition(),
@@ -188,7 +198,9 @@ test("只改工作流 A 并应用确认后，辅助成员 B 的身份版本启�
   );
 
   const listed = w.query();
-  assert.equal(listed.tasks.find((task) => task.id === taskId)?.fields.tags, "inherit-me");
+  const kept = listed.tasks.find((task) => task.id === taskId);
+  assert.equal(kept?.fields.tags, "inherit-me");
+  assert.equal(kept?.fields.dueAt, "2026-09-20T00:00:00Z");
   const task = w.read(taskId);
   const retagged = await w.command({
     type: "action",
@@ -200,6 +212,17 @@ test("只改工作流 A 并应用确认后，辅助成员 B 的身份版本启�
     compositionRevision: after.revision,
   });
   assert.equal(retagged.task?.fields.tags, "still-works");
+  const redated = await w.command({
+    type: "action",
+    taskId,
+    actionId: "setDue",
+    expectedRevision: retagged.task!.revision,
+    input: { dueAt: "2026-09-21T00:00:00Z" },
+    operationId: randomUUID(),
+    compositionRevision: after.revision,
+  });
+  assert.equal(redated.task?.fields.dueAt, "2026-09-21T00:00:00Z");
+  assert.equal(redated.task?.fields.tags, "still-works");
 });
 
 test("真实候选业务验收失败时正式组合与任务相对开始前不变", async (t) => {
