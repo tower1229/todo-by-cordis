@@ -11,6 +11,11 @@ import { createRequire } from "node:module";
 import { hash } from "../release/storage.js";
 import type { Workspace } from "./workspace.js";
 import type {
+  CompositionMember,
+  ExtensionSummary,
+} from "../shared/contracts.js";
+import type { ExtensionCapabilityStatus } from "./business/contracts.js";
+import type {
   InvestigatedPlan,
   PlanEvidence,
   WorkflowRule,
@@ -52,12 +57,29 @@ const requiredEvidence = [
   "src/server/evolution-domain.ts",
   "check_environment",
 ];
+export type InvestigationCapability = {
+  id: string;
+  interfaceId: string;
+  providerId: string;
+  status: ExtensionCapabilityStatus;
+  count: number;
+  /** True only when live registry status is active and composition is ready. */
+  ready: boolean;
+  artifactVersion: string;
+  contract?: string;
+  source?: string;
+  acceptance?: string;
+  dependencies?: string[];
+};
+
 export type Investigation = {
   revision: number;
   versionId: string;
   pluginId: string;
-  runtimeStatus: string;
-  capabilities: unknown[];
+  runtimeStatus: "ready" | "recovering" | "unavailable";
+  members: CompositionMember[];
+  extensions: ExtensionSummary;
+  capabilities: InvestigationCapability[];
   files: Record<string, { content: string; hash: string }>;
   environment: {
     node: string;
@@ -65,8 +87,28 @@ export type Investigation = {
     missing: string[];
   };
 };
+
+/** Live catalog from composition + registry; never evidence.ready / module eval alone. */
+function planningCapabilities(composition: {
+  status: "ready" | "recovering" | "unavailable";
+  versionId: string;
+  extensions: ExtensionSummary;
+}): InvestigationCapability[] {
+  const compositionReady = composition.status === "ready";
+  return composition.extensions.capabilities.map((c) => ({
+    id: `${c.interfaceId}:${c.providerId}`,
+    interfaceId: c.interfaceId,
+    providerId: c.providerId,
+    status: c.status,
+    count: c.count,
+    ready: compositionReady && c.status === "active",
+    artifactVersion: composition.versionId,
+  }));
+}
+
 export function capture(workspace: Workspace): Investigation {
   const active = workspace.activeVersion();
+  const composition = workspace.composition();
   const files: Investigation["files"] = {};
   const add = (ref: string, content: string) => {
     files[ref] = { content, hash: hash(content) };
@@ -105,18 +147,13 @@ export function capture(workspace: Workspace): Investigation {
     }),
   );
   return {
-    revision: workspace.composition().revision,
-    versionId: active.id,
+    revision: composition.revision,
+    versionId: composition.versionId,
     pluginId: active.pluginId,
-    runtimeStatus: workspace.composition().status,
-    capabilities: (
-      (active.evidence as { capabilities?: Record<string, unknown>[] })
-        .capabilities ?? []
-    ).map((c) => ({
-      ...c,
-      ready: c.ready === true && workspace.composition().status === "ready",
-      artifactVersion: active.id,
-    })),
+    runtimeStatus: composition.status,
+    members: composition.members,
+    extensions: composition.extensions,
+    capabilities: planningCapabilities(composition),
     files,
     environment: {
       node: process.version,
@@ -314,25 +351,19 @@ export function readInvestigation(
               "active-source 与 business/* 来自精确活动产物；src/* 为只读宿主资料。多文件候选只写冻结的 business/* 路径，正式应用另行确认。",
             compositionRevision: context.revision,
             versionId: context.versionId,
-            capabilities: [
-              ...context.capabilities,
-              {
-                id: "workflow",
-                provider: context.pluginId,
-                version: context.versionId,
-                declared: true,
-                ready: context.runtimeStatus === "ready",
-                runtimeStatus: context.runtimeStatus,
-                evidence: {
-                  compositionRevision: context.revision,
-                  artifact: context.versionId,
-                },
-                contract: "active-contract",
-                source: "active-source",
-                acceptance: "active-acceptance",
-                dependencies: ["cordis"],
-              },
-            ],
+            members: context.members,
+            extensions: context.extensions,
+            capabilities: context.capabilities.map((capability) =>
+              capability.interfaceId === "workflow.provide"
+                ? {
+                    ...capability,
+                    contract: "active-contract",
+                    source: "active-source",
+                    acceptance: "active-acceptance",
+                    dependencies: ["cordis"],
+                  }
+                : capability,
+            ),
             files: Object.entries(context.files).map(([ref, file]) => ({
               ref,
               hash: file.hash,
