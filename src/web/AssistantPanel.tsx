@@ -62,6 +62,31 @@ function EventLog({ events }: { events: AssistantEvent[] }) {
   );
 }
 
+function CompositionIntentBlock({
+  intent,
+}: {
+  intent: NonNullable<InvestigatedPlan["compositionIntent"]>;
+}) {
+  return (
+    <div>
+      <dt className="plan-label">组合变更</dt>
+      <dd className="break-words space-y-1">
+        {intent.upgrade.map((id) => (
+          <p key={`upgrade-${id}`}>升级成员：{id}</p>
+        ))}
+        {intent.add.map((m) => (
+          <p key={`add-${m.pluginId}`}>
+            新增成员：{m.pluginId}（{m.name}）
+          </p>
+        ))}
+        {!!intent.retain.length && (
+          <p>保留成员：{intent.retain.join("、")}（精确版本与启用状态）</p>
+        )}
+      </dd>
+    </div>
+  );
+}
+
 function PlanSummary({ plan }: { plan: InvestigatedPlan }) {
   return (
     <dl className="space-y-4 text-sm leading-6">
@@ -78,6 +103,9 @@ function PlanSummary({ plan }: { plan: InvestigatedPlan }) {
           <dd className="break-words">{value}</dd>
         </div>
       ))}
+      {!!plan.compositionIntent && (
+        <CompositionIntentBlock intent={plan.compositionIntent} />
+      )}
       {!!plan.excluded.length && (
         <div>
           <dt className="plan-label">不包含</dt>
@@ -101,18 +129,23 @@ function PlanDetails({ plan }: { plan: InvestigatedPlan }) {
             ))}
           </div>
         )}
-        {!!(plan.memberAdditions?.length || plan.memberUpgrades?.length) && (
+        {!!plan.compositionIntent && (
           <div>
             <p className="font-medium text-ink">组合变更</p>
-            {plan.memberUpgrades?.map((m) => (
-              <p key={`upgrade-${m.pluginId}`}>升级成员：{m.pluginId}</p>
+            {plan.compositionIntent.upgrade.map((id) => (
+              <p key={`upgrade-${id}`}>升级成员：{id}</p>
             ))}
-            {plan.memberAdditions?.map((m) => (
+            {plan.compositionIntent.add.map((m) => (
               <p key={`add-${m.pluginId}`}>
                 新增成员：{m.pluginId}（{m.name}）
               </p>
             ))}
-            <p>未列出的活动组合成员按精确版本保留</p>
+            {!!plan.compositionIntent.retain.length && (
+              <p>
+                保留成员：{plan.compositionIntent.retain.join("、")}
+                （精确版本与启用状态）
+              </p>
+            )}
           </div>
         )}
         {!!plan.acceptance?.length && (

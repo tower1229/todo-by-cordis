@@ -10,10 +10,11 @@ import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
 import { activateDual } from "./dual-composition-fixture.js";
-import { source } from "./evolution-fixture.js";
+import { source, candidateSource } from "./evolution-fixture.js";
 import { toolReply } from "./planning-fixture.js";
 import { panelPluginCode } from "../fixtures/member-ui.js";
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
+import { contract } from "../../src/server/evolution-domain.js";
 
 // Seams: Evolution public control plane (request/start/experience/apply/observe)
 // → Workspace composition/query/command. Real candidate generation only; no awaiting-apply seed.
@@ -857,27 +858,37 @@ test("只升级已有辅助成员 tags 并应用后，due 精确版本保留且 
   assert.equal(ready.status, "ready");
   if (ready.status !== "ready") throw new Error("expected ready");
   assert.deepEqual(ready.plan.memberUpgrades, [{ pluginId: "tags" }]);
+  assert.deepEqual(ready.plan.compositionIntent, {
+    upgrade: ["tags"],
+    add: [],
+    retain: ["aux-workflow", "due"],
+  });
   assert.match(ready.plan.dataImpact, /保留/);
-  assert.ok(
-    ready.plan.changes.some((c) => /升级.*tags|tags.*升级/i.test(c)),
-    "plan.changes must state which member is upgraded",
-  );
-  assert.ok(
-    ready.plan.changes.some((c) => /保留/.test(c)),
-    "plan.changes must state which members are retained",
-  );
   await e.command({
     type: "start",
     operationId: "start-upgrade-tags",
     runId: ready.id,
     planId: ready.plan.id,
   });
-  const done = await settle(e, "awaiting-apply");
-  assert.equal(done.status, "awaiting-apply");
-  if (done.status !== "awaiting-apply")
+  const executing = await settle(e, "awaiting-apply");
+  assert.equal(executing.status, "awaiting-apply");
+  if (executing.status !== "awaiting-apply")
     throw new Error("expected awaiting-apply");
-  const snapshot = await e.observe();
-  const candidate = snapshot.candidates?.find((c) => c.passed);
+  const progress = await e.observe();
+  assert.ok(
+    progress.events?.some(
+      (event) =>
+        /生成候选|修正候选/.test(event.label) && /升级 tags/.test(event.label),
+    ) ||
+      (progress.run &&
+        "steps" in progress.run &&
+        (progress.run as { steps?: { label: string }[] }).steps?.some((s) =>
+          /升级 tags/.test(s.label),
+        )),
+    "execution progress should reflect composition intent",
+  );
+  const done = executing;
+  const candidate = progress.candidates?.find((c) => c.passed);
   assert.ok(candidate, "real generation must produce a passed candidate");
   assert.ok(candidate.evidenceHash);
   assert.equal(w.composition().versionId, before.versionId);
@@ -894,6 +905,14 @@ test("只升级已有辅助成员 tags 并应用后，due 精确版本保留且 
   assert.equal(succeeded.status, "succeeded");
 
   const after = w.composition();
+  const workflowAfter = after.members.find((m) => m.role === "workflow");
+  assert.ok(workflowAfter);
+  assert.equal(workflowAfter.versionId, after.versionId);
+  assert.notEqual(
+    workflowAfter.versionId,
+    before.versionId,
+    "upgrade+workflow change must advance workflow member version",
+  );
   const tagsAfter = after.members.find((m) => m.pluginId === "tags");
   const dueAfter = after.members.find((m) => m.pluginId === "due");
   assert.ok(tagsAfter);
@@ -1016,4 +1035,391 @@ test("升级辅助成员候选业务验收失败时正式组合与任务相对�
       .every((version) => !(version.evidence as { passed?: boolean }).passed),
     "failed candidate must not leave passed upgrade versions",
   );
+});
+
+const pureUpgradeTagsPlan = {
+  summary: "只升级标签辅助成员",
+  changes: ["升级 tags 辅助成员"],
+  outcome: "标签写入会规范化小写；截止日期与主工作流仍按原版本可用",
+  dataImpact: "保留主工作流与 due 精确版本与字段；升级 tags 成员版本",
+  memberUpgrades: [{ pluginId: "tags" }],
+  workflowRules: [] as {
+    key: string;
+    label: string;
+    required: boolean;
+    minLength: number;
+    maxLength: number;
+  }[],
+};
+
+test("纯升级辅助成员且工作流未变时，主成员 versionId 精确保留", async (t) => {
+  const ctx = await dualWithTaggedTask(t);
+  const { w, before, tags, due, taskId } = ctx;
+  const workflowSource = w.activeVersion().source;
+  const planning = new PlanningDriver(pureUpgradeTagsPlan);
+  const driver: Driver = {
+    async generate(request: ModelRequest, signal) {
+      if (
+        request.tools?.some((tool) => tool.name === "submit_candidate") ||
+        request.tools?.some((tool) => tool.name === "build_candidate")
+      ) {
+        const content = JSON.stringify(request.history);
+        if (!content.includes("read_contract"))
+          return { ...toolReply("read_contract", {}), history: request.history };
+        if (!content.includes("read_current_source"))
+          return {
+            ...toolReply("read_current_source", {}),
+            history: request.history,
+          };
+        return {
+          ...toolReply("submit_candidate", {
+            source: workflowSource,
+            members: [{ pluginId: "tags", source: upgradedTagsSource }],
+          }),
+          history: request.history,
+        };
+      }
+      return planning.generate(request, signal);
+    },
+  };
+  const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "只升级标签规范化",
+    operationId: "plan-pure-upgrade",
+  });
+  const ready = await settle(e, "ready");
+  assert.equal(ready.status, "ready");
+  if (ready.status !== "ready") throw new Error("expected ready");
+  assert.deepEqual(ready.plan.compositionIntent?.upgrade, ["tags"]);
+  assert.ok(ready.plan.compositionIntent?.retain.includes("due"));
+  assert.ok(ready.plan.compositionIntent?.retain.includes("aux-workflow"));
+  await e.command({
+    type: "start",
+    operationId: "start-pure-upgrade",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  const done = await settle(e, "awaiting-apply");
+  assert.equal(done.status, "awaiting-apply");
+  if (done.status !== "awaiting-apply")
+    throw new Error("expected awaiting-apply");
+  const snapshot = await e.observe();
+  const candidate = snapshot.candidates?.find((c) => c.passed);
+  assert.ok(candidate?.evidenceHash);
+  await e.command({
+    type: "apply",
+    operationId: "apply-pure-upgrade",
+    runId: done.id,
+    candidateId: candidate!.id,
+    evidenceHash: candidate!.evidenceHash!,
+    compositionRevision: before.revision,
+  });
+  const succeeded = await settle(e, "succeeded");
+  assert.equal(succeeded.status, "succeeded");
+  const after = w.composition();
+  const workflowAfter = after.members.find((m) => m.role === "workflow");
+  assert.equal(
+    workflowAfter?.versionId,
+    before.versionId,
+    "unchanged workflow must keep exact versionId when only upgrading auxiliary",
+  );
+  assert.notEqual(after.members.find((m) => m.pluginId === "tags")?.versionId, tags.id);
+  assert.equal(after.members.find((m) => m.pluginId === "due")?.versionId, due.id);
+  const task = w.read(taskId);
+  const retagged = await w.command({
+    type: "action",
+    taskId,
+    actionId: "setTags",
+    expectedRevision: task.revision,
+    input: { tags: "  Pin-Case  " },
+    operationId: randomUUID(),
+    compositionRevision: after.revision,
+  });
+  assert.equal(retagged.task?.fields.tags, "pin-case");
+});
+
+test("先停用 tags 再升级后仍保持停用且 due 精确可用", async (t) => {
+  const ctx = await dualWithTaggedTask(t);
+  const { w, tags, due, taskId } = ctx;
+  await w.setMemberEnabled({
+    operationId: randomUUID(),
+    compositionRevision: ctx.before.revision,
+    versionId: ctx.before.versionId,
+    pluginId: "tags",
+    enabled: false,
+  });
+  const before = w.composition();
+  const e = new Evolution(
+    w.db,
+    new ExecutionDriver(
+      new PlanningDriver(upgradeTagsPlan),
+      "aux-workflow",
+      w.activeVersion().name,
+      1,
+      [{ pluginId: "tags", source: upgradedTagsSource }],
+    ),
+    new EvolutionDomain(w),
+  );
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "升级已停用的标签插件",
+    operationId: "plan-upgrade-disabled",
+  });
+  const ready = await settle(e, "ready");
+  assert.equal(ready.status, "ready");
+  if (ready.status !== "ready") throw new Error("expected ready");
+  await e.command({
+    type: "start",
+    operationId: "start-upgrade-disabled",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  const done = await settle(e, "awaiting-apply");
+  assert.equal(done.status, "awaiting-apply");
+  if (done.status !== "awaiting-apply")
+    throw new Error("expected awaiting-apply");
+  const candidate = (await e.observe()).candidates?.find((c) => c.passed);
+  assert.ok(candidate?.evidenceHash);
+  await e.command({
+    type: "apply",
+    operationId: "apply-upgrade-disabled",
+    runId: done.id,
+    candidateId: candidate!.id,
+    evidenceHash: candidate!.evidenceHash!,
+    compositionRevision: before.revision,
+  });
+  const succeeded = await settle(e, "succeeded");
+  assert.equal(succeeded.status, "succeeded");
+  const after = w.composition();
+  const tagsAfter = after.members.find((m) => m.pluginId === "tags");
+  assert.equal(tagsAfter?.enabled, false);
+  assert.notEqual(tagsAfter?.versionId, tags.id);
+  assert.equal(after.members.find((m) => m.pluginId === "due")?.versionId, due.id);
+  assert.equal(w.read(taskId).fields.tags, "inherit-me");
+  await assert.rejects(
+    w.command({
+      type: "action",
+      taskId,
+      actionId: "setTags",
+      expectedRevision: w.read(taskId).revision,
+      input: { tags: "nope" },
+      operationId: randomUUID(),
+      compositionRevision: after.revision,
+    }),
+    /不可用|无效/,
+  );
+  const dated = await w.command({
+    type: "action",
+    taskId,
+    actionId: "setDue",
+    expectedRevision: w.read(taskId).revision,
+    input: { dueAt: "2026-09-26T00:00:00Z" },
+    operationId: randomUUID(),
+    compositionRevision: after.revision,
+  });
+  assert.equal(dated.task?.fields.dueAt, "2026-09-26T00:00:00Z");
+});
+
+test("双组合上首次候选失败再修正成功后辅助成员仍完整", async (t) => {
+  const ctx = await dualWithTaggedTask(t);
+  const { w, before, tags, due } = ctx;
+  let attempts = 0;
+  const planning = new PlanningDriver();
+  const fallback = new ExecutionDriver(
+    planning,
+    "aux-workflow",
+    "双贡献组合",
+  );
+  const driver: Driver = {
+    async generate(request: ModelRequest, signal) {
+      const reply = await fallback.generate(request, signal);
+      if (reply.calls[0]?.name !== "submit_candidate") return reply;
+      attempts++;
+      const args = reply.calls[0].args as { source: string };
+      if (attempts === 1)
+        return {
+          ...toolReply("submit_candidate", {
+            source: args.source.replace(
+              "return {kind:'commit',state:'done',fields:{...task.fields,reflection:value}};",
+              "return {kind:'reject',message:'故意第一次失败'};",
+            ),
+          }),
+          history: request.history,
+        };
+      return reply;
+    },
+  };
+  const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "完成前填写复盘",
+    operationId: "plan-correct",
+  });
+  const ready = await settle(e, "ready");
+  assert.equal(ready.status, "ready");
+  if (ready.status !== "ready") throw new Error("expected ready");
+  await e.command({
+    type: "start",
+    operationId: "start-correct",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  const done = await settle(e, "awaiting-apply");
+  assert.equal(done.status, "awaiting-apply");
+  assert.ok(attempts >= 2, "correction round must retry submit_candidate");
+  if (done.status !== "awaiting-apply")
+    throw new Error("expected awaiting-apply");
+  const candidate = (await e.observe()).candidates?.find((c) => c.passed);
+  assert.ok(candidate?.evidenceHash);
+  await e.command({
+    type: "apply",
+    operationId: "apply-correct",
+    runId: done.id,
+    candidateId: candidate!.id,
+    evidenceHash: candidate!.evidenceHash!,
+    compositionRevision: before.revision,
+  });
+  await settle(e, "succeeded");
+  const after = w.composition();
+  assert.equal(after.members.find((m) => m.pluginId === "tags")?.versionId, tags.id);
+  assert.equal(after.members.find((m) => m.pluginId === "due")?.versionId, due.id);
+});
+
+test("双组合上 repair 应用后辅助成员精确版本仍完整", async (t) => {
+  const ctx = await dualWithTaggedTask(t);
+  const { w, tags, due } = ctx;
+  const rules = [
+    {
+      key: "reflection",
+      label: "复盘",
+      required: true,
+      minLength: 1,
+      maxLength: 5000,
+    },
+  ];
+  const brokenSource = source("aux-workflow", "双贡献组合").replaceAll(
+    "[...value].length",
+    "value.length",
+  );
+  const files = Object.fromEntries(
+    (
+      JSON.parse(candidateSource(brokenSource)) as {
+        files: { path: string; content: string }[];
+      }
+    ).files.map((f) => [f.path, f.content]),
+  );
+  const bundle = await w.release.buildBundle(
+    files,
+    contract,
+    AbortSignal.timeout(15000),
+  );
+  const old = w.activeVersion();
+  const faulty = w.release.record({
+    pluginId: old.pluginId,
+    name: old.name,
+    service: "workflow",
+    contractVersion: "workflow/1",
+    parentId: old.id,
+    source: JSON.stringify({
+      files: Object.entries(files).map(([path, content]) => ({
+        path,
+        content,
+      })),
+    }),
+    code: bundle.outputs["business/entry.js"],
+    bundle,
+    definition: {
+      ...(old.definition as object),
+      fields: [
+        { key: "reflection", label: "复盘", type: "text", required: true },
+      ],
+    },
+    evidence: { passed: true, rules, origin: "historical-fault-fixture" },
+    members: [
+      { pluginId: "aux-workflow", enabled: true, role: "workflow" },
+      { pluginId: "tags", versionId: tags.id, enabled: true, role: "auxiliary" },
+      { pluginId: "due", versionId: due.id, enabled: true, role: "auxiliary" },
+    ],
+  });
+  await w.activate(
+    {
+      versionId: faulty.id,
+      compositionRevision: w.composition().revision,
+      operationId: randomUUID(),
+    },
+    () => undefined,
+  );
+  const before = w.composition();
+  const planning = new PlanningDriver({
+    workflowRules: rules,
+    writableScope: [
+      "business/entry.ts",
+      "business/view.ts",
+      "business/config.json",
+      "business/compatibility.json",
+    ],
+    intent: "repair",
+  });
+  const fallback = new ExecutionDriver(planning, "aux-workflow", "双贡献组合");
+  const driver: Driver = {
+    async generate(request: ModelRequest, signal) {
+      const reply = await fallback.generate(request, signal);
+      if (
+        reply.calls[0]?.name === "submit_candidate" &&
+        w.activeVersion().bundle
+      ) {
+        reply.calls[0].args = JSON.parse(
+          candidateSource(String(reply.calls[0].args.source)),
+        ) as { files: unknown };
+      }
+      return reply;
+    },
+  };
+  const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "修复表情字符长度误判",
+    operationId: "plan-repair-dual",
+    intent: "repair",
+  });
+  const ready = await settle(e, "ready");
+  assert.equal(ready.status, "ready");
+  if (ready.status !== "ready") throw new Error("expected ready");
+  await e.command({
+    type: "start",
+    operationId: "start-repair-dual",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  const done = await settle(e, "awaiting-apply");
+  assert.equal(done.status, "awaiting-apply");
+  if (done.status !== "awaiting-apply")
+    throw new Error("expected awaiting-apply");
+  const candidate = (await e.observe()).candidates?.find((c) => c.passed);
+  assert.ok(candidate?.evidenceHash);
+  await e.command({
+    type: "apply",
+    operationId: "apply-repair-dual",
+    runId: done.id,
+    candidateId: candidate!.id,
+    evidenceHash: candidate!.evidenceHash!,
+    compositionRevision: before.revision,
+  });
+  await settle(e, "succeeded");
+  const after = w.composition();
+  assert.equal(after.members.find((m) => m.pluginId === "tags")?.versionId, tags.id);
+  assert.equal(after.members.find((m) => m.pluginId === "due")?.versionId, due.id);
 });

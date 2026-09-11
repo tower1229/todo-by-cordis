@@ -16,6 +16,7 @@ import type {
 import { describeBlockers } from "../shared/assistant.js";
 import { AppError } from "../shared/contracts.js";
 import type { Investigation, InvestigationRead } from "../server/planning.js";
+import { compositionIntentLabel } from "../server/planning.js";
 import {
   ProtectedCandidateError,
   CandidateValidationError,
@@ -1234,9 +1235,12 @@ export class Evolution {
     while (r.candidates < this.limits.candidates) {
       if (!this.alive(r.run.id)) return;
       const attempt = r.candidates + 1;
+      const intentNote = plan.compositionIntent
+        ? `（${compositionIntentLabel(plan.compositionIntent)}）`
+        : "";
       const generateId = this.beginStep(
         r,
-        r.candidates ? "修正候选" : "生成候选",
+        `${r.candidates ? "修正候选" : "生成候选"}${intentNote}`,
         attempt,
         "submit_candidate",
       );

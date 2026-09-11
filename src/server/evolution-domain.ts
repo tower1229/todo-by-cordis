@@ -83,6 +83,41 @@ type DraftMemberChange =
       priorVersion: Version;
     };
 
+function fieldContract(
+  fields: { key: string; label: string; type: string; required?: boolean }[],
+) {
+  return fields.map((f) => ({
+    key: f.key,
+    label: f.label,
+    type: f.type,
+    required: !!f.required,
+  }));
+}
+
+function workflowUnchangedForUpgrade(
+  base: Version,
+  goal: Goal,
+  workflowSource: string,
+  plannedAdditions: MemberAddition[],
+  plannedUpgrades: MemberUpgrade[],
+) {
+  if (!plannedUpgrades.length || plannedAdditions.length || goal.extensions)
+    return false;
+  if (workflowSource !== base.source || goal.pluginId !== base.pluginId)
+    return false;
+  return equal(
+    fieldContract(
+      goal.fields.map((f) => ({
+        key: f.key,
+        label: f.label,
+        type: "text",
+        required: f.required,
+      })),
+    ),
+    fieldContract((base.definition as WorkflowDefinition).fields),
+  );
+}
+
 function splitCandidateSubmission(source: string): {
   workflowSource: string;
   members: SubmittedMember[];
@@ -320,7 +355,7 @@ export class EvolutionDomain implements Domain {
     return {
       contract,
       source: base.source,
-      instruction: `Implement the frozen plan using submit_candidate with files [{path,content}] and optional members [{pluginId,source}] when the plan declares memberAdditions or memberUpgrades. Read read_contract and read_current_source first. The business artifact requires business/entry.ts (default Plugin), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed; business/contract.ts is supplied by the trusted host, never submit it. Imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. view fields must exactly match describe().fields keys in order. When memberAdditions is set, submit exactly those pluginIds as members with complete JavaScript module source (export default plugin with contribute/decide as needed); host records them as new auxiliary members. When memberUpgrades is set, submit exactly those existing auxiliary pluginIds with replacement source; host records new versionIds and inherits unmodified members with exact versionId/enabled/role. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
+      instruction: `Implement the frozen plan using submit_candidate with files [{path,content}] and optional members [{pluginId,source}] when the plan declares memberAdditions or memberUpgrades. Read read_contract and read_current_source first. The business artifact requires business/entry.ts (default Plugin), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed; business/contract.ts is supplied by the trusted host, never submit it. Imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. view fields must exactly match describe().fields keys in order. When memberAdditions is set, submit exactly those pluginIds as members with complete JavaScript module source (export default plugin with contribute/decide as needed); host records them as new auxiliary members. When memberUpgrades is set, submit exactly those existing auxiliary pluginIds with replacement source; host records new versionIds and inherits unmodified members with exact versionId/enabled/role. If only upgrading auxiliaries and the workflow source is unchanged from the base, resubmit read_current_source as-is so the host can pin the workflow member to the exact base versionId. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
     };
   }
   async candidate(
@@ -362,65 +397,85 @@ export class EvolutionDomain implements Domain {
       throw new ProtectedCandidateError(
         "单源码入口未获冻结范围授权，请提交完整候选文件",
       );
-    const files = workflowSource.startsWith('{"files":')
-      ? parseBusinessFiles(
-          (JSON.parse(workflowSource) as { files: unknown }).files,
-        )
-      : {
-          "business/entry.ts": workflowSource,
-          "business/view.ts": `export default ${JSON.stringify({ title: goal.name, fields: goal.fields.map((f) => f.key) })};`,
-          "business/config.json": "{}",
-          "business/compatibility.json": '{"preserveUnknownFields":true}',
-        };
-    if (
-      workflowSource.startsWith('{"files":') &&
-      goal.scope &&
-      [
-        ...new Set([
-          ...Object.keys(files),
-          ...Object.keys(base.bundle?.files ?? {}),
-        ]),
-      ].some(
-        (path) =>
-          path !== "business/contract.ts" &&
-          !goal.scope!.includes(path) &&
-          files[path] !== base.bundle?.files[path],
-      )
-    )
-      throw new ProtectedCandidateError(
-        "候选超出冻结可写范围，必须重新 Plan 和 start",
-      );
-    const bundle = await this.workspace.release.buildBundle(
-      files,
-      contract,
-      signal,
+    const pinWorkflow = workflowUnchangedForUpgrade(
+      base,
+      goal,
+      workflowSource,
+      plannedAdditions,
+      plannedUpgrades,
     );
-    const code = bundle.outputs["business/entry.js"];
+    const pinWorkflowVersionId = pinWorkflow ? base.id : undefined;
+    let code: string;
+    let bundle: Version["bundle"];
+    let definition: WorkflowDefinition;
+    let recordSource = workflowSource;
+    if (pinWorkflow) {
+      code = base.code;
+      bundle = base.bundle;
+      definition = base.definition as WorkflowDefinition;
+      recordSource = base.source;
+    } else {
+      const files = workflowSource.startsWith('{"files":')
+        ? parseBusinessFiles(
+            (JSON.parse(workflowSource) as { files: unknown }).files,
+          )
+        : {
+            "business/entry.ts": workflowSource,
+            "business/view.ts": `export default ${JSON.stringify({ title: goal.name, fields: goal.fields.map((f) => f.key) })};`,
+            "business/config.json": "{}",
+            "business/compatibility.json": '{"preserveUnknownFields":true}',
+          };
+      if (
+        workflowSource.startsWith('{"files":') &&
+        goal.scope &&
+        [
+          ...new Set([
+            ...Object.keys(files),
+            ...Object.keys(base.bundle?.files ?? {}),
+          ]),
+        ].some(
+          (path) =>
+            path !== "business/contract.ts" &&
+            !goal.scope!.includes(path) &&
+            files[path] !== base.bundle?.files[path],
+        )
+      )
+        throw new ProtectedCandidateError(
+          "候选超出冻结可写范围，必须重新 Plan 和 start",
+        );
+      const built = await this.workspace.release.buildBundle(
+        files,
+        contract,
+        signal,
+      );
+      code = built.outputs["business/entry.js"];
+      bundle = built;
+      definition = {
+        ...(base.definition as WorkflowDefinition),
+        id: goal.pluginId,
+        name: goal.name,
+        version: "generated",
+        actions: [
+          ...(base.definition as WorkflowDefinition).actions,
+          ...(goal.extensions?.actions ?? []).filter(
+            (a) =>
+              !(base.definition as WorkflowDefinition).actions.some(
+                (old) => old.id === a.id,
+              ),
+          ),
+        ],
+        fields: [
+          ...goal.fields.map((f) => ({
+            key: f.key,
+            label: f.label,
+            type: "text" as const,
+            required: f.required,
+          })),
+          ...(goal.extensions?.fields ?? []),
+        ],
+      };
+    }
     signal.throwIfAborted();
-    const definition: WorkflowDefinition = {
-      ...(base.definition as WorkflowDefinition),
-      id: goal.pluginId,
-      name: goal.name,
-      version: "generated",
-      actions: [
-        ...(base.definition as WorkflowDefinition).actions,
-        ...(goal.extensions?.actions ?? []).filter(
-          (a) =>
-            !(base.definition as WorkflowDefinition).actions.some(
-              (old) => old.id === a.id,
-            ),
-        ),
-      ],
-      fields: [
-        ...goal.fields.map((f) => ({
-          key: f.key,
-          label: f.label,
-          type: "text" as const,
-          required: f.required,
-        })),
-        ...(goal.extensions?.fields ?? []),
-      ],
-    };
     const addedMembers: VersionMember[] = [];
     const upgradedMembers: VersionMember[] = [];
     const draftChanges: DraftMemberChange[] = [];
@@ -430,19 +485,11 @@ export class EvolutionDomain implements Domain {
       );
       if (!submitted)
         throw new ProtectedCandidateError("成员提交与冻结计划不一致");
-      const draft = this.workspace.release.record({
-        pluginId: planned.pluginId,
-        name: planned.name,
-        service: `plugin:${planned.pluginId}`,
-        contractVersion: "extensions/1",
-        source: submitted.source,
-        code: submitted.source,
-        definition: { id: planned.pluginId },
-        evidence: {
-          passed: false,
-          origin: "evolution-member-addition",
-          baseVersion: base.id,
-        },
+      const draft = this.recordMemberDraft({
+        kind: "addition",
+        planned,
+        submitted,
+        baseId: base.id,
       });
       draftChanges.push({
         kind: "addition",
@@ -471,20 +518,12 @@ export class EvolutionDomain implements Domain {
       const priorVersion = this.workspace.release.get(
         prior.versionId ?? base.id,
       );
-      const draft = this.workspace.release.record({
-        pluginId: planned.pluginId,
-        name: priorVersion.name,
-        service: priorVersion.service,
-        contractVersion: priorVersion.contractVersion,
-        source: submitted.source,
-        code: submitted.source,
-        definition: priorVersion.definition,
-        evidence: {
-          passed: false,
-          origin: "evolution-member-upgrade",
-          baseVersion: base.id,
-          priorVersionId: priorVersion.id,
-        },
+      const draft = this.recordMemberDraft({
+        kind: "upgrade",
+        planned,
+        submitted,
+        baseId: base.id,
+        priorVersion,
       });
       draftChanges.push({
         kind: "upgrade",
@@ -506,6 +545,7 @@ export class EvolutionDomain implements Domain {
       goal.pluginId,
       addedMembers,
       upgradedMembers,
+      pinWorkflowVersionId,
     );
     validateCompositionMembers(
       { ...base, pluginId: goal.pluginId, name: goal.name, members },
@@ -517,9 +557,9 @@ export class EvolutionDomain implements Domain {
       parentId: base.pluginId === goal.pluginId ? base.id : undefined,
       service: "workflow",
       contractVersion: "workflow/1",
-      source: workflowSource,
+      source: recordSource,
       code,
-      bundle,
+      ...(bundle ? { bundle } : {}),
       definition,
       evidence: { passed: false, rules: goal.fields },
       members,
@@ -529,6 +569,13 @@ export class EvolutionDomain implements Domain {
     let checks: string[] = [];
     let systemChecks: string[] = [];
     let capabilities: unknown[] = [];
+    const verifyGoal = pinWorkflowVersionId
+      ? {
+          ...goal,
+          name: (base.definition as WorkflowDefinition).name,
+          fields: goal.fields,
+        }
+      : goal;
     const prepared = await this.workspace.release
       .prepare(candidate, async (runtime) => {
         const abort = () => {
@@ -538,59 +585,90 @@ export class EvolutionDomain implements Domain {
         try {
           signal.throwIfAborted();
           actual = await runtime.invoke<WorkflowDefinition>("describe");
-          const info = await runtime.invoke<{
-            presentation: { title: string; fields: string[] };
-            modules: { path: string; status: string; exports: string[] }[];
-          }>("__business_info");
-          if (
-            !info ||
-            typeof info.presentation?.title !== "string" ||
-            !equal(
-              info.presentation.fields,
-              actual.fields.map((f) => f.key),
-            )
-          )
-            throw new Error("前端资源与业务接口字段不一致");
-          capabilities = (goal.capabilities ?? []).map((c) => {
-            const provider =
-              c.provider === "active-source" ? "business/entry.ts" : c.provider;
-            if (!provider.startsWith("business/"))
-              return {
-                id: hash({ pluginId: goal.pluginId, capability: c.capability }),
-                declared: true,
-                ready: false,
-                provider,
-              };
-            const module = info.modules.find(
-              (m) => m.path === provider.replace(/\.ts$/, ".js"),
-            );
+          if (bundle) {
+            const info = await runtime.invoke<{
+              presentation: { title: string; fields: string[] };
+              modules: { path: string; status: string; exports: string[] }[];
+            }>("__business_info");
             if (
-              !module ||
-              module.status !== "evaluated" ||
-              !module.exports.length
+              !info ||
+              typeof info.presentation?.title !== "string" ||
+              !equal(
+                info.presentation.fields,
+                actual.fields.map((f) => f.key),
+              )
             )
-              throw new Error(`能力提供者未实际加载：${provider}`);
-            return {
+              throw new Error("前端资源与业务接口字段不一致");
+            capabilities = (goal.capabilities ?? []).map((c) => {
+              const provider =
+                c.provider === "active-source"
+                  ? "business/entry.ts"
+                  : c.provider;
+              if (!provider.startsWith("business/"))
+                return {
+                  id: hash({
+                    pluginId: goal.pluginId,
+                    capability: c.capability,
+                  }),
+                  declared: true,
+                  ready: false,
+                  provider,
+                };
+              const module = info.modules.find(
+                (m) => m.path === provider.replace(/\.ts$/, ".js"),
+              );
+              if (
+                !module ||
+                module.status !== "evaluated" ||
+                !module.exports.length
+              )
+                throw new Error(`能力提供者未实际加载：${provider}`);
+              return {
+                id: hash({
+                  pluginId: goal.pluginId,
+                  capability: c.capability,
+                }),
+                capability: c.capability,
+                provider,
+                version: hash(
+                  bundle.outputs[provider.replace(/\.ts$/, ".js")],
+                ),
+                interface: module.exports,
+                dependencies: [
+                  ...bundle.files[provider].matchAll(
+                    /from\s*["']([^"']+)["']/g,
+                  ),
+                ].map((m) => m[1]),
+                consumers: c.consumers,
+                declared: true,
+                ready: true,
+                evidence: candidate.id,
+              };
+            });
+          } else {
+            capabilities = (goal.capabilities ?? []).map((c) => ({
               id: hash({ pluginId: goal.pluginId, capability: c.capability }),
-              capability: c.capability,
-              provider,
-              version: hash(bundle.outputs[provider.replace(/\.ts$/, ".js")]),
-              interface: module.exports,
-              dependencies: [
-                ...bundle.files[provider].matchAll(/from\s*["']([^"']+)["']/g),
-              ].map((m) => m[1]),
-              consumers: c.consumers,
               declared: true,
-              ready: true,
-              evidence: candidate.id,
-            };
-          });
+              ready: false,
+              provider: c.provider,
+            }));
+          }
           systemChecks = await verifyProtection(runtime, actual);
-          checks = await verifyWorkflow(runtime, actual, base, goal);
-          if (goal.extensions)
-            checks.push(...(await verifyExtensions(runtime, goal.extensions)));
+          if (pinWorkflowVersionId) {
+            checks.push("workflow:pinned-unchanged");
+          } else {
+            checks = await verifyWorkflow(runtime, actual, base, verifyGoal);
+            if (goal.extensions)
+              checks.push(
+                ...(await verifyExtensions(runtime, goal.extensions)),
+              );
+          }
           for (const member of [...addedMembers, ...upgradedMembers]) {
             signal.throwIfAborted();
+            if (!member.enabled) {
+              checks.push(`member.upgraded:${member.pluginId}:disabled`);
+              continue;
+            }
             const decision = await runtime.invoke<WorkflowDecision>(
               "decide",
               {
@@ -637,7 +715,7 @@ export class EvolutionDomain implements Domain {
         ...(await verifyViaIsolatedWorkspace(
           this.workspace,
           candidate,
-          workspaceAcceptanceCases(goal),
+          workspaceAcceptanceCases(verifyGoal),
           signal,
         )),
       );
@@ -650,41 +728,7 @@ export class EvolutionDomain implements Domain {
     const verifiedAdditions: VersionMember[] = [];
     const verifiedUpgrades: VersionMember[] = [];
     for (const change of draftChanges) {
-      const verifiedMember =
-        change.kind === "addition"
-          ? this.workspace.release.record({
-              pluginId: change.planned.pluginId,
-              name: change.planned.name,
-              service: `plugin:${change.planned.pluginId}`,
-              contractVersion: "extensions/1",
-              source: change.submitted.source,
-              code: change.submitted.source,
-              definition: { id: change.planned.pluginId },
-              evidence: {
-                passed: true,
-                origin: "evolution-member-addition",
-                baseVersion: base.id,
-                draftVersion: change.draft.id,
-                candidateId: candidate.id,
-              },
-            })
-          : this.workspace.release.record({
-              pluginId: change.planned.pluginId,
-              name: change.priorVersion.name,
-              service: change.priorVersion.service,
-              contractVersion: change.priorVersion.contractVersion,
-              source: change.submitted.source,
-              code: change.submitted.source,
-              definition: change.priorVersion.definition,
-              evidence: {
-                passed: true,
-                origin: "evolution-member-upgrade",
-                baseVersion: base.id,
-                draftVersion: change.draft.id,
-                candidateId: candidate.id,
-                priorVersionId: change.priorVersion.id,
-              },
-            });
+      const verifiedMember = this.recordMemberVerified(change, base.id, candidate.id);
       if (change.kind === "addition")
         verifiedAdditions.push({
           pluginId: verifiedMember.pluginId,
@@ -705,6 +749,7 @@ export class EvolutionDomain implements Domain {
       goal.pluginId,
       verifiedAdditions,
       verifiedUpgrades,
+      pinWorkflowVersionId,
     );
     validateCompositionMembers(
       {
@@ -721,9 +766,9 @@ export class EvolutionDomain implements Domain {
       parentId: candidate.parentId,
       service: "workflow",
       contractVersion: "workflow/1",
-      source: workflowSource,
+      source: recordSource,
       code,
-      bundle,
+      ...(bundle ? { bundle } : {}),
       definition: actual,
       evidence: {
         passed: true,
@@ -742,16 +787,106 @@ export class EvolutionDomain implements Domain {
         }),
         environment: {
           node: process.version,
-          lockHash: bundle.lockHash,
-          builder: bundle.builder,
+          lockHash: bundle?.lockHash ?? null,
+          builder: bundle?.builder ?? null,
         },
         verifier: "workspace/1",
         baseVersion: base.id,
         members: verifiedMembers,
+        ...(pinWorkflowVersionId
+          ? { pinnedWorkflowVersionId: pinWorkflowVersionId }
+          : {}),
       },
       members: verifiedMembers,
     });
     return verified.id;
+  }
+  private recordMemberDraft(
+    input:
+      | {
+          kind: "addition";
+          planned: MemberAddition;
+          submitted: SubmittedMember;
+          baseId: string;
+        }
+      | {
+          kind: "upgrade";
+          planned: MemberUpgrade;
+          submitted: SubmittedMember;
+          baseId: string;
+          priorVersion: Version;
+        },
+  ): Version {
+    if (input.kind === "addition")
+      return this.workspace.release.record({
+        pluginId: input.planned.pluginId,
+        name: input.planned.name,
+        service: `plugin:${input.planned.pluginId}`,
+        contractVersion: "extensions/1",
+        source: input.submitted.source,
+        code: input.submitted.source,
+        definition: { id: input.planned.pluginId },
+        evidence: {
+          passed: false,
+          origin: "evolution-member-addition",
+          baseVersion: input.baseId,
+        },
+      });
+    return this.workspace.release.record({
+      pluginId: input.planned.pluginId,
+      name: input.priorVersion.name,
+      service: input.priorVersion.service,
+      contractVersion: input.priorVersion.contractVersion,
+      source: input.submitted.source,
+      code: input.submitted.source,
+      definition: input.priorVersion.definition,
+      evidence: {
+        passed: false,
+        origin: "evolution-member-upgrade",
+        baseVersion: input.baseId,
+        priorVersionId: input.priorVersion.id,
+      },
+    });
+  }
+  private recordMemberVerified(
+    change: DraftMemberChange,
+    baseId: string,
+    candidateId: string,
+  ): Version {
+    if (change.kind === "addition")
+      return this.workspace.release.record({
+        pluginId: change.planned.pluginId,
+        name: change.planned.name,
+        service: `plugin:${change.planned.pluginId}`,
+        contractVersion: "extensions/1",
+        source: change.submitted.source,
+        code: change.submitted.source,
+        definition: { id: change.planned.pluginId },
+        evidence: {
+          passed: true,
+          origin: "evolution-member-addition",
+          baseVersion: baseId,
+          draftVersion: change.draft.id,
+          candidateId,
+        },
+      });
+    return this.workspace.release.record({
+      pluginId: change.planned.pluginId,
+      name: change.priorVersion.name,
+      service: change.priorVersion.service,
+      contractVersion: change.priorVersion.contractVersion,
+      source: change.submitted.source,
+      code: change.submitted.source,
+      definition: change.priorVersion.definition,
+      evidence: {
+        passed: true,
+        origin: "evolution-member-upgrade",
+        baseVersion: baseId,
+        draftVersion: change.draft.id,
+        candidateId,
+        priorVersionId: change.priorVersion.id,
+      },
+    });
   }
   async experience(
     versionId: string,

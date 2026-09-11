@@ -103,17 +103,16 @@ Plan 是有预算的只读工具循环，可以读取当前版本、相关文件
 
 | 阶段 | 工具 | 返回与限制 |
 | --- | --- | --- |
-| Plan | `inspect_application`、`read_source`、`read_contract`、`read_acceptance` | 版本绑定的内容与引用，按范围读取 |
-| Plan | `check_environment`、`run_existing_check` | 固定检查目录内的检查；合成或授权副本，无任意命令 |
-| Plan | `propose_plan`、`request_clarification` | 执行器验证结构并记录；模型不能授权自己 |
-| 执行 | `read_candidate`、`patch_candidate` | 限当前候选可变文件；规范化路径，拒绝越界及符号链接绕过 |
-| 执行 | `build_candidate`、`validate_candidate` | 固定构建与可信检查器执行，返回诊断及证据引用 |
-| 执行 | `prepare_preview` | 精确候选、隔离数据、无正式副作用 |
+| Plan | `inspect_application`、`read_source`、`read_contract`、`read_acceptance` | 版本绑定的内容与引用，按范围读取；`inspect_application` 含活动 `members` 与扩展注册摘要 |
+| Plan | `check_environment`、`describe_verification` | 固定检查目录与可信检查器定义；合成或授权副本，无任意命令 |
+| Plan | `propose_plan`、`request_clarification` | 执行器验证结构并记录；可选 `memberAdditions` / `memberUpgrades`；宿主派生 `compositionIntent`；模型不能授权自己 |
+| 执行 | `read_contract`、`read_current_source` | 限冻结契约与当前基础源码 |
+| 执行 | `submit_candidate` | 提交工作流 `files`/`source` 与可选 `members`；宿主记完整组合锁、隔离 Workspace 验收；未确认不应用 |
 | 执行 | `report_blocker` | 记录障碍，执行器决定状态，不自动扩大范围 |
 
-不提供模型可调用的正式任务写入或 release.apply 工具。apply 只由用户命令触发，经 Release 复查执行。工具参数均校验，未知工具拒绝；任务内容、源码注释及日志作为数据，不授予权限。
+不提供模型可调用的正式任务写入或 release.apply 工具。apply 只由用户命令触发，经 Release 复查执行。工具参数均校验，未知工具拒绝；任务内容、源码注释及日志作为数据，不授予权限。普通候选必须显式写出完整 `members`（未改成员继承精确 `versionId`/`enabled`/`role`）；`memberAdditions` 与 `memberUpgrades` 本阶段各最多一项且互斥。
 
-首次 build 将当前工作副本封存为一个不可变 candidate；修改后产生新 candidateId，原产物和失败报告保留。业务配置变化也产生版本，无需强迫生成无意义代码。新增插件由宿主分配稳定身份，后续修改沿用身份；一个变更可以包含多个协作插件及业务界面。
+首次 `submit_candidate` 将当前工作副本封存为一个不可变 candidate；修改后产生新 candidateId，原产物和失败报告保留。业务配置变化也产生版本，无需强迫生成无意义代码。新增或升级辅助插件由宿主分配/沿用稳定身份；一个变更可以包含主工作流与协作成员及业务界面。
 
 ## 7. 状态与外部命令
 

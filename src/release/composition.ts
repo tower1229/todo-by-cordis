@@ -56,19 +56,35 @@ export function inheritCompositionMembers(
 /**
  * Ordinary candidate lock: inherit unmodified members, replace upgraded
  * auxiliary versionIds, then append new auxiliary members. Unmodified
- * members keep exact versionId/enabled/role. Rejects identity collisions.
+ * members keep exact versionId/enabled/role. When `pinWorkflowVersionId`
+ * is set (upgrade-only, workflow unchanged), the workflow slot keeps that
+ * exact version instead of binding to the new carrier Version.id.
  */
 export function composeCandidateMembers(
   base: Version,
   nextPluginId: string,
   additions: VersionMember[] = [],
   upgrades: VersionMember[] = [],
+  pinWorkflowVersionId?: string,
 ): VersionMember[] {
   const upgradeById = new Map(upgrades.map((m) => [m.pluginId, m]));
   const inherited = inheritCompositionMembers(base, nextPluginId).map(
     (member) => {
       const upgrade = upgradeById.get(member.pluginId);
-      if (!upgrade) return member;
+      if (!upgrade) {
+        if (
+          pinWorkflowVersionId &&
+          member.role === "workflow" &&
+          !member.versionId
+        )
+          return {
+            pluginId: member.pluginId,
+            versionId: pinWorkflowVersionId,
+            enabled: member.enabled,
+            role: member.role,
+          };
+        return member;
+      }
       if (member.role !== "auxiliary")
         throw new AppError(
           "INVALID_COMPOSITION",
