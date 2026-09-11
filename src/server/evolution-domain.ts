@@ -26,8 +26,10 @@ import {
 } from "../shared/contracts.js";
 import type { RuntimeLike, Version } from "../release/types.js";
 import {
+  inheritCompositionMembers,
   memberEnabledDataImpact,
   resolveVersionMembers,
+  validateCompositionMembers,
 } from "../release/composition.js";
 import {
   parseBusinessFiles,
@@ -299,6 +301,11 @@ export class EvolutionDomain implements Domain {
         ...(goal.extensions?.fields ?? []),
       ],
     };
+    const members = inheritCompositionMembers(base, goal.pluginId);
+    validateCompositionMembers(
+      { ...base, pluginId: goal.pluginId, name: goal.name, members },
+      (id) => this.workspace.release.get(id),
+    );
     const candidate = this.workspace.release.record({
       pluginId: goal.pluginId,
       name: goal.name,
@@ -310,6 +317,7 @@ export class EvolutionDomain implements Domain {
       bundle,
       definition,
       evidence: { passed: false, rules: goal.fields },
+      members,
     });
     stage("验证行为");
     let actual: WorkflowDefinition = definition;
@@ -419,6 +427,7 @@ export class EvolutionDomain implements Domain {
         verifier: "workspace/1",
         baseVersion: base.id,
       },
+      members,
     });
     return verified.id;
   }

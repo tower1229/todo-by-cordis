@@ -23,6 +23,36 @@ export function resolveVersionMembers(version: Version): VersionMember[] {
   ];
 }
 
+/**
+ * Full composition lock for a new primary-plugin version of `base`.
+ * Unmodified members keep exact versionId/enabled/role; the primary
+ * workflow slot binds to `nextPluginId` and omits versionId so it
+ * resolves to the new Version.id (supports same-id upgrades and
+ * fixture renames like default → reflection).
+ */
+export function inheritCompositionMembers(
+  base: Version,
+  nextPluginId = base.pluginId,
+): VersionMember[] {
+  return resolveVersionMembers(base).map((member) => {
+    if (
+      member.pluginId === base.pluginId &&
+      (!member.versionId || member.versionId === base.id)
+    )
+      return {
+        pluginId: nextPluginId,
+        enabled: member.enabled,
+        role: member.role,
+      };
+    return {
+      pluginId: member.pluginId,
+      versionId: member.versionId ?? base.id,
+      enabled: member.enabled,
+      role: member.role,
+    };
+  });
+}
+
 export function compositionMembers(version: Version): CompositionMember[] {
   return resolveVersionMembers(version).map((member) => ({
     pluginId: member.pluginId,
