@@ -74,6 +74,8 @@ export type InvestigatedPlan = AssistantPlan & {
   }[];
   /** Host-allocated identities for auxiliary members to overlay on the base composition. */
   memberAdditions?: { pluginId: string; name: string }[];
+  /** Existing auxiliary members to upgrade in place; unmodified members keep exact versionId. */
+  memberUpgrades?: { pluginId: string }[];
   cases: { given: string; when: string; then: string; checker: string }[];
   steps: {
     id: string;

@@ -54,15 +54,42 @@ export function inheritCompositionMembers(
 }
 
 /**
- * Ordinary candidate lock: inherit unmodified members, then append new
- * auxiliary members (exact versionId required). Rejects identity collisions.
+ * Ordinary candidate lock: inherit unmodified members, replace upgraded
+ * auxiliary versionIds, then append new auxiliary members. Unmodified
+ * members keep exact versionId/enabled/role. Rejects identity collisions.
  */
 export function composeCandidateMembers(
   base: Version,
   nextPluginId: string,
   additions: VersionMember[] = [],
+  upgrades: VersionMember[] = [],
 ): VersionMember[] {
-  const inherited = inheritCompositionMembers(base, nextPluginId);
+  const upgradeById = new Map(upgrades.map((m) => [m.pluginId, m]));
+  const inherited = inheritCompositionMembers(base, nextPluginId).map(
+    (member) => {
+      const upgrade = upgradeById.get(member.pluginId);
+      if (!upgrade) return member;
+      if (member.role !== "auxiliary")
+        throw new AppError(
+          "INVALID_COMPOSITION",
+          "普通候选只能升级辅助成员",
+        );
+      if (!upgrade.versionId)
+        throw new AppError("INVALID_COMPOSITION", "辅助插件缺少精确版本");
+      upgradeById.delete(member.pluginId);
+      return {
+        pluginId: member.pluginId,
+        versionId: upgrade.versionId,
+        enabled: member.enabled,
+        role: member.role,
+      };
+    },
+  );
+  if (upgradeById.size)
+    throw new AppError(
+      "UNKNOWN_PLUGIN",
+      `组合中不存在该插件：${[...upgradeById.keys()].join("、")}`,
+    );
   const ids = new Set(inherited.map((m) => m.pluginId));
   for (const member of additions) {
     if (ids.has(member.pluginId))

@@ -101,6 +101,20 @@ function PlanDetails({ plan }: { plan: InvestigatedPlan }) {
             ))}
           </div>
         )}
+        {!!(plan.memberAdditions?.length || plan.memberUpgrades?.length) && (
+          <div>
+            <p className="font-medium text-ink">组合变更</p>
+            {plan.memberUpgrades?.map((m) => (
+              <p key={`upgrade-${m.pluginId}`}>升级成员：{m.pluginId}</p>
+            ))}
+            {plan.memberAdditions?.map((m) => (
+              <p key={`add-${m.pluginId}`}>
+                新增成员：{m.pluginId}（{m.name}）
+              </p>
+            ))}
+            <p>未列出的活动组合成员按精确版本保留</p>
+          </div>
+        )}
         {!!plan.acceptance?.length && (
           <div>
             <p className="font-medium text-ink">验收条件</p>

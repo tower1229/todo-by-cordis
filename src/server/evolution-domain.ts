@@ -53,6 +53,7 @@ type Rule = {
   maxLength: number;
 };
 type MemberAddition = { pluginId: string; name: string };
+type MemberUpgrade = { pluginId: string };
 type Goal = {
   pluginId: string;
   name: string;
@@ -63,13 +64,24 @@ type Goal = {
   scope?: string[];
   capabilities?: InvestigatedPlan["capabilityChanges"];
   memberAdditions?: MemberAddition[];
+  memberUpgrades?: MemberUpgrade[];
 };
 type SubmittedMember = { pluginId: string; source: string };
-type DraftMemberAddition = {
-  planned: MemberAddition;
-  submitted: SubmittedMember;
-  draft: Version;
-};
+type DraftMemberChange =
+  | {
+      kind: "addition";
+      planned: MemberAddition;
+      submitted: SubmittedMember;
+      draft: Version;
+    }
+  | {
+      kind: "upgrade";
+      planned: MemberUpgrade;
+      submitted: SubmittedMember;
+      draft: Version;
+      prior: VersionMember;
+      priorVersion: Version;
+    };
 
 function splitCandidateSubmission(source: string): {
   workflowSource: string;
@@ -91,7 +103,7 @@ function splitCandidateSubmission(source: string): {
   if (typeof parsed.source === "string")
     return { workflowSource: parsed.source, members };
   if (members.length && !("files" in parsed) && !("source" in parsed))
-    throw new ProtectedCandidateError("新增成员候选缺少工作流源码");
+    throw new ProtectedCandidateError("成员候选缺少工作流源码");
   return { workflowSource: source, members: [] };
 }
 
@@ -99,11 +111,11 @@ function parseSubmittedMembers(value: unknown): SubmittedMember[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > 1)
     throw new ProtectedCandidateError(
-      "新增成员提交无效：本阶段每次变更最多新增一个辅助成员",
+      "成员提交无效：本阶段每次变更最多提交一个辅助成员源码",
     );
   const members = value.map((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item))
-      throw new ProtectedCandidateError("新增成员提交无效");
+      throw new ProtectedCandidateError("成员提交无效");
     const row = item as Record<string, unknown>;
     if (
       typeof row.pluginId !== "string" ||
@@ -112,11 +124,11 @@ function parseSubmittedMembers(value: unknown): SubmittedMember[] {
       !row.source.trim() ||
       Object.keys(row).some((key) => !["pluginId", "source"].includes(key))
     )
-      throw new ProtectedCandidateError("新增成员提交无效");
+      throw new ProtectedCandidateError("成员提交无效");
     return { pluginId: row.pluginId.trim(), source: row.source };
   });
   if (new Set(members.map((m) => m.pluginId)).size !== members.length)
-    throw new ProtectedCandidateError("新增成员提交身份重复");
+    throw new ProtectedCandidateError("成员提交身份重复");
   return members;
 }
 const equal = (a: unknown, b: unknown) => hash(a) === hash(b);
@@ -268,6 +280,9 @@ export class EvolutionDomain implements Domain {
         ...(plan.memberAdditions?.length
           ? { memberAdditions: plan.memberAdditions }
           : {}),
+        ...(plan.memberUpgrades?.length
+          ? { memberUpgrades: plan.memberUpgrades }
+          : {}),
       },
     };
   }
@@ -305,7 +320,7 @@ export class EvolutionDomain implements Domain {
     return {
       contract,
       source: base.source,
-      instruction: `Implement the frozen plan using submit_candidate with files [{path,content}] and optional members [{pluginId,source}] when the plan declares memberAdditions. Read read_contract and read_current_source first. The business artifact requires business/entry.ts (default Plugin), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed; business/contract.ts is supplied by the trusted host, never submit it. Imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. view fields must exactly match describe().fields keys in order. When memberAdditions is set, submit exactly those pluginIds as members with complete JavaScript module source (export default plugin with contribute/decide as needed); host records them as auxiliary members and inherits unmodified composition members with exact versionId/enabled/role. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
+      instruction: `Implement the frozen plan using submit_candidate with files [{path,content}] and optional members [{pluginId,source}] when the plan declares memberAdditions or memberUpgrades. Read read_contract and read_current_source first. The business artifact requires business/entry.ts (default Plugin), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed; business/contract.ts is supplied by the trusted host, never submit it. Imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. view fields must exactly match describe().fields keys in order. When memberAdditions is set, submit exactly those pluginIds as members with complete JavaScript module source (export default plugin with contribute/decide as needed); host records them as new auxiliary members. When memberUpgrades is set, submit exactly those existing auxiliary pluginIds with replacement source; host records new versionIds and inherits unmodified members with exact versionId/enabled/role. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
     };
   }
   async candidate(
@@ -327,17 +342,19 @@ export class EvolutionDomain implements Domain {
     const { workflowSource, members: submittedMembers } =
       splitCandidateSubmission(source);
     const plannedAdditions = goal.memberAdditions ?? [];
-    if (plannedAdditions.length || submittedMembers.length) {
-      const plannedIds = plannedAdditions.map((m) => m.pluginId).sort();
-      const submittedIds = submittedMembers.map((m) => m.pluginId).sort();
-      if (
-        plannedIds.length !== submittedIds.length ||
-        plannedIds.some((id, i) => id !== submittedIds[i])
-      )
-        throw new ProtectedCandidateError(
-          "新增成员提交与冻结计划不一致",
-        );
-    }
+    const plannedUpgrades = goal.memberUpgrades ?? [];
+    if (plannedAdditions.length && plannedUpgrades.length)
+      throw new ProtectedCandidateError("同一候选不能同时新增与升级辅助成员");
+    const plannedMemberIds = [
+      ...plannedAdditions.map((m) => m.pluginId),
+      ...plannedUpgrades.map((m) => m.pluginId),
+    ].sort();
+    const submittedIds = submittedMembers.map((m) => m.pluginId).sort();
+    if (
+      plannedMemberIds.length !== submittedIds.length ||
+      plannedMemberIds.some((id, i) => id !== submittedIds[i])
+    )
+      throw new ProtectedCandidateError("成员提交与冻结计划不一致");
     if (
       !workflowSource.startsWith('{"files":') &&
       (!goal.scope?.includes("active-source") || !!base.bundle)
@@ -405,13 +422,14 @@ export class EvolutionDomain implements Domain {
       ],
     };
     const addedMembers: VersionMember[] = [];
-    const draftAdditions: DraftMemberAddition[] = [];
+    const upgradedMembers: VersionMember[] = [];
+    const draftChanges: DraftMemberChange[] = [];
     for (const planned of plannedAdditions) {
       const submitted = submittedMembers.find(
         (m) => m.pluginId === planned.pluginId,
       );
       if (!submitted)
-        throw new ProtectedCandidateError("新增成员提交与冻结计划不一致");
+        throw new ProtectedCandidateError("成员提交与冻结计划不一致");
       const draft = this.workspace.release.record({
         pluginId: planned.pluginId,
         name: planned.name,
@@ -426,7 +444,12 @@ export class EvolutionDomain implements Domain {
           baseVersion: base.id,
         },
       });
-      draftAdditions.push({ planned, submitted, draft });
+      draftChanges.push({
+        kind: "addition",
+        planned,
+        submitted,
+        draft,
+      });
       addedMembers.push({
         pluginId: draft.pluginId,
         versionId: draft.id,
@@ -434,10 +457,55 @@ export class EvolutionDomain implements Domain {
         role: "auxiliary",
       });
     }
+    for (const planned of plannedUpgrades) {
+      const submitted = submittedMembers.find(
+        (m) => m.pluginId === planned.pluginId,
+      );
+      if (!submitted)
+        throw new ProtectedCandidateError("成员提交与冻结计划不一致");
+      const prior = resolveVersionMembers(base).find(
+        (m) => m.pluginId === planned.pluginId,
+      );
+      if (!prior || prior.role !== "auxiliary")
+        throw new ProtectedCandidateError("只能升级活动组合中的辅助成员");
+      const priorVersion = this.workspace.release.get(
+        prior.versionId ?? base.id,
+      );
+      const draft = this.workspace.release.record({
+        pluginId: planned.pluginId,
+        name: priorVersion.name,
+        service: priorVersion.service,
+        contractVersion: priorVersion.contractVersion,
+        source: submitted.source,
+        code: submitted.source,
+        definition: priorVersion.definition,
+        evidence: {
+          passed: false,
+          origin: "evolution-member-upgrade",
+          baseVersion: base.id,
+          priorVersionId: priorVersion.id,
+        },
+      });
+      draftChanges.push({
+        kind: "upgrade",
+        planned,
+        submitted,
+        draft,
+        prior,
+        priorVersion,
+      });
+      upgradedMembers.push({
+        pluginId: draft.pluginId,
+        versionId: draft.id,
+        enabled: prior.enabled,
+        role: "auxiliary",
+      });
+    }
     const members = composeCandidateMembers(
       base,
       goal.pluginId,
       addedMembers,
+      upgradedMembers,
     );
     validateCompositionMembers(
       { ...base, pluginId: goal.pluginId, name: goal.name, members },
@@ -521,7 +589,7 @@ export class EvolutionDomain implements Domain {
           checks = await verifyWorkflow(runtime, actual, base, goal);
           if (goal.extensions)
             checks.push(...(await verifyExtensions(runtime, goal.extensions)));
-          for (const member of addedMembers) {
+          for (const member of [...addedMembers, ...upgradedMembers]) {
             signal.throwIfAborted();
             const decision = await runtime.invoke<WorkflowDecision>(
               "decide",
@@ -543,8 +611,11 @@ export class EvolutionDomain implements Domain {
               member.pluginId,
             );
             if (decision.kind !== "reject")
-              throw new Error(`新增成员未正确装载：${member.pluginId}`);
-            checks.push(`member.added:${member.pluginId}`);
+              throw new Error(`成员未正确装载：${member.pluginId}`);
+            const kind = addedMembers.some((m) => m.pluginId === member.pluginId)
+              ? "added"
+              : "upgraded";
+            checks.push(`member.${kind}:${member.pluginId}`);
           }
           signal.throwIfAborted();
         } finally {
@@ -577,34 +648,63 @@ export class EvolutionDomain implements Domain {
       );
     }
     const verifiedAdditions: VersionMember[] = [];
-    for (const { planned, submitted, draft } of draftAdditions) {
-      const verifiedMember = this.workspace.release.record({
-        pluginId: planned.pluginId,
-        name: planned.name,
-        service: `plugin:${planned.pluginId}`,
-        contractVersion: "extensions/1",
-        source: submitted.source,
-        code: submitted.source,
-        definition: { id: planned.pluginId },
-        evidence: {
-          passed: true,
-          origin: "evolution-member-addition",
-          baseVersion: base.id,
-          draftVersion: draft.id,
-          candidateId: candidate.id,
-        },
-      });
-      verifiedAdditions.push({
-        pluginId: verifiedMember.pluginId,
-        versionId: verifiedMember.id,
-        enabled: true,
-        role: "auxiliary",
-      });
+    const verifiedUpgrades: VersionMember[] = [];
+    for (const change of draftChanges) {
+      const verifiedMember =
+        change.kind === "addition"
+          ? this.workspace.release.record({
+              pluginId: change.planned.pluginId,
+              name: change.planned.name,
+              service: `plugin:${change.planned.pluginId}`,
+              contractVersion: "extensions/1",
+              source: change.submitted.source,
+              code: change.submitted.source,
+              definition: { id: change.planned.pluginId },
+              evidence: {
+                passed: true,
+                origin: "evolution-member-addition",
+                baseVersion: base.id,
+                draftVersion: change.draft.id,
+                candidateId: candidate.id,
+              },
+            })
+          : this.workspace.release.record({
+              pluginId: change.planned.pluginId,
+              name: change.priorVersion.name,
+              service: change.priorVersion.service,
+              contractVersion: change.priorVersion.contractVersion,
+              source: change.submitted.source,
+              code: change.submitted.source,
+              definition: change.priorVersion.definition,
+              evidence: {
+                passed: true,
+                origin: "evolution-member-upgrade",
+                baseVersion: base.id,
+                draftVersion: change.draft.id,
+                candidateId: candidate.id,
+                priorVersionId: change.priorVersion.id,
+              },
+            });
+      if (change.kind === "addition")
+        verifiedAdditions.push({
+          pluginId: verifiedMember.pluginId,
+          versionId: verifiedMember.id,
+          enabled: true,
+          role: "auxiliary",
+        });
+      else
+        verifiedUpgrades.push({
+          pluginId: verifiedMember.pluginId,
+          versionId: verifiedMember.id,
+          enabled: change.prior.enabled,
+          role: "auxiliary",
+        });
     }
     const verifiedMembers = composeCandidateMembers(
       base,
       goal.pluginId,
       verifiedAdditions,
+      verifiedUpgrades,
     );
     validateCompositionMembers(
       {
@@ -632,6 +732,7 @@ export class EvolutionDomain implements Domain {
         rules: goal.fields,
         extensions: goal.extensions,
         memberAdditions: plannedAdditions,
+        memberUpgrades: plannedUpgrades,
         checks,
         systemChecks,
         capabilities,

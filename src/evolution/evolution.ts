@@ -1304,7 +1304,7 @@ export class Evolution {
                         required: ["pluginId", "source"],
                       },
                       description:
-                        "New auxiliary member sources matching plan.memberAdditions",
+                        "Auxiliary member sources matching plan.memberAdditions or plan.memberUpgrades",
                     },
                   },
                 },
