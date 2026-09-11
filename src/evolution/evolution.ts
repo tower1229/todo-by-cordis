@@ -52,6 +52,10 @@ export interface Domain {
   check(target: Target, revision: number): void;
   isActiveVersion(versionId: string): boolean;
   isReadyVersion(versionId: string): boolean;
+  acceptanceEvidence(versionId: string): {
+    members?: unknown;
+    workspaceChecks: string[];
+  };
   generation(target: Target): {
     instruction: string;
     contract: string;
@@ -1472,11 +1476,14 @@ export class Evolution {
               this.save(r);
               candidate.passed = true;
               candidate.versionId = r.versionId;
+              const acceptance = this.domain.acceptanceEvidence(r.versionId!);
               candidate.evidenceHash = hash({
                 candidateId: candidate.id,
                 versionId: r.versionId,
                 cases: plan.cases,
                 rules: plan.workflowRules,
+                members: acceptance.members,
+                workspaceChecks: acceptance.workspaceChecks,
               });
               saveAttempt();
             } catch (error) {

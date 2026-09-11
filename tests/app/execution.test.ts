@@ -251,6 +251,7 @@ test("late candidate success after cancel cannot enter awaiting-apply", async (t
     check: base.check.bind(base),
     isActiveVersion: base.isActiveVersion.bind(base),
     isReadyVersion: base.isReadyVersion.bind(base),
+    acceptanceEvidence: base.acceptanceEvidence.bind(base),
     generation: base.generation.bind(base),
     experience: base.experience.bind(base),
     apply: base.apply.bind(base),

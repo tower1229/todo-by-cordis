@@ -1016,6 +1016,30 @@ export class Workspace {
     );
   }
   /**
+   * Probe-only Given setup for acceptance cases that need non-create state/fields.
+   * Refuses on formal workspaces.
+   */
+  seedAcceptanceTask(
+    taskId: string,
+    state: string,
+    fields: Record<string, string>,
+    revision: number,
+  ) {
+    if (!this.options.acceptanceProbe)
+      throw new AppError(
+        "FORBIDDEN",
+        "仅隔离验收探针工作区可播种验收任务",
+        403,
+      );
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        "UPDATE tasks SET state=?, fields=?, revision=?, updatedAt=? WHERE id=?",
+      )
+      .run(state, JSON.stringify(fields), revision, now, taskId);
+    return this.read(taskId);
+  }
+  /**
    * Record a forward composition version that only flips one member's enabled
    * flag. Shared by Workspace public setMemberEnabled and self-iteration apply
    * fixtures; does not publish or change the formal composition.

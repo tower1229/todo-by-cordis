@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
 import { Evolution } from "../../src/evolution/evolution.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
+import { AppError } from "../../src/shared/contracts.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
 import { activateDual } from "./dual-composition-fixture.js";
@@ -197,6 +198,8 @@ test("完整组合继承候选的隔离 Workspace 验收绑定整组合，体验
   assert.equal(evidence.verifier, "workspace/1");
   assert.ok(evidence.checks?.includes("workspace:complete-final-fields"));
   assert.ok(evidence.checks?.includes("workspace:reflection:missing-input"));
+  assert.ok(evidence.checks?.includes("workspace:member:tags:setTags"));
+  assert.ok(evidence.checks?.includes("workspace:member:due:setDue"));
   assert.ok(
     evidence.checks?.some(
       (check) =>
@@ -268,5 +271,35 @@ test("完整组合继承候选的隔离 Workspace 验收绑定整组合，体验
   assert.equal(
     w.query().tasks.find((task) => task.id === taskId)?.fields.tags,
     "inherit-me",
+  );
+});
+
+test("正式 Workspace 拒绝 activateForAcceptance 与 seedAcceptanceTask", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-accept-gate-"));
+  const w = await Workspace.open(join(directory, "workspace.db"));
+  t.after(async () => {
+    await w.close().catch(() => undefined);
+    await rm(directory, { recursive: true, force: true });
+  });
+  const versionId = w.composition().versionId;
+  await assert.rejects(
+    () => w.activateForAcceptance(versionId),
+    (error: unknown) => error instanceof AppError && error.code === "FORBIDDEN",
+  );
+  const created = await w.command({
+    type: "create",
+    title: "gate",
+    compositionRevision: w.composition().revision,
+    operationId: randomUUID(),
+  });
+  assert.throws(
+    () =>
+      w.seedAcceptanceTask(
+        created.task!.id,
+        "done",
+        {},
+        created.task!.revision + 1,
+      ),
+    (error: unknown) => error instanceof AppError && error.code === "FORBIDDEN",
   );
 });

@@ -120,6 +120,16 @@ function parseSubmittedMembers(value: unknown): SubmittedMember[] {
   return members;
 }
 const equal = (a: unknown, b: unknown) => hash(a) === hash(b);
+
+/** Shared valid complete-input map for decide and Workspace acceptance cases. */
+export function validFieldInputs(fields: Rule[]) {
+  return Object.fromEntries(
+    fields.map((f) => [
+      f.key,
+      "文".repeat(Math.max(f.required ? 1 : 0, f.minLength)),
+    ]),
+  );
+}
 export const contract = `export type Task = { id:string; title:string; description:string; state:string; revision:number; createdAt:string; updatedAt:string; deletedAt:string|null; fields:Record<string,string> };
 export type Field = { key:string; label:string; type:"text"; required?:boolean; description?:string };
 export type WorkflowDefinition = { id:string; name:string; version:string; initialState:string; states:Record<string,{label:string;category:"open"|"done"}>; actions:{id:string;label:string;from:string[]}[]; fields:Field[] };
@@ -276,6 +286,19 @@ export class EvolutionDomain implements Domain {
       this.isActiveVersion(versionId) &&
       this.workspace.composition().status === "ready"
     );
+  }
+  acceptanceEvidence(versionId: string) {
+    const version = this.workspace.release.get(versionId);
+    const evidence = version.evidence as {
+      checks?: string[];
+      members?: unknown;
+    };
+    return {
+      members: version.members ?? evidence.members,
+      workspaceChecks: (evidence.checks ?? []).filter((check) =>
+        check.startsWith("workspace:"),
+      ),
+    };
   }
   generation(target: Target) {
     const base = this.workspace.release.get(target.baseVersion);
@@ -852,23 +875,18 @@ export class EvolutionDomain implements Domain {
 
 /** Cases for isolated Workspace command/query acceptance (after decide pre-checks). */
 export function workspaceAcceptanceCases(goal: Goal): WorkspaceAcceptanceCase[] {
-  const valid = Object.fromEntries(
-    goal.fields.map((f) => [
-      f.key,
-      "文".repeat(Math.max(f.required ? 1 : 0, f.minLength)),
-    ]),
-  );
+  const valid = validFieldInputs(goal.fields);
   const cases: WorkspaceAcceptanceCase[] = [
     {
       name: "workspace:complete-final-fields",
       state: "open",
-      fields: { retained: "historical" },
+      fields: {},
       action: "complete",
       input: valid,
       expected: {
         kind: "commit",
         state: "done",
-        fields: { retained: "historical", ...valid },
+        fields: { ...valid },
       },
     },
   ];
@@ -877,7 +895,7 @@ export function workspaceAcceptanceCases(goal: Goal): WorkspaceAcceptanceCase[] 
     cases.push({
       name: `workspace:${f.key}:missing-input`,
       state: "open",
-      fields: { retained: "historical" },
+      fields: {},
       action: "complete",
       input: {},
       expected: { kind: "reject" },
@@ -969,12 +987,7 @@ export async function verifyWorkflow(
       action,
       input,
     });
-  const valid = Object.fromEntries(
-    goal.fields.map((f) => [
-      f.key,
-      "文".repeat(Math.max(f.required ? 1 : 0, f.minLength)),
-    ]),
-  );
+  const valid = validFieldInputs(goal.fields);
   const assert = (ok: boolean, name: string) => {
     if (!ok) throw new BusinessAssertionError(`行为验收失败：${name}`);
     checks.push(name);
