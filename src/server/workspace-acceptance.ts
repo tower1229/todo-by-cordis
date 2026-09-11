@@ -111,19 +111,33 @@ async function assertAuxiliaryMemberCommands(
       operationId: randomUUID(),
       compositionRevision: revision,
     });
-    const listed =
-      probe.query("", "all").tasks.find((row) => row.id === created.task!.id) ??
-      probe.read(created.task.id);
-    for (const [key, value] of Object.entries(input)) {
-      if (listed.fields[key] !== value)
-        throw new BusinessAssertionError(
-          `业务验收失败：workspace:member:${command.providerId}:${command.id}；查询字段 ${key} 预期 ${value}；实际 ${listed.fields[key] ?? ""}`,
-        );
-    }
     if (result.decision?.kind === "reject")
       throw new BusinessAssertionError(
         `业务验收失败：workspace:member:${command.providerId}:${command.id}；命令被拒绝`,
       );
+    if (result.decision?.kind === "input-required")
+      throw new BusinessAssertionError(
+        `业务验收失败：workspace:member:${command.providerId}:${command.id}；命令未提交`,
+      );
+    const listed =
+      probe.query("", "all").tasks.find((row) => row.id === created.task!.id) ??
+      probe.read(created.task.id);
+    if (listed.revision <= created.task.revision)
+      throw new BusinessAssertionError(
+        `业务验收失败：workspace:member:${command.providerId}:${command.id}；未产生持久化写入`,
+      );
+    const committed =
+      result.task?.fields ??
+      (result.decision?.kind === "commit" ? result.decision.fields : undefined);
+    if (committed) {
+      for (const field of fields) {
+        if (!(field.key in committed)) continue;
+        if (listed.fields[field.key] !== committed[field.key])
+          throw new BusinessAssertionError(
+            `业务验收失败：workspace:member:${command.providerId}:${command.id}；查询字段 ${field.key} 预期 ${committed[field.key]}；实际 ${listed.fields[field.key] ?? ""}`,
+          );
+      }
+    }
     checks.push(`workspace:member:${command.providerId}:${command.id}`);
   }
   return checks;
