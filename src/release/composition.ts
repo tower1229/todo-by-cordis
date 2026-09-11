@@ -53,6 +53,35 @@ export function inheritCompositionMembers(
   });
 }
 
+/**
+ * Ordinary candidate lock: inherit unmodified members, then append new
+ * auxiliary members (exact versionId required). Rejects identity collisions.
+ */
+export function composeCandidateMembers(
+  base: Version,
+  nextPluginId: string,
+  additions: VersionMember[] = [],
+): VersionMember[] {
+  const inherited = inheritCompositionMembers(base, nextPluginId);
+  const ids = new Set(inherited.map((m) => m.pluginId));
+  for (const member of additions) {
+    if (ids.has(member.pluginId))
+      throw new AppError(
+        "EXTENSION_CONFLICT",
+        `组合内插件身份重复：${member.pluginId}`,
+      );
+    if (member.role !== "auxiliary")
+      throw new AppError(
+        "INVALID_COMPOSITION",
+        "普通候选只能新增辅助成员",
+      );
+    if (!member.versionId)
+      throw new AppError("INVALID_COMPOSITION", "辅助插件缺少精确版本");
+    ids.add(member.pluginId);
+  }
+  return [...inherited, ...additions];
+}
+
 export function compositionMembers(version: Version): CompositionMember[] {
   return resolveVersionMembers(version).map((member) => ({
     pluginId: member.pluginId,

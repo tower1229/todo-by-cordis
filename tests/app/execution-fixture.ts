@@ -2,6 +2,11 @@ import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
 import { source } from "./evolution-fixture.js";
 import { toolReply } from "./planning-fixture.js";
 
+export type CandidateMemberSubmission = {
+  pluginId: string;
+  source: string;
+};
+
 /** Model fixture that plans with PlanningDriver, then submits a verified candidate. */
 export class ExecutionDriver implements Driver {
   requests: ModelRequest[] = [];
@@ -10,6 +15,7 @@ export class ExecutionDriver implements Driver {
     private pluginId = "default",
     private name = "轻快完成",
     private minimum = 1,
+    private members: CandidateMemberSubmission[] = [],
   ) {}
   async generate(request: ModelRequest, signal = new AbortController().signal) {
     this.requests.push(request);
@@ -27,6 +33,7 @@ export class ExecutionDriver implements Driver {
         return reply("read_current_source", {});
       return reply("submit_candidate", {
         source: source(this.pluginId, this.name, this.minimum),
+        ...(this.members.length ? { members: this.members } : {}),
       });
     }
     return this.planning.generate(request, signal);

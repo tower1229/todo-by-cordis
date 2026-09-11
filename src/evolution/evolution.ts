@@ -1270,7 +1270,7 @@ export class Evolution {
               {
                 name: "submit_candidate",
                 description:
-                  "Build and independently verify complete TypeScript source",
+                  "Build and independently verify complete TypeScript source; optional members overlays auxiliary plugins declared in the frozen plan",
                 parameters: {
                   type: "object",
                   properties: {
@@ -1288,6 +1288,19 @@ export class Evolution {
                         },
                         required: ["path", "content"],
                       },
+                    },
+                    members: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          pluginId: { type: "string" },
+                          source: { type: "string" },
+                        },
+                        required: ["pluginId", "source"],
+                      },
+                      description:
+                        "New auxiliary member sources matching plan.memberAdditions",
                     },
                   },
                 },
@@ -1357,9 +1370,16 @@ export class Evolution {
             r.candidates++;
             this.save(r);
             const source =
-              call.args.files !== undefined
-                ? JSON.stringify({ files: call.args.files })
-                : String(call.args.source ?? "");
+              call.args.members !== undefined
+                ? JSON.stringify({
+                    ...(call.args.files !== undefined
+                      ? { files: call.args.files }
+                      : { source: String(call.args.source ?? "") }),
+                    members: call.args.members,
+                  })
+                : call.args.files !== undefined
+                  ? JSON.stringify({ files: call.args.files })
+                  : String(call.args.source ?? "");
             const candidate: CandidateAttempt = {
               id: hash({
                 source,
@@ -1389,7 +1409,7 @@ export class Evolution {
             try {
               if (
                 Object.keys(call.args).some(
-                  (key) => !["source", "files"].includes(key),
+                  (key) => !["source", "files", "members"].includes(key),
                 ) ||
                 (call.args.source !== undefined &&
                   call.args.files !== undefined)

@@ -174,13 +174,16 @@ export const planningInstruction = `你是本应用唯一的自迭代 Agent，�
 能力缺口不等于需求歧义。保留原目标，把需要的提供者、消费方、业务接口纳入同一个计划，不能强迫退化为文本字段。当核心目标依赖外部 IO、定时调度、通知推送或受保护控制协议时：必须先 request_clarification，用人话给出可选项（例如：仅记录可选提醒时间、明确不做「到点提醒」；或坚持完整到点提醒并等待维护者能力），在用户作出取舍前禁止 propose_plan。用户接受缩小范围后，再按缩小后的目标 propose_plan 进入可执行计划；用户坚持完整能力且当前环境无法提供时，再 propose_plan 并在 unresolved 如实写出阻塞，不得先输出看起来可执行的长计划。发现缺少可靠检查器时同样先澄清或阻塞，不虚构技术已就绪。
 对于 workflow/1，先 describe_verification(rules) 取得可信检查器定义，把返回 cases 原样作为 acceptance、rules 作为 workflowRules。新增动作通过 extensions 单独提交冻结数据化案例，acceptance 仍填写 describe_verification 返回 cases；超出这两个检查器的行为保留原目标并阻塞。必须读取 active-contract 和 active-acceptance，规则改变须提供 acceptanceReason 说明用户要求与原因，宿主展示旧新差异并等待独立确认；不能为通过候选而改规则。
 提交前核对 inspect_application.planningRequirements，evidence 包含全部 requiredEvidence 及相关消费方的已读 ref/hash。propose_plan 被宿主拒绝时按工具返回的诊断继续只读调查和修正计划，不降级原目标，不削弱检查器；真实阻塞如实保留。
-propose_plan 包含 summary、changes、outcome、dataImpact、excluded、evidence(ref/hash，必须引用真实读过的资料)、capabilityChanges(capability/provider/consumers/change)、acceptance(given/when/then/checker)、steps(id/purpose/dependsOn/artifact/evidence)、writableScope、compatibility、rollback、preview、application、restartImpact、dependencies(所需包名)、unresolved。summary 与 outcome 用用户可理解的短句描述目标与可见效果，不要把内部文件路径、JSON 样例或沙箱机制写进这两项。验收应覆盖正例、边界、已有行为和数据保留。不要自行声称验收已通过。ready 由宿主校验决定。
+propose_plan 包含 summary、changes、outcome、dataImpact、excluded、evidence(ref/hash，必须引用真实读过的资料)、capabilityChanges(capability/provider/consumers/change)、acceptance(given/when/then/checker)、steps(id/purpose/dependsOn/artifact/evidence)、writableScope、compatibility、rollback、preview、application、restartImpact、dependencies(所需包名)、unresolved；若要在既有组合上叠加一个新辅助成员（不替换既有成员），另附 memberAdditions:[{pluginId,name}]（本阶段最多一项，pluginId 不得与现有 members 冲突）。summary 与 outcome 用用户可理解的短句描述目标与可见效果，不要把内部文件路径、JSON 样例或沙箱机制写进这两项。验收应覆盖正例、边界、已有行为和数据保留。不要自行声称验收已通过。ready 由宿主校验决定。
 修复故障的请求必须在 propose_plan 中设置 intent:"repair"，绑定旧版故障，不以修改需求期望冒充修复。宿主先运行旧版相同验收；无法复现或执行错误则阻塞。
 用户点击开始后才会生成候选；验证通过后停在待应用，正式应用须另行确认，不得把开始当作应用授权。宿主提供 workflow/1 字段检查器及 business-actions/1 新增动作检查器。新增纯业务动作可用 extensions 提供 actions、fields、cases，extensions.cases 只能引用 extensions.actions 中的动作；complete/reopen 的回归由 workflow/1 自动验证，不能放入 extensions.cases。每个动作至少一个 commit 正例和 reject 反例，完整数据化用例在开始前展示冻结；不能移除既有行为。可写范围使用 business/entry.ts、business/view.ts、business/config.json、business/compatibility.json 及同目录新增提供者 .ts 文件。新文件无需虚构已读证据。其他 IO、通知交付、控制协议变更仍须维护者升级。`;
 const obj = (
   properties: Record<string, unknown>,
   required = Object.keys(properties).filter(
-    (key) => !["extensions", "acceptanceReason", "intent"].includes(key),
+    (key) =>
+      !["extensions", "acceptanceReason", "intent", "memberAdditions"].includes(
+        key,
+      ),
   ),
 ) => ({ type: "object", properties, required, additionalProperties: false });
 const text = { type: "string" };
@@ -321,6 +324,13 @@ export const planningTools = [
       restartImpact: text,
       dependencies: list,
       unresolved: list,
+      memberAdditions: {
+        type: "array",
+        description:
+          "Overlay at most one new auxiliary member on the current composition; pluginId must be host-stable and absent from inspect_application.members. Existing members keep exact versionId/enabled/role.",
+        maxItems: 1,
+        items: obj({ pluginId: text, name: text }),
+      },
     }),
   },
 ];
@@ -626,6 +636,10 @@ export function parsePlan(
         `提供者或消费方尚未调查，不能确认能力差异；请补读资料：${[...new Set(unread)].join("、")}`,
       );
   }
+  const memberAdditions = parseMemberAdditions(
+    v.memberAdditions,
+    new Set(context.members.map((m) => m.pluginId)),
+  );
   return {
     retryable:
       !unresolved.length &&
@@ -651,6 +665,7 @@ export function parsePlan(
       ruleChanges,
       acceptanceChanges,
       capabilityChanges,
+      ...(memberAdditions.length ? { memberAdditions } : {}),
       acceptance: [...cases, ...extensionCases(extensions)].map(
         (c) => `当 ${c.given}，执行 ${c.when}，应 ${c.then}`,
       ),
@@ -667,6 +682,29 @@ export function parsePlan(
       unresolved,
     },
   };
+}
+
+function parseMemberAdditions(
+  value: unknown,
+  existingPluginIds: Set<string>,
+): { pluginId: string; name: string }[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 1)
+    throw new Error("新增成员配置无效：本阶段每次变更最多新增一个辅助成员");
+  const additions = objects(value).map((item) => {
+    const pluginId = planText(item.pluginId);
+    if (
+      !/^[a-z][a-z0-9-]{0,63}$/.test(pluginId) ||
+      ["constructor", "prototype", "__proto__"].includes(pluginId)
+    )
+      throw new Error("新增成员身份无效");
+    if (existingPluginIds.has(pluginId))
+      throw new Error(`新增成员与现有组合冲突：${pluginId}`);
+    return { pluginId, name: planText(item.name) };
+  });
+  if (new Set(additions.map((a) => a.pluginId)).size !== additions.length)
+    throw new Error("新增成员身份重复");
+  return additions;
 }
 
 function parseRules(value: unknown): WorkflowRule[] {
