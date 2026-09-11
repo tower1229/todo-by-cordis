@@ -4,6 +4,10 @@ import {
   type BusinessExtensions,
 } from "./business-verification.js";
 import {
+  verifyViaIsolatedWorkspace,
+  type WorkspaceAcceptanceCase,
+} from "./workspace-acceptance.js";
+import {
   capture,
   planningInstruction,
   planningTools,
@@ -531,6 +535,24 @@ export class EvolutionDomain implements Domain {
         );
       });
     await prepared.runtime.close();
+    // Decide-level checks are a fast pre-layer; trusted completion requires
+    // isolated Workspace command → beforeCommit → query final facts.
+    try {
+      signal.throwIfAborted();
+      checks.push(
+        ...(await verifyViaIsolatedWorkspace(
+          this.workspace,
+          candidate,
+          workspaceAcceptanceCases(goal),
+          signal,
+        )),
+      );
+    } catch (error: unknown) {
+      throw new CandidateValidationError(
+        error instanceof Error ? error.message : "候选验证失败",
+        candidate.id,
+      );
+    }
     const verifiedAdditions: VersionMember[] = [];
     for (const { planned, submitted, draft } of draftAdditions) {
       const verifiedMember = this.workspace.release.record({
@@ -601,6 +623,7 @@ export class EvolutionDomain implements Domain {
         },
         verifier: "workspace/1",
         baseVersion: base.id,
+        members: verifiedMembers,
       },
       members: verifiedMembers,
     });
@@ -825,6 +848,58 @@ export class EvolutionDomain implements Domain {
       signal,
     );
   }
+}
+
+/** Cases for isolated Workspace command/query acceptance (after decide pre-checks). */
+export function workspaceAcceptanceCases(goal: Goal): WorkspaceAcceptanceCase[] {
+  const valid = Object.fromEntries(
+    goal.fields.map((f) => [
+      f.key,
+      "文".repeat(Math.max(f.required ? 1 : 0, f.minLength)),
+    ]),
+  );
+  const cases: WorkspaceAcceptanceCase[] = [
+    {
+      name: "workspace:complete-final-fields",
+      state: "open",
+      fields: { retained: "historical" },
+      action: "complete",
+      input: valid,
+      expected: {
+        kind: "commit",
+        state: "done",
+        fields: { retained: "historical", ...valid },
+      },
+    },
+  ];
+  for (const f of goal.fields) {
+    if (!f.required) continue;
+    cases.push({
+      name: `workspace:${f.key}:missing-input`,
+      state: "open",
+      fields: { retained: "historical" },
+      action: "complete",
+      input: {},
+      expected: { kind: "reject" },
+    });
+  }
+  for (const c of goal.extensions?.cases ?? [])
+    cases.push({
+      name: `workspace:${c.name}`,
+      state: c.state,
+      fields: { ...c.fields },
+      action: c.action,
+      input: { ...c.input },
+      expected:
+        c.expected.kind === "reject"
+          ? { kind: "reject" }
+          : {
+              kind: "commit",
+              state: c.expected.state,
+              fields: { ...c.expected.fields },
+            },
+    });
+  return cases;
 }
 
 // Host-owned oracle: frozen field rules plus existing workflow behavior, never model-written tests.

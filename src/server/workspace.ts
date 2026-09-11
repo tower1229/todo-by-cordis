@@ -989,6 +989,24 @@ export class Workspace {
     return this.publish(prepared, request, complete, signal);
   }
   /**
+   * Host-owned acceptance probe: activate a candidate composition without the
+   * evidence.passed gate. Only for disposable isolated workspaces.
+   */
+  async activateForAcceptance(versionId: string, signal?: AbortSignal) {
+    const version = this.release.get(versionId);
+    const prepared = await this.prepareForPublish(version);
+    return this.publish(
+      prepared,
+      {
+        operationId: `acceptance-probe-${randomUUID()}`,
+        compositionRevision: this.current().revision,
+        versionId,
+      },
+      undefined,
+      signal,
+    );
+  }
+  /**
    * Record a forward composition version that only flips one member's enabled
    * flag. Shared by Workspace public setMemberEnabled and self-iteration apply
    * fixtures; does not publish or change the formal composition.

@@ -73,27 +73,42 @@ export class Release {
       entry,
       createdAt: new Date().toISOString(),
     };
-    if (!existsSync(entry)) {
-      const stage = join(this.directory, `staging-${randomUUID()}`);
-      mkdirSync(stage);
-      writeFileSync(join(stage, "plugin.mjs"), input.code, { mode: 0o444 });
-      writeFileSync(join(stage, "source.ts"), input.source, { mode: 0o444 });
-      if (input.bundle) {
-        for (const [path, content] of Object.entries({
-          ...input.bundle.files,
-          ...input.bundle.outputs,
-        })) {
-          const target = join(stage, path);
-          mkdirSync(dirname(target), { recursive: true });
-          writeFileSync(target, content, { mode: 0o444 });
-        }
-      }
-      renameSync(stage, join(this.directory, id));
-    }
+    this.writeArtifacts(version);
     this.db
       .prepare("INSERT OR IGNORE INTO plugin_versions VALUES(?,?)")
       .run(id, JSON.stringify(version));
     return this.get(id);
+  }
+  /**
+   * Copy an existing version identity and artifacts into this catalog without
+   * rehashing. Used by isolated acceptance probes so member locks stay valid.
+   */
+  adopt(version: Version): Version {
+    const entry = join(resolve(this.directory), version.id, "plugin.mjs");
+    const stored: Version = { ...version, entry };
+    this.writeArtifacts(stored);
+    this.db
+      .prepare("INSERT OR IGNORE INTO plugin_versions VALUES(?,?)")
+      .run(version.id, JSON.stringify(stored));
+    return this.get(version.id);
+  }
+  private writeArtifacts(version: Version) {
+    if (existsSync(version.entry)) return;
+    const stage = join(this.directory, `staging-${randomUUID()}`);
+    mkdirSync(stage);
+    writeFileSync(join(stage, "plugin.mjs"), version.code, { mode: 0o444 });
+    writeFileSync(join(stage, "source.ts"), version.source, { mode: 0o444 });
+    if (version.bundle) {
+      for (const [path, content] of Object.entries({
+        ...version.bundle.files,
+        ...version.bundle.outputs,
+      })) {
+        const target = join(stage, path);
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, content, { mode: 0o444 });
+      }
+    }
+    renameSync(stage, join(this.directory, version.id));
   }
   private verifyArtifacts(version: Version) {
     const root = realpathSync(resolve(this.directory));
