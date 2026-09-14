@@ -7,6 +7,12 @@ import type {
 } from "./business/contracts.js";
 import type { RuntimeLike } from "../release/types.js";
 import { hash } from "../release/storage.js";
+import type {
+  AcceptanceExpected,
+  MemberAcceptanceCase,
+} from "../shared/acceptance-cases.js";
+
+export type { AcceptanceExpected, MemberAcceptanceCase };
 
 export class BusinessAssertionError extends Error {}
 
@@ -19,9 +25,7 @@ export type BusinessExtensions = {
     fields: Record<string, string>;
     action: string;
     input: Record<string, string>;
-    expected:
-      | { kind: "reject" }
-      | { kind: "commit"; state: string; fields: Record<string, string> };
+    expected: AcceptanceExpected;
   }[];
 };
 const record = (v: unknown): v is Record<string, unknown> =>
@@ -40,6 +44,35 @@ const id = (v: unknown): v is string =>
   !["constructor", "prototype"].includes(v);
 const text = (v: unknown): v is string =>
   typeof v === "string" && !!v.trim() && v.length <= 5000;
+
+function parseExpected(
+  expected: Record<string, unknown>,
+  states: Record<string, unknown>,
+): expected is AcceptanceExpected {
+  if (expected.kind === "reject") return true;
+  return (
+    expected.kind === "commit" &&
+    id(expected.state) &&
+    Object.hasOwn(states, expected.state) &&
+    strings(expected.fields)
+  );
+}
+
+function requireActionPairs<
+  T extends { action: string; expected: AcceptanceExpected },
+>(cases: T[], keyOf: (c: T) => string, message: string) {
+  const pairs = new Map<string, { commit: boolean; reject: boolean }>();
+  for (const c of cases) {
+    const key = keyOf(c);
+    const pair = pairs.get(key) ?? { commit: false, reject: false };
+    if (c.expected.kind === "commit") pair.commit = true;
+    else pair.reject = true;
+    pairs.set(key, pair);
+  }
+  for (const pair of pairs.values()) {
+    if (!pair.commit || !pair.reject) throw new Error(message);
+  }
+}
 
 /** Bounded data cases interpreted by the host. No executable tests or model reports. */
 export function parseExtensions(
@@ -111,15 +144,7 @@ export function parseExtensions(
       !record(c.expected)
     )
       throw new Error("业务案例无效");
-    if (
-      c.expected.kind !== "reject" &&
-      !(
-        c.expected.kind === "commit" &&
-        id(c.expected.state) &&
-        Object.hasOwn(base.states, c.expected.state) &&
-        strings(c.expected.fields)
-      )
-    )
+    if (!parseExpected(c.expected, base.states))
       throw new Error("业务案例期望无效");
   }
   const extension = structuredClone(value) as BusinessExtensions;
@@ -173,6 +198,73 @@ export function extensionCases(extension: BusinessExtensions | undefined) {
       when: JSON.stringify({ action: c.action, input: c.input }),
       then: JSON.stringify(c.expected),
       checker: "business-actions/1",
+    })) ?? []
+  );
+}
+
+/** Frozen auxiliary-member cases interpreted by the isolated Workspace checker. */
+export function parseMemberCases(
+  value: unknown,
+  previous: MemberAcceptanceCase[] | undefined,
+  allowedMembers: Set<string>,
+  states: Record<string, unknown>,
+): MemberAcceptanceCase[] | undefined {
+  if (value === undefined || (Array.isArray(value) && value.length === 0))
+    return previous ? structuredClone(previous) : undefined;
+  if (!Array.isArray(value) || value.length > 40)
+    throw new Error("成员业务案例无效");
+  const parsed: MemberAcceptanceCase[] = [];
+  for (const c of value) {
+    if (
+      !record(c) ||
+      !text(c.name) ||
+      !id(c.member) ||
+      !allowedMembers.has(c.member) ||
+      !id(c.state) ||
+      !Object.hasOwn(states, c.state) ||
+      !id(c.action) ||
+      !strings(c.fields) ||
+      !strings(c.input) ||
+      !record(c.expected)
+    )
+      throw new Error("成员业务案例无效");
+    if (!parseExpected(c.expected, states))
+      throw new Error("成员业务案例期望无效");
+    parsed.push(structuredClone(c) as MemberAcceptanceCase);
+  }
+  if (new Set(parsed.map((c) => c.name)).size !== parsed.length)
+    throw new Error("成员业务案例身份重复");
+  const merged = previous
+    ? [
+        ...previous.map(
+          (old) => parsed.find((c) => c.name === old.name) ?? old,
+        ),
+        ...parsed.filter(
+          (c) => !previous.some((old) => old.name === c.name),
+        ),
+      ]
+    : parsed;
+  requireActionPairs(
+    merged,
+    (c) => `${c.member}:${c.action}`,
+    "每个成员动作必须有正例和反例",
+  );
+  return merged;
+}
+
+export function memberCaseSummaries(
+  cases: MemberAcceptanceCase[] | undefined,
+) {
+  return (
+    cases?.map((c) => ({
+      given: JSON.stringify({
+        member: c.member,
+        state: c.state,
+        fields: c.fields,
+      }),
+      when: JSON.stringify({ action: c.action, input: c.input }),
+      then: JSON.stringify(c.expected),
+      checker: "workspace/1",
     })) ?? []
   );
 }

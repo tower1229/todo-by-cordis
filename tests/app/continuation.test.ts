@@ -412,6 +412,123 @@ test("A15: old published Unicode failure and candidate pass use identical assert
   assert.equal(w.activeVersion().id, faulty.id);
 });
 
+test("A15: published beforeCommit corruption is reproduced via isolated Workspace checker", async (t) => {
+  const { w, e, planning, command } = await setup(t);
+  const rules = [
+    {
+      key: "reflection",
+      label: "复盘",
+      required: true,
+      minLength: 1,
+      maxLength: 5000,
+    },
+  ];
+  const brokenSource = source("default", "轻快完成").replace(
+    "}; export default plugin;",
+    `};
+plugin.contribute = () => ({ beforeCommit: true });
+plugin.beforeCommit = (data) => ({
+  kind: "ok",
+  fields: { ...data.decision.fields, reflection: "CORRUPTED" },
+});
+export default plugin;`,
+  );
+  const files = Object.fromEntries(
+    (
+      JSON.parse(candidateSource(brokenSource)) as {
+        files: { path: string; content: string }[];
+      }
+    ).files.map((f) => [f.path, f.content]),
+  );
+  const { contract } = await import("../../src/server/evolution-domain.js");
+  const bundle = await w.release.buildBundle(
+    files,
+    contract,
+    AbortSignal.timeout(15000),
+  );
+  const old = w.activeVersion();
+  const faulty = w.release.record({
+    pluginId: old.pluginId,
+    name: old.name,
+    service: "workflow",
+    contractVersion: "workflow/1",
+    parentId: old.id,
+    source: JSON.stringify({
+      files: Object.entries(files).map(([path, content]) => ({
+        path,
+        content,
+      })),
+    }),
+    code: bundle.outputs["business/entry.js"],
+    bundle,
+    definition: {
+      ...(old.definition as object),
+      fields: [
+        { key: "reflection", label: "复盘", type: "text", required: true },
+      ],
+    },
+    evidence: { passed: true, rules, origin: "historical-beforecommit-fault" },
+  });
+  await w.activate(
+    {
+      versionId: faulty.id,
+      compositionRevision: w.composition().revision,
+      operationId: "beforecommit-fault-fixture",
+    },
+    () => undefined,
+  );
+  planning.finish = {
+    workflowRules: rules,
+    writableScope: candidateScope,
+    intent: "repair",
+  };
+  assert.equal(
+    (
+      await command({
+        type: "request",
+        operationId: "repair-beforecommit",
+        text: "修复完成后复盘被提交前钩子改写",
+        intent: "repair",
+      })
+    ).status,
+    200,
+  );
+  const ready = (await settled(e)).run!;
+  assert.equal(ready.status, "ready", JSON.stringify(ready));
+  if (ready.status !== "ready") return;
+  assert.equal(ready.plan.repairEvidence?.baseVersion, faulty.id);
+  assert.match(
+    ready.plan.repairEvidence?.diagnostic ?? "",
+    /CORRUPTED|workspace:complete-final-fields|业务验收失败/,
+  );
+  await e.command({
+    type: "start",
+    operationId: "start-beforecommit-repair",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  const candidate = await settled(e);
+  assert.equal(
+    candidate.run?.status,
+    "awaiting-apply",
+    JSON.stringify(candidate),
+  );
+  const evidence = w.release.get(candidate.run!.versionId!).evidence as {
+    definitionHash: string;
+    repairEvidence: unknown;
+    checks: string[];
+    verifier: string;
+  };
+  assert.equal(
+    evidence.definitionHash,
+    ready.plan.repairEvidence!.definitionHash,
+  );
+  assert.deepEqual(evidence.repairEvidence, ready.plan.repairEvidence);
+  assert.equal(evidence.verifier, "workspace/1");
+  assert.ok(evidence.checks.includes("workspace:complete-final-fields"));
+  assert.equal(w.activeVersion().id, faulty.id);
+});
+
 test("A09/A14: continue keeps the capability identity and old task fields while revising action assertions explicitly", async (t) => {
   let delta = 1;
   const { w, e, planning, command } = await setup(t, () => {

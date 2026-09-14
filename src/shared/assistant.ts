@@ -82,6 +82,8 @@ export type InvestigatedPlan = AssistantPlan & {
     add: { pluginId: string; name: string }[];
     retain: string[];
   };
+  /** Frozen auxiliary-member Given/When/Then cases interpreted by workspace/1. */
+  memberCases?: import("./acceptance-cases.js").MemberAcceptanceCase[];
   cases: { given: string; when: string; then: string; checker: string }[];
   steps: {
     id: string;

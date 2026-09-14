@@ -14,16 +14,17 @@ import {
 import type { Version } from "../release/types.js";
 import type { Task } from "./business/contracts.js";
 
+import type { AcceptanceExpected } from "../shared/acceptance-cases.js";
+
 /** Given/When/Then cases asserted via Workspace command → query final facts. */
 export type WorkspaceAcceptanceCase = {
   name: string;
+  member?: string;
   state: string;
   fields: Record<string, string>;
   action: string;
   input: Record<string, string>;
-  expected:
-    | { kind: "reject" }
-    | { kind: "commit"; state: string; fields: Record<string, string> };
+  expected: AcceptanceExpected;
 };
 
 function importCompositionVersions(
@@ -172,8 +173,36 @@ export async function verifyViaIsolatedWorkspace(
         .join(",")}`,
     );
     checks.push(...(await assertAuxiliaryMemberCommands(probe, signal)));
+    let registry = probe.extensionRegistry();
     for (const c of cases) {
       signal.throwIfAborted();
+      if (c.member) {
+        const listed = probe.composition().members.find(
+          (m) => m.pluginId === c.member,
+        );
+        if (!listed)
+          throw new BusinessAssertionError(
+            `业务验收失败：${c.name}；组合中不存在成员 ${c.member}`,
+          );
+        if (!listed.enabled) {
+          const composition = probe.composition();
+          await probe.setMemberEnabled({
+            operationId: randomUUID(),
+            compositionRevision: composition.revision,
+            versionId: composition.versionId,
+            pluginId: c.member,
+            enabled: true,
+          });
+          registry = probe.extensionRegistry();
+        }
+        const command = registry
+          .commands()
+          .find((item) => item.id === c.action);
+        if (command?.providerId !== c.member)
+          throw new BusinessAssertionError(
+            `业务验收失败：${c.name}；动作 ${c.action} 不是成员 ${c.member} 的贡献`,
+          );
+      }
       const compositionRevision = probe.composition().revision;
       const created = await probe.command({
         type: "create",

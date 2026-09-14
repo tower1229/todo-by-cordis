@@ -2,6 +2,7 @@ import {
   BusinessAssertionError,
   verifyExtensions,
   type BusinessExtensions,
+  type MemberAcceptanceCase,
 } from "./business-verification.js";
 import {
   verifyViaIsolatedWorkspace,
@@ -59,6 +60,7 @@ type Goal = {
   name: string;
   fields: Rule[];
   extensions?: BusinessExtensions;
+  memberCases?: MemberAcceptanceCase[];
   repairEvidence?: InvestigatedPlan["repairEvidence"];
   acceptanceRevision?: InvestigatedPlan["acceptanceRevision"];
   scope?: string[];
@@ -82,6 +84,18 @@ type DraftMemberChange =
       prior: VersionMember;
       priorVersion: Version;
     };
+
+function acceptanceDefinitionHash(goal: {
+  fields: Rule[];
+  extensions?: BusinessExtensions;
+  memberCases?: MemberAcceptanceCase[];
+}) {
+  return hash({
+    rules: goal.fields,
+    extensions: goal.extensions,
+    memberCases: goal.memberCases,
+  });
+}
 
 function fieldContract(
   fields: { key: string; label: string; type: string; required?: boolean }[],
@@ -238,6 +252,26 @@ export class EvolutionDomain implements Domain {
   async reproduce(plan: InvestigatedPlan, signal: AbortSignal) {
     const base = this.workspace.release.get(plan.baseVersion!);
     this.check(this.target(plan), plan.compositionRevision);
+    const goal = this.target(plan).payload as Goal;
+    const definitionHash = acceptanceDefinitionHash(goal);
+    const reproduced = (diagnostic: string) => ({
+      baseVersion: base.id,
+      definitionHash,
+      diagnostic,
+    });
+    try {
+      signal.throwIfAborted();
+      await verifyViaIsolatedWorkspace(
+        this.workspace,
+        base,
+        workspaceAcceptanceCases(goal),
+        signal,
+      );
+    } catch (error) {
+      signal.throwIfAborted();
+      if (!(error instanceof BusinessAssertionError)) throw error;
+      return reproduced(error.message);
+    }
     const runtime = await this.workspace.release.start(base);
     const abort = () => {
       void runtime.close();
@@ -247,24 +281,12 @@ export class EvolutionDomain implements Domain {
       signal.throwIfAborted();
       const definition = await runtime.invoke<WorkflowDefinition>("describe");
       try {
-        await verifyWorkflow(
-          runtime,
-          definition,
-          base,
-          this.target(plan).payload as Goal,
-        );
+        await verifyWorkflow(runtime, definition, base, goal);
         if (plan.extensions) await verifyExtensions(runtime, plan.extensions);
       } catch (error) {
         signal.throwIfAborted();
         if (!(error instanceof BusinessAssertionError)) throw error;
-        return {
-          baseVersion: base.id,
-          definitionHash: hash({
-            rules: plan.workflowRules,
-            extensions: plan.extensions,
-          }),
-          diagnostic: error.message,
-        };
+        return reproduced(error.message);
       }
       return undefined;
     } finally {
@@ -318,6 +340,7 @@ export class EvolutionDomain implements Domain {
         ...(plan.memberUpgrades?.length
           ? { memberUpgrades: plan.memberUpgrades }
           : {}),
+        ...(plan.memberCases?.length ? { memberCases: plan.memberCases } : {}),
       },
     };
   }
@@ -355,7 +378,7 @@ export class EvolutionDomain implements Domain {
     return {
       contract,
       source: base.source,
-      instruction: `Implement the frozen plan using submit_candidate with files [{path,content}] and optional members [{pluginId,source}] when the plan declares memberAdditions or memberUpgrades. Read read_contract and read_current_source first. The business artifact requires business/entry.ts (default Plugin), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed; business/contract.ts is supplied by the trusted host, never submit it. Imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. view fields must exactly match describe().fields keys in order. When memberAdditions is set, submit exactly those pluginIds as members with complete JavaScript module source (export default plugin with contribute/decide as needed); host records them as new auxiliary members. When memberUpgrades is set, submit exactly those existing auxiliary pluginIds with replacement source; host records new versionIds and inherits unmodified members with exact versionId/enabled/role. If only upgrading auxiliaries and the workflow source is unchanged from the base, resubmit read_current_source as-is so the host can pin the workflow member to the exact base versionId. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
+      instruction: `Implement the frozen plan using submit_candidate with files [{path,content}] and optional members [{pluginId,source}] when the plan declares memberAdditions or memberUpgrades. Read read_contract and read_current_source first. The business artifact requires business/entry.ts (default Plugin), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed; business/contract.ts is supplied by the trusted host, never submit it. Imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. Frozen memberCases are isolated Workspace assertions for auxiliary members (target member, action, initial data, input, expected final data or reject); implement them, do not rely on smoke. view fields must exactly match describe().fields keys in order. When memberAdditions is set, submit exactly those pluginIds as members with complete JavaScript module source (export default plugin with contribute/decide as needed); host records them as new auxiliary members. When memberUpgrades is set, submit exactly those existing auxiliary pluginIds with replacement source; host records new versionIds and inherits unmodified members with exact versionId/enabled/role. If only upgrading auxiliaries and the workflow source is unchanged from the base, resubmit read_current_source as-is so the host can pin the workflow member to the exact base versionId. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
     };
   }
   async candidate(
@@ -370,7 +393,7 @@ export class EvolutionDomain implements Domain {
       goal.repairEvidence &&
       (goal.repairEvidence.baseVersion !== base.id ||
         goal.repairEvidence.definitionHash !==
-          hash({ rules: goal.fields, extensions: goal.extensions }))
+          acceptanceDefinitionHash(goal))
     )
       throw new ProtectedCandidateError("修复断言与旧版证据不一致");
     stage("构建候选");
@@ -778,13 +801,11 @@ export class EvolutionDomain implements Domain {
         extensions: goal.extensions,
         memberAdditions: plannedAdditions,
         memberUpgrades: plannedUpgrades,
+        memberCases: goal.memberCases,
         checks,
         systemChecks,
         capabilities,
-        definitionHash: hash({
-          rules: goal.fields,
-          extensions: goal.extensions,
-        }),
+        definitionHash: acceptanceDefinitionHash(goal),
         environment: {
           node: process.version,
           lockHash: bundle?.lockHash ?? null,
@@ -1140,6 +1161,23 @@ export function workspaceAcceptanceCases(goal: Goal): WorkspaceAcceptanceCase[] 
   for (const c of goal.extensions?.cases ?? [])
     cases.push({
       name: `workspace:${c.name}`,
+      state: c.state,
+      fields: { ...c.fields },
+      action: c.action,
+      input: { ...c.input },
+      expected:
+        c.expected.kind === "reject"
+          ? { kind: "reject" }
+          : {
+              kind: "commit",
+              state: c.expected.state,
+              fields: { ...c.expected.fields },
+            },
+    });
+  for (const c of goal.memberCases ?? [])
+    cases.push({
+      name: `workspace:member:${c.member}:${c.name}`,
+      member: c.member,
       state: c.state,
       fields: { ...c.fields },
       action: c.action,
