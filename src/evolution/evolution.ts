@@ -62,6 +62,17 @@ export interface Domain {
     contract: string;
     source: string;
   };
+  /** Exact member source/contract/acceptance for generation-time reads. */
+  readMember(
+    pluginId: string,
+    versionId: string,
+  ): {
+    pluginId: string;
+    versionId: string;
+    source: string;
+    contract: string;
+    acceptance: string;
+  };
   candidate(
     source: string,
     target: Target,
@@ -1276,6 +1287,19 @@ export class Evolution {
                 parameters: { type: "object", properties: {} },
               },
               {
+                name: "read_member_source",
+                description:
+                  "Read exact auxiliary member source, contract, and acceptance refs by pluginId + versionId from the active composition",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    pluginId: { type: "string" },
+                    versionId: { type: "string" },
+                  },
+                  required: ["pluginId", "versionId"],
+                },
+              },
+              {
                 name: "submit_candidate",
                 description:
                   "Build and independently verify complete TypeScript source; optional members overlays auxiliary plugins declared in the frozen plan",
@@ -1353,6 +1377,19 @@ export class Evolution {
             this.toolEvent(r, "read_current_source", "started", attempt);
             result = { source: context.source };
             this.toolEvent(r, "read_current_source", "succeeded", attempt);
+          } else if (call.name === "read_member_source") {
+            if (
+              Object.keys(call.args).length !== 2 ||
+              typeof call.args.pluginId !== "string" ||
+              typeof call.args.versionId !== "string"
+            )
+              throw new Error("读取成员源码参数无效");
+            this.toolEvent(r, "read_member_source", "started", attempt);
+            result = this.domain.readMember(
+              call.args.pluginId,
+              call.args.versionId,
+            );
+            this.toolEvent(r, "read_member_source", "succeeded", attempt);
           } else if (call.name === "patch_candidate") {
             this.toolEvent(r, "patch_candidate", "started", attempt);
             this.toolEvent(

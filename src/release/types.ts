@@ -45,6 +45,8 @@ export type RuntimePluginTarget = {
   service: string;
   bundle?: BusinessBundle;
   role: VersionMemberRole;
+  /** Fixture / pre-trusted plugins may load via native import when no bundle. */
+  allowNativeImport?: boolean;
 };
 
 export type RuntimeTarget = {

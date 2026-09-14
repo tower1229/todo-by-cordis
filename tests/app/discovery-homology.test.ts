@@ -12,6 +12,7 @@ import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
 import type { WorkflowDefinition } from "../../src/shared/contracts.js";
 import { PlanningDriver, toolReply } from "./planning-fixture.js";
 import { activateDual } from "./dual-composition-fixture.js";
+import { capture, readInvestigation } from "../../src/server/planning.js";
 
 // Seam: Evolution investigation → inspect_application externally visible content.
 // Asserts live composition members + extension registry facts, not private assemblers.
@@ -480,4 +481,60 @@ test("unknown checker still blocks after live catalog homology", async (t) => {
   const run = await settle(e);
   assert.equal(run.status, "blocked", JSON.stringify(run));
   assert.match(run.message ?? "", /检查器/);
+});
+
+test("inspect_application 列出成员精确源码与验收 ref，且可读到与活动组合一致的内容", async (t) => {
+  const w = await setup(t);
+  const { tags, due } = await activateDual(w);
+  const tagsSource = w.release.get(tags.id).source;
+  const bag: { requests: ModelRequest[]; inspect?: InspectContent & {
+    files?: { ref: string; hash: string }[];
+  } } = { requests: [] };
+  const e = new Evolution(
+    w.db,
+    capturingInspectDriver(bag),
+    new EvolutionDomain(w),
+  );
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "升级标签前先读现有实现",
+    operationId: "discover-member-source",
+  });
+  await settle(e);
+  const files = bag.inspect?.files?.map((f) => f.ref) ?? [];
+  const memberFiles = files.filter((f) => f.startsWith("member-")).sort();
+  assert.ok(
+    files.includes(`member-source/tags@${tags.id}`),
+    memberFiles.join(","),
+  );
+  assert.ok(
+    files.includes(`member-source/due@${due.id}`),
+    memberFiles.join(","),
+  );
+  assert.ok(
+    files.includes(`member-contract/tags@${tags.id}`),
+    memberFiles.join(","),
+  );
+  assert.ok(
+    files.includes(`member-acceptance/tags@${tags.id}`),
+    memberFiles.join(","),
+  );
+  const context = capture(w);
+  const read = readInvestigation(
+    "read_source",
+    { ref: `member-source/tags@${tags.id}` },
+    context,
+  );
+  assert.ok(!("error" in read));
+  assert.equal(read.content, tagsSource);
+  const acceptance = readInvestigation(
+    "read_acceptance",
+    { ref: `member-acceptance/tags@${tags.id}` },
+    context,
+  );
+  assert.ok(!("error" in acceptance));
+  assert.match(String(acceptance.content), /tags/);
 });

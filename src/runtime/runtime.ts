@@ -51,6 +51,7 @@ export class Runtime {
                 ? target.bundle?.outputs
                 : undefined),
             role: plugin.role,
+            allowNativeImport: plugin.allowNativeImport === true,
           })),
         }),
       ],

@@ -1423,3 +1423,368 @@ test("双组合上 repair 应用后辅助成员精确版本仍完整", async (t)
   assert.equal(after.members.find((m) => m.pluginId === "tags")?.versionId, tags.id);
   assert.equal(after.members.find((m) => m.pluginId === "due")?.versionId, due.id);
 });
+
+/** Second tags upgrade: lowercase + collapse internal spaces to hyphen. */
+const upgradedTagsHyphenSource = `export default {
+  contribute() {
+    return {
+      fields: [{ key: "tags", label: "标签", type: "text" }],
+      commands: [{ id: "setTags", label: "设标签", from: ["open", "done"] }],
+    };
+  },
+  decide(data) {
+    const { task, action, input } = data;
+    if (action === "setTags")
+      return {
+        kind: "commit",
+        state: task.state,
+        fields: {
+          ...task.fields,
+          tags: String(input?.tags ?? "")
+            .trim()
+            .toLowerCase()
+            .replace(/\\s+/g, "-"),
+        },
+      };
+    return { kind: "reject", message: "未知动作" };
+  },
+};`;
+
+const changeWorkflowMin2Plan = {
+  summary: "提高复盘最短字数",
+  changes: ["完成前复盘至少2字", "保留 tags 与 due 精确版本"],
+  outcome: "一字复盘不能完成；标签与截止日期仍按原辅助版本",
+  dataImpact: "保留辅助成员精确版本与字段；更新主工作流复盘规则",
+  workflowRules: [
+    {
+      key: "reflection",
+      label: "复盘",
+      required: true,
+      minLength: 2,
+      maxLength: 5000,
+    },
+  ],
+  writableScope: [
+    "business/entry.ts",
+    "business/view.ts",
+    "business/config.json",
+    "business/compatibility.json",
+  ],
+};
+
+/** Pure tags upgrade after a bundled workflow is active: keep reflection rules + business scope. */
+const pureUpgradeTagsAfterBundlePlan = {
+  summary: "只升级标签辅助成员",
+  changes: ["升级 tags 辅助成员"],
+  outcome: "标签写入规范化；复盘与截止日期仍按原版本",
+  dataImpact: "保留主工作流与 due 精确版本与字段；升级 tags 成员版本",
+  memberUpgrades: [{ pluginId: "tags" }],
+  workflowRules: [
+    {
+      key: "reflection",
+      label: "复盘",
+      required: true,
+      minLength: 2,
+      maxLength: 5000,
+    },
+  ],
+  writableScope: [
+    "business/entry.ts",
+    "business/view.ts",
+    "business/config.json",
+    "business/compatibility.json",
+  ],
+};
+
+async function applyPassedCandidate(
+  e: Evolution,
+  w: Workspace,
+  operationPrefix: string,
+  requestText: string,
+) {
+  await e.command({
+    type: "request",
+    text: requestText,
+    operationId: `${operationPrefix}-plan`,
+  });
+  const ready = await settle(e, "ready");
+  assert.equal(ready.status, "ready");
+  if (ready.status !== "ready") throw new Error("expected ready");
+  const beforeRevision = w.composition().revision;
+  await e.command({
+    type: "start",
+    operationId: `${operationPrefix}-start`,
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  const done = await settle(e, "awaiting-apply");
+  assert.equal(done.status, "awaiting-apply");
+  if (done.status !== "awaiting-apply")
+    throw new Error("expected awaiting-apply");
+  const candidate = (await e.observe()).candidates?.find((c) => c.passed);
+  assert.ok(candidate?.evidenceHash, "expected passed candidate");
+  await e.command({
+    type: "apply",
+    operationId: `${operationPrefix}-apply`,
+    runId: done.id,
+    candidateId: candidate!.id,
+    evidenceHash: candidate!.evidenceHash!,
+    compositionRevision: beforeRevision,
+  });
+  const succeeded = await settle(e, "succeeded");
+  assert.equal(succeeded.status, "succeeded");
+  return { ready, done, candidate: candidate! };
+}
+
+test("四步连续：纯升辅助 pin 后改主工作流须绑新实现，再纯升辅助仍锁住新工作流", async (t) => {
+  const ctx = await dualWithTaggedTask(t);
+  const { w, tags, due, taskId } = ctx;
+  const initialWorkflowVersionId = w.composition().versionId;
+
+  // Step 1→2: pure upgrade tags, pin main workflow to prior exact version
+  {
+    const workflowSource = w.activeVersion().source;
+    const planning = new PlanningDriver(pureUpgradeTagsPlan);
+    const driver: Driver = {
+      async generate(request: ModelRequest, signal) {
+        if (
+          request.tools?.some((tool) => tool.name === "submit_candidate") ||
+          request.tools?.some((tool) => tool.name === "build_candidate")
+        ) {
+          const content = JSON.stringify(request.history);
+          if (!content.includes("read_contract"))
+            return {
+              ...toolReply("read_contract", {}),
+              history: request.history,
+            };
+          if (!content.includes("read_current_source"))
+            return {
+              ...toolReply("read_current_source", {}),
+              history: request.history,
+            };
+          return {
+            ...toolReply("submit_candidate", {
+              source: workflowSource,
+              members: [{ pluginId: "tags", source: upgradedTagsSource }],
+            }),
+            history: request.history,
+          };
+        }
+        return planning.generate(request, signal);
+      },
+    };
+    const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+    t.after(async () => {
+      await e.close();
+    });
+    await applyPassedCandidate(e, w, "seq-upgrade1", "只升级标签规范化");
+    const afterUpgrade = w.composition();
+    assert.equal(
+      afterUpgrade.members.find((m) => m.role === "workflow")?.versionId,
+      initialWorkflowVersionId,
+      "step2: unchanged workflow stays pinned",
+    );
+    assert.notEqual(
+      afterUpgrade.members.find((m) => m.pluginId === "tags")?.versionId,
+      tags.id,
+    );
+    assert.equal(
+      afterUpgrade.members.find((m) => m.pluginId === "due")?.versionId,
+      due.id,
+    );
+    const task = w.read(taskId);
+    const retagged = await w.command({
+      type: "action",
+      taskId,
+      actionId: "setTags",
+      expectedRevision: task.revision,
+      input: { tags: "  Seq-One  " },
+      operationId: randomUUID(),
+      compositionRevision: afterUpgrade.revision,
+    });
+    assert.equal(retagged.task?.fields.tags, "seq-one");
+  }
+
+  const afterPin = w.composition();
+  const pinnedWorkflowVersionId = afterPin.members.find(
+    (m) => m.role === "workflow",
+  )!.versionId;
+  const tagsAfterPin = afterPin.members.find((m) => m.pluginId === "tags")!
+    .versionId;
+  const dueAfterPin = afterPin.members.find((m) => m.pluginId === "due")!
+    .versionId;
+
+  // Step 3: change main workflow after pin — must bind new workflow implementation
+  {
+    const planning = new PlanningDriver(changeWorkflowMin2Plan);
+    const fallback = new ExecutionDriver(
+      planning,
+      "aux-workflow",
+      "双贡献组合",
+      2,
+    );
+    const driver: Driver = {
+      async generate(request: ModelRequest, signal) {
+        const reply = await fallback.generate(request, signal);
+        if (reply.calls[0]?.name === "submit_candidate") {
+          reply.calls[0].args = JSON.parse(
+            candidateSource(String(reply.calls[0].args.source)),
+          ) as { files: unknown };
+        }
+        return reply;
+      },
+    };
+    const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+    t.after(async () => {
+      await e.close();
+    });
+    await applyPassedCandidate(e, w, "seq-workflow", "复盘至少两字");
+    const afterWorkflow = w.composition();
+    const workflowMember = afterWorkflow.members.find(
+      (m) => m.role === "workflow",
+    );
+    assert.ok(workflowMember);
+    assert.equal(
+      workflowMember.versionId,
+      afterWorkflow.versionId,
+      "step3: changing workflow must rebind member to new carrier implementation",
+    );
+    assert.notEqual(
+      workflowMember.versionId,
+      pinnedWorkflowVersionId,
+      "step3: must not keep the pin from auxiliary-only upgrade",
+    );
+    assert.equal(
+      afterWorkflow.members.find((m) => m.pluginId === "tags")?.versionId,
+      tagsAfterPin,
+      "step3: unmodified tags stays exact",
+    );
+    assert.equal(
+      afterWorkflow.members.find((m) => m.pluginId === "due")?.versionId,
+      dueAfterPin,
+      "step3: unmodified due stays exact",
+    );
+
+    const created = await w.command({
+      type: "create",
+      title: "seq-workflow-probe",
+      compositionRevision: afterWorkflow.revision,
+      operationId: randomUUID(),
+    });
+    await assert.rejects(
+      w.command({
+        type: "action",
+        taskId: created.task!.id,
+        actionId: "complete",
+        expectedRevision: created.task!.revision,
+        input: { reflection: "一" },
+        operationId: randomUUID(),
+        compositionRevision: afterWorkflow.revision,
+      }),
+      /复盘字数|不符合/,
+    );
+    const completed = await w.command({
+      type: "action",
+      taskId: created.task!.id,
+      actionId: "complete",
+      expectedRevision: created.task!.revision,
+      input: { reflection: "两字" },
+      operationId: randomUUID(),
+      compositionRevision: afterWorkflow.revision,
+    });
+    assert.equal(completed.task?.state, "done");
+    assert.equal(completed.task?.fields.reflection, "两字");
+  }
+
+  const afterWorkflowChange = w.composition();
+  const newWorkflowVersionId = afterWorkflowChange.members.find(
+    (m) => m.role === "workflow",
+  )!.versionId;
+  const tagsBeforeSecondUpgrade = afterWorkflowChange.members.find(
+    (m) => m.pluginId === "tags",
+  )!.versionId;
+
+  // Step 4: pure upgrade tags again — keep new workflow + due locks
+  {
+    const workflowSource = w.activeVersion().source;
+    const planning = new PlanningDriver(pureUpgradeTagsAfterBundlePlan);
+    const driver: Driver = {
+      async generate(request: ModelRequest, signal) {
+        if (
+          request.tools?.some((tool) => tool.name === "submit_candidate") ||
+          request.tools?.some((tool) => tool.name === "build_candidate")
+        ) {
+          const content = JSON.stringify(request.history);
+          if (!content.includes("read_contract"))
+            return {
+              ...toolReply("read_contract", {}),
+              history: request.history,
+            };
+          if (!content.includes("read_current_source"))
+            return {
+              ...toolReply("read_current_source", {}),
+              history: request.history,
+            };
+          return {
+            ...toolReply("submit_candidate", {
+              ...(workflowSource.startsWith("{")
+                ? (JSON.parse(workflowSource) as { files: unknown })
+                : { source: workflowSource }),
+              members: [{ pluginId: "tags", source: upgradedTagsHyphenSource }],
+            }),
+            history: request.history,
+          };
+        }
+        return planning.generate(request, signal);
+      },
+    };
+    const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+    t.after(async () => {
+      await e.close();
+    });
+    await applyPassedCandidate(e, w, "seq-upgrade2", "标签再升级去空格");
+    const afterSecond = w.composition();
+    assert.equal(
+      afterSecond.members.find((m) => m.role === "workflow")?.versionId,
+      newWorkflowVersionId,
+      "step4: pure upgrade must keep the workflow version from step3",
+    );
+    assert.equal(
+      afterSecond.members.find((m) => m.pluginId === "due")?.versionId,
+      dueAfterPin,
+    );
+    assert.notEqual(
+      afterSecond.members.find((m) => m.pluginId === "tags")?.versionId,
+      tagsBeforeSecondUpgrade,
+    );
+
+    const created = await w.command({
+      type: "create",
+      title: "seq-upgrade2-probe",
+      compositionRevision: afterSecond.revision,
+      operationId: randomUUID(),
+    });
+    await assert.rejects(
+      w.command({
+        type: "action",
+        taskId: created.task!.id,
+        actionId: "complete",
+        expectedRevision: created.task!.revision,
+        input: { reflection: "一" },
+        operationId: randomUUID(),
+        compositionRevision: afterSecond.revision,
+      }),
+      /复盘字数|不符合/,
+    );
+    const tagged = await w.command({
+      type: "action",
+      taskId: created.task!.id,
+      actionId: "setTags",
+      expectedRevision: created.task!.revision,
+      input: { tags: "  Hello World  " },
+      operationId: randomUUID(),
+      compositionRevision: afterSecond.revision,
+    });
+    assert.equal(tagged.task?.fields.tags, "hello-world");
+  }
+});

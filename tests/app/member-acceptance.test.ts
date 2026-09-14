@@ -887,3 +887,123 @@ test("parseMemberCases 要求每个成员动作有正例和反例", () => {
   );
 });
 
+const unauthorizedTagsSource = `import fs from 'node:fs';
+export default {
+  contribute() {
+    return {
+      fields: [{ key: "tags", label: "标签", type: "text" }],
+      commands: [{ id: "setTags", label: "设标签", from: ["open", "done"] }],
+    };
+  },
+  decide(data) {
+    fs.writeFileSync('/tmp/x', 'leak');
+    const { task, action, input } = data;
+    if (action === "setTags")
+      return {
+        kind: "commit",
+        state: task.state,
+        fields: {
+          ...task.fields,
+          tags: String(input?.tags ?? "").trim().toLowerCase(),
+        },
+      };
+    return { kind: "reject", message: "未知动作" };
+  },
+};`;
+
+test("辅助成员提交未授权依赖时正式候选路径拒绝且正式组合不变", async (t) => {
+  const ctx = await dualWithTaggedTask(t);
+  const membersBefore = memberSnapshot(ctx.before);
+  const workflowSource = ctx.w.activeVersion().source;
+  const planning = new PlanningDriver(freezeTagsPlan);
+  const e = new Evolution(
+    ctx.w.db,
+    pinnedMemberDriver(
+      planning,
+      () => workflowSource,
+      () => [{ pluginId: "tags", source: unauthorizedTagsSource }],
+    ),
+    new EvolutionDomain(ctx.w),
+  );
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "标签保存去空格并转小写，空白拒绝",
+    operationId: "plan-unauthorized-tags",
+  });
+  const ready = await settle(e, "ready");
+  assert.equal(ready.status, "ready");
+  if (ready.status !== "ready") throw new Error("expected ready");
+  await e.command({
+    type: "start",
+    operationId: "start-unauthorized-tags",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  const finished = await settle(e);
+  assert.notEqual(finished.status, "awaiting-apply");
+  assert.notEqual(finished.status, "succeeded");
+  const snapshot = await e.observe();
+  assert.ok(
+    snapshot.candidates?.some((c) => c.passed === false),
+    snapshot.candidates?.map((c) => c.diagnostic).join("\n"),
+  );
+  assert.match(
+    snapshot.candidates?.find((c) => c.diagnostic)?.diagnostic ??
+      finished.message ??
+      "",
+    /未授权|依赖|运行能力|node:fs/,
+  );
+  assert.equal(ctx.w.composition().versionId, ctx.before.versionId);
+  assert.deepEqual(memberSnapshot(ctx.w.composition()), membersBefore);
+});
+
+test("通过验证的辅助成员记版含可信 bundle，不以提交字符串作原生执行产物", async (t) => {
+  const ctx = await dualWithTaggedTask(t);
+  const workflowSource = ctx.w.activeVersion().source;
+  const planning = new PlanningDriver(freezeTagsPlan);
+  const e = new Evolution(
+    ctx.w.db,
+    pinnedMemberDriver(
+      planning,
+      () => workflowSource,
+      () => [{ pluginId: "tags", source: normalizedTagsSource }],
+    ),
+    new EvolutionDomain(ctx.w),
+  );
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "标签保存去空格并转小写，空白拒绝",
+    operationId: "plan-trusted-bundle",
+  });
+  const ready = await settle(e, "ready");
+  assert.equal(ready.status, "ready");
+  if (ready.status !== "ready") throw new Error("expected ready");
+  await e.command({
+    type: "start",
+    operationId: "start-trusted-bundle",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  const done = await settle(e, "awaiting-apply");
+  assert.equal(done.status, "awaiting-apply");
+  const candidate = (await e.observe()).candidates?.find((c) => c.passed);
+  assert.ok(candidate?.versionId);
+  const composition = ctx.w.release.get(candidate!.versionId!);
+  const tagsMember = composition.members?.find((m) => m.pluginId === "tags");
+  assert.ok(tagsMember?.versionId);
+  const tagsVersion = ctx.w.release.get(tagsMember!.versionId!);
+  assert.ok(tagsVersion.bundle?.outputs["business/entry.js"]);
+  assert.notEqual(
+    tagsVersion.code,
+    normalizedTagsSource,
+    "execution code must come from trusted build outputs, not raw submission",
+  );
+  assert.equal(tagsVersion.source, normalizedTagsSource);
+});
+

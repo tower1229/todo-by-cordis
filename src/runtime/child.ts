@@ -6,6 +6,7 @@ import type { RuntimePluginTarget } from "../release/types.js";
 
 type ChildPlugin = RuntimePluginTarget & {
   modules?: Record<string, string>;
+  allowNativeImport?: boolean;
 };
 
 const payload = JSON.parse(process.argv[2]) as {
@@ -31,8 +32,11 @@ const plugins: ChildPlugin[] = payload.plugins?.length
 let businessInfo: unknown;
 
 async function loadPlugin(plugin: ChildPlugin) {
-  if (!plugin.modules)
+  if (!plugin.modules) {
+    if (!plugin.allowNativeImport)
+      throw new Error("未受信成员缺少可信构建产物，拒绝原生模块加载");
     return (await import(pathToFileURL(plugin.entry).href)).default as unknown;
+  }
   const realm = createContext(Object.create(null), {
     codeGeneration: { strings: false, wasm: false },
   });

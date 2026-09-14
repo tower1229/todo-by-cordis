@@ -56,9 +56,11 @@ export function inheritCompositionMembers(
 /**
  * Ordinary candidate lock: inherit unmodified members, replace upgraded
  * auxiliary versionIds, then append new auxiliary members. Unmodified
- * members keep exact versionId/enabled/role. When `pinWorkflowVersionId`
- * is set (upgrade-only, workflow unchanged), the workflow slot keeps that
- * exact version instead of binding to the new carrier Version.id.
+ * members keep exact versionId/enabled/role. Whether the workflow member
+ * rebinds to the new carrier is decided by the change goal via
+ * `pinWorkflowVersionId`: set only for upgrade-only / workflow-unchanged
+ * candidates; when unset, always clear any prior pin so the new workflow
+ * implementation runs (carrier Version.id ≠ prior pinned member versionId).
  */
 export function composeCandidateMembers(
   base: Version,
@@ -72,17 +74,23 @@ export function composeCandidateMembers(
     (member) => {
       const upgrade = upgradeById.get(member.pluginId);
       if (!upgrade) {
-        if (
-          pinWorkflowVersionId &&
-          member.role === "workflow" &&
-          !member.versionId
-        )
+        if (member.role === "workflow") {
+          if (pinWorkflowVersionId)
+            return {
+              pluginId: member.pluginId,
+              // Keep a prior exact pin; otherwise pin to the declared base.
+              versionId: member.versionId ?? pinWorkflowVersionId,
+              enabled: member.enabled,
+              role: member.role,
+            };
+          // Change-goal says workflow changes: clear any prior pin so the
+          // new carrier implementation is what Runtime loads.
           return {
-            pluginId: member.pluginId,
-            versionId: pinWorkflowVersionId,
+            pluginId: nextPluginId,
             enabled: member.enabled,
             role: member.role,
           };
+        }
         return member;
       }
       if (member.role !== "auxiliary")
@@ -183,12 +191,24 @@ export function resolveRuntimePlugins(
     if (!member.enabled) continue;
     const targetId = member.versionId ?? version.id;
     const target = targetId === version.id ? version : getVersion(targetId);
+    const evidence = target.evidence as { origin?: unknown } | null;
+    const fromEvolution =
+      typeof evidence?.origin === "string" &&
+      evidence.origin.startsWith("evolution-");
+    if (fromEvolution && !target.bundle?.outputs)
+      throw new AppError(
+        "INVALID_COMPOSITION",
+        `自迭代成员缺少可信构建产物：${member.pluginId}`,
+      );
     plugins.push({
       pluginId: target.pluginId,
       entry: target.entry,
       service: target.service,
       bundle: target.bundle,
       role: member.role,
+      // AI/evolution members must ship a trusted bundle; native import is
+      // only for explicit non-generated compatibility (fixtures, builtins).
+      allowNativeImport: !fromEvolution,
     });
   }
   return plugins;

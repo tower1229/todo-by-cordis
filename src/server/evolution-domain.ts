@@ -14,6 +14,7 @@ import {
   planningTools,
   readInvestigation,
   parsePlan,
+  memberAcceptancePayload,
   type Investigation,
 } from "./planning.js";
 import type {
@@ -41,10 +42,31 @@ import {
   ProtectedCandidateError,
   CandidateValidationError,
 } from "../release/business-bundle.js";
+import type { BusinessBundle } from "../release/types.js";
 import { hash } from "../release/storage.js";
 import type { ExtensionContribution } from "./business/contracts.js";
 import { emptyContribution } from "./business/contracts.js";
 import { resolveUiContributions } from "./extensions/ui-slots.js";
+
+/** Wrap a single-file auxiliary plugin into the trusted business artifact shape. */
+function memberArtifactFiles(source: string): Record<string, string> {
+  const entry =
+    /\bdecide\s*\(\s*\w+\s*:/.test(source) || source.includes("import type")
+      ? source
+      : `import type { Task } from './contract.js';
+type MemberDecideInput = {
+  task: Task;
+  action: string;
+  input?: Record<string, string>;
+};
+${source.replace(/\bdecide\s*\(\s*(\w+)\s*\)/, "decide($1: MemberDecideInput)")}`;
+  return {
+    "business/entry.ts": entry,
+    "business/view.ts": 'export default { title: "extension", fields: [] };',
+    "business/config.json": "{}",
+    "business/compatibility.json": '{"preserveUnknownFields":true}',
+  };
+}
 
 type Rule = {
   key: string;
@@ -378,7 +400,45 @@ export class EvolutionDomain implements Domain {
     return {
       contract,
       source: base.source,
-      instruction: `Implement the frozen plan using submit_candidate with files [{path,content}] and optional members [{pluginId,source}] when the plan declares memberAdditions or memberUpgrades. Read read_contract and read_current_source first. The business artifact requires business/entry.ts (default Plugin), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed; business/contract.ts is supplied by the trusted host, never submit it. Imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. Frozen memberCases are isolated Workspace assertions for auxiliary members (target member, action, initial data, input, expected final data or reject); implement them, do not rely on smoke. view fields must exactly match describe().fields keys in order. When memberAdditions is set, submit exactly those pluginIds as members with complete JavaScript module source (export default plugin with contribute/decide as needed); host records them as new auxiliary members. When memberUpgrades is set, submit exactly those existing auxiliary pluginIds with replacement source; host records new versionIds and inherits unmodified members with exact versionId/enabled/role. If only upgrading auxiliaries and the workflow source is unchanged from the base, resubmit read_current_source as-is so the host can pin the workflow member to the exact base versionId. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
+      instruction: `Implement the frozen plan using submit_candidate with files [{path,content}] and optional members [{pluginId,source}] when the plan declares memberAdditions or memberUpgrades. Read read_contract and read_current_source first. When upgrading an existing auxiliary member, call read_member_source with that pluginId and its exact versionId from the frozen composition before rewriting. The business artifact requires business/entry.ts (default Plugin), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed; business/contract.ts is supplied by the trusted host, never submit it. Imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. Frozen memberCases are isolated Workspace assertions for auxiliary members (target member, action, initial data, input, expected final data or reject); implement them, do not rely on smoke. view fields must exactly match describe().fields keys in order. When memberAdditions is set, submit exactly those pluginIds as members with complete JavaScript module source (export default plugin with contribute/decide as needed); host records them as new auxiliary members. When memberUpgrades is set, submit exactly those existing auxiliary pluginIds with replacement source; host records new versionIds and inherits unmodified members with exact versionId/enabled/role. If only upgrading auxiliaries and the workflow source is unchanged from the base, resubmit read_current_source as-is so the host can pin the workflow member to the exact base versionId. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
+    };
+  }
+  readMember(pluginId: string, versionId: string) {
+    const composition = this.workspace.composition();
+    const member = composition.members.find(
+      (m) => m.pluginId === pluginId && m.versionId === versionId,
+    );
+    if (!member)
+      throw new AppError(
+        "UNKNOWN_PLUGIN",
+        `活动组合中不存在成员 ${pluginId}@${versionId}`,
+      );
+    const version = this.workspace.release.get(versionId);
+    if (version.pluginId !== pluginId)
+      throw new AppError(
+        "EXTENSION_CONFLICT",
+        `成员身份与版本不一致：${pluginId}`,
+      );
+    const acceptance = this.workspace.activeVersion().evidence as {
+      memberCases?: { member?: string }[];
+    };
+    const memberCases = Array.isArray(acceptance.memberCases)
+      ? acceptance.memberCases
+      : [];
+    return {
+      pluginId,
+      versionId,
+      source: version.source,
+      contract: JSON.stringify(version.definition ?? { id: pluginId }),
+      acceptance: JSON.stringify(
+        memberAcceptancePayload(
+          pluginId,
+          versionId,
+          member.role,
+          version.evidence,
+          memberCases,
+        ),
+      ),
     };
   }
   async candidate(
@@ -508,12 +568,15 @@ export class EvolutionDomain implements Domain {
       );
       if (!submitted)
         throw new ProtectedCandidateError("成员提交与冻结计划不一致");
-      const draft = this.recordMemberDraft({
-        kind: "addition",
-        planned,
-        submitted,
-        baseId: base.id,
-      });
+      const draft = await this.recordMemberDraft(
+        {
+          kind: "addition",
+          planned,
+          submitted,
+          baseId: base.id,
+        },
+        signal,
+      );
       draftChanges.push({
         kind: "addition",
         planned,
@@ -541,13 +604,16 @@ export class EvolutionDomain implements Domain {
       const priorVersion = this.workspace.release.get(
         prior.versionId ?? base.id,
       );
-      const draft = this.recordMemberDraft({
-        kind: "upgrade",
-        planned,
-        submitted,
-        baseId: base.id,
-        priorVersion,
-      });
+      const draft = await this.recordMemberDraft(
+        {
+          kind: "upgrade",
+          planned,
+          submitted,
+          baseId: base.id,
+          priorVersion,
+        },
+        signal,
+      );
       draftChanges.push({
         kind: "upgrade",
         planned,
@@ -822,7 +888,17 @@ export class EvolutionDomain implements Domain {
     });
     return verified.id;
   }
-  private recordMemberDraft(
+  private async buildMemberBundle(
+    source: string,
+    signal: AbortSignal,
+  ): Promise<BusinessBundle> {
+    return this.workspace.release.buildBundle(
+      memberArtifactFiles(source),
+      contract,
+      signal,
+    );
+  }
+  private async recordMemberDraft(
     input:
       | {
           kind: "addition";
@@ -837,7 +913,12 @@ export class EvolutionDomain implements Domain {
           baseId: string;
           priorVersion: Version;
         },
-  ): Version {
+    signal: AbortSignal,
+  ): Promise<Version> {
+    const bundle = await this.buildMemberBundle(input.submitted.source, signal);
+    const code = bundle.outputs["business/entry.js"];
+    if (!code)
+      throw new ProtectedCandidateError("辅助成员可信构建缺少入口产物");
     if (input.kind === "addition")
       return this.workspace.release.record({
         pluginId: input.planned.pluginId,
@@ -845,7 +926,8 @@ export class EvolutionDomain implements Domain {
         service: `plugin:${input.planned.pluginId}`,
         contractVersion: "extensions/1",
         source: input.submitted.source,
-        code: input.submitted.source,
+        code,
+        bundle,
         definition: { id: input.planned.pluginId },
         evidence: {
           passed: false,
@@ -859,7 +941,8 @@ export class EvolutionDomain implements Domain {
       service: input.priorVersion.service,
       contractVersion: input.priorVersion.contractVersion,
       source: input.submitted.source,
-      code: input.submitted.source,
+      code,
+      bundle,
       definition: input.priorVersion.definition,
       evidence: {
         passed: false,
@@ -874,6 +957,10 @@ export class EvolutionDomain implements Domain {
     baseId: string,
     candidateId: string,
   ): Version {
+    const bundle = change.draft.bundle;
+    const code = change.draft.code;
+    if (!bundle?.outputs["business/entry.js"])
+      throw new ProtectedCandidateError("辅助成员缺少可信构建产物，不能记通过版");
     if (change.kind === "addition")
       return this.workspace.release.record({
         pluginId: change.planned.pluginId,
@@ -881,7 +968,8 @@ export class EvolutionDomain implements Domain {
         service: `plugin:${change.planned.pluginId}`,
         contractVersion: "extensions/1",
         source: change.submitted.source,
-        code: change.submitted.source,
+        code,
+        bundle,
         definition: { id: change.planned.pluginId },
         evidence: {
           passed: true,
@@ -897,7 +985,8 @@ export class EvolutionDomain implements Domain {
       service: change.priorVersion.service,
       contractVersion: change.priorVersion.contractVersion,
       source: change.submitted.source,
-      code: change.submitted.source,
+      code,
+      bundle,
       definition: change.priorVersion.definition,
       evidence: {
         passed: true,
