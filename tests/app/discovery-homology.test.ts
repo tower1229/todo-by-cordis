@@ -538,3 +538,120 @@ test("inspect_application 列出成员精确源码与验收 ref，且可读到�
   assert.ok(!("error" in acceptance));
   assert.match(String(acceptance.content), /tags/);
 });
+
+test("生成阶段 read_member 返回活动组合成员精确源码", async (t) => {
+  const w = await setup(t);
+  const { tags } = await activateDual(w);
+  const tagsSource = w.release.get(tags.id).source;
+  let readPayload: { source?: string; pluginId?: string; versionId?: string } |
+    undefined;
+  const planning = new PlanningDriver({
+    summary: "只升级标签辅助成员",
+    changes: ["升级 tags"],
+    outcome: "标签规范化",
+    dataImpact: "保留主工作流与 due",
+    memberUpgrades: [{ pluginId: "tags" }],
+    workflowRules: [] as {
+      key: string;
+      label: string;
+      required: boolean;
+      minLength: number;
+      maxLength: number;
+    }[],
+  });
+  const driver: Driver = {
+    async generate(request, signal) {
+      if (
+        request.tools?.some((tool) => tool.name === "submit_candidate") ||
+        request.tools?.some((tool) => tool.name === "build_candidate")
+      ) {
+        const content = JSON.stringify(request.history);
+        if (!content.includes("read_contract"))
+          return { ...toolReply("read_contract", {}), history: request.history };
+        if (!content.includes("read_current_source"))
+          return {
+            ...toolReply("read_current_source", {}),
+            history: request.history,
+          };
+        if (!content.includes("read_member"))
+          return {
+            ...toolReply("read_member", {
+              pluginId: "tags",
+              versionId: tags.id,
+            }),
+            history: request.history,
+          };
+        for (const message of request.history as {
+          parts?: {
+            functionResponse?: {
+              name?: string;
+              response?: { result?: { source?: string; pluginId?: string; versionId?: string } };
+            };
+          }[];
+        }[]) {
+          for (const part of message.parts ?? []) {
+            if (part.functionResponse?.name === "read_member")
+              readPayload = part.functionResponse.response?.result;
+          }
+        }
+        return {
+          ...toolReply("submit_candidate", {
+            source: w.activeVersion().source,
+            members: [
+              {
+                pluginId: "tags",
+                source: `export default {
+  contribute() {
+    return {
+      fields: [{ key: "tags", label: "标签", type: "text" }],
+      commands: [{ id: "setTags", label: "设标签", from: ["open", "done"] }],
+    };
+  },
+  decide(data) {
+    const { task, action, input } = data;
+    if (action === "setTags")
+      return {
+        kind: "commit",
+        state: task.state,
+        fields: {
+          ...task.fields,
+          tags: String(input?.tags ?? "").trim().toLowerCase(),
+        },
+      };
+    return { kind: "reject", message: "未知动作" };
+  },
+};`,
+              },
+            ],
+          }),
+          history: request.history,
+        };
+      }
+      return planning.generate(request, signal);
+    },
+  };
+  const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "只升级标签规范化",
+    operationId: "gen-read-member",
+  });
+  const ready = await settle(e);
+  assert.equal(ready.status, "ready", JSON.stringify(ready));
+  if (ready.status !== "ready") throw new Error("expected ready");
+  await e.command({
+    type: "start",
+    operationId: "start-read-member",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  const done = await settle(e);
+  assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
+  assert.ok(readPayload);
+  assert.equal(readPayload!.pluginId, "tags");
+  assert.equal(readPayload!.versionId, tags.id);
+  assert.equal(readPayload!.source, tagsSource);
+});

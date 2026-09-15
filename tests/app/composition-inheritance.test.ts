@@ -15,6 +15,9 @@ import { toolReply } from "./planning-fixture.js";
 import { panelPluginCode } from "../fixtures/member-ui.js";
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
 import { contract } from "../../src/server/evolution-domain.js";
+import { composeCandidateMembers } from "../../src/release/composition.js";
+import { createApp } from "../../src/server/app.js";
+import type { Version } from "../../src/release/types.js";
 
 // Seams: Evolution public control plane (request/start/experience/apply/observe)
 // → Workspace composition/query/command. Real candidate generation only; no awaiting-apply seed.
@@ -1538,7 +1541,7 @@ async function applyPassedCandidate(
 
 test("四步连续：纯升辅助 pin 后改主工作流须绑新实现，再纯升辅助仍锁住新工作流", async (t) => {
   const ctx = await dualWithTaggedTask(t);
-  const { w, tags, due, taskId } = ctx;
+  const { w, tags, due, taskId, directory } = ctx;
   const initialWorkflowVersionId = w.composition().versionId;
 
   // Step 1→2: pure upgrade tags, pin main workflow to prior exact version
@@ -1787,4 +1790,112 @@ test("四步连续：纯升辅助 pin 后改主工作流须绑新实现，再纯
     });
     assert.equal(tagged.task?.fields.tags, "hello-world");
   }
+
+  // Delivery bar: restart keeps locks/fields; restore keeps interim task fields
+  const afterAll = w.composition();
+  const membersAfter = memberSnapshot(afterAll);
+  const versionBeforeRestore = afterAll.versionId;
+  const probeTask = await w.command({
+    type: "create",
+    title: "seq-persist",
+    compositionRevision: afterAll.revision,
+    operationId: randomUUID(),
+  });
+  const labeled = await w.command({
+    type: "action",
+    taskId: probeTask.task!.id,
+    actionId: "setTags",
+    expectedRevision: probeTask.task!.revision,
+    input: { tags: "  Persist Me  " },
+    operationId: randomUUID(),
+    compositionRevision: afterAll.revision,
+  });
+  assert.equal(labeled.task?.fields.tags, "persist-me");
+  const revisionBeforeClose = w.composition().revision;
+  await w.close();
+  const reopened = await Workspace.open(join(directory, "workspace.db"));
+  t.after(async () => {
+    await reopened.close().catch(() => undefined);
+  });
+  assert.deepEqual(memberSnapshot(reopened.composition()), membersAfter);
+  assert.equal(reopened.read(probeTask.task!.id).fields.tags, "persist-me");
+  const previousId = reopened.previousVersionId();
+  assert.ok(previousId);
+  assert.notEqual(previousId, versionBeforeRestore);
+  const app = createApp(reopened);
+  const restored = await app.request("/api/runtime/restore", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      operationId: randomUUID(),
+      compositionRevision: revisionBeforeClose,
+    }),
+  });
+  assert.equal(restored.status, 200);
+  assert.equal(reopened.composition().versionId, previousId);
+  assert.equal(reopened.read(probeTask.task!.id).title, "seq-persist");
+  assert.equal(reopened.read(probeTask.task!.id).fields.tags, "persist-me");
+  assert.equal(
+    reopened.query().tasks.find((task) => task.id === taskId)?.fields.tags,
+    "seq-one",
+  );
+});
+
+test("US25: 非 pin 候选必须清掉主工作流成员的旧精确 versionId", () => {
+  const base = {
+    id: "carrier-after-pin",
+    pluginId: "aux-workflow",
+    name: "双贡献组合",
+    service: "workflow",
+    contractVersion: "workflow/1",
+    source: "s",
+    code: "c",
+    definition: { id: "aux-workflow" },
+    evidence: { passed: true },
+    createdAt: new Date().toISOString(),
+    entry: "/tmp/x",
+    members: [
+      {
+        pluginId: "aux-workflow",
+        versionId: "pinned-old-workflow",
+        enabled: true,
+        role: "workflow" as const,
+      },
+      {
+        pluginId: "tags",
+        versionId: "tags-1",
+        enabled: true,
+        role: "auxiliary" as const,
+      },
+    ],
+  } as Version;
+  const rebound = composeCandidateMembers(
+    base,
+    "aux-workflow",
+    [],
+    [],
+    undefined,
+  );
+  const workflow = rebound.find((m) => m.role === "workflow");
+  assert.ok(workflow);
+  assert.equal(workflow.versionId, undefined);
+  assert.equal(workflow.pluginId, "aux-workflow");
+  const pinned = composeCandidateMembers(
+    base,
+    "aux-workflow",
+    [],
+    [
+      {
+        pluginId: "tags",
+        versionId: "tags-2",
+        enabled: true,
+        role: "auxiliary",
+      },
+    ],
+    "pinned-old-workflow",
+  );
+  assert.equal(
+    pinned.find((m) => m.role === "workflow")?.versionId,
+    "pinned-old-workflow",
+  );
 });

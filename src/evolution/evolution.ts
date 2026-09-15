@@ -1287,9 +1287,9 @@ export class Evolution {
                 parameters: { type: "object", properties: {} },
               },
               {
-                name: "read_member_source",
+                name: "read_member",
                 description:
-                  "Read exact auxiliary member source, contract, and acceptance refs by pluginId + versionId from the active composition",
+                  "Read exact composition member source, contract, and acceptance by pluginId + versionId",
                 parameters: {
                   type: "object",
                   properties: {
@@ -1377,19 +1377,19 @@ export class Evolution {
             this.toolEvent(r, "read_current_source", "started", attempt);
             result = { source: context.source };
             this.toolEvent(r, "read_current_source", "succeeded", attempt);
-          } else if (call.name === "read_member_source") {
+          } else if (call.name === "read_member") {
             if (
               Object.keys(call.args).length !== 2 ||
               typeof call.args.pluginId !== "string" ||
               typeof call.args.versionId !== "string"
             )
-              throw new Error("读取成员源码参数无效");
-            this.toolEvent(r, "read_member_source", "started", attempt);
+              throw new Error("读取成员资料参数无效");
+            this.toolEvent(r, "read_member", "started", attempt);
             result = this.domain.readMember(
               call.args.pluginId,
               call.args.versionId,
             );
-            this.toolEvent(r, "read_member_source", "succeeded", attempt);
+            this.toolEvent(r, "read_member", "succeeded", attempt);
           } else if (call.name === "patch_candidate") {
             this.toolEvent(r, "patch_candidate", "started", attempt);
             this.toolEvent(

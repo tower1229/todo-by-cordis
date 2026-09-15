@@ -1,7 +1,13 @@
 import { AppError } from "../shared/contracts.js";
 import type { CompositionMember } from "../shared/contracts.js";
+import {
+  isGeneratedMember,
+  ProtectedCandidateError,
+  synthesizeMemberBundle,
+} from "./business-bundle.js";
 import { hash } from "./storage.js";
 import type {
+  BusinessBundle,
   RuntimePluginTarget,
   Version,
   VersionMember,
@@ -184,6 +190,7 @@ export function validateCompositionMembers(
 export function resolveRuntimePlugins(
   version: Version,
   getVersion: (id: string) => Version,
+  onSynthesized?: (versionId: string, bundle: BusinessBundle) => void,
 ): RuntimePluginTarget[] {
   validateCompositionMembers(version, getVersion);
   const plugins: RuntimePluginTarget[] = [];
@@ -191,24 +198,31 @@ export function resolveRuntimePlugins(
     if (!member.enabled) continue;
     const targetId = member.versionId ?? version.id;
     const target = targetId === version.id ? version : getVersion(targetId);
-    const evidence = target.evidence as { origin?: unknown } | null;
-    const fromEvolution =
-      typeof evidence?.origin === "string" &&
-      evidence.origin.startsWith("evolution-");
-    if (fromEvolution && !target.bundle?.outputs)
-      throw new AppError(
-        "INVALID_COMPOSITION",
-        `自迭代成员缺少可信构建产物：${member.pluginId}`,
-      );
+    const generated = isGeneratedMember(target.evidence);
+    let bundle = target.bundle;
+    if (generated && !bundle?.outputs?.["business/entry.js"]) {
+      try {
+        bundle = synthesizeMemberBundle(target.source);
+        onSynthesized?.(target.id, bundle);
+      } catch (error) {
+        const detail =
+          error instanceof ProtectedCandidateError || error instanceof Error
+            ? error.message
+            : "合成失败";
+        throw new AppError(
+          "INVALID_COMPOSITION",
+          `自迭代成员缺少可信构建产物：${member.pluginId}（${detail}）`,
+        );
+      }
+    }
     plugins.push({
       pluginId: target.pluginId,
       entry: target.entry,
       service: target.service,
-      bundle: target.bundle,
+      bundle,
       role: member.role,
-      // AI/evolution members must ship a trusted bundle; native import is
-      // only for explicit non-generated compatibility (fixtures, builtins).
-      allowNativeImport: !fromEvolution,
+      // Generated members require modules; native import only for fixtures/builtins.
+      allowNativeImport: !generated,
     });
   }
   return plugins;

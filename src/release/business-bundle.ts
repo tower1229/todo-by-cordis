@@ -1,5 +1,7 @@
 import { stripTypeScriptTypes } from "node:module";
 import { posix } from "node:path";
+import { hash } from "./storage.js";
+import type { BusinessBundle } from "./types.js";
 
 export class ProtectedCandidateError extends Error {}
 export class CandidateValidationError extends Error {
@@ -12,6 +14,51 @@ export class CandidateValidationError extends Error {
 }
 export const businessPath = (path: string) =>
   /^business\/[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*\.(ts|json)$/.test(path);
+
+/** Single-file auxiliary plugin → trusted business artifact shape (no tsc). */
+export function memberArtifactFiles(source: string): Record<string, string> {
+  return {
+    "business/entry.ts": source,
+    "business/view.ts": 'export default { title: "extension", fields: [] };',
+    "business/config.json": "{}",
+    "business/compatibility.json": '{"preserveUnknownFields":true}',
+  };
+}
+
+/**
+ * Import-gated strip build for auxiliary members (new record + legacy load).
+ * Same checkBusinessImports gate as main candidates; emits VM modules without forking tsc.
+ */
+export function synthesizeMemberBundle(source: string): BusinessBundle {
+  if (!source?.trim())
+    throw new ProtectedCandidateError("辅助成员源码为空");
+  const files = memberArtifactFiles(source);
+  checkBusinessImports(files);
+  const outputs: Record<string, string> = {};
+  for (const [path, content] of Object.entries(files)) {
+    if (!path.endsWith(".ts")) continue;
+    outputs[path.replace(/\.ts$/, ".js")] = stripTypeScriptTypes(content);
+  }
+  if (!outputs["business/entry.js"])
+    throw new ProtectedCandidateError("辅助成员可信构建缺少入口产物");
+  return {
+    files,
+    outputs,
+    lockHash: hash(files),
+    builder: "member-strip/1",
+  };
+}
+
+/** Evolution-generated members require restricted load (bundle / no native import). */
+export function isGeneratedMember(evidence: unknown): boolean {
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence))
+    return false;
+  const row = evidence as { generated?: unknown; origin?: unknown };
+  if (row.generated === true) return true;
+  return (
+    typeof row.origin === "string" && row.origin.startsWith("evolution-")
+  );
+}
 
 /** All files are data until the trusted compiler and linker accept the graph. */
 export function parseBusinessFiles(value: unknown): Record<string, string> {

@@ -999,11 +999,124 @@ test("通过验证的辅助成员记版含可信 bundle，不以提交字符串�
   assert.ok(tagsMember?.versionId);
   const tagsVersion = ctx.w.release.get(tagsMember!.versionId!);
   assert.ok(tagsVersion.bundle?.outputs["business/entry.js"]);
-  assert.notEqual(
+  assert.equal(
     tagsVersion.code,
-    normalizedTagsSource,
-    "execution code must come from trusted build outputs, not raw submission",
+    tagsVersion.bundle!.outputs["business/entry.js"],
+    "execution code must be trusted build output",
   );
+  assert.equal(tagsVersion.bundle?.builder, "member-strip/1");
   assert.equal(tagsVersion.source, normalizedTagsSource);
+  assert.equal(
+    (tagsVersion.evidence as { generated?: boolean }).generated,
+    true,
+  );
+});
+
+test("旧 evolution 辅成员无 bundle 时激活可合成并回写，命令仍可用", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-legacy-member-"));
+  const w = await Workspace.open(join(directory, "workspace.db"));
+  t.after(async () => {
+    await w.close().catch(() => undefined);
+    await rm(directory, { recursive: true, force: true });
+  });
+  const { due } = await activateDual(w);
+  const legacySource = await asIsTagsSource();
+  const legacy = w.release.record({
+    pluginId: "tags",
+    name: "标签插件",
+    service: "plugin:tags",
+    contractVersion: "extensions/1",
+    source: legacySource,
+    code: legacySource,
+    definition: { id: "tags" },
+    evidence: {
+      passed: true,
+      origin: "evolution-member-upgrade",
+    },
+  });
+  assert.equal(legacy.bundle, undefined);
+  const composition = w.release.record({
+    pluginId: "aux-workflow",
+    name: "双贡献组合",
+    service: "workflow",
+    contractVersion: "workflow/1",
+    source: w.activeVersion().source,
+    code: w.activeVersion().code,
+    definition: w.activeVersion().definition,
+    evidence: { passed: true, origin: "test" },
+    members: [
+      { pluginId: "aux-workflow", enabled: true, role: "workflow" },
+      {
+        pluginId: "tags",
+        versionId: legacy.id,
+        enabled: true,
+        role: "auxiliary",
+      },
+      {
+        pluginId: "due",
+        versionId: due.id,
+        enabled: true,
+        role: "auxiliary",
+      },
+    ],
+  });
+  await w.activate(
+    {
+      versionId: composition.id,
+      compositionRevision: w.composition().revision,
+      operationId: randomUUID(),
+    },
+    () => undefined,
+  );
+  const created = await w.command({
+    type: "create",
+    title: "legacy-tags",
+    compositionRevision: w.composition().revision,
+    operationId: randomUUID(),
+  });
+  const tagged = await w.command({
+    type: "action",
+    taskId: created.task!.id,
+    actionId: "setTags",
+    expectedRevision: created.task!.revision,
+    input: { tags: "  Keep  " },
+    operationId: randomUUID(),
+    compositionRevision: w.composition().revision,
+  });
+  assert.equal(tagged.task?.fields.tags, "  Keep  ");
+  const persisted = w.release.get(legacy.id);
+  assert.ok(
+    persisted.bundle?.outputs["business/entry.js"],
+    "legacy synthesize must attachBundle",
+  );
+});
+
+test("Seam B: generated 成员禁止无 modules 的原生 import", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-seam-b-"));
+  const w = await Workspace.open(join(directory, "workspace.db"));
+  t.after(async () => {
+    await w.close().catch(() => undefined);
+    await rm(directory, { recursive: true, force: true });
+  });
+  await activateDual(w);
+  const entry = w.activeVersion().entry;
+  const { Runtime } = await import("../../src/runtime/runtime.js");
+  await assert.rejects(
+    Runtime.start({
+      entry,
+      service: "workflow",
+      pluginId: "aux-workflow",
+      plugins: [
+        {
+          pluginId: "tags",
+          entry,
+          service: "plugin:tags",
+          role: "auxiliary",
+          allowNativeImport: false,
+        },
+      ],
+    }),
+    /可信构建产物|原生模块加载/,
+  );
 });
 

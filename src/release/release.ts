@@ -92,6 +92,34 @@ export class Release {
       .run(version.id, JSON.stringify(stored));
     return this.get(version.id);
   }
+  /**
+   * Persist a synthesized bundle onto an existing version id (legacy evolution
+   * members recorded before trusted member builds). Keeps the composition lock.
+   */
+  attachBundle(id: string, bundle: BusinessBundle): Version {
+    const current = this.get(id);
+    if (current.bundle?.outputs?.["business/entry.js"]) return current;
+    if (!bundle.outputs["business/entry.js"])
+      throw new Error("合成产物缺少入口");
+    // Keep code/entry bytes unchanged so verifyArtifacts still matches plugin.mjs;
+    // restricted load uses bundle.outputs modules.
+    const stored: Version = {
+      ...current,
+      bundle,
+    };
+    for (const [path, content] of Object.entries({
+      ...bundle.files,
+      ...bundle.outputs,
+    })) {
+      const target = join(resolve(this.directory), id, path);
+      mkdirSync(dirname(target), { recursive: true });
+      if (!existsSync(target)) writeFileSync(target, content, { mode: 0o444 });
+    }
+    this.db
+      .prepare("UPDATE plugin_versions SET body=? WHERE id=?")
+      .run(JSON.stringify(stored), id);
+    return this.get(id);
+  }
   private writeArtifacts(version: Version) {
     if (existsSync(version.entry)) return;
     const stage = join(this.directory, `staging-${randomUUID()}`);
@@ -141,11 +169,17 @@ export class Release {
   }
   async start(version: Version) {
     this.verifyArtifacts(version);
-    const plugins = resolveRuntimePlugins(version, (id) => {
-      const member = this.get(id);
-      if (member.id !== version.id) this.verifyArtifacts(member);
-      return member;
-    });
+    const plugins = resolveRuntimePlugins(
+      version,
+      (id) => {
+        const member = this.get(id);
+        if (member.id !== version.id) this.verifyArtifacts(member);
+        return member;
+      },
+      (versionId, bundle) => {
+        this.attachBundle(versionId, bundle);
+      },
+    );
     return this.launch({ ...version, plugins });
   }
   async prepare(
