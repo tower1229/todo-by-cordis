@@ -163,7 +163,7 @@ export function describeBlockers(blockers: string[]): {
       userMessage:
         "这项改进需要系统级能力（例如到点提醒、外部通知或宿主升级），当前不能自行完成。可改成不依赖这些能力的需求，或等待维护者补齐后再试。",
     };
-  if (/缺少可靠.*检查器|验证能力补齐|检查器|冻结业务案例|未被本次提交的冻结案例覆盖/.test(text))
+  if (/缺少可靠.*检查器|验证能力补齐|检查器|冻结业务案例|未被本次提交的冻结案例覆盖|受影响动作缺少成对冻结案例|未授权动作/.test(text))
     return {
       message,
       blockReason: "missing-checker",

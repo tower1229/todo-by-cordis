@@ -14,36 +14,12 @@ import { panelPluginCode } from "../fixtures/member-ui.js";
 import { source } from "./evolution-fixture.js";
 import { parseMemberCases } from "../../src/server/business-verification.js";
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
+import { tagsMemberCases, dueMemberCases, panelMemberCases } from "./member-case-fixtures.js";
 
 // Seam A: Evolution public control plane → isolated Workspace command/query.
 // Frozen member cases are the business oracle; smoke matching decide output is not enough.
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "../fixtures");
-
-const tagsMemberCases = [
-  {
-    name: "标签去空格转小写",
-    member: "tags",
-    state: "open",
-    fields: {},
-    action: "setTags",
-    input: { tags: "  Hello " },
-    expected: {
-      kind: "commit" as const,
-      state: "open",
-      fields: { tags: "hello" },
-    },
-  },
-  {
-    name: "空白标签拒绝",
-    member: "tags",
-    state: "open",
-    fields: {},
-    action: "setTags",
-    input: { tags: "   " },
-    expected: { kind: "reject" as const },
-  },
-];
 
 const freezeTagsPlan = {
   summary: "冻结标签规范化验收并升级 tags",
@@ -323,30 +299,7 @@ test("成员级正例与拒绝案例在无关后续迭代中继续参与验收�
     outcome: "截止日期仍按成员命令可用",
     dataImpact: "保留 tags 精确版本与冻结验收；升级 due 成员版本",
     memberUpgrades: [{ pluginId: "due" }],
-    memberCases: [
-      {
-        name: "设置截止日期成功",
-        member: "due",
-        state: "open",
-        fields: {},
-        action: "setDue",
-        input: { dueAt: "2026-09-20T00:00:00Z" },
-        expected: {
-          kind: "commit" as const,
-          state: "open",
-          fields: { dueAt: "2026-09-20T00:00:00Z" },
-        },
-      },
-      {
-        name: "已完成不可设截止",
-        member: "due",
-        state: "done",
-        fields: {},
-        action: "setDue",
-        input: { dueAt: "2026-09-21T00:00:00Z" },
-        expected: { kind: "reject" as const },
-      },
-    ],
+    memberCases: dueMemberCases,
     workflowRules: [],
   };
   submitted = [{ pluginId: "due", source: dueSource }];
@@ -790,37 +743,13 @@ test("新增辅助成员可冻结正反例；错误实现验证失败", async (t
     return { kind: "reject", message: "未知动作" };
   },
 };`;
-  const panelCases = [
-    {
-      name: "打备注标记成功",
-      member: "panel",
-      state: "open",
-      fields: {},
-      action: "markNote",
-      input: {},
-      expected: {
-        kind: "commit" as const,
-        state: "open",
-        fields: { noteMark: "ok" },
-      },
-    },
-    {
-      name: "已完成不可打备注",
-      member: "panel",
-      state: "done",
-      fields: {},
-      action: "markNote",
-      input: {},
-      expected: { kind: "reject" as const },
-    },
-  ];
   const planning = new PlanningDriver({
     summary: "叠加备注面板并冻结验收",
     changes: ["新增 panel 辅助成员", "冻结 markNote 正反例"],
     outcome: "可打备注标记，已完成任务拒绝",
     dataImpact: "保留既有成员精确版本；新增 panel",
     memberAdditions: [{ pluginId: "panel", name: "备注面板插件" }],
-    memberCases: panelCases,
+    memberCases: panelMemberCases,
   });
   let submitted = [{ pluginId: "panel", source: brokenPanel }];
   const e = new Evolution(

@@ -152,16 +152,7 @@ function PlanDetails({ plan }: { plan: InvestigatedPlan }) {
           <div>
             <p className="font-medium text-ink">业务验收</p>
             <ul className="list-disc pl-5">
-              {(plan.affectedAcceptance?.coverageSummary?.length
-                ? [
-                    ...plan.affectedAcceptance.coverageSummary,
-                    ...plan.acceptance.filter(
-                      (line) =>
-                        !plan.affectedAcceptance!.coverageSummary.includes(line),
-                    ),
-                  ]
-                : plan.acceptance
-              ).map((c, i) => (
+              {plan.acceptance.map((c, i) => (
                 <li key={i}>{c}</li>
               ))}
             </ul>

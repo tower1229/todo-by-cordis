@@ -5,6 +5,10 @@ import {
   type MemberAcceptanceCase,
 } from "./business-verification.js";
 import {
+  unauthorizedMemberCommands,
+  type AffectedAcceptance,
+} from "./affected-acceptance.js";
+import {
   verifyViaIsolatedWorkspace,
   type WorkspaceAcceptanceCase,
 } from "./workspace-acceptance.js";
@@ -64,6 +68,7 @@ type Goal = {
   fields: Rule[];
   extensions?: BusinessExtensions;
   memberCases?: MemberAcceptanceCase[];
+  affectedAcceptance?: AffectedAcceptance;
   repairEvidence?: InvestigatedPlan["repairEvidence"];
   acceptanceRevision?: InvestigatedPlan["acceptanceRevision"];
   scope?: string[];
@@ -344,6 +349,9 @@ export class EvolutionDomain implements Domain {
           ? { memberUpgrades: plan.memberUpgrades }
           : {}),
         ...(plan.memberCases?.length ? { memberCases: plan.memberCases } : {}),
+        ...(plan.affectedAcceptance
+          ? { affectedAcceptance: plan.affectedAcceptance }
+          : {}),
       },
     };
   }
@@ -764,6 +772,70 @@ export class EvolutionDomain implements Domain {
               ? "added"
               : "upgraded";
             checks.push(`member.${kind}:${member.pluginId}`);
+          }
+          if (
+            goal.affectedAcceptance &&
+            [...addedMembers, ...upgradedMembers].some((m) => m.enabled)
+          ) {
+            signal.throwIfAborted();
+            const priorCommands = new Map<string, string[]>();
+            if (plannedUpgrades.length) {
+              const baseRuntime = await this.workspace.release.start(base);
+              try {
+                for (const planned of plannedUpgrades) {
+                  const prior = await baseRuntime
+                    .invoke<ExtensionContribution>(
+                      "contribute",
+                      undefined,
+                      planned.pluginId,
+                    )
+                    .catch(() => emptyContribution());
+                  priorCommands.set(
+                    planned.pluginId,
+                    (prior.commands ?? []).map((c) => c.id),
+                  );
+                }
+              } finally {
+                await baseRuntime.close();
+              }
+            }
+            for (const member of [...addedMembers, ...upgradedMembers]) {
+              if (!member.enabled) continue;
+              const target = goal.affectedAcceptance.targets.find(
+                (t) => t.pluginId === member.pluginId,
+              );
+              const contribution = await runtime
+                .invoke<ExtensionContribution>(
+                  "contribute",
+                  undefined,
+                  member.pluginId,
+                )
+                .catch(() => emptyContribution());
+              const registered = (contribution.commands ?? []).map((c) => c.id);
+              const known = new Set(registered);
+              const { valid: uiContributions, faults } = resolveUiContributions(
+                contribution,
+                known,
+                member.pluginId,
+              );
+              if (faults.length)
+                throw new Error(
+                  `成员 UI 贡献无效：${member.pluginId}；${faults.map((f) => f.reason).join("；")}`,
+                );
+              void uiContributions;
+              const unauthorized = unauthorizedMemberCommands({
+                registered,
+                authorized: target?.actions ?? [],
+                ...(upgradedMembers.some((m) => m.pluginId === member.pluginId)
+                  ? { prior: priorCommands.get(member.pluginId) ?? [] }
+                  : {}),
+              });
+              if (unauthorized.length)
+                throw new Error(
+                  `未授权动作：成员 ${member.pluginId} 注册了计划未覆盖的命令 ${unauthorized.join("、")}，请重新规划并提交对应冻结案例`,
+                );
+              checks.push(`member.authorized:${member.pluginId}`);
+            }
           }
           signal.throwIfAborted();
         } finally {

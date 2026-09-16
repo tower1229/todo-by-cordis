@@ -13,6 +13,7 @@ import type { WorkflowDefinition } from "../../src/shared/contracts.js";
 import { PlanningDriver, toolReply } from "./planning-fixture.js";
 import { activateDual } from "./dual-composition-fixture.js";
 import { capture, readInvestigation } from "../../src/server/planning.js";
+import { tagsMemberCases } from "./member-case-fixtures.js";
 
 // Seam: Evolution investigation → inspect_application externally visible content.
 // Asserts live composition members + extension registry facts, not private assemblers.
@@ -551,30 +552,7 @@ test("生成阶段 read_member 返回活动组合成员精确源码", async (t) 
     outcome: "标签规范化",
     dataImpact: "保留主工作流与 due",
     memberUpgrades: [{ pluginId: "tags" }],
-    memberCases: [
-      {
-        name: "标签去空格转小写",
-        member: "tags",
-        state: "open",
-        fields: {},
-        action: "setTags",
-        input: { tags: "  Hello " },
-        expected: {
-          kind: "commit" as const,
-          state: "open",
-          fields: { tags: "hello" },
-        },
-      },
-      {
-        name: "空白标签拒绝",
-        member: "tags",
-        state: "open",
-        fields: {},
-        action: "setTags",
-        input: { tags: "   " },
-        expected: { kind: "reject" as const },
-      },
-    ],
+    memberCases: tagsMemberCases,
     workflowRules: [] as {
       key: string;
       label: string;

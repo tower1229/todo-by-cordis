@@ -209,8 +209,35 @@ export function parseMemberCases(
   allowedMembers: Set<string>,
   states: Record<string, unknown>,
 ): MemberAcceptanceCase[] | undefined {
+  const resolved = resolveMemberCases(
+    value,
+    previous,
+    allowedMembers,
+    states,
+  );
+  return resolved.merged;
+}
+
+/**
+ * Single-pass resolve: omit/empty inherits previous; otherwise parse submitted
+ * once and merge with previous by case name.
+ */
+export function resolveMemberCases(
+  value: unknown,
+  previous: MemberAcceptanceCase[] | undefined,
+  allowedMembers: Set<string>,
+  states: Record<string, unknown>,
+): {
+  omitted: boolean;
+  submitted: MemberAcceptanceCase[] | "omit";
+  merged: MemberAcceptanceCase[] | undefined;
+} {
   if (value === undefined || (Array.isArray(value) && value.length === 0))
-    return previous ? structuredClone(previous) : undefined;
+    return {
+      omitted: true,
+      submitted: "omit",
+      merged: previous ? structuredClone(previous) : undefined,
+    };
   if (!Array.isArray(value) || value.length > 40)
     throw new Error("成员业务案例无效");
   const parsed: MemberAcceptanceCase[] = [];
@@ -249,7 +276,7 @@ export function parseMemberCases(
     (c) => `${c.member}:${c.action}`,
     "每个成员动作必须有正例和反例",
   );
-  return merged;
+  return { omitted: false, submitted: parsed, merged };
 }
 
 export function memberCaseSummaries(
