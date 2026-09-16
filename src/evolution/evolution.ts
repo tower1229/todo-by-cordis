@@ -22,7 +22,9 @@ import {
   CandidateValidationError,
 } from "../release/business-bundle.js";
 import { hash } from "../release/storage.js";
-import type { ExperienceSessionHost } from "../server/experience-session.js";
+import {
+  ExperienceSessionHost,
+} from "../server/experience-session.js";
 import { experienceSessionBanner } from "../shared/assistant.js";
 export type Target = {
   kind: "plugin";
@@ -122,6 +124,8 @@ const editable = (status: string) =>
     status,
   );
 export class Evolution {
+  private sessions?: ExperienceSessionHost;
+  private limits = { calls: 12, candidates: 3, milliseconds: 600_000 };
   private active?: {
     id: string;
     controller: AbortController;
@@ -131,9 +135,15 @@ export class Evolution {
     private db: DatabaseSync,
     private driver: Driver,
     private domain: Domain,
-    private sessions?: ExperienceSessionHost,
-    private limits = { calls: 12, candidates: 3, milliseconds: 600_000 },
+    sessionsOrLimits?:
+      | ExperienceSessionHost
+      | { calls: number; candidates: number; milliseconds: number },
+    maybeLimits?: { calls: number; candidates: number; milliseconds: number },
   ) {
+    if (sessionsOrLimits instanceof ExperienceSessionHost) {
+      this.sessions = sessionsOrLimits;
+      if (maybeLimits) this.limits = maybeLimits;
+    } else if (sessionsOrLimits) this.limits = sessionsOrLimits;
     db.exec(`CREATE TABLE IF NOT EXISTS evolution_runs(id TEXT PRIMARY KEY,body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS evolution_operations(id TEXT PRIMARY KEY,hash TEXT NOT NULL,runId TEXT NOT NULL,receipt TEXT);
       CREATE TABLE IF NOT EXISTS evolution_acceptance_revisions(id TEXT PRIMARY KEY,runId TEXT NOT NULL,body TEXT NOT NULL);
