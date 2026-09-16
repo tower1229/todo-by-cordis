@@ -7,9 +7,14 @@ import {
   type AssistantService,
 } from "./assistant.js";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import {
+  ExperienceSessionHost,
+} from "./experience-session.js";
+import type { Command } from "../shared/contracts.js";
 export function createApp(
   workspace: Workspace,
   assistant: AssistantService = unavailableAssistant,
+  sessions: ExperienceSessionHost = new ExperienceSessionHost(workspace),
 ) {
   const app = new Hono();
   app.onError((error, c) => {
@@ -81,6 +86,34 @@ export function createApp(
   app.post("/api/runtime/retry", async (c) => {
     await workspace.restart();
     return c.json(workspace.composition());
+  });
+  app.get("/api/experience", (c) => {
+    const observed = sessions.observe({
+      sessionId: c.req.query("sessionId"),
+      runId: c.req.query("runId"),
+    });
+    if (observed.status === "none") return c.json(observed);
+    if (observed.status === "invalid") return c.json(observed);
+    return c.json(sessions.readSnapshot(observed.id));
+  });
+  app.post("/api/experience/end", async (c) => {
+    const body = (await c.req.json()) as Record<string, unknown>;
+    sessions.rejectUntrustedFields(body);
+    const sessionId =
+      typeof body.sessionId === "string" ? body.sessionId : undefined;
+    await sessions.end(sessionId);
+    return c.json({ ok: true });
+  });
+  app.post("/api/experience/commands", async (c) => {
+    const body = (await c.req.json()) as Record<string, unknown>;
+    sessions.rejectUntrustedFields(body);
+    if (typeof body.sessionId !== "string" || !body.sessionId)
+      throw new AppError("INVALID_INPUT", "体验会话无效");
+    const { sessionId, ...rest } = body;
+    const command = rest as Omit<Command, "compositionRevision">;
+    if (typeof command.operationId !== "string" || !command.operationId)
+      throw new AppError("INVALID_INPUT", "操作标识无效");
+    return c.json(await sessions.command(sessionId, command));
   });
   return app;
 }

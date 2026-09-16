@@ -6,6 +6,7 @@ import {
   isStringRecord,
   sendCommand,
 } from "./api.js";
+import { sendExperienceCommand } from "./experience-api.js";
 import { Button, ErrorMessage, Spinner } from "./ui.js";
 export type ActionForm = {
   task: Task;
@@ -13,6 +14,7 @@ export type ActionForm = {
   label: string;
   fields: Field[];
   revision: number;
+  experienceSessionId?: string;
 };
 export function InputForm({
   form,
@@ -48,14 +50,17 @@ export function InputForm({
         setBusy(true);
         setError("");
         try {
-          const result = await sendCommand({
-            type: "action",
+          const payload = {
+            type: "action" as const,
             taskId: form.task.id,
             actionId: form.actionId,
             input,
             expectedRevision: form.task.revision,
             compositionRevision: form.revision,
-          });
+          };
+          const result = form.experienceSessionId
+            ? await sendExperienceCommand(form.experienceSessionId, payload)
+            : await sendCommand(payload);
           if (result.decision?.kind === "input-required") {
             setError("请补充必填内容");
             return;

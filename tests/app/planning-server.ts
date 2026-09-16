@@ -10,8 +10,10 @@ import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { PlanningDriver, toolReply } from "./planning-fixture.js";
 import { candidateSource, candidateScope } from "./evolution-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
+import { ExperienceSessionHost } from "../../src/server/experience-session.js";
 const dir = mkdtempSync(join(tmpdir(), "cordis-browser-plan-"));
 const workspace = await Workspace.open(join(dir, "workspace.db"));
+const experienceSessions = new ExperienceSessionHost(workspace);
 const planning = new PlanningDriver();
 let clarify = false;
 const evolution = new Evolution(
@@ -81,14 +83,16 @@ const evolution = new Evolution(
     },
   },
   new EvolutionDomain(workspace),
+  experienceSessions,
 );
-const app = createApp(workspace, evolution);
+const app = createApp(workspace, evolution, experienceSessions);
 app.use("/*", serveStatic({ root: "./dist/web" }));
 app.get("*", serveStatic({ path: "./dist/web/index.html" }));
 const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 4519 });
 async function stop() {
   await new Promise<void>((r) => server.close(() => r()));
   await evolution.close();
+  await experienceSessions.close();
   await workspace.close();
   rmSync(dir, { recursive: true, force: true });
   process.exit(0);

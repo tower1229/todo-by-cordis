@@ -10,6 +10,7 @@ import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { AppError } from "../../src/shared/contracts.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
+import { evolutionWithExperience } from "./evolution-session-fixture.js";
 import { activateDual } from "./dual-composition-fixture.js";
 import { candidateScope, source } from "./evolution-fixture.js";
 import { toolReply } from "./planning-fixture.js";
@@ -166,13 +167,13 @@ export default plugin;`,
 
 async function realAwaitingApply(t: TestContext) {
   const ctx = await dualWithTaggedTask(t);
-  const e = new Evolution(
-    ctx.w.db,
+  const { evolution: e, sessions } = evolutionWithExperience(
+    ctx.w,
     new ExecutionDriver(new PlanningDriver(), "aux-workflow", "双贡献组合"),
-    new EvolutionDomain(ctx.w),
   );
   t.after(async () => {
     await e.close();
+    await sessions.close();
   });
   await e.command({
     type: "request",
@@ -316,10 +317,9 @@ test("完整组合继承候选的隔离 Workspace 验收绑定整组合，体验
   assert.equal(experience.run?.status, "awaiting-apply");
   if (experience.run?.status !== "awaiting-apply")
     throw new Error("expected awaiting-apply");
-  assert.equal(experience.run.experience?.marked, "not-applied");
-  assert.equal(experience.run.experience?.isolated, true);
-  assert.equal(experience.run.experience?.simulated, true);
-  assert.match(experience.run.experience?.note ?? "", /尚未应用|模拟/);
+  assert.equal(experience.run.experienceSession?.candidateId, candidate.id);
+  assert.equal(experience.run.experienceSession?.status, "active");
+  assert.match(experience.run.experienceSession?.note ?? "", /隔离库|尚未应用/);
   assert.equal(w.composition().versionId, before.versionId);
   assert.equal(
     w.query().tasks.find((task) => task.id === taskId)?.fields.tags,

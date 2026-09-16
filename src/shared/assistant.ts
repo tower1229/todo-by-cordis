@@ -229,6 +229,7 @@ export type AssistantRun = Run &
         steps: AssistantStep[];
         summary: string;
         experience?: ExperienceReport;
+        experienceSession?: ExperienceSessionView;
       }
     | {
         status: "applying";
@@ -251,6 +252,20 @@ export type ExperienceReport = {
   presentation?: { title: string; fields: string[] };
   uiContributions?: ResolvedUiContribution[];
   note: string;
+};
+
+export const experienceSessionBanner =
+  "候选体验 · 测试数据 · 尚未应用" as const;
+
+export type ExperienceSessionView = {
+  id: string;
+  status: "active" | "ended" | "invalid";
+  banner: typeof experienceSessionBanner;
+  runId: string;
+  candidateId: string;
+  taskId: string;
+  note: string;
+  invalidReason?: string;
 };
 export type CandidateAttempt = {
   id: string;

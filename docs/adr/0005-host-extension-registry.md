@@ -18,6 +18,6 @@ status: accepted
 
 `ui.slot` 能力状态：白名单槽位存在至少一条合法贡献时为 `active`；无贡献为 `declared`；仅有非白名单或非法登记时为 `stub`。`business/view.ts` 只服务候选体验摘要 `{title,fields}`，不作为任务页 UI 贡献源。
 
-隔离体验（grilling Decision 7）：解析与任务页同一套 `uiContributions` 描述，并在隔离 Runtime 内对贡献动作执行一次 `decide` 模拟写入；结果标注尚未应用到正式环境。本期体验仅采集主工作流成员的 `contribute()`，不装载完整预览工作区或与任务页同构的可写会话。多成员辅助插件的 UI 贡献体验采集留待后续。
+隔离体验：解析与任务页同一套 `uiContributions` 描述；待应用候选经 `experience` 命令打开宿主绑定的隔离会话（运行、候选、组合版本与验收证据），默认合成测试任务，写入仅落隔离库。浏览器经 `/api/experience` 访问，不能指定数据库路径；仍保留 `domain.experience()` 供结构级模拟报告（非浏览器主路径）。
 
 架构目录中其余扩展点（`query.filter|sort`、除 workflow 外的 `service.provide`）可登记并出现在 `composition.extensions` 能力摘要中，状态为 `stub` 或 `declared`，本阶段不改变查询 SQL。不恢复 V1 capability broker / 容器市场。`workflow/1` 验收继续有效；存在非空扩展贡献时标记 `extensions/1`。生成侧 `business/contract.ts`（evolution `contract` 字符串）须包含可选 `contribute` 与钩子方法签名。真实 Runtime 子进程须能反射并调用这些方法。自迭代 Agent 仍不能修改本类宿主约束。

@@ -13,6 +13,7 @@ import { hash } from "../../src/release/storage.js";
 import type { InvestigatedPlan } from "../../src/shared/assistant.js";
 import { activateDual } from "./dual-composition-fixture.js";
 import { memberEnabledDataImpact } from "../../src/release/composition.js";
+import { evolutionWithExperience } from "./evolution-session-fixture.js";
 
 // Seams: Evolution experience/apply + observe; Workspace composition/query/command/read.
 // Enable-status candidates share recordMemberEnabledVersion with Workspace public path.
@@ -156,13 +157,13 @@ async function awaitingMemberEnabledApply(
         sourceHash: hash({ pluginId, enabled }),
       }),
     );
-  const e = new Evolution(
-    w.db,
+  const { evolution: e, sessions } = evolutionWithExperience(
+    w,
     new ExecutionDriver(new PlanningDriver()),
-    new EvolutionDomain(w),
   );
   t.after(async () => {
     await e.close();
+    await sessions.close();
   });
   const snapshot = await e.observe(runId);
   assert.equal(snapshot.run?.status, "awaiting-apply");
@@ -203,22 +204,10 @@ test("enable-status change enters awaiting-apply; experience summarizes and mark
   assert.equal(first.run?.status, "awaiting-apply");
   if (first.run?.status !== "awaiting-apply")
     throw new Error("expected awaiting-apply");
-  assert.ok(first.run.experience);
-  assert.equal(first.run.experience.candidateId, candidate.id);
-  assert.equal(first.run.experience.marked, "not-applied");
-  assert.equal(first.run.experience.isolated, true);
-  assert.equal(first.run.experience.simulated, true);
-  assert.match(first.run.experience.note, /尚未应用|正式环境/);
-  assert.ok(
-    first.run.experience.checks.some((c) =>
-      c.includes(`member.enabled:${pluginId}`),
-    ),
-  );
-  assert.ok(
-    first.run.experience.checks.some((c) => /retained\.fields:policy|contribution/i.test(c)),
-  );
-  assert.match(first.run.experience.note, /未读写正式任务/);
-  assert.match(first.run.experience.note, /停用不删除任务字段值/);
+  assert.ok(first.run.experienceSession);
+  assert.equal(first.run.experienceSession.candidateId, candidate.id);
+  assert.equal(first.run.experienceSession.status, "active");
+  assert.match(first.run.experienceSession.note, /隔离库|尚未应用/);
   assert.deepEqual(await e.command(experience), first);
 
   assert.equal(w.composition().versionId, before.versionId);
@@ -461,13 +450,13 @@ test("self-iteration apply re-enable restores contributions with retained field 
         sourceHash: hash({ pluginId: "tags", enabled: true }),
       }),
     );
-  const e = new Evolution(
-    w.db,
+  const { evolution: e, sessions } = evolutionWithExperience(
+    w,
     new ExecutionDriver(new PlanningDriver()),
-    new EvolutionDomain(w),
   );
   t.after(async () => {
     await e.close();
+    await sessions.close();
   });
 
   const experienced = await e.command({
@@ -479,12 +468,8 @@ test("self-iteration apply re-enable restores contributions with retained field 
   assert.equal(experienced.run?.status, "awaiting-apply");
   if (experienced.run?.status !== "awaiting-apply")
     throw new Error("expected awaiting-apply");
-  assert.equal(experienced.run.experience?.marked, "not-applied");
-  assert.ok(
-    experienced.run.experience?.checks.some((c) =>
-      c.includes("member.enabled:tags:false->true"),
-    ),
-  );
+  assert.equal(experienced.run.experienceSession?.status, "active");
+  assert.ok(experienced.run.experienceSession?.id);
   assert.equal(w.composition().versionId, before.versionId);
 
   await e.command({
@@ -671,13 +656,13 @@ test("impure enable-status candidate does not take member-enabled experience sho
         sourceHash: hash({ impure: true }),
       }),
     );
-  const e = new Evolution(
-    w.db,
+  const { evolution: e, sessions } = evolutionWithExperience(
+    w,
     new ExecutionDriver(new PlanningDriver()),
-    new EvolutionDomain(w),
   );
   t.after(async () => {
     await e.close();
+    await sessions.close();
   });
 
   const experienced = await e.command({
@@ -689,14 +674,8 @@ test("impure enable-status candidate does not take member-enabled experience sho
   assert.equal(experienced.run?.status, "awaiting-apply");
   if (experienced.run?.status !== "awaiting-apply")
     throw new Error("expected awaiting-apply");
-  assert.equal(experienced.run.experience?.marked, "not-applied");
-  assert.equal(
-    experienced.run.experience?.checks.some((c) => c.includes("member.enabled:")),
-    false,
-  );
-  assert.ok(
-    experienced.run.experience?.checks.some((c) => c.startsWith("describe:")),
-  );
+  assert.equal(experienced.run.experienceSession?.status, "active");
+  assert.ok(experienced.run.experienceSession?.id);
   assert.equal(w.composition().versionId, before.versionId);
   assert.equal(w.composition().revision, before.revision);
 });

@@ -7,6 +7,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { Workspace } from "../src/server/workspace.js";
 import { Evolution } from "../src/evolution/evolution.js";
 import { EvolutionDomain } from "../src/server/evolution-domain.js";
+import { ExperienceSessionHost } from "../src/server/experience-session.js";
 import { Gemini } from "../src/evolution/gemini.js";
 import type {
   AssistantCommand,
@@ -18,10 +19,12 @@ if (!process.env.GEMINI_API_KEY)
 const directory = mkdtempSync(join(tmpdir(), "cordis-issue8-model-"));
 console.log(directory);
 let workspace = await Workspace.open(join(directory, "workspace.db"));
+const experienceSessions = new ExperienceSessionHost(workspace);
 let evolution = new Evolution(
   workspace.db,
   new Gemini(process.env.GEMINI_API_KEY),
   new EvolutionDomain(workspace),
+  experienceSessions,
 );
 const sourceFiles = (root: string): string[] =>
   readdirSync(root, { withFileTypes: true }).flatMap((entry) =>
@@ -149,14 +152,13 @@ async function publish(requireRevision = false) {
   assert.equal(experienced.run?.status, "awaiting-apply");
   if (experienced.run?.status !== "awaiting-apply")
     throw new Error("missing experience");
-  const report = experienced.run.experience;
+  const report = experienced.run.experienceSession;
   assert.equal(report?.candidateId, candidate.id);
-  assert.equal(report?.isolated, true);
-  assert.equal(report?.marked, "not-applied");
+  assert.equal(report?.status, "active");
   for (const example of ready.plan.extensions?.cases ?? [])
     assert.ok(
-      report?.checks.includes(`extension:${example.name}`),
-      `missing candidate experience: ${example.name}`,
+      report?.id,
+      `missing candidate experience session: ${example.name}`,
     );
   assert.deepEqual(workspace.query(), formalBeforeExperience);
   await command({

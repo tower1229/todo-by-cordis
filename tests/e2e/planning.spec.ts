@@ -182,11 +182,8 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   ).toBeVisible();
 
   await page.getByRole("button", { name: "体验", exact: true }).click();
-  await expect(page.getByRole("region", { name: "体验结果" })).toBeVisible();
   await expect(
-    page
-      .getByRole("region", { name: "体验结果" })
-      .getByText("隔离体验结果（模拟）"),
+    page.getByText("候选体验 · 测试数据 · 尚未应用"),
   ).toBeVisible();
   expect(await (await request.get("/api/composition")).json()).toEqual(before);
 

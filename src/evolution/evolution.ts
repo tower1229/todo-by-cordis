@@ -22,6 +22,8 @@ import {
   CandidateValidationError,
 } from "../release/business-bundle.js";
 import { hash } from "../release/storage.js";
+import type { ExperienceSessionHost } from "../server/experience-session.js";
+import { experienceSessionBanner } from "../shared/assistant.js";
 export type Target = {
   kind: "plugin";
   baseVersion: string;
@@ -129,6 +131,7 @@ export class Evolution {
     private db: DatabaseSync,
     private driver: Driver,
     private domain: Domain,
+    private sessions?: ExperienceSessionHost,
     private limits = { calls: 12, candidates: 3, milliseconds: 600_000 },
   ) {
     db.exec(`CREATE TABLE IF NOT EXISTS evolution_runs(id TEXT PRIMARY KEY,body TEXT NOT NULL);
@@ -485,6 +488,7 @@ export class Evolution {
       work = "plan";
     } else if (command.type === "cancel") {
       record = this.get(command.runId);
+      this.sessions?.endForRun(record.run.id);
       if (!terminal(record.run.status) || record.run.status === "blocked") {
         const wasApplying = record.run.status === "applying";
         if (this.active?.id === record.run.id)
@@ -578,6 +582,7 @@ export class Evolution {
       if (
         !candidate.passed ||
         !candidate.versionId ||
+        !candidate.evidenceHash ||
         candidate.versionId !== (record.versionId ?? record.run.versionId)
       )
         throw new AppError(
@@ -585,18 +590,39 @@ export class Evolution {
           "候选已过期或不匹配，请重新规划",
           409,
         );
-      const report = await this.domain.experience(
-        candidate.versionId,
-        candidate.id,
-        AbortSignal.timeout(15_000),
-      );
+      if (!this.sessions)
+        throw new AppError(
+          "UNAVAILABLE",
+          "候选体验会话未配置",
+          503,
+        );
+      const plan = record.run.plan as InvestigatedPlan;
+      const target = record.target ?? this.domain.target(plan);
+      this.domain.check(target, plan.compositionRevision);
+      const snapshot = await this.sessions.start({
+        runId: record.run.id,
+        candidateId: candidate.id,
+        versionId: candidate.versionId,
+        evidenceHash: candidate.evidenceHash,
+        compositionRevision: plan.compositionRevision,
+        signal: AbortSignal.timeout(30_000),
+      });
       record.run = {
         ...record.run,
-        experience: report,
+        experienceSession: {
+          id: snapshot.id,
+          status: "active",
+          banner: experienceSessionBanner,
+          runId: snapshot.runId,
+          candidateId: snapshot.candidateId,
+          taskId: snapshot.taskId,
+          note: snapshot.note,
+        },
         updatedAt: new Date().toISOString(),
       };
     } else if (command.type === "apply") {
       record = this.get(command.runId);
+      this.sessions?.endForRun(record.run.id);
       if (record.run.status !== "awaiting-apply" || !("plan" in record.run))
         throw new AppError("PLAN_STALE", "没有可应用的候选", 409);
       const plan = record.run.plan as InvestigatedPlan;
@@ -1624,5 +1650,6 @@ export class Evolution {
   async close() {
     this.active?.controller.abort(new Error("宿主停止，运行已中断"));
     await this.active?.promise;
+    await this.sessions?.close();
   }
 }

@@ -22,6 +22,7 @@ import {
   panelMemberCases,
   tagsMemberCases,
 } from "./member-case-fixtures.js";
+import { evolutionWithExperience } from "./evolution-session-fixture.js";
 
 // Seams: Evolution public control plane (request/start/experience/apply/observe)
 // → Workspace composition/query/command. Real candidate generation only; no awaiting-apply seed.
@@ -141,13 +142,13 @@ async function dualWithTaggedTask(t: TestContext) {
 /** Real plan → start → candidate generation to awaiting-apply on dual composition. */
 async function realAwaitingApply(t: TestContext) {
   const ctx = await dualWithTaggedTask(t);
-  const e = new Evolution(
-    ctx.w.db,
+  const { evolution: e, sessions } = evolutionWithExperience(
+    ctx.w,
     new ExecutionDriver(new PlanningDriver(), "aux-workflow", "双贡献组合"),
-    new EvolutionDomain(ctx.w),
   );
   t.after(async () => {
     await e.close();
+    await sessions.close();
   });
   await e.command({
     type: "request",
@@ -195,9 +196,8 @@ test("只改工作流 A 并应用确认后，辅助成员 B 的身份版本启�
   assert.equal(experience.run?.status, "awaiting-apply");
   if (experience.run?.status !== "awaiting-apply")
     throw new Error("expected awaiting-apply");
-  assert.equal(experience.run.experience?.marked, "not-applied");
-  assert.equal(experience.run.experience?.isolated, true);
-  assert.match(experience.run.experience?.note ?? "", /尚未应用|模拟/);
+  assert.equal(experience.run.experienceSession?.status, "active");
+  assert.match(experience.run.experienceSession?.note ?? "", /隔离库|尚未应用/);
   assert.equal(w.composition().versionId, before.versionId);
   assert.equal(w.query().tasks.find((task) => task.id === taskId)?.fields.tags, "inherit-me");
 
@@ -458,8 +458,8 @@ test("真实候选业务验收失败时正式组合与任务相对开始前不�
 async function realAwaitingApplyAddMember(t: TestContext) {
   const ctx = await dualWithTaggedTask(t);
   const panelSource = await panelPluginCode();
-  const e = new Evolution(
-    ctx.w.db,
+  const { evolution: e, sessions } = evolutionWithExperience(
+    ctx.w,
     new ExecutionDriver(
       new PlanningDriver(addPanelPlan),
       "aux-workflow",
@@ -467,10 +467,10 @@ async function realAwaitingApplyAddMember(t: TestContext) {
       1,
       [{ pluginId: "panel", source: panelSource }],
     ),
-    new EvolutionDomain(ctx.w),
   );
   t.after(async () => {
     await e.close();
+    await sessions.close();
   });
   await e.command({
     type: "request",
@@ -518,9 +518,8 @@ test("经正常候选新增辅助成员后，应用前正式组合不变；应�
   assert.equal(experience.run?.status, "awaiting-apply");
   if (experience.run?.status !== "awaiting-apply")
     throw new Error("expected awaiting-apply");
-  assert.equal(experience.run.experience?.marked, "not-applied");
-  assert.equal(experience.run.experience?.isolated, true);
-  assert.match(experience.run.experience?.note ?? "", /尚未应用|模拟/);
+  assert.equal(experience.run.experienceSession?.status, "active");
+  assert.match(experience.run.experienceSession?.note ?? "", /隔离库|尚未应用/);
   assert.equal(w.composition().versionId, before.versionId);
   assert.deepEqual(memberSnapshot(w.composition()), memberSnapshot(before));
 

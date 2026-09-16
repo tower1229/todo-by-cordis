@@ -14,7 +14,7 @@ import { Workspace } from "../../src/server/workspace.js";
 import { Evolution } from "../../src/evolution/evolution.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { PlanningDriver } from "./planning-fixture.js";
-import { ExecutionDriver } from "./execution-fixture.js";
+import { evolutionWithExperience } from "./evolution-session-fixture.js";
 import { source } from "./evolution-fixture.js";
 import type { Driver } from "../../src/evolution/driver.js";
 
@@ -242,9 +242,10 @@ test("new provider and consumer implement an additional action with frozen indep
       };
     },
   };
-  const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+  const { evolution: e, sessions } = evolutionWithExperience(w, driver);
   t.after(async () => {
     await e.close();
+    await sessions.close();
     await w.close();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -286,7 +287,7 @@ test("new provider and consumer implement an additional action with frozen indep
   assert.equal(experience.run?.status, "awaiting-apply");
   if (experience.run?.status !== "awaiting-apply")
     throw new Error("expected candidate");
-  assert.ok(experience.run.experience?.checks.includes("extension:保留并累加"));
+  assert.equal(experience.run.experienceSession?.status, "active");
   assert.equal(w.composition().revision, 1);
   assert.equal(w.query().total, 0);
   const runtime = await w.release.start(

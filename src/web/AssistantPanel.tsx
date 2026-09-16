@@ -210,9 +210,14 @@ function PlanDetails({ plan }: { plan: InvestigatedPlan }) {
 export function AssistantPanel({
   controller,
   compositionRevision,
+  onExperienceStarted,
 }: {
   controller: AssistantController;
   compositionRevision: number;
+  onExperienceStarted?: (session: {
+    id: string;
+    runId: string;
+  }) => void;
 }) {
   const { snapshot, error, busy, draft, setDraft, command, working } =
     controller;
@@ -543,88 +548,30 @@ export function AssistantPanel({
               {run.summary}
             </p>
             <p className="rounded-md border border-line bg-canvas px-3 py-2 text-xs leading-5 text-muted">
-              候选已验证且尚未应用到正式环境。
-              {run.experience
-                ? ` ${run.experience.note}`
-                : " 可先隔离体验，再单独确认应用。"}
+              候选已验证且尚未应用到正式环境。可先打开隔离体验实际操作完整候选组合，再单独确认应用。
+              {run.experienceSession?.status === "active"
+                ? " 当前已有活跃的体验会话，刷新页面可继续。"
+                : ""}
             </p>
-            {run.experience && (
-              <section className="space-y-2 text-sm" aria-label="体验结果">
-                <p className="font-medium">隔离体验结果（模拟）</p>
-                <ul className="list-disc space-y-1 pl-5 text-muted">
-                  {run.experience.checks.map((check) => (
-                    <li key={check}>{check}</li>
-                  ))}
-                </ul>
-                {run.experience.presentation && (
-                  <p className="text-xs text-muted">
-                    界面：{run.experience.presentation.title} ·{" "}
-                    {run.experience.presentation.fields.join("、")}
-                  </p>
-                )}
-                {run.experience.uiContributions &&
-                  run.experience.uiContributions.length > 0 && (
-                    <div className="space-y-3" aria-label="体验 UI 贡献">
-                      <p className="text-xs text-muted">
-                        以下为与任务详情同结构的只读摘要；写入已在隔离环境模拟，未落正式任务。
-                      </p>
-                      {run.experience.uiContributions.map((item) => (
-                        <article
-                          key={`${item.providerId}:${item.id}`}
-                          className="space-y-2 rounded-md border border-line bg-canvas px-3 py-2"
-                          aria-label={item.title}
-                        >
-                          <h3 className="text-sm font-medium">{item.title}</h3>
-                          {item.body && (
-                            <p className="text-xs leading-5 text-muted">
-                              {item.body}
-                            </p>
-                          )}
-                          {item.fields.map((field) => (
-                            <div key={field.key} className="space-y-0.5">
-                              <p className="field-label">{field.label}</p>
-                              <p className="text-xs text-muted">（体验只读）</p>
-                            </div>
-                          ))}
-                          {item.actions.length > 0 && (
-                            <ul className="flex flex-wrap gap-2 text-xs text-muted">
-                              {item.actions.map((action) => (
-                                <li key={action.commandId}>
-                                  动作：{action.label}
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </article>
-                      ))}
-                      {run.experience.checks
-                        .filter((check) => check.startsWith("ui.write:"))
-                        .map((check) => (
-                          <p
-                            key={check}
-                            className="text-xs text-muted"
-                            role="status"
-                          >
-                            模拟写入结果：{check}
-                          </p>
-                        ))}
-                    </div>
-                  )}
-              </section>
-            )}
             <Steps steps={run.steps} />
             <EventLog events={snapshot?.events ?? []} />
             <div className="flex flex-wrap gap-2">
               <Button
                 disabled={busy || !passedCandidate}
-                onClick={() =>
-                  passedCandidate &&
-                  command({
+                onClick={async () => {
+                  if (!passedCandidate) return;
+                  const result = await command({
                     type: "experience",
                     runId: run.id,
                     candidateId: passedCandidate.id,
-                  })
-                }
+                  });
+                  if (
+                    result &&
+                    result.run?.status === "awaiting-apply" &&
+                    result.run.experienceSession
+                  )
+                    onExperienceStarted?.(result.run.experienceSession);
+                }}
               >
                 体验
               </Button>

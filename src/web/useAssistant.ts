@@ -92,7 +92,7 @@ export function useAssistant(onCompleted: () => Promise<void>) {
       void onCompletedRef.current();
     }
   }, [snapshot]);
-  async function command(input: CommandInput) {
+  async function command(input: CommandInput): Promise<AssistantSnapshot | false> {
     if (locked.current) return false;
     locked.current = true;
     sequence.current++;
@@ -116,7 +116,7 @@ export function useAssistant(onCompleted: () => Promise<void>) {
         events: [...events.current],
         eventCursor: eventCursor.current,
       });
-      return true;
+      return result;
     } catch (error) {
       setError(errorMessage(error));
       return false;

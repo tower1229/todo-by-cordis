@@ -27,7 +27,7 @@ export type WorkspaceAcceptanceCase = {
   expected: AcceptanceExpected;
 };
 
-function importCompositionVersions(
+export function importCompositionVersions(
   formal: Workspace,
   isolated: Workspace,
   root: Version,

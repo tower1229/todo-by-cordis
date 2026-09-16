@@ -10,6 +10,7 @@ import { createApp } from "../../src/server/app.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
 import { parseAssistantCommand } from "../../src/server/assistant.js";
+import { evolutionWithExperience } from "./evolution-session-fixture.js";
 
 // Seams: public Evolution commands + observe, composition/query, HTTP assistant API.
 async function settle(e: Evolution, status?: string) {
@@ -30,13 +31,13 @@ async function settle(e: Evolution, status?: string) {
 async function awaitingApply(t: test.TestContext) {
   const dir = mkdtempSync(join(tmpdir(), "cordis-apply-"));
   const w = await Workspace.open(join(dir, "workspace.db"));
-  const e = new Evolution(
-    w.db,
+  const { evolution: e, sessions } = evolutionWithExperience(
+    w,
     new ExecutionDriver(new PlanningDriver()),
-    new EvolutionDomain(w),
   );
   t.after(async () => {
     await e.close();
+    await sessions.close();
     await w.close();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -62,7 +63,7 @@ async function awaitingApply(t: test.TestContext) {
   assert.ok(candidate);
   assert.ok(candidate.evidenceHash);
   assert.ok(done.versionId);
-  return { w, e, before, ready, done, candidate: candidate! };
+  return { w, e, before, ready, done, candidate: candidate!, app: createApp(w, e, sessions) };
 }
 
 test("A06: experience probes the candidate in isolation without changing formal tasks or composition", async (t) => {
@@ -84,13 +85,10 @@ test("A06: experience probes the candidate in isolation without changing formal 
   const first = await e.command(experience);
   assert.equal(first.run?.status, "awaiting-apply");
   if (first.run?.status !== "awaiting-apply") throw new Error("expected awaiting-apply");
-  assert.ok(first.run.experience);
-  assert.equal(first.run.experience.candidateId, candidate.id);
-  assert.equal(first.run.experience.marked, "not-applied");
-  assert.equal(first.run.experience.isolated, true);
-  assert.equal(first.run.experience.simulated, true);
-  assert.match(first.run.experience.note, /尚未应用|模拟/);
-  assert.ok(first.run.experience.checks.length > 0);
+  assert.ok(first.run.experienceSession);
+  assert.equal(first.run.experienceSession.candidateId, candidate.id);
+  assert.equal(first.run.experienceSession.status, "active");
+  assert.match(first.run.experienceSession.note, /隔离库|尚未应用/);
   assert.deepEqual(await e.command(experience), first);
 
   assert.equal(w.composition().versionId, before.versionId);
@@ -99,8 +97,7 @@ test("A06: experience probes the candidate in isolation without changing formal 
 });
 
 test("A07: apply binds candidate evidence and base composition; mismatch and replay stay safe", async (t) => {
-  const { w, e, before, done, candidate } = await awaitingApply(t);
-  const app = createApp(w, e);
+  const { w, e, before, done, candidate, app } = await awaitingApply(t);
 
   await assert.rejects(
     e.command({

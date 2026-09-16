@@ -13,6 +13,7 @@ import {
   isStringRecord,
   sendCommand,
 } from "./api.js";
+import { sendExperienceCommand } from "./experience-api.js";
 import { Button, ErrorMessage, Spinner } from "./ui.js";
 import { TaskDetailContributions } from "./TaskDetailContributions.js";
 
@@ -29,6 +30,7 @@ export function Editor({
   onContributionAction,
   contributionBusy = false,
   contributionError = "",
+  experienceSessionId,
 }: {
   task: Task;
   revision: number;
@@ -45,6 +47,7 @@ export function Editor({
   ) => void;
   contributionBusy?: boolean;
   contributionError?: string;
+  experienceSessionId?: string;
 }) {
   const key = `draft:${task.id}`;
   const [draft, setDraft] = useState(() => {
@@ -67,13 +70,16 @@ export function Editor({
     setBusy(true);
     setError("");
     try {
-      await sendCommand({
-        type: "edit",
+      const payload = {
+        type: "edit" as const,
         taskId: task.id,
         expectedRevision: base,
         compositionRevision: revision,
         ...draft,
-      });
+      };
+      if (experienceSessionId)
+        await sendExperienceCommand(experienceSessionId, payload);
+      else await sendCommand(payload);
       localStorage.removeItem(key);
       await saved();
       close();

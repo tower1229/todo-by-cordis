@@ -27,6 +27,7 @@ import { Button, ErrorMessage, Sheet, Spinner } from "./ui.js";
 import { useAssistant } from "./useAssistant.js";
 import { AssistantPanel } from "./AssistantPanel.js";
 import { WorkspacePanel } from "./WorkspacePanel.js";
+import { CandidateExperiencePanel } from "./CandidateExperiencePanel.js";
 import "./style.css";
 
 const filters = [
@@ -39,7 +40,8 @@ type Panel =
   | { kind: "task"; task: Task }
   | { kind: "action"; form: ActionForm; returnTask?: Task }
   | { kind: "assistant" }
-  | { kind: "workspace" };
+  | { kind: "workspace" }
+  | { kind: "experience"; sessionId: string; runId: string };
 
 function App() {
   const [composition, setComposition] = useState<Composition>();
@@ -316,7 +318,9 @@ function App() {
         ? panel.form.label
         : panel?.kind === "assistant"
           ? "改进应用"
-          : "工作区设置";
+          : panel?.kind === "experience"
+            ? "候选体验"
+            : "工作区设置";
   return (
     <div className="flex h-dvh min-h-0 bg-canvas text-ink">
       <aside className="hidden w-56 shrink-0 flex-col border-r border-line bg-sidebar px-4 py-6 md:flex">
@@ -570,7 +574,9 @@ function App() {
         close={() => setPanel(undefined)}
         title={panelTitle}
         returnFocus={returnFocus.current}
-        wide={panel?.kind === "assistant"}
+        wide={
+          panel?.kind === "assistant" || panel?.kind === "experience"
+        }
         action={
           panel &&
           panel.kind !== "assistant" && (
@@ -642,6 +648,20 @@ function App() {
           <AssistantPanel
             controller={assistant}
             compositionRevision={composition?.revision ?? 1}
+            onExperienceStarted={(session) =>
+              openPanel({
+                kind: "experience",
+                sessionId: session.id,
+                runId: session.runId,
+              })
+            }
+          />
+        )}
+        {panel?.kind === "experience" && (
+          <CandidateExperiencePanel
+            sessionId={panel.sessionId}
+            runId={panel.runId}
+            onClose={() => setPanel(undefined)}
           />
         )}
         {panel?.kind === "workspace" && (
