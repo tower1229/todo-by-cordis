@@ -84,6 +84,8 @@ export type InvestigatedPlan = AssistantPlan & {
   };
   /** Frozen auxiliary-member Given/When/Then cases interpreted by workspace/1. */
   memberCases?: import("./acceptance-cases.js").MemberAcceptanceCase[];
+  /** Host-owned affected-action ↔ frozen-case coverage for planning and later candidate reuse. */
+  affectedAcceptance?: import("../server/affected-acceptance.js").AffectedAcceptance;
   cases: { given: string; when: string; then: string; checker: string }[];
   steps: {
     id: string;
@@ -161,7 +163,7 @@ export function describeBlockers(blockers: string[]): {
       userMessage:
         "这项改进需要系统级能力（例如到点提醒、外部通知或宿主升级），当前不能自行完成。可改成不依赖这些能力的需求，或等待维护者补齐后再试。",
     };
-  if (/缺少可靠.*检查器|验证能力补齐|检查器/.test(text))
+  if (/缺少可靠.*检查器|验证能力补齐|检查器|冻结业务案例|未被本次提交的冻结案例覆盖/.test(text))
     return {
       message,
       blockReason: "missing-checker",

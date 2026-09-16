@@ -7,6 +7,7 @@ import {
   type BusinessExtensions,
   type MemberAcceptanceCase,
 } from "./business-verification.js";
+import { evaluateAffectedAcceptance } from "./affected-acceptance.js";
 import type { WorkflowDefinition } from "./business/contracts.js";
 import { readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
@@ -656,17 +657,37 @@ export function parsePlan(
   );
   if (memberAdditionsEarly.length && memberUpgradesEarly.length)
     throw new Error("同一计划不能同时新增与升级辅助成员");
+  const allowedMembers = new Set([
+    ...context.members
+      .filter((m) => m.role === "auxiliary")
+      .map((m) => m.pluginId),
+    ...memberAdditionsEarly.map((a) => a.pluginId),
+  ]);
+  const memberCasesOmitted =
+    v.memberCases === undefined ||
+    (Array.isArray(v.memberCases) && v.memberCases.length === 0);
   const memberCases = parseMemberCases(
     v.memberCases,
     previous.memberCases,
-    new Set([
-      ...context.members
-        .filter((m) => m.role === "auxiliary")
-        .map((m) => m.pluginId),
-      ...memberAdditionsEarly.map((a) => a.pluginId),
-    ]),
+    allowedMembers,
     definition.states,
   );
+  const submittedMemberCases = memberCasesOmitted
+    ? ("omit" as const)
+    : (parseMemberCases(
+        v.memberCases,
+        undefined,
+        allowedMembers,
+        definition.states,
+      ) ?? []);
+  const affectedAcceptance = evaluateAffectedAcceptance({
+    additions: memberAdditionsEarly,
+    upgrades: memberUpgradesEarly,
+    submitted: submittedMemberCases,
+    previous: previous.memberCases,
+    merged: memberCases,
+  });
+  if (!affectedAcceptance.complete) blockers.push(...affectedAcceptance.gaps);
   for (const old of previous.memberCases ?? []) {
     const next = memberCases?.find((c) => c.name === old.name);
     if (next && hash(next) !== hash(old))
@@ -811,15 +832,24 @@ export function parsePlan(
       ...(compositionIntent ? { compositionIntent } : {}),
       ...(memberCases?.length ? { memberCases } : {}),
       acceptance: [
-        ...cases,
-        ...extensionCases(extensions),
-        ...memberCaseSummaries(memberCases),
-      ].map((c) => `当 ${c.given}，执行 ${c.when}，应 ${c.then}`),
+        ...cases.map((c) => `当 ${c.given}，执行 ${c.when}，应 ${c.then}`),
+        ...extensionCases(extensions).map(
+          (c) => `当 ${c.given}，执行 ${c.when}，应 ${c.then}`,
+        ),
+        ...(affectedAcceptance.coverageSummary.length
+          ? affectedAcceptance.coverageSummary
+          : memberCaseSummaries(memberCases).map(
+              (c) => `当 ${c.given}，执行 ${c.when}，应 ${c.then}`,
+            )),
+      ],
       cases: [
         ...cases,
         ...extensionCases(extensions),
         ...memberCaseSummaries(memberCases),
       ],
+      ...(memberAdditions.length || memberUpgrades.length
+        ? { affectedAcceptance }
+        : {}),
       extensions,
       steps,
       writableScope: scope,

@@ -22,12 +22,63 @@ import type { Version } from "../../src/release/types.js";
 // Seams: Evolution public control plane (request/start/experience/apply/observe)
 // → Workspace composition/query/command. Real candidate generation only; no awaiting-apply seed.
 
+const panelMemberCases = [
+  {
+    name: "打备注标记成功",
+    member: "panel",
+    state: "open",
+    fields: {},
+    action: "markNote",
+    input: {},
+    expected: {
+      kind: "commit" as const,
+      state: "open",
+      fields: { noteMark: "ok" },
+    },
+  },
+  {
+    name: "已完成不可打备注",
+    member: "panel",
+    state: "done",
+    fields: {},
+    action: "markNote",
+    input: {},
+    expected: { kind: "reject" as const },
+  },
+];
+
+const tagsUpgradeCases = [
+  {
+    name: "标签去空格转小写",
+    member: "tags",
+    state: "open",
+    fields: {},
+    action: "setTags",
+    input: { tags: "  Hello " },
+    expected: {
+      kind: "commit" as const,
+      state: "open",
+      fields: { tags: "hello" },
+    },
+  },
+  {
+    name: "空白标签拒绝",
+    member: "tags",
+    state: "open",
+    fields: {},
+    action: "setTags",
+    input: { tags: "   " },
+    expected: { kind: "reject" as const },
+  },
+];
+
 const addPanelPlan = {
   summary: "叠加备注面板辅助成员",
   changes: ["新增 panel 辅助成员", "保留 tags 与 due 精确版本", "完成前要求填写复盘"],
   outcome: "既有标签与截止日期仍可用，并可打备注标记",
   dataImpact: "保留既有成员精确版本与字段；新增 panel 成员",
   memberAdditions: [{ pluginId: "panel", name: "备注面板插件" }],
+  memberCases: panelMemberCases,
 };
 
 const upgradeTagsPlan = {
@@ -36,6 +87,7 @@ const upgradeTagsPlan = {
   outcome: "标签写入会规范化小写；截止日期仍按原版本可用",
   dataImpact: "保留 due 精确版本与字段；升级 tags 成员版本；保留未改成员启用状态",
   memberUpgrades: [{ pluginId: "tags" }],
+  memberCases: tagsUpgradeCases,
 };
 
 /** Upgraded tags: trim + lowercase; same field/command identity. */
@@ -48,15 +100,15 @@ const upgradedTagsSource = `export default {
   },
   decide(data) {
     const { task, action, input } = data;
-    if (action === "setTags")
+    if (action === "setTags") {
+      const tags = String(input?.tags ?? "").trim().toLowerCase();
+      if (!tags) return { kind: "reject", message: "标签不能为空" };
       return {
         kind: "commit",
         state: task.state,
-        fields: {
-          ...task.fields,
-          tags: String(input?.tags ?? "").trim().toLowerCase(),
-        },
+        fields: { ...task.fields, tags },
       };
+    }
     return { kind: "reject", message: "未知动作" };
   },
 };`;
@@ -1046,6 +1098,7 @@ const pureUpgradeTagsPlan = {
   outcome: "标签写入会规范化小写；截止日期与主工作流仍按原版本可用",
   dataImpact: "保留主工作流与 due 精确版本与字段；升级 tags 成员版本",
   memberUpgrades: [{ pluginId: "tags" }],
+  memberCases: tagsUpgradeCases,
   workflowRules: [] as {
     key: string;
     label: string;
@@ -1437,18 +1490,18 @@ const upgradedTagsHyphenSource = `export default {
   },
   decide(data) {
     const { task, action, input } = data;
-    if (action === "setTags")
+    if (action === "setTags") {
+      const tags = String(input?.tags ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/\\s+/g, "-");
+      if (!tags) return { kind: "reject", message: "标签不能为空" };
       return {
         kind: "commit",
         state: task.state,
-        fields: {
-          ...task.fields,
-          tags: String(input?.tags ?? "")
-            .trim()
-            .toLowerCase()
-            .replace(/\\s+/g, "-"),
-        },
+        fields: { ...task.fields, tags },
       };
+    }
     return { kind: "reject", message: "未知动作" };
   },
 };`;
@@ -1482,6 +1535,7 @@ const pureUpgradeTagsAfterBundlePlan = {
   outcome: "标签写入规范化；复盘与截止日期仍按原版本",
   dataImpact: "保留主工作流与 due 精确版本与字段；升级 tags 成员版本",
   memberUpgrades: [{ pluginId: "tags" }],
+  memberCases: tagsUpgradeCases,
   workflowRules: [
     {
       key: "reflection",

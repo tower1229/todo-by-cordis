@@ -323,6 +323,30 @@ test("成员级正例与拒绝案例在无关后续迭代中继续参与验收�
     outcome: "截止日期仍按成员命令可用",
     dataImpact: "保留 tags 精确版本与冻结验收；升级 due 成员版本",
     memberUpgrades: [{ pluginId: "due" }],
+    memberCases: [
+      {
+        name: "设置截止日期成功",
+        member: "due",
+        state: "open",
+        fields: {},
+        action: "setDue",
+        input: { dueAt: "2026-09-20T00:00:00Z" },
+        expected: {
+          kind: "commit" as const,
+          state: "open",
+          fields: { dueAt: "2026-09-20T00:00:00Z" },
+        },
+      },
+      {
+        name: "已完成不可设截止",
+        member: "due",
+        state: "done",
+        fields: {},
+        action: "setDue",
+        input: { dueAt: "2026-09-21T00:00:00Z" },
+        expected: { kind: "reject" as const },
+      },
+    ],
     workflowRules: [],
   };
   submitted = [{ pluginId: "due", source: dueSource }];

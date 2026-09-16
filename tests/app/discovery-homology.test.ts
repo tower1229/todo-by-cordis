@@ -551,6 +551,30 @@ test("生成阶段 read_member 返回活动组合成员精确源码", async (t) 
     outcome: "标签规范化",
     dataImpact: "保留主工作流与 due",
     memberUpgrades: [{ pluginId: "tags" }],
+    memberCases: [
+      {
+        name: "标签去空格转小写",
+        member: "tags",
+        state: "open",
+        fields: {},
+        action: "setTags",
+        input: { tags: "  Hello " },
+        expected: {
+          kind: "commit" as const,
+          state: "open",
+          fields: { tags: "hello" },
+        },
+      },
+      {
+        name: "空白标签拒绝",
+        member: "tags",
+        state: "open",
+        fields: {},
+        action: "setTags",
+        input: { tags: "   " },
+        expected: { kind: "reject" as const },
+      },
+    ],
     workflowRules: [] as {
       key: string;
       label: string;
@@ -609,15 +633,15 @@ test("生成阶段 read_member 返回活动组合成员精确源码", async (t) 
   },
   decide(data) {
     const { task, action, input } = data;
-    if (action === "setTags")
+    if (action === "setTags") {
+      const tags = String(input?.tags ?? "").trim().toLowerCase();
+      if (!tags) return { kind: "reject", message: "标签不能为空" };
       return {
         kind: "commit",
         state: task.state,
-        fields: {
-          ...task.fields,
-          tags: String(input?.tags ?? "").trim().toLowerCase(),
-        },
+        fields: { ...task.fields, tags },
       };
+    }
     return { kind: "reject", message: "未知动作" };
   },
 };`,
