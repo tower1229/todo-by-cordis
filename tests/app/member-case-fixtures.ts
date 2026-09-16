@@ -1,5 +1,31 @@
 /** Shared frozen member-case fixtures for planning / acceptance gate tests. */
 
+/** Phase 1 shortened trial: trim and reject blank; case preserved. */
+export const tagsTrimOnlyMemberCases = [
+  {
+    name: "标签去空格",
+    member: "tags",
+    state: "open",
+    fields: {},
+    action: "setTags",
+    input: { tags: "  Hello " },
+    expected: {
+      kind: "commit" as const,
+      state: "open",
+      fields: { tags: "Hello" },
+    },
+  },
+  {
+    name: "空白标签拒绝",
+    member: "tags",
+    state: "open",
+    fields: {},
+    action: "setTags",
+    input: { tags: "   " },
+    expected: { kind: "reject" as const },
+  },
+];
+
 export const tagsMemberCases = [
   {
     name: "标签去空格转小写",

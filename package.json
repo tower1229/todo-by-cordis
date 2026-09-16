@@ -14,7 +14,8 @@
     "start": "node dist/server/main.js",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
-    "bench:m1": "node scripts/benchmark.mjs"
+    "bench:m1": "node scripts/benchmark.mjs",
+    "accept:shortened-tags": "node --import tsx scripts/accept-shortened-tags.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
