@@ -11,9 +11,80 @@ import { AppError } from "../../src/shared/contracts.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
 import { activateDual } from "./dual-composition-fixture.js";
-import { source } from "./evolution-fixture.js";
+import { candidateScope, source } from "./evolution-fixture.js";
 import { toolReply } from "./planning-fixture.js";
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
+
+const positiveIntegerExtensions = {
+  actions: [{ id: "setEstimate", label: "估时", from: ["open"] }],
+  fields: [{ key: "estimateMinutes", label: "预估分钟", type: "text" }],
+  cases: [
+    {
+      name: "正整数字符串",
+      state: "open",
+      fields: {},
+      action: "setEstimate",
+      input: { estimateMinutes: "15" },
+      expected: {
+        kind: "commit" as const,
+        state: "open",
+        fields: { estimateMinutes: "15" },
+      },
+    },
+    {
+      name: "非正整拒绝",
+      state: "open",
+      fields: {},
+      action: "setEstimate",
+      input: { estimateMinutes: "abc" },
+      expected: { kind: "reject" as const },
+    },
+  ],
+};
+
+function estimateCandidateFiles(mode: "strict" | "loose") {
+  const code = source("default", "轻快完成", 1).replace(
+    "export default",
+    "const base =",
+  );
+  const validate =
+    mode === "strict"
+      ? "if(!/^[1-9]\\d*$/.test(raw))return{kind:'reject',message:'须为正整数字符串'};"
+      : "if(!raw)return{kind:'reject',message:'empty'};";
+  const entry = `${code}\nexport default { describe() { const d = base.describe(); return {...d, actions:[...d.actions,{id:'setEstimate',label:'估时',from:['open']}], fields:[...d.fields,{key:'estimateMinutes',label:'预估分钟',type:'text'}]}; }, decide(data: Parameters<typeof base.decide>[0]) { if(data.action!=='setEstimate') return base.decide(data); const raw=String(data.input?.estimateMinutes??''); ${validate} return {kind:'commit',state:data.task.state,fields:{...data.task.fields,estimateMinutes:raw}}; } };`;
+  return [
+    { path: "business/entry.ts", content: entry },
+    {
+      path: "business/view.ts",
+      content:
+        'export default { title: "复盘与估时", fields: ["reflection", "estimateMinutes"] };',
+    },
+    { path: "business/config.json", content: "{}" },
+    {
+      path: "business/compatibility.json",
+      content: '{"preserveUnknownFields":true}',
+    },
+  ];
+}
+
+function estimateDriver(planning: PlanningDriver, mode: "strict" | "loose"): Driver {
+  const fallback = new ExecutionDriver(planning);
+  return {
+    async generate(request: ModelRequest, signal) {
+      const reply = await fallback.generate(request, signal);
+      if (reply.calls[0]?.name !== "submit_candidate") return reply;
+      return {
+        ...reply,
+        calls: [
+          {
+            name: "submit_candidate",
+            args: { files: estimateCandidateFiles(mode) },
+          },
+        ],
+      };
+    },
+  };
+}
 
 // Seams: Evolution public control plane → Workspace composition / command / query.
 // Trusted business acceptance must exercise isolated Workspace command→beforeCommit→query,
@@ -198,8 +269,6 @@ test("完整组合继承候选的隔离 Workspace 验收绑定整组合，体验
   assert.equal(evidence.verifier, "workspace/1");
   assert.ok(evidence.checks?.includes("workspace:complete-final-fields"));
   assert.ok(evidence.checks?.includes("workspace:reflection:missing-input"));
-  assert.ok(evidence.checks?.includes("workspace:member:tags:setTags"));
-  assert.ok(evidence.checks?.includes("workspace:member:due:setDue"));
   assert.ok(
     evidence.checks?.some(
       (check) =>
@@ -272,6 +341,93 @@ test("完整组合继承候选的隔离 Workspace 验收绑定整组合，体验
     w.query().tasks.find((task) => task.id === taskId)?.fields.tags,
     "inherit-me",
   );
+});
+
+test("只接受正整数字符串的动作：冻结 15/abc 案例通过隔离 Workspace 验收，不靠 probe 猜测", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-pos-int-"));
+  const w = await Workspace.open(join(directory, "workspace.db"));
+  t.after(async () => {
+    await w.close().catch(() => undefined);
+    await rm(directory, { recursive: true, force: true });
+  });
+  const planning = new PlanningDriver({
+    writableScope: [...candidateScope],
+    extensions: positiveIntegerExtensions,
+  });
+  const e = new Evolution(
+    w.db,
+    estimateDriver(planning, "strict"),
+    new EvolutionDomain(w),
+  );
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "未完成任务可填写正整数字符串预估分钟",
+    operationId: "plan-estimate-int",
+  });
+  const ready = await settle(e, "ready");
+  assert.equal(ready.status, "ready", JSON.stringify(ready));
+  if (ready.status !== "ready") throw new Error("expected ready");
+  await e.command({
+    type: "start",
+    operationId: "start-estimate-int",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  const done = await settle(e, "awaiting-apply");
+  assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
+  const evidence = w.release.get(done.versionId!).evidence as {
+    checks?: string[];
+  };
+  assert.ok(
+    evidence.checks?.includes("workspace:正整数字符串"),
+    evidence.checks?.join("\n"),
+  );
+  assert.ok(evidence.checks?.includes("workspace:非正整拒绝"));
+});
+
+test("非正整仍被写入的实现无法靠 decide 层蒙混，隔离 Workspace 冻结案例拒绝", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-pos-int-bad-"));
+  const w = await Workspace.open(join(directory, "workspace.db"));
+  const before = w.composition();
+  t.after(async () => {
+    await w.close().catch(() => undefined);
+    await rm(directory, { recursive: true, force: true });
+  });
+  const planning = new PlanningDriver({
+    writableScope: [...candidateScope],
+    extensions: positiveIntegerExtensions,
+  });
+  const e = new Evolution(
+    w.db,
+    estimateDriver(planning, "loose"),
+    new EvolutionDomain(w),
+  );
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "未完成任务可填写正整数字符串预估分钟",
+    operationId: "plan-estimate-loose",
+  });
+  const ready = await settle(e, "ready");
+  assert.equal(ready.status, "ready");
+  if (ready.status !== "ready") throw new Error("expected ready");
+  await e.command({
+    type: "start",
+    operationId: "start-estimate-loose",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  const finished = await settle(e);
+  assert.notEqual(finished.status, "awaiting-apply");
+  const diagnostic =
+    (await e.observe()).candidates?.find((c) => c.diagnostic)?.diagnostic ?? "";
+  assert.match(diagnostic, /非正整拒绝|abc|业务验收失败/);
+  assert.equal(w.composition().versionId, before.versionId);
 });
 
 test("正式 Workspace 拒绝 activateForAcceptance 与 seedAcceptanceTask", async (t) => {

@@ -9,6 +9,7 @@ import {
   type AffectedAcceptance,
 } from "./affected-acceptance.js";
 import {
+  assertWorkspaceCaseCoverage,
   verifyViaIsolatedWorkspace,
   type WorkspaceAcceptanceCase,
 } from "./workspace-acceptance.js";
@@ -269,10 +270,12 @@ export class EvolutionDomain implements Domain {
     });
     try {
       signal.throwIfAborted();
+      const reproducedCases = workspaceAcceptanceCases(goal);
+      assertWorkspaceCaseCoverage(goal.affectedAcceptance, reproducedCases);
       await verifyViaIsolatedWorkspace(
         this.workspace,
         base,
-        workspaceAcceptanceCases(goal),
+        reproducedCases,
         signal,
       );
     } catch (error) {
@@ -853,11 +856,21 @@ export class EvolutionDomain implements Domain {
     // isolated Workspace command → beforeCommit → query final facts.
     try {
       signal.throwIfAborted();
+      const workspaceCases = workspaceAcceptanceCases(verifyGoal);
+      if (
+        verifyGoal.affectedAcceptance &&
+        [...addedMembers, ...upgradedMembers].some((m) => m.enabled) &&
+        !verifyGoal.affectedAcceptance.complete
+      )
+        throw new BusinessAssertionError(
+          `验收缺失：${verifyGoal.affectedAcceptance.gaps.join("；")}`,
+        );
+      assertWorkspaceCaseCoverage(verifyGoal.affectedAcceptance, workspaceCases);
       checks.push(
         ...(await verifyViaIsolatedWorkspace(
           this.workspace,
           candidate,
-          workspaceAcceptanceCases(verifyGoal),
+          workspaceCases,
           signal,
         )),
       );

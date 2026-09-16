@@ -9,12 +9,12 @@ import { hash } from "../release/storage.js";
 import {
   compositionMembers,
   resolveVersionMembers,
-  workflowPluginId,
 } from "../release/composition.js";
 import type { Version } from "../release/types.js";
 import type { Task } from "./business/contracts.js";
 
 import type { AcceptanceExpected } from "../shared/acceptance-cases.js";
+import type { AffectedAcceptance } from "./affected-acceptance.js";
 
 /** Given/When/Then cases asserted via Workspace command → query final facts. */
 export type WorkspaceAcceptanceCase = {
@@ -68,80 +68,26 @@ function prepareCaseTask(
   );
 }
 
-/** Smoke inherited auxiliary commands via formal command/query after activate. */
-async function assertAuxiliaryMemberCommands(
-  probe: Workspace,
-  signal: AbortSignal,
-): Promise<string[]> {
-  const checks: string[] = [];
-  const workflowId = workflowPluginId(probe.release.get(probe.composition().versionId));
-  const initial = probe.composition().workflow.initialState;
-  const revision = probe.composition().revision;
-  const registry = probe.extensionRegistry();
-  const commands = registry
-    .commands()
-    .filter(
-      (command) =>
-        command.providerId !== workflowId &&
-        (!command.from?.length || command.from.includes(initial)),
-    );
-  for (const command of commands) {
-    signal.throwIfAborted();
-    const fields = registry
-      .fields()
-      .filter((field) => field.providerId === command.providerId);
-    const input = Object.fromEntries(
-      fields.map((field) => [field.key, `probe-${field.key}`]),
-    );
-    const created = await probe.command({
-      type: "create",
-      title: `member:${command.providerId}:${command.id}`,
-      compositionRevision: revision,
-      operationId: randomUUID(),
-    });
-    if (!created.task)
-      throw new BusinessAssertionError(
-        `业务验收失败：workspace:member:${command.providerId}:${command.id}；创建任务失败`,
+/** Ensures each plan-authorized member action has commit+reject frozen cases to run. */
+export function assertWorkspaceCaseCoverage(
+  affected: AffectedAcceptance | undefined,
+  cases: WorkspaceAcceptanceCase[],
+): void {
+  if (!affected?.complete) return;
+  for (const target of affected.targets) {
+    for (const action of target.actions) {
+      const matched = cases.filter(
+        (c) => c.member === target.pluginId && c.action === action,
       );
-    const result = await probe.command({
-      type: "action",
-      taskId: created.task.id,
-      actionId: command.id,
-      expectedRevision: created.task.revision,
-      input,
-      operationId: randomUUID(),
-      compositionRevision: revision,
-    });
-    if (result.decision?.kind === "reject")
-      throw new BusinessAssertionError(
-        `业务验收失败：workspace:member:${command.providerId}:${command.id}；命令被拒绝`,
-      );
-    if (result.decision?.kind === "input-required")
-      throw new BusinessAssertionError(
-        `业务验收失败：workspace:member:${command.providerId}:${command.id}；命令未提交`,
-      );
-    const listed =
-      probe.query("", "all").tasks.find((row) => row.id === created.task!.id) ??
-      probe.read(created.task.id);
-    if (listed.revision <= created.task.revision)
-      throw new BusinessAssertionError(
-        `业务验收失败：workspace:member:${command.providerId}:${command.id}；未产生持久化写入`,
-      );
-    const committed =
-      result.task?.fields ??
-      (result.decision?.kind === "commit" ? result.decision.fields : undefined);
-    if (committed) {
-      for (const field of fields) {
-        if (!(field.key in committed)) continue;
-        if (listed.fields[field.key] !== committed[field.key])
-          throw new BusinessAssertionError(
-            `业务验收失败：workspace:member:${command.providerId}:${command.id}；查询字段 ${field.key} 预期 ${committed[field.key]}；实际 ${listed.fields[field.key] ?? ""}`,
-          );
-      }
+      if (
+        !matched.some((c) => c.expected.kind === "commit") ||
+        !matched.some((c) => c.expected.kind === "reject")
+      )
+        throw new BusinessAssertionError(
+          `验收缺失：成员 ${target.pluginId} 的动作 ${action} 缺少成对隔离 Workspace 冻结案例`,
+        );
     }
-    checks.push(`workspace:member:${command.providerId}:${command.id}`);
   }
-  return checks;
 }
 
 /**
@@ -172,7 +118,6 @@ export async function verifyViaIsolatedWorkspace(
         .map((m) => `${m.pluginId}@${m.versionId}:${m.enabled ? "on" : "off"}`)
         .join(",")}`,
     );
-    checks.push(...(await assertAuxiliaryMemberCommands(probe, signal)));
     let registry = probe.extensionRegistry();
     for (const c of cases) {
       signal.throwIfAborted();
