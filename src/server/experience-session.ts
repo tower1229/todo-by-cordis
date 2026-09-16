@@ -105,6 +105,7 @@ export class ExperienceSessionHost {
       const timer = setTimeout(() => {
         void this.closeActive();
       }, this.ttlMs);
+      timer.unref();
       this.active = {
         id,
         runId: input.runId,

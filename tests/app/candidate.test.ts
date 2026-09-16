@@ -14,6 +14,7 @@ import { Workspace } from "../../src/server/workspace.js";
 import { Evolution } from "../../src/evolution/evolution.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { PlanningDriver } from "./planning-fixture.js";
+import { ExecutionDriver } from "./execution-fixture.js";
 import { evolutionWithExperience } from "./evolution-session-fixture.js";
 import { source } from "./evolution-fixture.js";
 import type { Driver } from "../../src/evolution/driver.js";
