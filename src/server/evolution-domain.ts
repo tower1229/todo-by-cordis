@@ -10,6 +10,7 @@ import {
 } from "./affected-acceptance.js";
 import {
   assertWorkspaceCaseCoverage,
+  requireAffectedAcceptanceForMemberChange,
   verifyViaIsolatedWorkspace,
   type WorkspaceAcceptanceCase,
 } from "./workspace-acceptance.js";
@@ -271,6 +272,10 @@ export class EvolutionDomain implements Domain {
     try {
       signal.throwIfAborted();
       const reproducedCases = workspaceAcceptanceCases(goal);
+      requireAffectedAcceptanceForMemberChange(
+        goal.affectedAcceptance,
+        !!(goal.memberAdditions?.length || goal.memberUpgrades?.length),
+      );
       assertWorkspaceCaseCoverage(goal.affectedAcceptance, reproducedCases);
       await verifyViaIsolatedWorkspace(
         this.workspace,
@@ -857,14 +862,10 @@ export class EvolutionDomain implements Domain {
     try {
       signal.throwIfAborted();
       const workspaceCases = workspaceAcceptanceCases(verifyGoal);
-      if (
-        verifyGoal.affectedAcceptance &&
-        [...addedMembers, ...upgradedMembers].some((m) => m.enabled) &&
-        !verifyGoal.affectedAcceptance.complete
-      )
-        throw new BusinessAssertionError(
-          `验收缺失：${verifyGoal.affectedAcceptance.gaps.join("；")}`,
-        );
+      requireAffectedAcceptanceForMemberChange(
+        verifyGoal.affectedAcceptance,
+        [...addedMembers, ...upgradedMembers].some((m) => m.enabled),
+      );
       assertWorkspaceCaseCoverage(verifyGoal.affectedAcceptance, workspaceCases);
       checks.push(
         ...(await verifyViaIsolatedWorkspace(

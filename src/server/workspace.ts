@@ -1007,7 +1007,7 @@ export class Workspace {
     return this.publish(
       prepared,
       {
-        operationId: `acceptance-probe-${randomUUID()}`,
+        operationId: `acceptance-isolated-${randomUUID()}`,
         compositionRevision: this.current().revision,
         versionId,
       },

@@ -292,6 +292,15 @@ test("成员级正例与拒绝案例在无关后续迭代中继续参与验收�
   assert.ok(
     firstEvidence.checks?.includes("workspace:member:tags:空白标签拒绝"),
   );
+  const compositionLine = firstEvidence.checks?.find((check) =>
+    check.startsWith("workspace:composition:"),
+  );
+  const tagsVersionId = compositionLine?.match(/tags@([a-f0-9]{64}):/)?.[1];
+  assert.ok(tagsVersionId, compositionLine);
+  assert.ok(
+    firstEvidence.checks?.includes(`member-version:tags@${tagsVersionId}`),
+    firstEvidence.checks?.join("\n"),
+  );
 
   planning.finish = {
     summary: "只升级截止日期辅助成员",
@@ -609,6 +618,106 @@ test("停用后升级错误实现仍被冻结案例拦住；规范化升级并�
     compositionRevision: ctx.w.composition().revision,
   });
   assert.equal(retagged.task?.fields.tags, "hello");
+});
+
+test("隔离验收对停用成员临时启用后在案例结束时恢复，并留下成员版本证据", async (t) => {
+  const ctx = await dualWithTaggedTask(t);
+  const planning = new PlanningDriver(freezeTagsPlan);
+  let submitted = [{ pluginId: "tags", source: normalizedTagsSource }];
+  const e = new Evolution(
+    ctx.w.db,
+    pinnedMemberDriver(
+      planning,
+      () => ctx.w.activeVersion().source,
+      () => submitted,
+    ),
+    new EvolutionDomain(ctx.w),
+  );
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "标签保存去空格并转小写",
+    operationId: "freeze-for-disabled-verify",
+  });
+  const freezeReady = await settle(e, "ready");
+  assert.equal(freezeReady.status, "ready");
+  if (freezeReady.status !== "ready") throw new Error("expected ready");
+  await e.command({
+    type: "start",
+    operationId: "start-freeze-for-disabled-verify",
+    runId: freezeReady.id,
+    planId: freezeReady.plan.id,
+  });
+  const freezeDone = await settle(e, "awaiting-apply");
+  const freezeCandidate = (await e.observe()).candidates?.find((c) => c.passed);
+  assert.ok(freezeCandidate?.evidenceHash);
+  await e.command({
+    type: "apply",
+    operationId: "apply-freeze-for-disabled-verify",
+    runId: freezeReady.id,
+    candidateId: freezeCandidate!.id,
+    evidenceHash: freezeCandidate!.evidenceHash!,
+    compositionRevision: ctx.w.composition().revision,
+  });
+  assert.equal((await settle(e, "succeeded")).status, "succeeded");
+
+  await ctx.w.setMemberEnabled({
+    operationId: randomUUID(),
+    compositionRevision: ctx.w.composition().revision,
+    versionId: ctx.w.composition().versionId,
+    pluginId: "tags",
+    enabled: false,
+  });
+  assert.equal(
+    ctx.w.composition().members.find((m) => m.pluginId === "tags")?.enabled,
+    false,
+  );
+
+  planning.finish = {
+    summary: "as-is 升级停用 tags",
+    changes: ["升级 tags 辅助成员"],
+    outcome: "继承历史冻结案例",
+    dataImpact: "升级 tags；省略 memberCases",
+    memberUpgrades: [{ pluginId: "tags" }],
+    workflowRules: [],
+  };
+  submitted = [{ pluginId: "tags", source: normalizedTagsSource }];
+  await e.command({
+    type: "request",
+    text: "升级停用的标签并继承冻结案例",
+    operationId: "request-disabled-inherit-cases",
+  });
+  const ready = await settle(e, "ready");
+  assert.equal(ready.status, "ready", JSON.stringify(ready));
+  if (ready.status !== "ready") throw new Error("expected ready");
+  await e.command({
+    type: "start",
+    operationId: "start-disabled-inherit-cases",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  const done = await settle(e, "awaiting-apply");
+  assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
+  const candidate = (await e.observe()).candidates?.find((c) => c.passed);
+  assert.ok(candidate?.versionId);
+  const evidence = ctx.w.release.get(candidate!.versionId!).evidence as {
+    checks?: string[];
+  };
+  assert.ok(
+    evidence.checks?.includes("workspace:member-restored:tags:off"),
+    evidence.checks?.join("\n"),
+  );
+  const compositionLine = evidence.checks?.find((check) =>
+    check.startsWith("workspace:composition:"),
+  );
+  const tagsVersionId = compositionLine?.match(/tags@([a-f0-9]{64}):/)?.[1];
+  assert.ok(tagsVersionId, compositionLine);
+  assert.ok(
+    evidence.checks?.includes(`member-version:tags@${tagsVersionId}`),
+    evidence.checks?.join("\n"),
+  );
 });
 
 test("改已有成员案例须 acceptanceReason 并经 confirm-acceptance", async (t) => {

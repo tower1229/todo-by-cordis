@@ -386,6 +386,14 @@ test("只接受正整数字符串的动作：冻结 15/abc 案例通过隔离 Wo
     evidence.checks?.join("\n"),
   );
   assert.ok(evidence.checks?.includes("workspace:非正整拒绝"));
+  assert.ok(
+    evidence.checks?.filter((check) => check === "workspace:正整数字符串")
+      .length === 1,
+  );
+  assert.ok(
+    evidence.checks?.filter((check) => check === "workspace:非正整拒绝")
+      .length === 1,
+  );
 });
 
 test("非正整仍被写入的实现无法靠 decide 层蒙混，隔离 Workspace 冻结案例拒绝", async (t) => {
