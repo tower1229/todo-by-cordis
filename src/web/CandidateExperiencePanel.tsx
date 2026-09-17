@@ -3,9 +3,14 @@ import type { ExperienceSessionSnapshot } from "../server/experience-session.js"
 import { Editor } from "./TaskEditor.js";
 import { InputForm, type ActionForm } from "./ActionForm.js";
 import {
+  clearStoredExperienceSession,
   experienceClient,
+  experienceGoneError,
   errorMessage,
+  isExperienceGone,
+  isExperienceSnapshot,
   readExperienceSession,
+  writeStoredExperienceSession,
   type ExperienceClient,
 } from "./experience-api.js";
 import { Button, ErrorMessage, Spinner } from "./ui.js";
@@ -30,22 +35,20 @@ export function CandidateExperiencePanel({
 
   const load = useCallback(async () => {
     const result = await readExperienceSession({ sessionId, runId });
-    if ("status" in result) {
-      if (result.status === "invalid") {
-        const invalid = result as Extract<typeof result, { status: "invalid" }>;
-        throw Object.assign(
-          new Error(invalid.note ?? "体验会话已失效，请重新打开体验"),
-          { code: "EXPERIENCE_STALE" },
-        );
-      }
-      throw Object.assign(new Error("体验会话已结束"), {
-        code: "EXPERIENCE_SESSION",
-      });
+    if (isExperienceGone(result)) {
+      clearStoredExperienceSession();
+      throw experienceGoneError(result, true);
     }
-    const snapshot = result as ExperienceSessionSnapshot;
-    setSnapshot(snapshot);
-    setClient(experienceClient(snapshot.id));
-    localStorage.setItem("cordis-experience-session", snapshot.id);
+    if (!isExperienceSnapshot(result)) {
+      clearStoredExperienceSession();
+      throw experienceGoneError({ status: "none" }, true);
+    }
+    setSnapshot(result);
+    setClient(experienceClient(result.id));
+    writeStoredExperienceSession({
+      sessionId: result.id,
+      runId: result.runId,
+    });
   }, [runId, sessionId]);
 
   useEffect(() => {
@@ -96,7 +99,7 @@ export function CandidateExperiencePanel({
 
   async function closeExperience() {
     if (client) await client.end().catch(() => undefined);
-    localStorage.removeItem("cordis-experience-session");
+    clearStoredExperienceSession();
     onClose();
   }
 
@@ -170,7 +173,11 @@ export function CandidateExperiencePanel({
         />
       )}
       <div className="border-t border-line px-5 py-4">
-        <Button variant="secondary" disabled={busy} onClick={() => void closeExperience()}>
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onClick={() => void closeExperience()}
+        >
           结束体验
         </Button>
       </div>

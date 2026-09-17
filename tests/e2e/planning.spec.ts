@@ -181,11 +181,54 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
     page.getByRole("button", { name: "放弃候选", exact: true }),
   ).toBeVisible();
 
+  await page.setViewportSize({ width: 320, height: 850 });
   await page.getByRole("button", { name: "体验", exact: true }).click();
   await expect(
-    page.getByText("候选体验 · 测试数据 · 尚未应用"),
+    page.getByRole("status", { name: "候选体验提示" }),
+  ).toContainText("候选体验 · 测试数据 · 尚未应用");
+  await expect(
+    page.getByRole("button", { name: "结束体验", exact: true }),
   ).toBeVisible();
   expect(await (await request.get("/api/composition")).json()).toEqual(before);
+
+  await page.reload();
+  await expect(
+    page.getByRole("status", { name: "候选体验提示" }),
+  ).toContainText("候选体验 · 测试数据 · 尚未应用", { timeout: 10000 });
+  await expect(
+    page.getByRole("button", { name: "结束体验", exact: true }),
+  ).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "应用", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "停止", exact: true }).or(
+      page.getByRole("button", { name: "放弃候选", exact: true }),
+    ),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "体验", exact: true }).click();
+  await expect(
+    page.getByRole("status", { name: "候选体验提示" }),
+  ).toBeVisible();
+  await page.route("**/api/experience/commands", async (route) => {
+    await route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: "INVALID_INPUT",
+        message: "体验写入失败提示",
+      }),
+    });
+  });
+  await page.getByLabel("任务名称").fill("改标题应失败");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("体验写入失败提示");
+  expect(await (await request.get("/api/composition")).json()).toEqual(before);
+  await page.unroute("**/api/experience/commands");
 
   const afterExperience = await (await request.get("/api/assistant")).json();
   const candidate = afterExperience.candidates.find(

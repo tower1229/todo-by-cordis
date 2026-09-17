@@ -28,6 +28,14 @@ import { useAssistant } from "./useAssistant.js";
 import { AssistantPanel } from "./AssistantPanel.js";
 import { WorkspacePanel } from "./WorkspacePanel.js";
 import { CandidateExperiencePanel } from "./CandidateExperiencePanel.js";
+import {
+  clearStoredExperienceSession,
+  experienceGoneError,
+  isExperienceGone,
+  isExperienceSnapshot,
+  readExperienceSession,
+  readStoredExperienceSession,
+} from "./experience-api.js";
 import "./style.css";
 
 const filters = [
@@ -120,6 +128,31 @@ function App() {
     const back = () => setPanel(undefined);
     window.addEventListener("popstate", back);
     return () => window.removeEventListener("popstate", back);
+  }, []);
+  useEffect(() => {
+    const stored = readStoredExperienceSession();
+    if (!stored) return;
+    void readExperienceSession({
+      sessionId: stored.sessionId,
+      ...(stored.runId ? { runId: stored.runId } : {}),
+    })
+      .then((result) => {
+        if (isExperienceSnapshot(result)) {
+          setPanel({
+            kind: "experience",
+            sessionId: result.id,
+            runId: result.runId,
+          });
+          return;
+        }
+        clearStoredExperienceSession();
+        if (isExperienceGone(result))
+          setError(experienceGoneError(result, true).message);
+      })
+      .catch((err) => {
+        clearStoredExperienceSession();
+        setError(errorMessage(err));
+      });
   }, []);
   function openPanel(
     next: Panel,

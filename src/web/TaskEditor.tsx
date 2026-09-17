@@ -11,9 +11,8 @@ import {
   errorMessage,
   readStored,
   isStringRecord,
-  sendCommand,
 } from "./api.js";
-import { sendExperienceCommand } from "./experience-api.js";
+import { dispatchWorkspaceCommand } from "./experience-api.js";
 import { Button, ErrorMessage, Spinner } from "./ui.js";
 import { TaskDetailContributions } from "./TaskDetailContributions.js";
 
@@ -70,16 +69,13 @@ export function Editor({
     setBusy(true);
     setError("");
     try {
-      const payload = {
-        type: "edit" as const,
+      await dispatchWorkspaceCommand(experienceSessionId, {
+        type: "edit",
         taskId: task.id,
         expectedRevision: base,
         compositionRevision: revision,
         ...draft,
-      };
-      if (experienceSessionId)
-        await sendExperienceCommand(experienceSessionId, payload);
-      else await sendCommand(payload);
+      });
       localStorage.removeItem(key);
       await saved();
       close();

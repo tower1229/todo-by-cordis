@@ -135,15 +135,16 @@ export class Evolution {
     private db: DatabaseSync,
     private driver: Driver,
     private domain: Domain,
-    sessionsOrLimits?:
+    /** ExperienceSessionHost, or legacy budget limits as the 4th argument. */
+    sessionsOrBudget?:
       | ExperienceSessionHost
       | { calls: number; candidates: number; milliseconds: number },
-    maybeLimits?: { calls: number; candidates: number; milliseconds: number },
+    budgetLimits?: { calls: number; candidates: number; milliseconds: number },
   ) {
-    if (sessionsOrLimits instanceof ExperienceSessionHost) {
-      this.sessions = sessionsOrLimits;
-      if (maybeLimits) this.limits = maybeLimits;
-    } else if (sessionsOrLimits) this.limits = sessionsOrLimits;
+    if (sessionsOrBudget instanceof ExperienceSessionHost) {
+      this.sessions = sessionsOrBudget;
+      if (budgetLimits) this.limits = budgetLimits;
+    } else if (sessionsOrBudget) this.limits = sessionsOrBudget;
     db.exec(`CREATE TABLE IF NOT EXISTS evolution_runs(id TEXT PRIMARY KEY,body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS evolution_operations(id TEXT PRIMARY KEY,hash TEXT NOT NULL,runId TEXT NOT NULL,receipt TEXT);
       CREATE TABLE IF NOT EXISTS evolution_acceptance_revisions(id TEXT PRIMARY KEY,runId TEXT NOT NULL,body TEXT NOT NULL);

@@ -9,6 +9,12 @@ import { ExecutionDriver } from "./execution-fixture.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import { activateDual } from "./dual-composition-fixture.js";
 import { evolutionWithExperience } from "./evolution-session-fixture.js";
+import { ExperienceSessionHost } from "../../src/server/experience-session.js";
+import {
+  experienceGoneError,
+  isExperienceGone,
+  isExperienceSnapshot,
+} from "../../src/web/experience-api.js";
 import { experienceSessionBanner } from "../../src/shared/assistant.js";
 import { AppError } from "../../src/shared/contracts.js";
 import type { Evolution } from "../../src/evolution/evolution.js";
@@ -22,6 +28,40 @@ async function settle(e: Evolution) {
   }
   throw new Error("timeout");
 }
+
+test("isExperienceSnapshot distinguishes active snapshots from gone/invalid", () => {
+  assert.equal(
+    isExperienceSnapshot({
+      status: "active",
+      id: "s",
+      banner: experienceSessionBanner,
+      runId: "r",
+      candidateId: "c",
+      taskId: "t",
+      note: "n",
+      composition: { revision: 1 } as never,
+      task: { id: "t" } as never,
+    }),
+    true,
+  );
+  assert.equal(isExperienceGone({ status: "none" }), true);
+  assert.equal(
+    isExperienceGone({
+      status: "invalid",
+      id: "s",
+      banner: experienceSessionBanner,
+      runId: "r",
+      candidateId: "c",
+      taskId: "t",
+      note: "失效",
+    }),
+    true,
+  );
+  assert.match(
+    experienceGoneError({ status: "none" }, true).message,
+    /宿主重启/,
+  );
+});
 
 async function awaitingApplyDual(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), "cordis-exp-session-"));
@@ -78,7 +118,44 @@ async function awaitingApplyDual(t: TestContext) {
   };
 }
 
-test("待应用且已通过验证的候选可打开体验；非 awaiting-apply 不能创建", async (t) => {
+test("非 awaiting-apply 状态不能创建体验会话", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-exp-ready-"));
+  const w = await Workspace.open(join(directory, "workspace.db"));
+  t.after(async () => {
+    await w.close().catch(() => undefined);
+    await rm(directory, { recursive: true, force: true });
+  });
+  await activateDual(w);
+  const { evolution: e, sessions } = evolutionWithExperience(
+    w,
+    new ExecutionDriver(new PlanningDriver(), "aux-workflow", "双贡献组合"),
+  );
+  t.after(async () => {
+    await e.close();
+    await sessions.close();
+  });
+  await e.command({
+    type: "request",
+    text: "完成前填写复盘",
+    operationId: "plan-ready-only",
+  });
+  const ready = await settle(e);
+  assert.equal(ready.status, "ready");
+  if (ready.status !== "ready") throw new Error("expected ready");
+  await assert.rejects(
+    () =>
+      e.command({
+        type: "experience",
+        operationId: "exp-while-ready",
+        runId: ready.id,
+        candidateId: "any",
+      }),
+    (error: unknown) =>
+      error instanceof AppError && error.code === "PLAN_STALE",
+  );
+});
+
+test("待应用且已通过验证的候选可打开体验；错误候选不能创建", async (t) => {
   const { w, before, e, app, done, candidate, formalTaskId } =
     await awaitingApplyDual(t);
   await assert.rejects(
@@ -227,4 +304,73 @@ test("浏览器不能指定数据库路径；结束体验不自动应用候选",
   const still = await e.observe();
   assert.equal(still.run?.status, "awaiting-apply");
   assert.equal(w.composition().versionId, before.versionId);
+});
+
+test("体验拒绝校验不改任务；TTL 超时后会话清理", async (t) => {
+  const { w, before, e, app, done, candidate, formalTaskId } =
+    await awaitingApplyDual(t);
+  const opened = await e.command({
+    type: "experience",
+    operationId: "exp-reject",
+    runId: done.id,
+    candidateId: candidate.id,
+  });
+  assert.equal(opened.run?.status, "awaiting-apply");
+  if (opened.run?.status !== "awaiting-apply")
+    throw new Error("expected awaiting-apply");
+  const sessionId = opened.run.experienceSession!.id;
+  const initial = await (
+    await app.request(`/api/experience?sessionId=${sessionId}`)
+  ).json();
+  const beforeFields = { ...initial.task.fields };
+  const rejected = await app.request("/api/experience/commands", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionId,
+      operationId: randomUUID(),
+      type: "action",
+      taskId: initial.task.id,
+      actionId: "complete",
+      expectedRevision: initial.task.revision,
+      input: {},
+    }),
+  });
+  assert.ok(rejected.status === 200 || rejected.status === 400 || rejected.status === 409);
+  const rejectedBody = await rejected.json();
+  if (rejected.status === 200) {
+    assert.ok(
+      rejectedBody.decision?.kind === "reject" ||
+        rejectedBody.decision?.kind === "input-required",
+      JSON.stringify(rejectedBody),
+    );
+  }
+  const after = await (
+    await app.request(`/api/experience?sessionId=${sessionId}`)
+  ).json();
+  assert.equal(after.task.state, initial.task.state);
+  assert.deepEqual(after.task.fields, beforeFields);
+  assert.equal(w.query().tasks[0]?.id, formalTaskId);
+  assert.equal(w.composition().versionId, before.versionId);
+
+  await e.command({
+    type: "experience",
+    operationId: "exp-end-before-ttl",
+    runId: done.id,
+    candidateId: candidate.id,
+  });
+  const short = new ExperienceSessionHost(w, 40);
+  t.after(async () => {
+    await short.close();
+  });
+  const snap = await short.start({
+    runId: done.id,
+    candidateId: candidate.id,
+    versionId: candidate.versionId!,
+    evidenceHash: candidate.evidenceHash!,
+    compositionRevision: before.revision,
+  });
+  assert.equal(snap.status, "active");
+  await new Promise((r) => setTimeout(r, 80));
+  assert.deepEqual(short.observe({ sessionId: snap.id }), { status: "none" });
 });
