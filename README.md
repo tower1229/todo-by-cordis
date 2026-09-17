@@ -42,13 +42,15 @@ pnpm test:e2e
 pnpm bench:m1
 # 真实模型验收（需要 .env，会调用 Gemini 并产生 usage）
 node --import tsx scripts/accept-m2.ts
+# #33 缩短试跑：新增标签 → 升级小写（显式授权；无候选体验；不覆盖旧证据）
+ACCEPT_REAL_MODEL=1 pnpm accept:shortened-tags
 ```
 
 浏览器测试与基准使用生产构建，运行前先 `pnpm build`。浏览器测试监听 4518，使用临时数据库，截图和失败证据写入忽略的 `test-results/`。覆盖 320、390、768、1280 宽度、任务操作、草稿、幂等重试，以及 AI 前端契约。
 
 已移除 M0 的重复实验运行器、对应探针、示例数据按钮、手写流程切换界面和 `/api/releases` 演示接口。保留正式 Workspace/Runtime 的崩溃恢复、超时、版本切换及数据保留回归。旧数据库仍可加载已有复盘流程，设置中的版本恢复保留历史字段；兼容插件不再提供安装入口。
 
-真实验收脚本使用独立数据库，将需求、方案、调用、真实 usage、候选源码、失败诊断、版本与行为证据保存到 `.runtime/acceptance-*/evidence.json`。自动回归使用显式 FixtureDriver，不能冒充真实模型证据。
+真实验收脚本使用独立数据库，将需求、方案、调用、真实 usage、候选源码、失败诊断、版本与行为证据保存到 `.runtime/acceptance-*/evidence.json`。自动回归使用显式 FixtureDriver，不能冒充真实模型证据。`pnpm accept:shortened-tags` 写入运行目录下的 `issue-33-shortened-evidence.json`（`kind=real-model-shortened-trial`），与完整六步 / `issue-8-*` 历史记录可区分，且不覆盖旧文件。
 
 基础 Todo 不依赖模型。Workspace 是唯一数据提交入口，Cordis 业务组合运行在常驻子进程中。当前不提供远程部署、多租户或恶意插件隔离保证。
 

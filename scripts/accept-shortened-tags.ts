@@ -1,7 +1,13 @@
 // External Gemini calls require ACCEPT_REAL_MODEL=1 and GEMINI_API_KEY.
-// Fresh synthetic dual-composition workspace; no candidate experience step.
+// Fresh synthetic workflow-only workspace; add tags then upgrade lowercase; no experience.
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import {
+  mkdtempSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  existsSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
@@ -9,20 +15,21 @@ import { Workspace } from "../src/server/workspace.js";
 import { Evolution } from "../src/evolution/evolution.js";
 import { EvolutionDomain } from "../src/server/evolution-domain.js";
 import { Gemini } from "../src/evolution/gemini.js";
-import { activateDual } from "../tests/app/dual-composition-fixture.js";
+import { activateWorkflowOnly } from "../tests/app/dual-composition-fixture.js";
 import type {
   AssistantCommand,
   AssistantSnapshot,
 } from "../src/shared/assistant.js";
 import {
   assertFormalFingerprintUnchanged,
+  buildBreakpoint,
   buildShortenedTrialHeader,
   formalWorkspaceFingerprint,
   redactSensitive,
   requireRealModelAuthorization,
   summarizeCandidateResults,
   summarizeRunConfirmation,
-} from "../src/shared/shortened-real-model.js";
+} from "./lib/shortened-real-model.js";
 
 if (existsSync(".env")) process.loadEnvFile(".env");
 requireRealModelAuthorization();
@@ -30,9 +37,15 @@ requireRealModelAuthorization();
 const ISSUE = "https://github.com/tower1229/todo-by-cordis/issues/33";
 const PARENT = "https://github.com/tower1229/todo-by-cordis/issues/30";
 const REQUEST_ADD_TAGS =
-  "请为任务增加标签能力：保存标签时去掉首尾空格，空白标签必须拒绝。保留现有工作流、截止日期与其他字段行为不变。";
+  "请新增标签插件：保存标签时去掉首尾空格，空白标签必须拒绝。保留现有工作流与其他字段行为不变。";
 const REQUEST_LOWERCASE_TAGS =
-  "请继续改进标签：保存时统一转为小写，仍要去掉首尾空格并拒绝空白标签。其他成员与任务行为保持不变。";
+  "请继续升级刚新增的标签插件：保存时统一转为小写，仍要去掉首尾空格并拒绝空白标签。其他成员与任务行为保持不变。";
+
+const SHORTENED_LIMITS = {
+  calls: 12,
+  candidates: 1,
+  milliseconds: 600_000,
+} as const;
 
 const directory =
   process.env.ACCEPTANCE_PATH ??
@@ -64,8 +77,9 @@ const evidence: unknown[] = [
   },
 ];
 
-let workspace = await Workspace.open(join(directory, "workspace.db"));
-await activateDual(workspace);
+let currentPhase = "bootstrap";
+const workspace = await Workspace.open(join(directory, "workspace.db"));
+await activateWorkflowOnly(workspace);
 const seedTask = (
   await workspace.command({
     type: "create",
@@ -79,17 +93,43 @@ let formalBefore = formalWorkspaceFingerprint({
   tasks: workspace.query(),
 });
 
-let evolution = new Evolution(
+const evolution = new Evolution(
   workspace.db,
   new Gemini(process.env.GEMINI_API_KEY!),
   new EvolutionDomain(workspace),
+  SHORTENED_LIMITS,
 );
 
 const command = async (input: AssistantCommand) => {
   const receipt = await evolution.command(input);
-  evidence.push({ command: redactSensitive(input), receipt: redactSensitive(receipt) });
+  evidence.push({
+    command: redactSensitive(input),
+    receipt: redactSensitive(receipt),
+  });
   return receipt;
 };
+
+function caseSummariesFromSnapshot(snapshot: AssistantSnapshot) {
+  return (snapshot.candidates ?? []).map((candidate) => {
+    if (!candidate.versionId) return { versionId: candidate.versionId };
+    try {
+      const evidenceBody = workspace.release.get(candidate.versionId)
+        .evidence as {
+        checks?: string[];
+        memberCases?: { name?: string }[];
+      };
+      return {
+        versionId: candidate.versionId,
+        checks: evidenceBody.checks,
+        memberCaseNames: evidenceBody.memberCases
+          ?.map((c) => c.name)
+          .filter((name): name is string => !!name),
+      };
+    } catch {
+      return { versionId: candidate.versionId };
+    }
+  });
+}
 
 async function settled(): Promise<AssistantSnapshot> {
   let last = "";
@@ -104,7 +144,10 @@ async function settled(): Promise<AssistantSnapshot> {
       evidence.push({
         snapshotSummary: {
           run: summarizeRunConfirmation(snapshot),
-          candidates: summarizeCandidateResults(snapshot),
+          candidates: summarizeCandidateResults(
+            snapshot,
+            caseSummariesFromSnapshot(snapshot),
+          ),
         },
       });
       return snapshot;
@@ -114,16 +157,21 @@ async function settled(): Promise<AssistantSnapshot> {
   throw new Error("acceptance timeout");
 }
 
-async function publishPhase(label: string) {
-  let snapshot = await settled();
+function assertFormalAt(label: string) {
   assertFormalFingerprintUnchanged(
-    `${label}-after-planning`,
+    label,
     formalBefore,
     formalWorkspaceFingerprint({
       composition: workspace.composition(),
       tasks: workspace.query(),
     }),
   );
+}
+
+async function publishPhase(label: string) {
+  currentPhase = label;
+  let snapshot = await settled();
+  assertFormalAt(`${label}-after-planning`);
   if (snapshot.run?.status === "awaiting-acceptance") {
     const run = snapshot.run;
     console.log(
@@ -138,6 +186,7 @@ async function publishPhase(label: string) {
       revisionId: run.acceptanceRevision!.id,
     });
     snapshot = await settled();
+    assertFormalAt(`${label}-after-acceptance-confirm`);
   }
   const ready = snapshot.run;
   assert.equal(ready?.status, "ready", JSON.stringify(ready));
@@ -154,6 +203,7 @@ async function publishPhase(label: string) {
     "awaiting-apply",
     JSON.stringify(snapshot.run),
   );
+  assertFormalAt(`${label}-before-apply`);
   const candidate = snapshot.candidates!.find((c) => c.passed);
   assert.ok(candidate?.evidenceHash, JSON.stringify(snapshot.candidates));
   await command({
@@ -223,16 +273,35 @@ try {
     composition: workspace.composition(),
   });
   console.log(
-    "PASS: shortened real-model trial (tags trim/reject → lowercase upgrade)",
+    "PASS: shortened real-model trial (add tags trim/reject → lowercase upgrade)",
   );
 } catch (error) {
+  const snapshot = await evolution.observe().catch(() => null);
+  const failed = snapshot?.candidates?.find((c) => c.diagnostic);
+  const run = snapshot?.run;
   evidence.push({
     passed: false,
     error: error instanceof Error ? error.message : String(error),
-    preservedDirectory: directory,
+    breakpoint: buildBreakpoint({
+      phase: currentPhase,
+      runStatus: run?.status,
+      diagnostic:
+        failed?.diagnostic ??
+        (run && "message" in run ? String(run.message) : undefined),
+      preservedDirectory: directory,
+    }),
   });
   throw error;
 } finally {
+  evidence.push({
+    calls: workspace.db
+      .prepare("SELECT runId,body FROM evolution_calls")
+      .all()
+      .map((r) => ({
+        runId: r.runId,
+        ...JSON.parse(String(r.body)),
+      })),
+  });
   await evolution.close();
   writeFileSync(
     join(directory, "issue-33-shortened-evidence.json"),

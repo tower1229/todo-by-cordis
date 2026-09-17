@@ -1,14 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { hostname } from "node:os";
 import {
-  REAL_MODEL_FULL_SIX_STEP_KIND,
   REAL_MODEL_SHORTENED_KIND,
   assertFormalFingerprintUnchanged,
+  buildBreakpoint,
   buildShortenedTrialHeader,
   formalWorkspaceFingerprint,
   redactSensitive,
   requireRealModelAuthorization,
-} from "../../src/shared/shortened-real-model.js";
+} from "../../scripts/lib/shortened-real-model.js";
 
 test("requireRealModelAuthorization blocks without explicit ACCEPT_REAL_MODEL", () => {
   const key = process.env.GEMINI_API_KEY;
@@ -24,7 +25,7 @@ test("requireRealModelAuthorization blocks without explicit ACCEPT_REAL_MODEL", 
   delete process.env.ACCEPT_REAL_MODEL;
 });
 
-test("buildShortenedTrialHeader distinguishes shortened trial from full six-step kind", () => {
+test("buildShortenedTrialHeader uses shortened kind and real hostname", () => {
   const header = buildShortenedTrialHeader({
     issue: "https://github.com/tower1229/todo-by-cordis/issues/33",
     parentIssue: "https://github.com/tower1229/todo-by-cordis/issues/30",
@@ -32,17 +33,20 @@ test("buildShortenedTrialHeader distinguishes shortened trial from full six-step
     baseCommit: "abc123",
   });
   assert.equal(header.kind, REAL_MODEL_SHORTENED_KIND);
-  assert.notEqual(header.kind, REAL_MODEL_FULL_SIX_STEP_KIND);
   assert.equal(header.maxAttemptsPerPhase, 1);
   assert.equal(header.experienceInteraction, false);
   assert.deepEqual(header.businessRequests, ["a", "b"]);
   assert.match(header.note, /不覆盖/);
+  assert.equal(header.runner.host, hostname());
 });
 
 test("redactSensitive masks Gemini keys and secret fields", () => {
   const redacted = redactSensitive({
     gemini_api_key: "secret",
-    nested: { authorization: "Bearer x", text: "AIzaSy0123456789012345678901234567890ab" },
+    nested: {
+      authorization: "Bearer x",
+      text: "AIzaSy0123456789012345678901234567890ab",
+    },
   }) as Record<string, unknown>;
   assert.equal(redacted.gemini_api_key, "[REDACTED]");
   assert.equal(
@@ -84,4 +88,15 @@ test("assertFormalFingerprintUnchanged detects composition or task drift", () =>
     () => assertFormalFingerprintUnchanged("planning", before, after),
     /正式任务数据或组合指针/,
   );
+});
+
+test("buildBreakpoint records nextAction without marking failure as pass", () => {
+  const breakpoint = buildBreakpoint({
+    phase: "add-tags-trim-reject",
+    runStatus: "failed",
+    diagnostic: "验收失败",
+    preservedDirectory: "/tmp/run",
+  });
+  assert.equal(breakpoint.phase, "add-tags-trim-reject");
+  assert.match(breakpoint.nextAction, /禁止.*手工改生成代码/);
 });

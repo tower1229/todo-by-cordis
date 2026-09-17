@@ -1,14 +1,10 @@
 import { execSync } from "node:child_process";
-import type { Composition, TaskList } from "./contracts.js";
-import type { AssistantSnapshot } from "./assistant.js";
+import { hostname } from "node:os";
+import type { Composition, TaskList } from "../../src/shared/contracts.js";
+import type { AssistantSnapshot } from "../../src/shared/assistant.js";
 
 /** Distinguishes PR4 shortened trial from full six-step real-model evidence. */
 export const REAL_MODEL_SHORTENED_KIND = "real-model-shortened-trial" as const;
-export const REAL_MODEL_FULL_SIX_STEP_KIND = "real-model-full-six-step" as const;
-
-export type RealModelEvidenceKind =
-  | typeof REAL_MODEL_SHORTENED_KIND
-  | typeof REAL_MODEL_FULL_SIX_STEP_KIND;
 
 export type ShortenedTrialHeader = {
   kind: typeof REAL_MODEL_SHORTENED_KIND;
@@ -21,6 +17,14 @@ export type ShortenedTrialHeader = {
   maxAttemptsPerPhase: number;
   experienceInteraction: false;
   note: string;
+};
+
+export type ShortenedBreakpoint = {
+  phase: string;
+  runStatus?: string;
+  diagnostic?: string;
+  preservedDirectory: string;
+  nextAction: string;
 };
 
 export function requireRealModelAuthorization(): void {
@@ -54,7 +58,7 @@ export function buildShortenedTrialHeader(input: {
     startedAt: new Date().toISOString(),
     runner: {
       user: process.env.USER ?? process.env.USERNAME ?? "unknown",
-      host: process.env.HOSTNAME ?? "unknown",
+      host: hostname(),
       node: process.version,
     },
     businessRequests: input.businessRequests,
@@ -87,14 +91,28 @@ export function redactSensitive(value: unknown): unknown {
   return value;
 }
 
-export function summarizeCandidateResults(snapshot: AssistantSnapshot) {
-  return (snapshot.candidates ?? []).map((candidate) => ({
-    id: candidate.id,
-    passed: candidate.passed,
-    diagnostic: candidate.diagnostic,
-    evidenceHash: candidate.evidenceHash,
-    versionId: candidate.versionId,
-  }));
+export function summarizeCandidateResults(
+  snapshot: AssistantSnapshot,
+  caseSummaries?: {
+    versionId?: string;
+    checks?: string[];
+    memberCaseNames?: string[];
+  }[],
+) {
+  return (snapshot.candidates ?? []).map((candidate) => {
+    const matched = caseSummaries?.find(
+      (summary) => summary.versionId === candidate.versionId,
+    );
+    return {
+      id: candidate.id,
+      passed: candidate.passed,
+      diagnostic: candidate.diagnostic,
+      evidenceHash: candidate.evidenceHash,
+      versionId: candidate.versionId,
+      checks: matched?.checks,
+      memberCaseNames: matched?.memberCaseNames,
+    };
+  });
 }
 
 export function summarizeRunConfirmation(snapshot: AssistantSnapshot) {
@@ -155,4 +173,20 @@ export function assertFormalFingerprintUnchanged(
     throw new Error(
       `正式任务数据或组合指针在 ${label} 阶段被改动：${JSON.stringify({ before, after })}`,
     );
+}
+
+export function buildBreakpoint(input: {
+  phase: string;
+  runStatus?: string;
+  diagnostic?: string;
+  preservedDirectory: string;
+}): ShortenedBreakpoint {
+  return {
+    phase: input.phase,
+    runStatus: input.runStatus,
+    diagnostic: input.diagnostic,
+    preservedDirectory: input.preservedDirectory,
+    nextAction:
+      "补确定性回归后再跑；禁止无限重试或手工改生成代码后算通过。",
+  };
 }

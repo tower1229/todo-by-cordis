@@ -9,6 +9,32 @@ const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "../fixtures");
 
 export const dualWorkflowDefinition = memberUiWorkflowDefinition;
 
+/** Workflow-only baseline for shortened trial: no auxiliary tags/due yet. */
+export async function activateWorkflowOnly(w: Workspace) {
+  const workflowCode = await readFile(join(fixtureDir, "aux-workflow.mjs"), "utf8");
+  const composition = w.release.record({
+    pluginId: "aux-workflow",
+    name: "双贡献组合",
+    service: "workflow",
+    contractVersion: "workflow/1",
+    source: workflowCode,
+    code: workflowCode,
+    definition: dualWorkflowDefinition,
+    evidence: { passed: true, origin: "test" },
+    members: [{ pluginId: "aux-workflow", enabled: true, role: "workflow" }],
+  });
+  const before = w.composition();
+  await w.activate(
+    {
+      versionId: composition.id,
+      compositionRevision: before.revision,
+      operationId: randomUUID(),
+    },
+    () => undefined,
+  );
+  return { composition };
+}
+
 /** Dual-plugin composition fixture shared by Workspace and Evolution enable tests. */
 export async function activateDual(w: Workspace) {
   const workflowCode = await readFile(join(fixtureDir, "aux-workflow.mjs"), "utf8");
