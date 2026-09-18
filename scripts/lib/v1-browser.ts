@@ -41,6 +41,20 @@ export function v1Browser(
       await expect(banner).toContainText("候选体验 · 测试数据 · 尚未应用");
       await page.reload();
       await expect(banner).toBeVisible();
+      const complete = session.composition.workflow.actions.find((action) => action.id === "complete");
+      const reopen = session.composition.workflow.actions.find((action) => action.id === "reopen");
+      assert.ok(complete && reopen);
+      await page.getByRole("button", { name: complete.label, exact: true }).click();
+      if (phase >= 3) {
+        const reflection = session.composition.retainedFields.find(
+          (field) => session.task.fields[field.key] === "完成复盘",
+        );
+        assert.ok(reflection, "候选体验须保留复盘字段");
+        await page.getByLabel(reflection.label, { exact: true }).fill("浏览器完成复盘");
+        await page.getByRole("button", { name: complete.label, exact: true }).click();
+      }
+      await page.getByRole("button", { name: reopen.label, exact: true }).click();
+      await expect(page.getByRole("button", { name: complete.label, exact: true })).toBeVisible();
       await page.screenshot({ path, fullPage: true });
       await page.getByLabel("备注", { exact: true }).fill("浏览器隔离写入");
       const [saved] = await Promise.all([
@@ -60,6 +74,8 @@ export function v1Browser(
         status: "passed",
         viewport: { width: 390, height: 844 },
         refresh: true,
+        completedAndReopened: true,
+        reflectionInput: phase >= 3,
         editedSyntheticTask: session.taskId,
         screenshot: path,
         pageErrors: errors,

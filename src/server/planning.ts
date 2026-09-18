@@ -156,7 +156,10 @@ export function capture(workspace: Workspace): Investigation {
     const contractRef = `member-contract/${member.pluginId}@${member.versionId}`;
     const acceptanceRef = `member-acceptance/${member.pluginId}@${member.versionId}`;
     add(sourceRef, version.source);
-    add(contractRef, JSON.stringify(version.definition ?? { id: member.pluginId }));
+    add(
+      contractRef,
+      JSON.stringify(version.definition ?? { id: member.pluginId }),
+    );
     add(
       acceptanceRef,
       JSON.stringify(
@@ -222,7 +225,7 @@ export const planningInstruction = `你是本应用唯一的自迭代 Agent，�
 纯辅助成员启停使用 memberEnabled:{pluginId,enabled}，仅变更一个现有辅助成员的 enabled。writableScope 为 []，保留已有 workflowRules、extensions 和 memberCases，不得同时新增或升级成员、修改源码或修订验收；仍需调查与 describe_verification。宿主生成状态候选，体验与应用确认独立。
 对于 workflow/1，先 describe_verification(rules) 取得可信检查器定义，把返回 cases 原样作为 acceptance、rules 作为 workflowRules。新增动作通过 extensions 单独提交冻结数据化案例，acceptance 仍填写 describe_verification 返回 cases；辅助成员业务要求通过 memberCases 冻结目标成员、动作、初始数据、输入、预期最终数据与拒绝案例，由隔离 Workspace 检查器解释，不能仅靠成员冒烟。超出这些检查器的行为保留原目标并阻塞。必须读取 active-contract 和 active-acceptance，规则改变须提供 acceptanceReason 说明用户要求与原因，宿主展示旧新差异并等待独立确认；不能为通过候选而改规则。已有成员级正例与拒绝案例必须继续参与验收，不能因无关变更悄悄丢失。新增辅助成员必须在本次计划提交该成员动作的成对冻结案例；升级辅助成员时，省略/空 memberCases 仅表示 as-is 继承该成员历史成对案例（无历史基线则阻塞），若提交了 memberCases 却未覆盖被升级成员的受影响动作（含历史动作与本次提交动作）则视为错绑并阻塞。宿主用 AffectedAcceptance 在规划与候选阶段共用同一套「受影响动作 ↔ 冻结案例」规则。
 提交前核对 inspect_application.planningRequirements，evidence 包含全部 requiredEvidence 及相关消费方的已读 ref/hash。propose_plan 被宿主拒绝时按工具返回的诊断继续只读调查和修正计划，不降级原目标，不削弱检查器；真实阻塞如实保留。
-propose_plan 包含 summary、changes、outcome、dataImpact、excluded、evidence(ref/hash，必须引用真实读过的资料)、capabilityChanges(capability/provider/consumers/change)、acceptance(given/when/then/checker)、steps(id/purpose/dependsOn/artifact/evidence)、writableScope、compatibility、rollback、preview、application、restartImpact、dependencies(所需包名)、unresolved；若要在既有组合上叠加一个新辅助成员（不替换既有成员），另附 memberAdditions:[{pluginId,name}]（本阶段最多一项，pluginId 不得与现有 members 冲突）；若要只升级某个已有辅助成员，另附 memberUpgrades:[{pluginId}]（本阶段最多一项，必须是现有 auxiliary，且不得与 memberAdditions 同时出现）。辅助成员业务验收另附 memberCases（目标成员、动作、初始数据、输入、预期最终数据与拒绝案例）。宿主会派生 compositionIntent（改谁/保留谁）供用户查看；dataImpact 仍须如实说明字段与数据后果。summary 与 outcome 用用户可理解的短句描述目标与可见效果，不要把内部文件路径、JSON 样例或沙箱机制写进这两项。验收应覆盖正例、边界、已有行为和数据保留。不要自行声称验收已通过。ready 由宿主校验决定。
+propose_plan 包含 summary、changes、outcome、dataImpact、excluded、evidence(ref/hash，必须引用真实读过的资料)、capabilityChanges(capability/provider/consumers/change)、acceptance(given/when/then/checker)、steps(id/purpose/dependsOn/artifact/evidence)、writableScope、compatibility、rollback、preview、application、restartImpact、dependencies(所需包名)、unresolved；若要在既有组合上叠加一个新辅助成员（不替换既有成员），另附 memberAdditions:[{pluginId,name}]（本阶段最多一项，pluginId 不得与现有 members 冲突）；若要只升级某个已有辅助成员，另附 memberUpgrades:[{pluginId}]（本阶段最多一项，必须是现有 auxiliary，且不得与 memberAdditions 同时出现）。辅助成员业务验收另附 memberCases（目标成员、动作、初始数据、输入、预期最终数据与拒绝案例）。capabilityChanges、evidence、acceptance、steps 必须非空；新增辅助成员同样需要声明能力提供者与实际消费方，writableScope 声明候选组合 business/* 产物。memberEnabled 只在纯启停请求中提交，其他改进必须省略。宿主会派生 compositionIntent（改谁/保留谁）供用户查看；dataImpact 仍须如实说明字段与数据后果。summary 与 outcome 用用户可理解的短句描述目标与可见效果，不要把内部文件路径、JSON 样例或沙箱机制写进这两项。验收应覆盖正例、边界、已有行为和数据保留。不要自行声称验收已通过。ready 由宿主校验决定。
 修复故障的请求必须在 propose_plan 中设置 intent:"repair"，绑定旧版故障，不以修改需求期望冒充修复。宿主先运行旧版相同验收；无法复现或执行错误则阻塞。
 用户点击开始后才会生成候选；验证通过后停在待应用，正式应用须另行确认，不得把开始当作应用授权。宿主提供 workflow/1 字段检查器、business-actions/1 新增动作检查器，以及隔离 Workspace 检查器解释的 memberCases。新增纯业务动作可用 extensions 提供 actions、fields、cases，extensions.cases 只能引用 extensions.actions 中的动作；complete/reopen 的回归由 workflow/1 自动验证，不能放入 extensions.cases。每个动作至少一个 commit 正例和 reject 反例，完整数据化用例在开始前展示冻结；不能移除既有行为。可写范围使用 business/entry.ts、business/view.ts、business/config.json、business/compatibility.json 及同目录新增提供者 .ts 文件。新文件无需虚构已读证据。其他 IO、通知交付、控制协议变更仍须维护者升级。`;
 const obj = (
@@ -236,6 +239,7 @@ const obj = (
         "memberAdditions",
         "memberUpgrades",
         "memberCases",
+        "memberEnabled",
       ].includes(key),
   ),
 ) => ({ type: "object", properties, required, additionalProperties: false });
@@ -330,9 +334,14 @@ export const planningTools = [
       outcome: text,
       dataImpact: text,
       excluded: list,
-      evidence: { type: "array", items: obj({ ref: text, hash: text }) },
+      evidence: {
+        type: "array",
+        minItems: 1,
+        items: obj({ ref: text, hash: text }),
+      },
       capabilityChanges: {
         type: "array",
+        minItems: 1,
         items: obj({
           capability: text,
           provider: text,
@@ -346,6 +355,7 @@ export const planningTools = [
       },
       acceptance: {
         type: "array",
+        minItems: 1,
         description:
           "Copy describe_verification(rules).cases unchanged. Only workflow/1 cases belong here. Put added-action cases exclusively in extensions.cases; the host combines both after validation.",
         items: obj({
@@ -357,6 +367,7 @@ export const planningTools = [
       },
       steps: {
         type: "array",
+        minItems: 1,
         items: obj({
           id: text,
           purpose: text,
@@ -564,9 +575,15 @@ export function parsePlan(
   if (v.memberEnabled !== undefined) {
     const toggle = object(v.memberEnabled);
     const member = context.members.find((m) => m.pluginId === toggle.pluginId);
-    if (Object.keys(toggle).some((key) => !["pluginId", "enabled"].includes(key)) ||
-        !member || member.role !== "auxiliary" || typeof toggle.enabled !== "boolean" ||
-        member.enabled === toggle.enabled)
+    if (
+      Object.keys(toggle).some(
+        (key) => !["pluginId", "enabled"].includes(key),
+      ) ||
+      !member ||
+      member.role !== "auxiliary" ||
+      typeof toggle.enabled !== "boolean" ||
+      member.enabled === toggle.enabled
+    )
       blockers.push("启停必须绑定一个现有辅助成员且改变其启用状态");
     else memberEnabled = { pluginId: member.pluginId, enabled: toggle.enabled };
   }
@@ -846,7 +863,11 @@ export function parsePlan(
       ...(compositionIntent ? { compositionIntent } : {}),
       ...(memberCases?.length ? { memberCases } : {}),
       acceptance: [
-        ...(memberEnabled ? [`${memberEnabled.enabled ? "启用" : "停用"} ${memberEnabled.pluginId}，保留数据和精确成员版本，体验后独立应用`] : []),
+        ...(memberEnabled
+          ? [
+              `${memberEnabled.enabled ? "启用" : "停用"} ${memberEnabled.pluginId}，保留数据和精确成员版本，体验后独立应用`,
+            ]
+          : []),
         ...cases.map((c) => `当 ${c.given}，执行 ${c.when}，应 ${c.then}`),
         ...extensionCases(extensions).map(
           (c) => `当 ${c.given}，执行 ${c.when}，应 ${c.then}`,
@@ -858,7 +879,16 @@ export function parsePlan(
             )),
       ],
       cases: [
-        ...(memberEnabled ? [{ given: "现有辅助成员与精确版本锁", when: `${memberEnabled.pluginId} enabled=${memberEnabled.enabled}`, then: "只改变该成员启用状态，保留任务字段及其他成员版本；隔离体验后独立应用", checker: "host-member-enabled/1" }] : []),
+        ...(memberEnabled
+          ? [
+              {
+                given: "现有辅助成员与精确版本锁",
+                when: `${memberEnabled.pluginId} enabled=${memberEnabled.enabled}`,
+                then: "只改变该成员启用状态，保留任务字段及其他成员版本；隔离体验后独立应用",
+                checker: "host-member-enabled/1",
+              },
+            ]
+          : []),
         ...cases,
         ...extensionCases(extensions),
         ...memberCaseSummaries(memberCases),

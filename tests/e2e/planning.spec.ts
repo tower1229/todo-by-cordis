@@ -214,6 +214,19 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   await expect(
     page.getByRole("status", { name: "候选体验提示" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "完成", exact: true }).click();
+  await page.getByLabel("复盘", { exact: true }).fill("候选体验完成后的复盘");
+  await page.getByRole("button", { name: "完成", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "重新打开", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "重新打开", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "完成", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("候选体验完成后的复盘", { exact: true }),
+  ).toBeVisible();
   await page.route("**/api/experience/commands", async (route) => {
     await route.fulfill({
       status: 400,

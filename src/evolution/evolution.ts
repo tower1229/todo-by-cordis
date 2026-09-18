@@ -22,9 +22,7 @@ import {
   CandidateValidationError,
 } from "../release/business-bundle.js";
 import { hash } from "../release/storage.js";
-import {
-  ExperienceSessionHost,
-} from "../server/experience-session.js";
+import { ExperienceSessionHost } from "../server/experience-session.js";
 import { experienceSessionBanner } from "../shared/assistant.js";
 export type Target = {
   kind: "plugin";
@@ -602,11 +600,7 @@ export class Evolution {
           409,
         );
       if (!this.sessions)
-        throw new AppError(
-          "UNAVAILABLE",
-          "候选体验会话未配置",
-          503,
-        );
+        throw new AppError("UNAVAILABLE", "候选体验会话未配置", 503);
       const plan = record.run.plan as InvestigatedPlan;
       const target = record.target ?? this.domain.target(plan);
       this.domain.check(target, plan.compositionRevision);
@@ -1134,11 +1128,34 @@ export class Evolution {
               question: this.resultText(call.args.question),
             };
           } else {
-            const parsed = this.domain.parse(
-              call.args,
-              context,
-              r.run.evidence ?? [],
-            );
+            let parsed: ReturnType<Domain["parse"]>;
+            try {
+              parsed = this.domain.parse(
+                call.args,
+                context,
+                r.run.evidence ?? [],
+              );
+            } catch (error) {
+              const diagnostic =
+                error instanceof Error ? error.message : "计划结构无效";
+              const rejection = hash({ diagnostic, evidence: r.run.evidence });
+              if (rejections.has(rejection) || r.calls >= this.limits.calls) {
+                r.run = {
+                  ...this.base(r),
+                  status: "blocked",
+                  ...describeBlockers([diagnostic]),
+                };
+                this.save(r);
+                return;
+              }
+              rejections.add(rejection);
+              retryProtocol(
+                response,
+                diagnostic,
+                "计划结构未通过，不允许执行。请检查工具契约中的必填字段与非空列表，在原预算内修正；相同错误且无新证据将结束调查。不得降低目标、修改验收或绕过保护。",
+              );
+              continue investigation;
+            }
             if (r.calls >= this.limits.calls)
               parsed.blockers.push(
                 "调查已耗尽模型调用预算，需要新的运行重新规划",

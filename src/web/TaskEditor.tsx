@@ -12,7 +12,10 @@ import {
   readStored,
   isStringRecord,
 } from "./api.js";
-import { dispatchWorkspaceCommand } from "./experience-api.js";
+import {
+  dispatchWorkspaceCommand,
+  experienceClient,
+} from "./experience-api.js";
 import { Button, ErrorMessage, Spinner } from "./ui.js";
 import { TaskDetailContributions } from "./TaskDetailContributions.js";
 
@@ -72,7 +75,7 @@ export function Editor({
       await dispatchWorkspaceCommand(experienceSessionId, {
         type: "edit",
         taskId: task.id,
-        expectedRevision: base,
+        expectedRevision: experienceSessionId ? task.revision : base,
         compositionRevision: revision,
         ...draft,
       });
@@ -164,7 +167,9 @@ export function Editor({
           <Button
             onClick={async () => {
               try {
-                const latest = await api<Task>(`/tasks/${task.id}`);
+                const latest = experienceSessionId
+                  ? (await experienceClient(experienceSessionId).refresh()).task
+                  : await api<Task>(`/tasks/${task.id}`);
                 setBase(latest.revision);
                 await saved();
                 setError("已读取最新版本，请核对草稿后保存。");

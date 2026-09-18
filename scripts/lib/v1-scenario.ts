@@ -258,6 +258,11 @@ export async function runV1Acceptance(options: V1Options) {
           correctedCandidate: candidate,
           budget: snapshot.run?.budget,
         });
+      for (const attempt of failedAttempts) {
+        if (!attempt.versionId) continue;
+        record({ type: "failed-candidate-evidence", candidate: attempt,
+          evidence: w.release.get(attempt.versionId).evidence });
+      }
       const version = w.release.get(candidate.versionId);
       record({
         type: "candidate-evidence",

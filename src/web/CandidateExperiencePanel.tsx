@@ -134,6 +134,36 @@ export function CandidateExperiencePanel({
           <ErrorMessage message={error} />
         </div>
       )}
+      {!actionPanel && (
+        <div
+          className="flex flex-wrap gap-2 border-b border-line px-5 py-3"
+          aria-label="体验任务操作"
+        >
+          {(snapshot.composition.workflow.actions ?? [])
+            .filter(
+              (action) =>
+                action.from.includes(snapshot.task.state) &&
+                !(snapshot.composition.uiContributions ?? []).some(
+                  (contribution) =>
+                    contribution.actions.some(
+                      (item) => item.commandId === action.id,
+                    ),
+                ),
+            )
+            .map((action) => (
+              <Button
+                key={action.id}
+                variant="secondary"
+                disabled={busy}
+                onClick={(event) =>
+                  void runContribution(action, event.currentTarget)
+                }
+              >
+                {action.label}
+              </Button>
+            ))}
+        </div>
+      )}
       {actionPanel ? (
         <InputForm
           key={`${actionPanel.task.id}:${actionPanel.actionId}`}

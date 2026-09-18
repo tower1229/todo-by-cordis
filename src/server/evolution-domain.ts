@@ -13,6 +13,7 @@ import {
   requireAffectedAcceptanceForMemberChange,
   verifyViaIsolatedWorkspace,
   type WorkspaceAcceptanceCase,
+  type WorkspaceCaseEvidence,
 } from "./workspace-acceptance.js";
 import {
   capture,
@@ -265,10 +266,12 @@ export class EvolutionDomain implements Domain {
     this.check(this.target(plan), plan.compositionRevision);
     const goal = this.target(plan).payload as Goal;
     const definitionHash = acceptanceDefinitionHash(goal);
+    const reproductionCases: WorkspaceCaseEvidence[] = [];
     const reproduced = (diagnostic: string) => ({
       baseVersion: base.id,
       definitionHash,
       diagnostic,
+      workspaceCases: reproductionCases,
     });
     try {
       signal.throwIfAborted();
@@ -283,6 +286,7 @@ export class EvolutionDomain implements Domain {
         base,
         reproducedCases,
         signal,
+        (receipt) => reproductionCases.push(receipt),
       );
     } catch (error) {
       signal.throwIfAborted();
@@ -874,6 +878,7 @@ export class EvolutionDomain implements Domain {
         );
       });
     await prepared.runtime.close();
+    const workspaceCasesEvidence: WorkspaceCaseEvidence[] = [];
     // Decide-level checks are a fast pre-layer; trusted completion requires
     // isolated Workspace command → beforeCommit → query final facts.
     try {
@@ -890,12 +895,18 @@ export class EvolutionDomain implements Domain {
           candidate,
           workspaceCases,
           signal,
+          (receipt) => workspaceCasesEvidence.push(receipt),
         )),
       );
     } catch (error: unknown) {
+      const { id: _id, entry: _entry, createdAt: _createdAt, ...artifact } = candidate;
+      const failed = this.workspace.release.record({
+        ...artifact,
+        evidence: { passed: false, rules: goal.fields, workspaceCases: workspaceCasesEvidence },
+      });
       throw new CandidateValidationError(
         error instanceof Error ? error.message : "候选验证失败",
-        candidate.id,
+        failed.id,
       );
     }
     const verifiedAdditions: VersionMember[] = [];
@@ -952,6 +963,7 @@ export class EvolutionDomain implements Domain {
         memberAdditions: plannedAdditions,
         memberUpgrades: plannedUpgrades,
         memberCases: goal.memberCases,
+        workspaceCases: workspaceCasesEvidence,
         checks,
         systemChecks,
         capabilities,

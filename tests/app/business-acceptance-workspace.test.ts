@@ -68,7 +68,10 @@ function estimateCandidateFiles(mode: "strict" | "loose") {
   ];
 }
 
-function estimateDriver(planning: PlanningDriver, mode: "strict" | "loose"): Driver {
+function estimateDriver(
+  planning: PlanningDriver,
+  mode: "strict" | "loose",
+): Driver {
   const fallback = new ExecutionDriver(planning);
   return {
     async generate(request: ModelRequest, signal) {
@@ -195,7 +198,10 @@ async function realAwaitingApply(t: TestContext) {
     throw new Error("expected awaiting-apply");
   const snapshot = await e.observe();
   const candidate = snapshot.candidates?.find((c) => c.passed);
-  assert.ok(candidate, "must produce a passed candidate via workspace acceptance");
+  assert.ok(
+    candidate,
+    "must produce a passed candidate via workspace acceptance",
+  );
   assert.ok(candidate.evidenceHash);
   assert.ok(done.versionId);
   return { ...ctx, e, ready, done, candidate };
@@ -248,6 +254,25 @@ test("decide 正确但 beforeCommit 破坏最终字段时，候选验证失败�
     snapshot.candidates?.find((c) => c.diagnostic)?.diagnostic ?? "",
     /CORRUPTED|业务验收失败|workspace:complete-final-fields/,
   );
+  const failedVersion = snapshot.candidates?.find(
+    (c) => !c.passed && c.versionId,
+  )?.versionId;
+  assert.ok(failedVersion);
+  const failedEvidence = ctx.w.release.get(failedVersion).evidence as {
+    workspaceCases?: {
+      status: string;
+      actual: { fields?: Record<string, string> };
+      diagnostic: string;
+    }[];
+  };
+  assert.ok(
+    failedEvidence.workspaceCases?.some(
+      (c) =>
+        c.status === "failed" &&
+        c.actual.fields?.reflection === "CORRUPTED" &&
+        c.diagnostic.includes("业务验收失败"),
+    ),
+  );
   assert.equal(ctx.w.composition().versionId, ctx.before.versionId);
   assert.equal(ctx.w.composition().revision, ctx.before.revision);
   assert.deepEqual(memberSnapshot(ctx.w.composition()), membersBefore);
@@ -267,6 +292,33 @@ test("完整组合继承候选的隔离 Workspace 验收绑定整组合，体验
     members?: Array<{ pluginId: string; versionId?: string; enabled: boolean }>;
     verifier?: string;
   };
+  const receipts = (
+    version.evidence as {
+      workspaceCases?: {
+        name: string;
+        member: string;
+        memberVersionId: string;
+        input: Record<string, string>;
+        expected: unknown;
+        actual: unknown;
+        diagnostic: string;
+        status: string;
+      }[];
+    }
+  ).workspaceCases;
+  assert.ok(receipts?.length);
+  assert.ok(
+    receipts.every(
+      (c) =>
+        c.status === "passed" &&
+        c.member &&
+        c.memberVersionId &&
+        c.input &&
+        c.expected &&
+        c.actual &&
+        c.diagnostic,
+    ),
+  );
   assert.equal(evidence.verifier, "workspace/1");
   assert.ok(evidence.checks?.includes("workspace:complete-final-fields"));
   assert.ok(evidence.checks?.includes("workspace:reflection:missing-input"));

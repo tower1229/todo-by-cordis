@@ -762,6 +762,52 @@ test("empty extension declaration permits a workflow-only plan", async (t) => {
   assert.equal(w.composition().revision, 1);
 });
 
+test("malformed plan lists return bounded diagnostics without losing the investigation", async (t) => {
+  for (const repeated of [false, true])
+    await t.test(String(repeated), async (t) => {
+      const dir = mkdtempSync(join(tmpdir(), "cordis-plan-shape-"));
+      const w = await Workspace.open(join(dir, "workspace.db"));
+      const fixture = new PlanningDriver();
+      let proposals = 0;
+      const e = new Evolution(
+        w.db,
+        {
+          async generate(request) {
+            const response = await fixture.generate(request);
+            if (
+              response.calls[0]?.name === "propose_plan" &&
+              (++proposals === 1 || repeated)
+            )
+              response.calls[0].args.capabilityChanges = [];
+            return response;
+          },
+        },
+        new EvolutionDomain(w),
+      );
+      t.after(async () => {
+        await e.close();
+        await w.close();
+        rmSync(dir, { recursive: true, force: true });
+      });
+      await e.command({
+        type: "request",
+        operationId: "shape",
+        text: "完成前填写复盘",
+      });
+      for (
+        let i = 0;
+        i < 100 && (await e.observe()).run?.status === "planning";
+        i++
+      )
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      const run = (await e.observe()).run!;
+      assert.equal(run.status, repeated ? "blocked" : "ready");
+      assert.equal(run.budget?.callsUsed, 4);
+      assert.ok(JSON.stringify(fixture.requests).includes("计划列表不能为空"));
+      assert.equal(w.composition().revision, 1);
+    });
+});
+
 test("invalid plan step dependencies return bounded diagnostics before ready", async (t) => {
   for (const repeated of [false, true])
     await t.test(
