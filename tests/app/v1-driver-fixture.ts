@@ -11,6 +11,7 @@ const tagsSource = (lower: boolean) => `export default {
  contribute() { return {fields:[{key:'tags',label:'标签',type:'text'}],commands:[{id:'setTags',label:'设标签',from:['open','done']}]}; },
  decide({task,action,input}) {
   if(action!=='setTags') return {kind:'reject',message:'未知动作'};
+  if(!Object.hasOwn(input??{},'tags'))return {kind:'input-required',fields:[{key:'tags',label:'标签',type:'text',required:true}]};
   const tags=String(input?.tags ?? '').trim()${lower ? ".toLowerCase()" : ""};
   if(!tags) return {kind:'reject',message:'标签为空'};
   return {kind:'commit',state:task.state,fields:{...task.fields,tags}};

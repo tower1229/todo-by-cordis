@@ -999,3 +999,165 @@ test("misplaced supported action cases can be corrected with consumer investigat
       assert.equal(w.composition().revision, 1);
     });
 });
+
+test("inspection supplies exact baseline documents within the existing budget and does not attest unsent files", async (t) => {
+  for (const forgeUnread of [false, true])
+    await t.test(String(forgeUnread), async (t) => {
+      const directory = mkdtempSync(
+        join(tmpdir(), "cordis-inspection-bundle-"),
+      );
+      const w = await Workspace.open(join(directory, "workspace.db"));
+      await w.command({
+        type: "create",
+        operationId: "private-task",
+        compositionRevision: w.composition().revision,
+        title: "private-owner-task-never-send",
+      });
+      const fixture = new PlanningDriver();
+      const planning: Driver = {
+        async generate(request) {
+          const messages = request.history as {
+            parts?: {
+              functionResponse?: {
+                name?: string;
+                response: {
+                  result: {
+                    ref: string;
+                    hash: string;
+                    content: { files?: { ref: string; hash: string }[] };
+                    documents?: {
+                      ref: string;
+                      hash: string;
+                      content: unknown;
+                    }[];
+                  };
+                };
+              };
+            }[];
+          }[];
+          const results = messages
+            .flatMap((m) => m.parts ?? [])
+            .flatMap((p) =>
+              p.functionResponse ? [p.functionResponse.response.result] : [],
+            );
+          const inspection = results.find(
+            (r) => r.ref === "inspect_application",
+          );
+          if (!inspection)
+            return {
+              ...reply("inspect_application", {}),
+              history: request.history,
+            };
+          assert.ok(
+            inspection.documents?.length,
+            "inspection must deliver actual documents, not just their names",
+          );
+          assert.ok(
+            !JSON.stringify(inspection).includes(
+              "private-owner-task-never-send",
+            ),
+          );
+          for (const ref of [
+            "active-source",
+            "active-contract",
+            "active-acceptance",
+            "check_environment",
+            "src/shared/contracts.ts",
+            "src/server/evolution-domain.ts",
+            "src/web/ActionForm.tsx",
+          ])
+            assert.ok(
+              inspection.documents.some(
+                (doc) => doc.ref === ref && doc.hash && doc.content,
+              ),
+            );
+          if (!results.some((r) => r.ref === "verification-definition"))
+            return {
+              ...reply("describe_verification", {
+                rules: [
+                  {
+                    key: "reflection",
+                    label: "复盘",
+                    required: true,
+                    minLength: 1,
+                    maxLength: 5000,
+                  },
+                ],
+              }),
+              history: request.history,
+            };
+          // Adapt the delivered material to the existing model fixture's input format.
+          const response = await fixture.generate({
+            ...request,
+            history: [
+              ...request.history,
+              {
+                parts: inspection.documents.map((doc) => ({
+                  functionResponse: {
+                    name: "read_source",
+                    response: { result: doc },
+                  },
+                })),
+              },
+            ],
+          });
+          if (forgeUnread) {
+            const unread = inspection.content.files?.find(
+              (file) => file.ref === "tests/app/workspace.test.ts",
+            );
+            assert.ok(unread);
+            assert.ok(
+              !inspection.documents.some((doc) => doc.ref === unread.ref),
+            );
+            const evidence = response.calls[0].args.evidence as {
+              ref: string;
+              hash: string;
+            }[];
+            evidence.push(unread);
+          }
+          return { ...response, history: request.history };
+        },
+      };
+      const { ExecutionDriver } = await import("./execution-fixture.js");
+      const e = new Evolution(
+        w.db,
+        new ExecutionDriver(planning),
+        new EvolutionDomain(w),
+      );
+      t.after(async () => {
+        await e.close();
+        await w.close();
+        rmSync(directory, { recursive: true, force: true });
+      });
+      await e.command({
+        type: "request",
+        operationId: "inspect-bundle",
+        text: "完成前填写复盘",
+      });
+      for (
+        let i = 0;
+        i < 200 && (await e.observe()).run?.status === "planning";
+        i++
+      )
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      const ready = (await e.observe()).run!;
+      assert.equal(ready.status, forgeUnread ? "blocked" : "ready");
+      if (ready.status !== "ready") return;
+      assert.equal(ready.budget?.callsUsed, 3);
+      await e.command({
+        type: "start",
+        operationId: "generate",
+        runId: ready.id,
+        planId: ready.plan.id,
+      });
+      for (
+        let i = 0;
+        i < 200 && (await e.observe()).run?.status === "executing";
+        i++
+      )
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      const done = (await e.observe()).run!;
+      assert.equal(done.status, "awaiting-apply");
+      assert.equal(done.budget?.callsUsed, 6);
+    });
+});

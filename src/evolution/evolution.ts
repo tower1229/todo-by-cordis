@@ -1112,9 +1112,7 @@ export class Evolution {
               message: this.resultText(call.args.message),
             };
           } else if (call.name === "request_clarification") {
-            if (
-              !r.run.evidence?.some((e) => e.ref === "inspect_application")
-            ) {
+            if (!r.run.evidence?.some((e) => e.ref === "inspect_application")) {
               retryProtocol(
                 response,
                 "澄清前必须调查应用",
@@ -1264,11 +1262,16 @@ export class Evolution {
           return;
         }
         const result = this.domain.read(call.name, call.args, context);
-        if ("ref" in result)
+        if ("ref" in result) {
+          const delivered = [result, ...(result.documents ?? [])];
+          const deliveredRefs = new Set(
+            delivered.map((document) => document.ref),
+          );
           r.run.evidence = [
-            ...(r.run.evidence ?? []).filter((e) => e.ref !== result.ref),
-            { ref: result.ref, hash: result.hash },
+            ...(r.run.evidence ?? []).filter((e) => !deliveredRefs.has(e.ref)),
+            ...delivered.map(({ ref, hash }) => ({ ref, hash })),
           ];
+        }
         parts.push({
           functionResponse: {
             ...(call.id ? { id: call.id } : {}),

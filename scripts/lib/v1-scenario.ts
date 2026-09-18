@@ -41,6 +41,7 @@ export type V1Options = {
     app: ReturnType<typeof createApp>,
     phase: number,
     session: ExperienceSessionSnapshot,
+    bindings: { tags?: Binding; counter?: Binding; reflection: string },
   ) => Promise<unknown>;
 };
 type Binding = { member: string; action: string; field: string };
@@ -304,7 +305,7 @@ export async function runV1Acceptance(options: V1Options) {
       );
       const experienceSnapshot = readExperience();
       const browser = options.browser
-        ? await options.browser(app, phase, readExperience())
+        ? await options.browser(app, phase, readExperience(), { tags, counter, reflection })
         : { status: "not-run", reason: "CI public-control-plane subset" };
       record({
         type: "experience-checked",

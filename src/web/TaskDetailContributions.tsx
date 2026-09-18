@@ -25,7 +25,8 @@ export function TaskDetailContributions({
     trigger: HTMLElement,
   ) => void;
 }) {
-  if (!contributions.length && !faults.length) return null;
+  if (!contributions.length && !faults.length)
+    return error ? <ErrorMessage message={error} /> : null;
   return (
     <section className="space-y-4" aria-label="任务详情扩展">
       {contributions.map((contribution) => {

@@ -11,9 +11,11 @@ import { createApp } from "../../src/server/app.js";
 import { uiDetailReleaseInput } from "../fixtures/ui-detail.js";
 
 const experienceTest = test.extend<{
+  withUiContributions: boolean;
   experience: { sessions: ExperienceSessionHost; id: string; taskId: string };
 }>({
-  experience: async ({ page }, use) => {
+  withUiContributions: [true, { option: true }],
+  experience: async ({ page, withUiContributions }, use) => {
     const directory = await mkdtemp(
       join(tmpdir(), "cordis-experience-editor-"),
     );
@@ -33,10 +35,23 @@ const experienceTest = test.extend<{
       definition: { id: "counter" },
       evidence: { passed: true, origin: "test" },
     });
+    const base = workspace.release.get(workspace.composition().versionId);
+    const workflow = withUiContributions
+      ? await uiDetailReleaseInput("experience-editor")
+      : {
+          pluginId: base.pluginId,
+          name: base.name,
+          service: base.service,
+          contractVersion: base.contractVersion,
+          source: base.source,
+          code: base.code,
+          definition: base.definition,
+          evidence: { passed: true, origin: "test" },
+        };
     const version = workspace.release.record({
-      ...(await uiDetailReleaseInput("experience-editor")),
+      ...workflow,
       members: [
-        { pluginId: "ui-detail", enabled: true, role: "workflow" },
+        { pluginId: workflow.pluginId, enabled: true, role: "workflow" },
         {
           pluginId: "counter",
           versionId: counter.id,
@@ -82,7 +97,7 @@ const experienceTest = test.extend<{
       await page.close();
       await new Promise<void>((resolve) => {
         server.close(() => resolve());
-        server.closeAllConnections();
+        if ("closeAllConnections" in server) server.closeAllConnections();
       });
       await sessions.close();
       await workspace.close();
@@ -185,4 +200,49 @@ experienceTest("体验任务可以完成并重新打开", async ({ page, experie
   expect(experience.sessions.readSnapshot(experience.id).task.state).toBe(
     "open",
   );
+});
+
+experienceTest.describe("没有界面贡献的体验", () => {
+  experienceTest.use({ withUiContributions: false });
+  experienceTest("计数拒绝可见且能重试和保存", async ({ page, experience }) => {
+    expect(
+      experience.sessions.readSnapshot(experience.id).composition
+        .uiContributions ?? [],
+    ).toEqual([]);
+    await page.getByLabel("备注", { exact: true }).fill("拒绝后保留草稿");
+    await page.route("**/api/experience/commands", async (route) => {
+      if (route.request().postDataJSON().actionId === "increment")
+        return route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({
+            code: "ACTION_REJECTED",
+            message: "计数暂不可用",
+          }),
+        });
+      await route.continue();
+    });
+    await page.getByRole("button", { name: "加一", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText("计数暂不可用");
+    await expect(
+      page.getByRole("button", { name: "加一", exact: true }),
+    ).toBeEnabled();
+    await page.unroute("**/api/experience/commands");
+    await page.getByRole("button", { name: "加一", exact: true }).click();
+    await expect
+      .poll(
+        () => experience.sessions.readSnapshot(experience.id).task.fields.count,
+      )
+      .toBe("1");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    const receipt = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/experience/commands") &&
+        response.request().postDataJSON().type === "edit",
+    );
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    const response = await receipt;
+    expect(response.status()).toBe(200);
+    expect((await response.json()).task.description).toBe("拒绝后保留草稿");
+  });
 });

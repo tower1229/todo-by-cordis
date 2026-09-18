@@ -10,7 +10,7 @@ import type { V1Options } from "./v1-scenario.js";
 export function v1Browser(
   directory: string,
 ): NonNullable<V1Options["browser"]> {
-  return async (app, phase, session) => {
+  return async (app, phase, session, bindings) => {
     const browserApp = new Hono().route("/", app);
     browserApp.use("/*", serveStatic({ root: "./dist/web" }));
     browserApp.get("*", serveStatic({ path: "./dist/web/index.html" }));
@@ -41,6 +41,33 @@ export function v1Browser(
       await expect(banner).toContainText("候选体验 · 测试数据 · 尚未应用");
       await page.reload();
       await expect(banner).toBeVisible();
+      async function clickAction(id: string) {
+        const action = session.composition.workflow.actions.find((item) => item.id === id);
+        assert.ok(action, `候选界面缺少动作 ${id}`);
+        const contribution = session.composition.uiContributions.flatMap((item) => item.actions)
+          .find((item) => item.commandId === id);
+        const name = contribution ? `${contribution.label} ${session.task.title}` : action.label;
+        await page!.getByRole("button", { name, exact: true }).click();
+        return contribution?.label ?? action.label;
+      }
+      if (bindings.tags && phase !== 4) {
+        const label = await clickAction(bindings.tags.action);
+        const field = session.composition.retainedFields.find((item) => item.key === bindings.tags!.field);
+        assert.ok(field);
+        await page.getByLabel(field.label, { exact: true }).fill("  BrowserTag  ");
+        const response = page.waitForResponse((r) => r.url().endsWith("/api/experience/commands") && r.request().postDataJSON().input);
+        await page.getByRole("button", { name: label, exact: true }).click();
+        const saved = await response;
+        assert.equal(saved.status(), 200);
+        assert.equal((await saved.json()).task.fields[bindings.tags.field], phase >= 2 ? "browsertag" : "BrowserTag");
+      }
+      if (bindings.counter) {
+        const response = page.waitForResponse((r) => r.url().endsWith("/api/experience/commands") && r.request().postDataJSON().actionId === bindings.counter!.action);
+        await clickAction(bindings.counter.action);
+        const saved = await response;
+        assert.equal(saved.status(), 200);
+        assert.equal((await saved.json()).task.fields[bindings.counter.field], String(Number(session.task.fields[bindings.counter.field] ?? "0") + 1));
+      }
       const complete = session.composition.workflow.actions.find((action) => action.id === "complete");
       const reopen = session.composition.workflow.actions.find((action) => action.id === "reopen");
       assert.ok(complete && reopen);
@@ -75,6 +102,8 @@ export function v1Browser(
         viewport: { width: 390, height: 844 },
         refresh: true,
         completedAndReopened: true,
+        tagInput: Boolean(bindings.tags && phase !== 4),
+        counterAction: Boolean(bindings.counter),
         reflectionInput: phase >= 3,
         editedSyntheticTask: session.taskId,
         screenshot: path,
