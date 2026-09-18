@@ -9,7 +9,7 @@ import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { createApp } from "../../src/server/app.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
-import { source } from "./evolution-fixture.js";
+import { source, candidateScope, candidateSource } from "./evolution-fixture.js";
 
 async function settle(e: Evolution, status?: string) {
   for (let i = 0; i < 200; i++) {
@@ -606,4 +606,35 @@ test("A12: persisted executing run is interrupted on host reopen without applyin
   const run = (await e.observe("crash-exec")).run;
   assert.equal(run?.status, "interrupted");
   assert.equal(w.composition().versionId, before.versionId);
+});
+
+
+test("generation tool requires the frozen bundle format instead of advertising legacy source", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-submit-format-"));
+  const w = await Workspace.open(join(dir, "workspace.db"));
+  const fixture = new ExecutionDriver(new PlanningDriver({ writableScope: candidateScope }));
+  let checked = false;
+  const e = new Evolution(w.db, {
+    async generate(request, signal) {
+      const tool = request.tools?.find((item) => item.name === "submit_candidate");
+      if (tool) {
+        const schema = tool.parameters as { properties: Record<string, unknown>; required?: string[] };
+        assert.equal("source" in schema.properties, false);
+        assert.ok(schema.required?.includes("files"));
+        checked = true;
+      }
+      const response = await fixture.generate(request, signal);
+      if (response.calls[0]?.name === "submit_candidate")
+        response.calls[0].args = JSON.parse(candidateSource(source("default", "轻快完成"))) as Record<string, unknown>;
+      return response;
+    },
+  }, new EvolutionDomain(w));
+  t.after(async () => { await e.close(); await w.close(); rmSync(dir, { recursive: true, force: true }); });
+  await e.command({ type: "request", operationId: "format-plan", text: "完成前填写复盘" });
+  const ready = await settle(e);
+  assert.equal(ready.status, "ready");
+  if (ready.status !== "ready") throw new Error("not ready");
+  await e.command({ type: "start", operationId: "format-start", runId: ready.id, planId: ready.plan.id });
+  assert.equal((await settle(e)).status, "awaiting-apply");
+  assert.equal(checked, true);
 });

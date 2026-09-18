@@ -1362,11 +1362,11 @@ export class Evolution {
                   "Build and independently verify complete TypeScript source; optional members overlays auxiliary plugins declared in the frozen plan",
                 parameters: {
                   type: "object",
+                  ...(!(plan.memberEnabled || plan.writableScope.includes("active-source")) ? { required: ["files"] } : {}),
                   properties: {
-                    source: {
-                      type: "string",
-                      description: "Legacy single file; prefer files",
-                    },
+                    ...((plan.memberEnabled || plan.writableScope.includes("active-source")) ? {
+                      source: { type: "string", description: "Frozen plan permits this exact single-source submission" },
+                    } : {}),
                     files: {
                       type: "array",
                       items: {

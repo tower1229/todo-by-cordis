@@ -91,13 +91,16 @@ function App() {
     setComposition(next);
     setList({ ...pages[0], tasks: pages.flatMap((page) => page.tasks) });
   }, [category, search, offset]);
+  // Async writes may finish after the user changes filters. Refresh that view.
+  const currentRefresh = useRef(refresh);
+  currentRefresh.current = refresh;
   const refreshAfterWrite = useCallback(async () => {
     try {
-      await refresh();
+      await currentRefresh.current();
     } catch (error) {
       setError(`已保存，但列表暂时无法刷新：${errorMessage(error)}`);
     }
-  }, [refresh]);
+  }, []);
   const assistant = useAssistant(refreshAfterWrite);
   useEffect(() => {
     const timer = setTimeout(
@@ -171,7 +174,7 @@ function App() {
       await operation();
     } catch (error) {
       setError(errorMessage(error));
-      await refresh().catch(() => {});
+      await currentRefresh.current().catch(() => {});
     } finally {
       locked.current = false;
       setBusy(false);
@@ -244,7 +247,7 @@ function App() {
       await run();
     } catch (error) {
       setContributionError(errorMessage(error));
-      await refresh().catch(() => {});
+      await currentRefresh.current().catch(() => {});
     } finally {
       locked.current = false;
       setBusy(false);

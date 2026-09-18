@@ -270,3 +270,52 @@ test("additional workflow actions are visible and keyboard usable on a narrow sc
     ),
   ).toBe(true);
 });
+
+test("完成期间切换视图后刷新当前列表", async ({ page, request }) => {
+  const title = "完成与视图切换并发";
+  const composition = await (await request.get("/api/composition")).json();
+  await request.post("/api/commands", {
+    data: {
+      type: "create",
+      title,
+      operationId: crypto.randomUUID(),
+      compositionRevision: composition.revision,
+    },
+  });
+  await page.goto("/");
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let started!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  await page.route("**/api/commands", async (route) => {
+    if (route.request().postDataJSON().actionId === "complete") {
+      started();
+      await gate;
+    }
+    await route.continue();
+  });
+  try {
+    await page
+      .getByRole("button", { name: `完成 ${title}`, exact: true })
+      .click();
+    await pending;
+    const readDone = page.waitForResponse((response) =>
+      response.url().includes("/api/tasks?category=done"),
+    );
+    await page.getByRole("button", { name: "已完成", exact: true }).click();
+    await readDone;
+    release();
+    await expect(
+      page.getByRole("button", { name: `重新打开 ${title}`, exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "已完成", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+  } finally {
+    release();
+  }
+});
