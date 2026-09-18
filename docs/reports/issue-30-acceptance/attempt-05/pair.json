@@ -1,0 +1,23 @@
+{
+  "schema": "cordis.v1-acceptance-pair/1",
+  "pairId": "6e6ec8a0-1ae1-42f5-b720-dd64d52d7904",
+  "commit": "01ac0a6069e5893ecee7d5d3cf481d4911e0ddd9",
+  "passed": false,
+  "reason": "maintainer-interruption-for-host-fix",
+  "runs": [
+    {
+      "id": "ba1cf598-9ee0-4cca-8c82-cbb754e90896",
+      "directory": "run-1",
+      "status": "interrupted",
+      "originalEventsSha256": "5f06103764cd3cafde9ef4edceffb6ecde78e9ebd18150e62944f1f352502092",
+      "archivedEventsSha256": "5f06103764cd3cafde9ef4edceffb6ecde78e9ebd18150e62944f1f352502092"
+    }
+  ],
+  "repairEvidence": "not-exercised",
+  "repairs": [],
+  "archive": {
+    "events": "gzip JSONL; original provider signatures omitted; local roots replaced",
+    "databasesIncluded": false,
+    "credentialsIncluded": false
+  }
+}

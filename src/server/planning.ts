@@ -52,6 +52,12 @@ const mutable = [
   "src/web/ActionForm.tsx",
   "src/web/TaskEditor.tsx",
 ];
+const requiredBusinessFiles = [
+  "business/entry.ts",
+  "business/view.ts",
+  "business/config.json",
+  "business/compatibility.json",
+] as const;
 const requiredEvidence = [
   "inspect_application",
   "active-source",
@@ -224,7 +230,7 @@ export const planningInstruction = `你是本应用唯一的自迭代 Agent，�
 纯辅助成员启停使用 memberEnabled:{pluginId,enabled}，仅变更一个现有辅助成员的 enabled。writableScope 为 []，保留已有 workflowRules、extensions 和 memberCases，不得同时新增或升级成员、修改源码或修订验收；仍需调查与 describe_verification。宿主生成状态候选，体验与应用确认独立。
 对于 workflow/1，先 describe_verification(rules) 取得可信检查器定义，把返回 cases 原样作为 acceptance、rules 作为 workflowRules。新增动作通过 extensions 单独提交冻结数据化案例，acceptance 仍填写 describe_verification 返回 cases；辅助成员业务要求通过 memberCases 冻结目标成员、动作、初始数据、输入、预期最终数据与拒绝案例，由隔离 Workspace 检查器解释，不能仅靠成员冒烟。超出这些检查器的行为保留原目标并阻塞。必须读取 active-contract 和 active-acceptance，规则改变须提供 acceptanceReason 说明用户要求与原因，宿主展示旧新差异并等待独立确认；不能为通过候选而改规则。已有成员级正例与拒绝案例必须继续参与验收，不能因无关变更悄悄丢失。新增辅助成员必须在本次计划提交该成员动作的成对冻结案例；升级辅助成员时，省略/空 memberCases 仅表示 as-is 继承该成员历史成对案例（无历史基线则阻塞），若提交了 memberCases 却未覆盖被升级成员的受影响动作（含历史动作与本次提交动作）则视为错绑并阻塞。宿主用 AffectedAcceptance 在规划与候选阶段共用同一套「受影响动作 ↔ 冻结案例」规则。
 提交前核对 inspect_application.planningRequirements，evidence 包含全部 requiredEvidence 及相关消费方的已读 ref/hash。propose_plan 被宿主拒绝时按工具返回的诊断继续只读调查和修正计划，不降级原目标，不削弱检查器；真实阻塞如实保留。
-propose_plan 包含 summary、changes、outcome、dataImpact、excluded、evidence(ref/hash，必须引用真实读过的资料)、capabilityChanges(capability/provider/consumers/change)、acceptance(given/when/then/checker)、steps(id/purpose/dependsOn/artifact/evidence)、writableScope、compatibility、rollback、preview、application、restartImpact、dependencies(所需包名)、unresolved；若要在既有组合上叠加一个新辅助成员（不替换既有成员），另附 memberAdditions:[{pluginId,name}]（本阶段最多一项，pluginId 不得与现有 members 冲突）；若要只升级某个已有辅助成员，另附 memberUpgrades:[{pluginId}]（本阶段最多一项，必须是现有 auxiliary，且不得与 memberAdditions 同时出现）。辅助成员业务验收另附 memberCases（目标成员、动作、初始数据、输入、预期最终数据与拒绝案例）。capabilityChanges、evidence、acceptance、steps 必须非空；新增辅助成员同样需要声明能力提供者与实际消费方，writableScope 声明候选组合 business/* 产物。memberEnabled 只在纯启停请求中提交，其他改进必须省略。宿主会派生 compositionIntent（改谁/保留谁）供用户查看；dataImpact 仍须如实说明字段与数据后果。summary 与 outcome 用用户可理解的短句描述目标与可见效果，不要把内部文件路径、JSON 样例或沙箱机制写进这两项。验收应覆盖正例、边界、已有行为和数据保留。不要自行声称验收已通过。ready 由宿主校验决定。
+propose_plan 包含 summary、changes、outcome、dataImpact、excluded、evidence(ref/hash，必须引用真实读过的资料)、capabilityChanges(capability/provider/consumers/change)、acceptance(given/when/then/checker)、steps(id/purpose/dependsOn/artifact/evidence)、writableScope、compatibility、rollback、preview、application、restartImpact、dependencies(所需包名)、unresolved；若要在既有组合上叠加一个新辅助成员（不替换既有成员），另附 memberAdditions:[{pluginId,name}]（本阶段最多一项，pluginId 不得与现有 members 冲突）；若要只升级某个已有辅助成员，另附 memberUpgrades:[{pluginId}]（本阶段最多一项，必须是现有 auxiliary，且不得与 memberAdditions 同时出现）。辅助成员业务验收另附 memberCases（目标成员、动作、初始数据、输入、预期最终数据与拒绝案例）。capabilityChanges、evidence、acceptance、steps 必须非空；新增辅助成员同样需要声明能力提供者与实际消费方，writableScope 声明候选组合 business/* 产物。若活动版本尚无 business/entry.ts，首次选择 business/* 文件封装时，即使只新增辅助成员，也必须显式包含 business/entry.ts、business/view.ts、business/config.json、business/compatibility.json 四个必需路径，再加本次新增业务文件；不能只列辅助成员文件。宿主不会自动扩充授权范围。memberEnabled 只在纯启停请求中提交，其他改进必须省略。宿主会派生 compositionIntent（改谁/保留谁）供用户查看；dataImpact 仍须如实说明字段与数据后果。summary 与 outcome 用用户可理解的短句描述目标与可见效果，不要把内部文件路径、JSON 样例或沙箱机制写进这两项。验收应覆盖正例、边界、已有行为和数据保留。不要自行声称验收已通过。ready 由宿主校验决定。
 修复故障的请求必须在 propose_plan 中设置 intent:"repair"，绑定旧版故障，不以修改需求期望冒充修复。宿主先运行旧版相同验收；无法复现或执行错误则阻塞。
 用户点击开始后才会生成候选；验证通过后停在待应用，正式应用须另行确认，不得把开始当作应用授权。宿主提供 workflow/1 字段检查器、business-actions/1 新增动作检查器，以及隔离 Workspace 检查器解释的 memberCases。新增纯业务动作可用 extensions 提供 actions、fields、cases，extensions.cases 只能引用 extensions.actions 中的动作；complete/reopen 的回归由 workflow/1 自动验证，不能放入 extensions.cases。每个动作至少一个 commit 正例和 reject 反例，完整数据化用例在开始前展示冻结；不能移除既有行为。可写范围使用 business/entry.ts、business/view.ts、business/config.json、business/compatibility.json 及同目录新增提供者 .ts 文件。新文件无需虚构已读证据。其他 IO、通知交付、控制协议变更仍须维护者升级。`;
 const obj = (
@@ -379,7 +385,11 @@ export const planningTools = [
           evidence: text,
         }),
       },
-      writableScope: list,
+      writableScope: {
+        ...list,
+        description:
+          "Exact authorized paths. For the first business/* bundle, include business/entry.ts, business/view.ts, business/config.json and business/compatibility.json plus new business files, even when only adding an auxiliary member. Existing bundle paths unchanged need no extra write authorization. Pure memberEnabled uses [].",
+      },
       compatibility: text,
       rollback: text,
       preview: text,
@@ -500,12 +510,10 @@ export function readInvestigation(
             protected:
               "执行策略、模型凭据、工具、验证器、提交控制、发布恢复与改进控件；混合文件暂不开放写入",
             businessArtifact: {
-              required: [
-                "business/entry.ts",
-                "business/view.ts",
-                "business/config.json",
-                "business/compatibility.json",
-              ],
+              required: requiredBusinessFiles,
+              firstBundleRequiredScope: context.files["business/entry.ts"]
+                ? []
+                : requiredBusinessFiles,
               protectedContract: "business/contract.ts",
               extensions:
                 "其他 business/*.ts 业务提供者与接口可在计划中声明新增；不能导入宿主、任意依赖或 IO",
@@ -635,6 +643,17 @@ export function parsePlan(
       blockers.push(`缺少调查证据：${ref}`);
   const scope = strings(v.writableScope);
   if (!scope.length && !memberEnabled) blockers.push("缺少可写范围");
+  if (
+    !context.files["business/entry.ts"] &&
+    !scope.includes("active-source") &&
+    scope.some((ref) => businessPath(ref))
+  ) {
+    const missing = requiredBusinessFiles.filter((ref) => !scope.includes(ref));
+    if (missing.length)
+      blockers.push(
+        `首次封装业务产物缺少必需可写路径：${missing.join("、")}；请重新提交完整范围，宿主不会自动扩充授权`,
+      );
+  }
   if (context.files["business/entry.ts"] && scope.includes("active-source"))
     blockers.push(
       "活动组合已使用完整产物，请调查并使用 business/* 精确可写范围",

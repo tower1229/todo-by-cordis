@@ -1161,3 +1161,107 @@ test("inspection supplies exact baseline documents within the existing budget an
       assert.equal(done.budget?.callsUsed, 6);
     });
 });
+
+test("first business bundle requires its four paths before ready and can correct scope within the original budget", async (t) => {
+  const { ExecutionDriver } = await import("./execution-fixture.js");
+  const { candidateScope, candidateSource, source } = await import(
+    "./evolution-fixture.js"
+  );
+  const { panelMemberCases } = await import("./member-case-fixtures.js");
+  const { panelPluginCode } = await import("../fixtures/member-ui.js");
+  for (const repeat of [false, true])
+    await t.test(String(repeat), async (t) => {
+      const directory = mkdtempSync(
+        join(tmpdir(), "cordis-first-bundle-scope-"),
+      );
+      const w = await Workspace.open(join(directory, "workspace.db"));
+      const fixture = new ExecutionDriver(
+        new PlanningDriver({
+          writableScope: [...candidateScope, "business/label.ts"],
+          memberAdditions: [{ pluginId: "panel", name: "备注面板" }],
+          memberCases: panelMemberCases,
+        }),
+        "default",
+        "轻快完成",
+        1,
+        [{ pluginId: "panel", source: await panelPluginCode() }],
+      );
+      let proposals = 0;
+      const e = new Evolution(
+        w.db,
+        {
+          async generate(request, signal) {
+            const response = await fixture.generate(request, signal);
+            const call = response.calls[0];
+            if (call?.name === "propose_plan" && (++proposals === 1 || repeat))
+              call.args.writableScope = ["business/label.ts"];
+            if (call?.name === "submit_candidate") {
+              call.args.files = (
+                JSON.parse(candidateSource(source("default", "轻快完成"))) as {
+                  files: unknown;
+                }
+              ).files;
+              delete call.args.source;
+            }
+            return response;
+          },
+        },
+        new EvolutionDomain(w),
+      );
+      t.after(async () => {
+        await e.close();
+        await w.close();
+        rmSync(directory, { recursive: true, force: true });
+      });
+      const before = w.composition();
+      await e.command({
+        type: "request",
+        operationId: "first-bundle",
+        text: "增加独立辅助标签插件，并在完成前填写复盘",
+      });
+      for (
+        let i = 0;
+        i < 200 && (await e.observe()).run?.status === "planning";
+        i++
+      )
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      const ready = (await e.observe()).run!;
+      assert.equal(
+        proposals,
+        2,
+        "incomplete scope must be diagnosed before execution",
+      );
+      assert.equal(ready.status, repeat ? "blocked" : "ready");
+      assert.deepEqual(
+        ready.plans?.[0].writableScope,
+        ["business/label.ts"],
+        "host must not expand frozen scope silently",
+      );
+      for (const path of candidateScope)
+        assert.ok(JSON.stringify(fixture.requests).includes(path));
+      assert.ok(
+        JSON.stringify(fixture.requests).includes(
+          "首次封装业务产物缺少必需可写路径",
+        ),
+      );
+      assert.deepEqual(w.composition(), before);
+      if (ready.status !== "ready") return;
+      assert.equal(ready.budget?.callsUsed, 4);
+      await e.command({
+        type: "start",
+        operationId: "start-first-bundle",
+        runId: ready.id,
+        planId: ready.plan.id,
+      });
+      for (
+        let i = 0;
+        i < 200 && (await e.observe()).run?.status === "executing";
+        i++
+      )
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      const done = (await e.observe()).run!;
+      assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
+      assert.equal(done.budget?.callsUsed, 7);
+      assert.deepEqual(w.composition(), before);
+    });
+});
