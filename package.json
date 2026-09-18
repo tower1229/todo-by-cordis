@@ -8,14 +8,15 @@
     "node": "24.18.x"
   },
   "scripts": {
-    "test": "node --import tsx --test tests/app/*.test.ts",
+    "test": "node --import tsx --test --test-concurrency=1 tests/app/*.test.ts",
     "dev": "node scripts/dev.mjs",
     "build": "tsc -p tsconfig.server.json && vite build",
     "start": "node dist/server/main.js",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
     "bench:m1": "node scripts/benchmark.mjs",
-    "accept:shortened-tags": "node --import tsx scripts/accept-shortened-tags.ts"
+    "accept:shortened-tags": "node --import tsx scripts/accept-shortened-tags.ts",
+    "accept:v1": "node --import tsx scripts/accept-v1.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",

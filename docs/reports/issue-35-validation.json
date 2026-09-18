@@ -1,0 +1,61 @@
+{
+  "schema": "cordis.issue35.delivery-status/1",
+  "issue": 35,
+  "status": "awaiting-authorized-real-model-acceptance",
+  "deterministicEvidence": {
+    "kind": "model-stub",
+    "tests": [
+      "tests/app/v1-acceptance.test.ts",
+      "tests/app/member-enabled-planning.test.ts",
+      "tests/e2e/v1-acceptance.spec.ts"
+    ],
+    "coverage": "Six-step public-control-plane scenario, isolated candidate operations, separate application confirmation, exact member locks, restart and restore with retained tasks and fields",
+    "syntheticFault": "A deliberately invalid candidate is followed by a model-stub correction within the same budget; this is not real Agent repair evidence"
+  },
+  "realModelEvidence": {
+    "status": "not-run",
+    "required": "Two independent clean synthetic workspaces on the same fixed clean source commit",
+    "entrypoint": "pnpm accept:v1 --authorize-real-model",
+    "runs": []
+  },
+  "completionGates": {
+    "reliableAcceptance": "deterministic-only",
+    "completeExperience": "deterministic-only",
+    "repeatableRealIteration": "pending",
+    "deliveryDocumentation": "describes-current-limits"
+  },
+  "limitations": [
+    "No full real-model pass is claimed until pair.json reports two passing runs at the same commit",
+    "No real Agent fault repair is claimed by the synthetic fixture",
+    "Any host fix requires a new commit and two fresh full runs; old evidence remains historical",
+    "Browser interaction checks candidate UI, reconnect and isolated edits; business actions are also checked through the same public experience API"
+  ],
+  "localValidation": {
+    "node": "24.18.0",
+    "pnpm": "12.3.4",
+    "typecheck": "passed, including explicit scripts and new tests typecheck",
+    "build": "passed",
+    "unit": {
+      "command": "pnpm test",
+      "passed": 194,
+      "failed": 0,
+      "fileConcurrency": 1
+    },
+    "browser": {
+      "command": "pnpm test:e2e",
+      "passed": 28,
+      "failed": 0
+    },
+    "authorizationGate": "without --authorize-real-model rejected before provider construction",
+    "review": {
+      "standards": 0,
+      "specFound": 2,
+      "specFixedAndRechecked": 2
+    },
+    "earlierFailures": [
+      "Concurrent unit runs hit short existing candidate-settle deadlines; final serial full run passed",
+      "Old browser test still expected the removed simulated summary; aligned assertions with current experience and apply controls"
+    ],
+    "evidenceBoundary": "Local deterministic model stubs and Chromium; not real-model or production acceptance"
+  }
+}

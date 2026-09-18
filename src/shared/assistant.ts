@@ -76,6 +76,8 @@ export type InvestigatedPlan = AssistantPlan & {
   memberAdditions?: { pluginId: string; name: string }[];
   /** Existing auxiliary members to upgrade in place; unmodified members keep exact versionId. */
   memberUpgrades?: { pluginId: string }[];
+  /** Frozen, code-preserving enable-status change of one auxiliary member. */
+  memberEnabled?: { pluginId: string; enabled: boolean };
   /** Host-derived who changes / who is retained; not model prose. */
   compositionIntent?: {
     upgrade: string[];

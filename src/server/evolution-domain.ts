@@ -65,6 +65,7 @@ type Rule = {
 type MemberAddition = { pluginId: string; name: string };
 type MemberUpgrade = { pluginId: string };
 type Goal = {
+  memberEnabled?: InvestigatedPlan["memberEnabled"];
   pluginId: string;
   name: string;
   fields: Rule[];
@@ -344,6 +345,7 @@ export class EvolutionDomain implements Domain {
       payload: {
         pluginId: base.pluginId,
         name: base.name,
+        ...(plan.memberEnabled ? { memberEnabled: plan.memberEnabled } : {}),
         repairEvidence: plan.repairEvidence,
         acceptanceRevision: plan.acceptanceRevision,
         fields: plan.workflowRules,
@@ -397,7 +399,9 @@ export class EvolutionDomain implements Domain {
     return {
       contract,
       source: base.source,
-      instruction: `Implement the frozen plan using submit_candidate with files [{path,content}] and optional members [{pluginId,source}] when the plan declares memberAdditions or memberUpgrades. Read read_contract and read_current_source first. When upgrading an existing auxiliary member, call read_member with that pluginId and its exact versionId from the frozen composition before rewriting. The business artifact requires business/entry.ts (default Plugin), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed; business/contract.ts is supplied by the trusted host, never submit it. Imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. Frozen memberCases are isolated Workspace assertions for auxiliary members (target member, action, initial data, input, expected final data or reject); implement them, do not rely on smoke. view fields must exactly match describe().fields keys in order. When memberAdditions is set, submit exactly those pluginIds as members with complete JavaScript module source (export default plugin with contribute/decide as needed); host records them as new auxiliary members. When memberUpgrades is set, submit exactly those existing auxiliary pluginIds with replacement source; host records new versionIds and inherits unmodified members with exact versionId/enabled/role. If only upgrading auxiliaries and the workflow source is unchanged from the base, resubmit read_current_source as-is so the host can pin the workflow member to the exact base versionId. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
+      instruction: (target.payload as Goal).memberEnabled
+        ? `The frozen plan only changes member enabled status: ${JSON.stringify((target.payload as Goal).memberEnabled)}. Read read_contract and read_current_source, then submit_candidate with {source: read_current_source.source} byte-for-byte unchanged, no members or files. The host records and validates the status candidate; never edit implementation, acceptance or publish.`
+        : `Implement the frozen plan using submit_candidate with files [{path,content}] and optional members [{pluginId,source}] when the plan declares memberAdditions or memberUpgrades. Read read_contract and read_current_source first. When upgrading an existing auxiliary member, call read_member with that pluginId and its exact versionId from the frozen composition before rewriting. The business artifact requires business/entry.ts (default Plugin), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed; business/contract.ts is supplied by the trusted host, never submit it. Imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. Frozen memberCases are isolated Workspace assertions for auxiliary members (target member, action, initial data, input, expected final data or reject); implement them, do not rely on smoke. view fields must exactly match describe().fields keys in order. When memberAdditions is set, submit exactly those pluginIds as members with complete JavaScript module source (export default plugin with contribute/decide as needed); host records them as new auxiliary members. When memberUpgrades is set, submit exactly those existing auxiliary pluginIds with replacement source; host records new versionIds and inherits unmodified members with exact versionId/enabled/role. If only upgrading auxiliaries and the workflow source is unchanged from the base, resubmit read_current_source as-is so the host can pin the workflow member to the exact base versionId. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
     };
   }
   readMember(pluginId: string, versionId: string) {
@@ -446,6 +450,19 @@ export class EvolutionDomain implements Domain {
   ) {
     const base = this.workspace.release.get(target.baseVersion);
     const goal = target.payload as Goal;
+    if (goal.memberEnabled) {
+      signal.throwIfAborted();
+      this.check(target, this.workspace.composition().revision);
+      const submitted = splitCandidateSubmission(source);
+      if (submitted.workflowSource !== base.source || submitted.members.length)
+        throw new ProtectedCandidateError("启停候选禁止修改源码或成员实现");
+      stage("验证辅助成员启用状态候选");
+      const version = this.workspace.recordMemberEnabledVersion(goal.memberEnabled.pluginId, goal.memberEnabled.enabled);
+      // Existing host checks validate the exact before/after member lock and unchanged implementation.
+      if (!this.memberEnabledExperience(version, "enable-status-check"))
+        throw new ProtectedCandidateError("启停候选不是纯状态变更");
+      return version.id;
+    }
     if (
       goal.repairEvidence &&
       (goal.repairEvidence.baseVersion !== base.id ||
@@ -1224,7 +1241,7 @@ export class EvolutionDomain implements Domain {
         const nextVid = member.versionId ?? version.id;
         const priorIsRoot = priorVid === base.id;
         const nextIsRoot = nextVid === version.id;
-        return priorIsRoot !== nextIsRoot || (!priorIsRoot && priorVid !== nextVid);
+        return priorVid !== nextVid && !(priorIsRoot && nextIsRoot);
       })
     )
       return undefined;

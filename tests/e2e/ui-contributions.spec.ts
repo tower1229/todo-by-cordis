@@ -199,8 +199,8 @@ test("contribution action failure does not block stop/apply or workspace recover
   await page.getByRole("button", { name: "关闭任务详情", exact: true }).click();
 
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "扩展证明" })).toBeVisible();
-  await expect(page.getByText("模拟写入结果：ui.write:commit")).toBeVisible();
+  await expect(page.getByText(/候选已验证且尚未应用到正式环境/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "体验", exact: true })).toBeEnabled();
   await expect(page.getByRole("button", { name: "应用", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "放弃候选", exact: true }).click();
   await expect(page.getByText("已取消", { exact: true })).toBeVisible();

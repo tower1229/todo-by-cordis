@@ -35,7 +35,6 @@ import { OnlineScheduler } from "./extensions/scheduler.js";
 import {
   compositionBuildHash,
   compositionMembers,
-  inheritCompositionMembers,
   resolveVersionMembers,
   validateCompositionMembers,
   workflowPluginId,
@@ -1060,9 +1059,11 @@ export class Workspace {
     const { active, target } = this.requireCompositionMember(pluginId);
     if (target.enabled === enabled)
       throw new AppError("INVALID_INPUT", "成员已是目标启用状态");
-    const recordedMembers = inheritCompositionMembers(active).map((member) =>
-      member.pluginId === pluginId ? { ...member, enabled } : member,
-    );
+    const recordedMembers = resolveVersionMembers(active).map((member) => ({
+      ...member,
+      versionId: member.versionId ?? active.id,
+      enabled: member.pluginId === pluginId ? enabled : member.enabled,
+    }));
     validateCompositionMembers(
       { ...active, members: recordedMembers },
       (id) => this.release.get(id),
