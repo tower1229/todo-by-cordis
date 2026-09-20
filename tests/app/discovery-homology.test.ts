@@ -540,10 +540,15 @@ test("inspect_application 列出成员精确源码与验收 ref，且可读到�
   assert.match(String(acceptance.content), /tags/);
 });
 
-test("生成阶段 read_member 返回活动组合成员精确源码", async (t) => {
+for (const lookup of ["exact", "wrong-version", "missing", "malformed", "repeated", "infrastructure"] as const)
+test(`生成阶段 read_member 有界纠正且只返回精确成员：${lookup}`, async (t) => {
   const w = await setup(t);
   const { tags } = await activateDual(w);
   const tagsSource = w.release.get(tags.id).source;
+  const before = w.composition();
+  const invalidLookup = lookup !== "exact" && lookup !== "infrastructure";
+  let memberReads = 0;
+  const errors: unknown[] = [];
   let readPayload: { source?: string; pluginId?: string; versionId?: string } |
     undefined;
   const planning = new PlanningDriver({
@@ -575,7 +580,22 @@ test("生成阶段 read_member 返回活动组合成员精确源码", async (t) 
             ...toolReply("read_current_source", {}),
             history: request.history,
           };
-        if (!content.includes("read_member"))
+        if ((invalidLookup && memberReads === 0) || lookup === "repeated") {
+          memberReads++;
+          return { ...toolReply("read_member", lookup === "malformed" ? {pluginId:"tags"} : {
+            pluginId: lookup === "missing" ? "missing" : "tags",
+            versionId: w.activeVersion().id,
+          }), history: request.history };
+        }
+        if (memberReads === 0 || (invalidLookup && memberReads === 1)) {
+          for (const message of request.history as {parts?:{functionResponse?:{name?:string;response?:{result?:{error?:string;source?:string}}}}[]}[])
+            for (const part of message.parts ?? []) if (part.functionResponse?.name === "read_member") {
+              const result = part.functionResponse.response?.result;
+              assert.ok(result?.error);
+              assert.equal(result.source, undefined);
+              errors.push(result);
+            }
+          memberReads++;
           return {
             ...toolReply("read_member", {
               pluginId: "tags",
@@ -583,6 +603,7 @@ test("生成阶段 read_member 返回活动组合成员精确源码", async (t) 
             }),
             history: request.history,
           };
+        }
         for (const message of request.history as {
           parts?: {
             functionResponse?: {
@@ -632,7 +653,9 @@ test("生成阶段 read_member 返回活动组合成员精确源码", async (t) 
       return planning.generate(request, signal);
     },
   };
-  const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+  const domain = new EvolutionDomain(w);
+  if (lookup === "infrastructure") domain.readMember = () => { throw new Error("member storage unavailable"); };
+  const e = new Evolution(w.db, driver, domain);
   t.after(async () => {
     await e.close();
   });
@@ -651,7 +674,24 @@ test("生成阶段 read_member 返回活动组合成员精确源码", async (t) 
     planId: ready.plan.id,
   });
   const done = await settle(e);
+  assert.deepEqual(w.composition(), before);
+  if (lookup === "infrastructure") {
+    assert.equal(done.status, "failed");
+    assert.match(done.message ?? "", /member storage unavailable/);
+    assert.equal(done.budget?.callsUsed, 6);
+    assert.equal(readPayload, undefined);
+    return;
+  }
+  if (lookup === "repeated") {
+    assert.equal(done.status, "failed");
+    assert.equal(done.budget?.callsRemaining, 0);
+    assert.equal(done.budget?.candidatesRemaining, 3);
+    assert.equal(readPayload, undefined);
+    return;
+  }
   assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
+  assert.equal(errors.length, lookup === "exact" ? 0 : 1);
+  assert.equal(done.budget?.callsUsed, lookup === "exact" ? 7 : 8);
   assert.ok(readPayload);
   assert.equal(readPayload!.pluginId, "tags");
   assert.equal(readPayload!.versionId, tags.id);

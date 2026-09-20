@@ -13,7 +13,7 @@
     "syntheticFault": "A deliberately invalid candidate is followed by a model-stub correction within the same budget; this is not real Agent repair evidence"
   },
   "realModelEvidence": {
-    "status": "fourteen-attempts-one-full-run-no-complete-pair",
+    "status": "fifteen-attempts-one-full-run-no-complete-pair",
     "required": "Two independent clean synthetic workspaces on the same fixed clean source commit",
     "entrypoint": "pnpm accept:v1 --authorize-real-model",
     "runs": [
@@ -75,16 +75,21 @@
         "archive": "issue-30-acceptance/attempt-14/pair.json",
         "status": "failed",
         "diagnostic": "Gemini fetch failed during first-run planning on call 3 before any candidate. Public unauthenticated HTTPS endpoint was reachable afterwards; this does not prove the failed model request recovered. No automatic retry."
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-15/pair.json",
+        "status": "failed",
+        "diagnostic": "Tags were corrected by the Agent and applied within the original budget. Counter generation stopped after read_member used an incorrect exact member version; read-only lookup errors were terminal instead of returned as correctable tool results."
       }
     ],
-    "latestFailure": "Attempt 11 submitted a candidate importing ../../shared/contracts.js outside the allowed bundle boundary. Protected import gate correctly blocked execution; no candidate was applied. No new host defect is established by this failure, so no extra outer retry is used to chase a pass.",
-    "nextPair": "Not started. Current failure remains recorded; further work must preserve protected import rules, original per-run limits and the two-clean-workspace completion criterion. Gemini data transfer and API usage were explicitly authorized.",
-    "naturalRepairEvidence": "attempt-12 phase 1: failed candidate then passing corrected candidate in the same frozen plan; full pair still failed"
+    "latestFailure": "Attempt 15: wrong exact member lookup terminated generation before call budget exhaustion; denied read did not reveal source or change formal composition.",
+    "nextPair": "A fresh pair will run only after the bounded read-only lookup correction is reviewed, validated and committed; prior runs are not reused.",
+    "naturalRepairEvidence": "attempt-12 phase 1 and attempt-15 phase 0: failed candidate followed by Agent-generated passing correction in the same frozen plan and original budget; neither full pair passed."
   },
   "completionGates": {
     "reliableAcceptance": "deterministic-passed-real-pair-incomplete",
     "completeExperience": "deterministic-passed-real-pair-incomplete",
-    "repeatableRealIteration": "blocked-on-gemini-transport-and-missing-two-pass-pair",
+    "repeatableRealIteration": "pending-fresh-pair-after-member-read-fix",
     "deliveryDocumentation": "describes-current-limits"
   },
   "limitations": [
@@ -100,27 +105,27 @@
     "build": "passed",
     "unit": {
       "command": "pnpm test",
-      "passed": 230,
+      "passed": 235,
       "failed": 0,
       "fileConcurrency": 1,
-      "evidenceSource": "Local complete application suite after optional completion form and rule-binding fixes"
+      "evidenceSource": "Local full working-tree validation of the bounded member-read correction before its source commit"
     },
     "browser": {
       "command": "pnpm test:e2e",
       "passed": 36,
       "failed": 0,
-      "evidenceSource": "Local complete browser suite after optional completion form and rule-binding fixes"
+      "evidenceSource": "Local full browser suite after bounded member-read correction"
     },
     "authorizationGate": "without --authorize-real-model rejected before provider construction",
     "review": {
-      "standards": "AST static names and re-exports rechecked; no outstanding findings",
-      "spec": "Member gates, exact bundle locks, optional form submission and receipt-driven browser checks reviewed; no outstanding findings"
+      "standards": "No outstanding findings; six targeted read_member regressions independently passed",
+      "spec": "Denied reads reveal no source, exact membership remains enforced, original budget is unchanged, and infrastructure failures remain fatal"
     },
     "earlierFailures": [
       "Concurrent unit runs hit short existing candidate-settle deadlines; final serial full run passed",
       "Old browser test still expected the removed simulated summary; aligned assertions with current experience and apply controls"
     ],
-    "evidenceBoundary": "230 deterministic application tests and 36 browser tests passed. Fourteen historical real attempts include one full independent run on 94b6607, not a passing pair on the current implementation and not production acceptance.",
+    "evidenceBoundary": "235 deterministic application tests and 36 browser tests passed before the bounded member-read source commit. Fifteen historical real attempts include one full independent run, but no passing pair on the current implementation.",
     "ci": {
       "commit": "8ccb3c9ed21041e7e4b86fd30e089ca040476b54",
       "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/35491798745",

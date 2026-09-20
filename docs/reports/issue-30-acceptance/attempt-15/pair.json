@@ -1,0 +1,58 @@
+{
+  "schema": "cordis.v1-acceptance-pair/1",
+  "pairId": "04743a80-ad80-47c6-932a-66aec135582a",
+  "commit": "a4815a89faa7b0f026b3e36cae635bc33176874d",
+  "passed": false,
+  "runs": [
+    {
+      "id": "c721a593-1e4f-4556-8d08-43288a7581aa",
+      "directory": "run-1",
+      "status": "failed",
+      "originalEventsSha256": "a433f85f10f7a8497937e6d3124f7f5b168f1e7f2398569e3a2469a46899e2a8",
+      "archivedEventsSha256": "49e774fdda326bcd904fcf0bab1ae538db6f271d070f55654bdd6e9ebd00e855"
+    }
+  ],
+  "repairEvidence": "generated-candidate-correction-observed",
+  "repairs": [
+    {
+      "trialId": "c721a593-1e4f-4556-8d08-43288a7581aa",
+      "phase": 0,
+      "type": "generated-candidate-correction",
+      "runId": "4a98483b-1002-4f11-9bb0-dece0c4bf0a9",
+      "faultOrigin": "natural-flow",
+      "failedCandidates": [
+        {
+          "id": "50daa15cef1b8a4fef806c8be99318bd7a0c5e2b84784689ec67ff9be24652d8",
+          "planId": "d452a353-a47f-45d9-b46b-4be175bb5be8",
+          "baseVersion": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0",
+          "attempt": 1,
+          "passed": false,
+          "sourceHash": "c253a678fce97dfb81d9b3c018e1cb4472aeb148f86a6e79e9b0ac3b1af0aa5a",
+          "diagnostic": "../../../../..[ACCEPTANCE_ROOT]/run-1-2a0vJp/artifacts/candidate-bd0d847f-a5a6-4ed3-b3e0-1cfc516978b4/business/entry.ts(35,15): error TS2339: Property 'required' does not exist on type 'never'.\n../../../../..[ACCEPTANCE_ROOT]/run-1-2a0vJp/artifacts/candidate-bd0d847f-a5a6-4ed3-b3e0-1cfc516978b4/business/entry.ts(36,31): error TS2339: Property 'key' does not exist on type 'never'.\n../../../../..[ACCEPTANCE_ROOT]/run-1-2a0vJp/artifacts/candidate-bd0d847f-a5a6-4ed3-b3e0-1cfc516978b4/business/entry.ts(36,53): error TS2339: Property 'key' does not exist on type 'never'.\n../../../../..[ACCEPTANCE_ROOT]/run-1-2a0vJp/artifacts/candidate-bd0d847f-a5a6-4ed3-b3e0-1cfc516978b4/business/entry.ts(48,29): error TS2339: Property 'key' does not exist on type 'never'.\n../../../../..[ACCEPTANCE_ROOT]/run-1-2a0vJp/artifacts/candidate-bd0d847f-a5a6-4ed3-b3e0-1cfc516978b4/business/entry.ts(50,20): error TS2339: Property 'key' does not exist on type 'never'.\n"
+        }
+      ],
+      "correctedCandidate": {
+        "id": "23c079dc2c61bfbca97894187de9ffe08a78a0ef3e4a8820d8233637b8fadbf1",
+        "planId": "d452a353-a47f-45d9-b46b-4be175bb5be8",
+        "baseVersion": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0",
+        "attempt": 2,
+        "passed": true,
+        "sourceHash": "4d41408f403284cb1c4d4015729d555074d48846f52f5a2b25f24f9dbab85cf0",
+        "evidenceHash": "9fd96e6307b658e2419b9e204173fab4452fd40089eeea6fc33ed91ceec10f28",
+        "versionId": "8c59130dbf4e6d09d254aec1e03a99c47c03d5286b1385e84e74a7c166a9dd60"
+      },
+      "budget": {
+        "callsUsed": 6,
+        "callsRemaining": 6,
+        "candidatesRemaining": 1,
+        "millisecondsRemaining": 414856.161625
+      }
+    }
+  ],
+  "note": "未执行故障修复不得声称 Agent 自修复通过；失败现场保留，不覆盖旧报告。",
+  "archive": {
+    "events": "gzip JSONL; original provider signatures omitted; local roots replaced",
+    "databasesIncluded": false,
+    "credentialsIncluded": false
+  }
+}

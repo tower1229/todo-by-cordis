@@ -1438,18 +1438,23 @@ export class Evolution {
             result = { source: context.source };
             this.toolEvent(r, "read_current_source", "succeeded", attempt);
           } else if (call.name === "read_member") {
-            if (
-              Object.keys(call.args).length !== 2 ||
-              typeof call.args.pluginId !== "string" ||
-              typeof call.args.versionId !== "string"
-            )
-              throw new Error("读取成员资料参数无效");
             this.toolEvent(r, "read_member", "started", attempt);
-            result = this.domain.readMember(
-              call.args.pluginId,
-              call.args.versionId,
-            );
-            this.toolEvent(r, "read_member", "succeeded", attempt);
+            try {
+              if (
+                Object.keys(call.args).length !== 2 ||
+                typeof call.args.pluginId !== "string" ||
+                typeof call.args.versionId !== "string"
+              ) throw new AppError("INVALID_MEMBER_READ", "读取成员资料参数无效：需要 pluginId 和精确 versionId");
+              result = this.domain.readMember(call.args.pluginId, call.args.versionId);
+              this.toolEvent(r, "read_member", "succeeded", attempt);
+            } catch (error) {
+              if (!(error instanceof AppError) ||
+                  !["INVALID_MEMBER_READ", "UNKNOWN_PLUGIN"].includes(error.code)) throw error;
+              // A denied read exposes no source. The next model call may correct
+              // identifiers within the same call/deadline budget; never retry here.
+              result = { error: error.message };
+              this.toolEvent(r, "read_member", "failed", attempt, error.message);
+            }
           } else if (call.name === "patch_candidate") {
             this.toolEvent(r, "patch_candidate", "started", attempt);
             this.toolEvent(
