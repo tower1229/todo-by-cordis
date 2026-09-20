@@ -13,7 +13,7 @@
     "syntheticFault": "A deliberately invalid candidate is followed by a model-stub correction within the same budget; this is not real Agent repair evidence"
   },
   "realModelEvidence": {
-    "status": "seventeen-attempts-one-full-run-no-complete-pair",
+    "status": "eighteen-attempts-one-full-run-no-complete-pair",
     "required": "Two independent clean synthetic workspaces on the same fixed clean source commit",
     "entrypoint": "pnpm accept:v1 --authorize-real-model",
     "runs": [
@@ -90,16 +90,21 @@
         "archive": "issue-30-acceptance/attempt-17/pair.json",
         "status": "failed",
         "diagnostic": "Second planning call omitted required describe_verification rules; pure argument validation threw instead of returning a correctable tool diagnostic. No candidate generated."
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-18/pair.json",
+        "status": "failed",
+        "diagnostic": "Tags passed supplied-input business cases but rejected absent input instead of returning a form. Browser click returned 400 before application."
       }
     ],
-    "latestFailure": "Attempt 17: omitted required verification arguments terminated investigation on call 2.",
-    "nextPair": "Fresh pair after reviewed, validated and committed verification argument diagnostics; no previous run reused.",
+    "latestFailure": "Attempt 18: candidate action could not open its required input form.",
+    "nextPair": "Fresh pair after reviewed, validated and committed frozen-case-bound member input-form verification.",
     "naturalRepairEvidence": "attempt-12 phase 1 and attempt-15 phase 0: failed candidate followed by Agent-generated passing correction in the same frozen plan and original budget; neither full pair passed."
   },
   "completionGates": {
     "reliableAcceptance": "deterministic-passed-real-pair-incomplete",
     "completeExperience": "deterministic-passed-real-pair-incomplete",
-    "repeatableRealIteration": "pending-fresh-pair-after-verification-argument-fix",
+    "repeatableRealIteration": "pending-fresh-pair-after-input-form-fix",
     "deliveryDocumentation": "describes-current-limits"
   },
   "limitations": [
@@ -115,32 +120,32 @@
     "build": "passed",
     "unit": {
       "command": "pnpm test",
-      "passed": 242,
+      "passed": 247,
       "failed": 0,
       "fileConcurrency": 1,
-      "evidenceSource": "Full local working-tree regression before verification argument diagnostic source commit"
+      "evidenceSource": "Full local working-tree regression before frozen-case-bound input form source commit"
     },
     "browser": {
       "command": "pnpm test:e2e",
       "passed": 36,
       "failed": 0,
-      "evidenceSource": "Full local browser regression after verification argument diagnostics"
+      "evidenceSource": "Full local browser regression after input form protection"
     },
     "authorizationGate": "without --authorize-real-model rejected before provider construction",
     "review": {
-      "standards": "No outstanding findings; catch limited to pure parameter validation",
-      "spec": "Required rules remain explicit; invalid calls produce no verification evidence and consume original call budget"
+      "standards": "Input form structure and frozen-input submission verified; no outstanding findings",
+      "spec": "Only same-initial-data missing-input reject / supplied-input success pairs require forms; optional default actions remain valid"
     },
     "earlierFailures": [
       "Concurrent unit runs hit short existing candidate-settle deadlines; final serial full run passed",
       "Old browser test still expected the removed simulated summary; aligned assertions with current experience and apply controls"
     ],
-    "evidenceBoundary": "242 deterministic application tests and 36 browser tests passed before verification argument diagnostic source commit. Seventeen historical real attempts include one full run, but no passing pair.",
+    "evidenceBoundary": "247 deterministic application tests and 36 browser tests passed before input form source commit. Eighteen historical real attempts include one full run, but no passing pair.",
     "ci": {
-      "commit": "25f6de0e2728567c7db788430bbcb01eccde6277",
-      "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/35495224167",
+      "commit": "66b918ada289015556439de7ccd5a2ef787588d7",
+      "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/35496225718",
       "status": "passed"
     }
   },
-  "implementationCommit": "697826bd70b16f2495ff98ac7ffd3677f2ea0182"
+  "implementationCommit": "66b918ada289015556439de7ccd5a2ef787588d7"
 }

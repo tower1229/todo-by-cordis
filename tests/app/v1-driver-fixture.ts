@@ -7,11 +7,21 @@ import {
 } from "./evolution-fixture.js";
 import { tagsTrimOnlyMemberCases } from "./member-case-fixtures.js";
 
-const tagsSource = (lower: boolean, declareField: boolean) => `export default {
+const tagsSource = (
+  lower: boolean,
+  declareField: boolean,
+  inputMode:
+    | "form"
+    | "reject-missing"
+    | "default"
+    | "optional-only"
+    | "invalid-field"
+    | "extra-required" = "form",
+) => `export default {
  contribute() { return {${declareField ? "fields:[{key:'tags',label:'标签',type:'text'}]," : ""}commands:[{id:'setTags',label:'设标签',from:['open','done']}]}; },
  decide({task,action,input}) {
   if(action!=='setTags') return {kind:'reject',message:'未知动作'};
-  if(!Object.hasOwn(input??{},'tags'))return {kind:'input-required',fields:[{key:'tags',label:'标签',type:'text',required:true}]};
+  ${inputMode === "reject-missing" ? "" : inputMode === "default" ? "if(!Object.hasOwn(input??{},'tags'))return {kind:'commit',state:task.state,fields:{...task.fields,tags:'default'}};" : inputMode === "optional-only" ? "if(!Object.hasOwn(input??{},'tags'))return {kind:'input-required',fields:[{key:'optionalNote',label:'备注',type:'text'}]};" : inputMode === "extra-required" ? "if(!Object.hasOwn(input??{},'tags'))return {kind:'input-required',fields:[{key:'tags',label:'标签',type:'text'},{key:'extra',label:'额外必填',type:'text',required:true}]};" : inputMode === "invalid-field" ? "if(!Object.hasOwn(input??{},'tags'))return {kind:'input-required',fields:[{key:'tags'}]};" : "if(!Object.hasOwn(input??{},'tags'))return {kind:'input-required',fields:[{key:'tags',label:'标签',type:'text',required:true}]};"}
   const tags=String(input?.tags ?? '').trim()${lower ? ".toLowerCase()" : ""};
   if(!tags) return {kind:'reject',message:'标签为空'};
   return {kind:'commit',state:task.state,fields:{...task.fields,tags}};
@@ -31,6 +41,13 @@ export function v1FixtureDriver(
   declareTagField = true,
   optionalCompletionField = false,
   counterFieldLoss: "none" | "decide" | "beforeCommit" = "none",
+  tagInputMode:
+    | "form"
+    | "reject-missing"
+    | "default"
+    | "optional-only"
+    | "invalid-field"
+    | "extra-required" = "form",
 ): Driver {
   let phase = -1;
   let faultInjected = false;
@@ -42,7 +59,27 @@ export function v1FixtureDriver(
           phase++;
           const memberCases =
             phase === 0
-              ? tagsTrimOnlyMemberCases
+              ? [
+                  ...tagsTrimOnlyMemberCases.map((c) =>
+                    c.expected.kind === "commit"
+                      ? { ...c, input: { ...c.input, optionalNote: "ignored" } }
+                      : c,
+                  ),
+                  {
+                    ...tagsTrimOnlyMemberCases[1],
+                    name: "缺失标签输入",
+                    input: {},
+                    ...(tagInputMode === "default"
+                      ? {
+                          expected: {
+                            kind: "commit",
+                            state: "open",
+                            fields: { tags: "default" },
+                          },
+                        }
+                      : {}),
+                  },
+                ]
               : phase === 1
                 ? [
                     {
@@ -242,7 +279,7 @@ export function v1FixtureDriver(
                             "export default {beforeCommit({action,draft}) {return action==='increment' ? {kind:'ok',fields:{count:draft.fields.count}} : {kind:'ok'};},",
                           )
                       : counterSource
-                  : tagsSource(true, declareTagField),
+                  : tagsSource(true, declareTagField, tagInputMode),
             },
           ],
         });
@@ -274,8 +311,11 @@ const plugin: Plugin = {
           {
             pluginId: phase === 1 ? "counter" : "tags",
             source: inject
-              ? tagsSource(false, declareTagField).replace(".trim()", "")
-              : tagsSource(false, declareTagField),
+              ? tagsSource(false, declareTagField, tagInputMode).replace(
+                  ".trim()",
+                  "",
+                )
+              : tagsSource(false, declareTagField, tagInputMode),
           },
         ],
       });

@@ -28,6 +28,19 @@ export type WorkspaceAcceptanceCase = {
   protectionOf?: string;
 };
 
+type FormExpected = {
+  kind: "input-required";
+  examples: {
+    name: string;
+    input: Record<string, string>;
+    expected: Extract<AcceptanceExpected, { kind: "commit" }>;
+  }[];
+};
+
+type WorkspaceExecutionCase = Omit<WorkspaceAcceptanceCase, "expected"> & {
+  expected: AcceptanceExpected | FormExpected;
+};
+
 export type WorkspaceCaseEvidence = {
   kind: "frozen-business" | "system-protection";
   protectionOf?: string;
@@ -38,11 +51,20 @@ export type WorkspaceCaseEvidence = {
   action: string;
   initial: { state: string; fields: Record<string, string> };
   input: Record<string, string>;
-  expected: AcceptanceExpected;
+  expected: AcceptanceExpected | FormExpected;
   actual: {
     state?: string;
     fields?: Record<string, string>;
     decision?: string;
+    formFields?: { key: string; label: string }[];
+    formSubmissions?: {
+      caseName: string;
+      input: Record<string, string>;
+      state?: string;
+      fields?: Record<string, string>;
+      matched: boolean;
+      error?: string;
+    }[];
     error?: string;
   };
   status: "passed" | "failed";
@@ -63,11 +85,12 @@ export function importCompositionVersions(
 function assertTaskUnchanged(
   isolated: Workspace,
   taskId: string,
-  before: { state: string; fields: Record<string, string> },
+  before: { state: string; fields: Record<string, string>; revision: number },
   caseName: string,
 ) {
   const stayed = isolated.read(taskId);
   if (
+    stayed.revision !== before.revision ||
     stayed.state !== before.state ||
     hash(stayed.fields) !== hash(before.fields)
   )
@@ -79,7 +102,7 @@ function assertTaskUnchanged(
 function prepareCaseTask(
   isolated: Workspace,
   created: Task,
-  c: WorkspaceAcceptanceCase,
+  c: WorkspaceExecutionCase,
 ): Task {
   const initial = isolated.composition().workflow.initialState;
   const needsSeed = c.state !== initial || Object.keys(c.fields).length > 0;
@@ -145,13 +168,16 @@ export async function verifyViaIsolatedWorkspace(
   const checks: string[] = [];
   let receipt: WorkspaceCaseEvidence;
   const recordCasePass = (
-    c: WorkspaceAcceptanceCase,
+    c: WorkspaceExecutionCase,
     memberVersionId: string | undefined,
   ) => {
     receipt.status = "passed";
-    receipt.diagnostic = c.protectionOf
-      ? "系统数据保留约束与持久化最终事实一致"
-      : "冻结案例与持久化最终事实一致";
+    receipt.diagnostic =
+      c.expected.kind === "input-required"
+        ? "输入表单可收集冻结正例所需数据并完成动作"
+        : c.protectionOf
+          ? "系统数据保留约束与持久化最终事实一致"
+          : "冻结案例与持久化最终事实一致";
     checks.push(c.name);
     if (c.member && memberVersionId)
       checks.push(`member-version:${c.member}@${memberVersionId}`);
@@ -195,7 +221,46 @@ export async function verifyViaIsolatedWorkspace(
             },
           ],
     );
-    for (const c of [...cases, ...protectionCases]) {
+    const formCases: WorkspaceExecutionCase[] = cases.flatMap((c) => {
+      if (
+        !c.member ||
+        c.expected.kind !== "reject" ||
+        Object.keys(c.input).length
+      )
+        return [];
+      const positives = cases.filter(
+        (p) =>
+          p.expected.kind === "commit" &&
+          p.member === c.member &&
+          p.action === c.action &&
+          p.state === c.state &&
+          hash(p.fields) === hash(c.fields) &&
+          Object.keys(p.input).length > 0,
+      );
+      if (!positives.length) return [];
+      return [
+        {
+          ...c,
+          name: `system:input-form:${c.name}`,
+          protectionOf: c.name,
+          expected: {
+            kind: "input-required",
+            examples: positives.flatMap((p) =>
+              p.expected.kind === "commit"
+                ? [
+                    {
+                      name: p.name,
+                      input: { ...p.input },
+                      expected: structuredClone(p.expected),
+                    },
+                  ]
+                : [],
+            ),
+          },
+        },
+      ];
+    });
+    for (const c of [...cases, ...protectionCases, ...formCases]) {
       signal.throwIfAborted();
       const targetMember = members.find((m) =>
         c.member ? m.pluginId === c.member : m.role === "workflow",
@@ -275,6 +340,122 @@ export async function verifyViaIsolatedWorkspace(
               compositionRevision,
             });
             receipt.actual.decision = result.decision?.kind ?? "commit";
+            if (c.expected.kind === "input-required") {
+              const decision = result.decision;
+              receipt.actual.formFields =
+                decision?.kind === "input-required"
+                  ? decision.fields.map(({ key, label }) => ({ key, label }))
+                  : [];
+              if (
+                decision?.kind !== "input-required" ||
+                !decision.fields.length ||
+                decision.fields.some(
+                  (field) =>
+                    typeof field.key !== "string" ||
+                    !field.key ||
+                    typeof field.label !== "string" ||
+                    !field.label.trim() ||
+                    field.type !== "text" ||
+                    (field.required !== undefined &&
+                      typeof field.required !== "boolean"),
+                ) ||
+                new Set(decision.fields.map((field) => field.key)).size !==
+                  decision.fields.length
+              )
+                throw new BusinessAssertionError(
+                  `系统验收失败：${c.name}；缺失输入须返回有效的 input-required 表单`,
+                );
+              assertTaskUnchanged(isolated, task.id, task, c.name);
+              receipt.actual.formSubmissions = [];
+              for (const example of c.expected.examples) {
+                const input = Object.fromEntries(
+                  decision.fields.map((field) => [
+                    field.key,
+                    example.input[field.key] ?? "",
+                  ]),
+                );
+                if (
+                  decision.fields.some(
+                    (field) =>
+                      (field.required && !input[field.key]) ||
+                      input[field.key]!.length > 10000,
+                  )
+                ) {
+                  receipt.actual.formSubmissions.push({
+                    caseName: example.name,
+                    input,
+                    matched: false,
+                    error: "冻结输入不满足真实表单的必填或长度约束",
+                  });
+                  continue;
+                }
+                const createdSubmission = await isolated.command({
+                  type: "create",
+                  title: `form:${randomUUID()}`,
+                  compositionRevision,
+                  operationId: randomUUID(),
+                });
+                if (!createdSubmission.task)
+                  throw new Error("无法创建表单验收任务");
+                const submissionTask = prepareCaseTask(
+                  isolated,
+                  createdSubmission.task,
+                  c,
+                );
+                let errorMessage: string | undefined;
+                let committed = false;
+                try {
+                  const submitted = await isolated.command({
+                    type: "action",
+                    taskId: submissionTask.id,
+                    actionId: c.action,
+                    expectedRevision: submissionTask.revision,
+                    input,
+                    compositionRevision,
+                    operationId: randomUUID(),
+                  });
+                  committed =
+                    Boolean(submitted.task) &&
+                    submitted.decision?.kind !== "input-required";
+                } catch (error) {
+                  if (
+                    !(error instanceof AppError) ||
+                    !["ACTION_REJECTED", "INVALID_ACTION"].includes(error.code)
+                  )
+                    throw error;
+                  errorMessage = error.message;
+                }
+                const actual =
+                  isolated
+                    .query("", "all")
+                    .tasks.find((row) => row.id === submissionTask.id) ??
+                  isolated.read(submissionTask.id);
+                const matched =
+                  committed &&
+                  !errorMessage &&
+                  actual.state === example.expected.state &&
+                  hash(actual.fields) === hash(example.expected.fields);
+                receipt.actual.formSubmissions.push({
+                  caseName: example.name,
+                  input,
+                  state: actual.state,
+                  fields: { ...actual.fields },
+                  matched,
+                  ...(errorMessage ? { error: errorMessage } : {}),
+                });
+                if (matched) break;
+              }
+              if (
+                !receipt.actual.formSubmissions.some(
+                  (submission) => submission.matched,
+                )
+              )
+                throw new BusinessAssertionError(
+                  `系统验收失败：${c.name}；表单可收集的冻结输入不能完成动作，缺少必要输入字段`,
+                );
+              recordCasePass(c, memberVersionId);
+              continue;
+            }
             if (c.expected.kind === "reject") {
               if (result.decision?.kind === "input-required") {
                 assertTaskUnchanged(isolated, task.id, task, c.name);
@@ -311,6 +492,14 @@ export async function verifyViaIsolatedWorkspace(
               recordCasePass(c, memberVersionId);
               continue;
             }
+            if (
+              c.expected.kind === "input-required" &&
+              error instanceof AppError &&
+              error.code === "ACTION_REJECTED"
+            )
+              throw new BusinessAssertionError(
+                `系统验收失败：${c.name}；缺失输入须返回 input-required 表单，实际拒绝：${error.message}`,
+              );
             throw error;
           }
         } finally {

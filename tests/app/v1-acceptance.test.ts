@@ -171,3 +171,53 @@ for (const loss of ["decide", "beforeCommit"] as const)
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+for (const mode of [
+  "reject-missing",
+  "optional-only",
+  "invalid-field",
+  "extra-required",
+] as const) {
+  test(`输入表单不可用不能进入待应用：${mode}`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), "cordis-v1-no-form-"));
+    const events: Record<string, unknown>[] = [];
+    try {
+      await assert.rejects(
+        runV1Acceptance({
+          directory,
+          driver: v1FixtureDriver(false, true, false, "none", mode),
+          mode: "deterministic-subset",
+          record: (e) => events.push(e),
+        }),
+      );
+      const event = events.findLast((e) => e.type === "settled");
+      const snapshot =
+        event?.snapshot as import("../../src/shared/assistant.js").AssistantSnapshot;
+      assert.equal(snapshot.run?.status, "failed");
+      assert.ok(
+        snapshot.run?.diagnostics.some((x) => x.includes("input-form")),
+      );
+      assert.equal(
+        events.some((e) => e.type === "applied"),
+        false,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
+
+test("可选标签输入缺省执行不强制表单", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-v1-optional-input-"));
+  try {
+    const result = await runV1Acceptance({
+      directory,
+      driver: v1FixtureDriver(false, true, false, "none", "default"),
+      mode: "deterministic-subset",
+      record: () => {},
+    });
+    assert.equal(result.status, "subset-passed");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
