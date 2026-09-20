@@ -138,7 +138,10 @@ async function freezeTags(
       ) {
         const content = JSON.stringify(request.history);
         if (!content.includes("read_contract"))
-          return { ...toolReply("read_contract", {}), history: request.history };
+          return {
+            ...toolReply("read_contract", {}),
+            history: request.history,
+          };
         if (!content.includes("read_current_source"))
           return {
             ...toolReply("read_current_source", {}),
@@ -152,7 +155,7 @@ async function freezeTags(
           history: request.history,
         };
       }
-      return freeze.generate(request, signal);
+      return freeze.generate(request);
     },
   };
   const e = new Evolution(w.db, driver, new EvolutionDomain(w));
@@ -334,9 +337,7 @@ test("经公开规划入口：omit 且已有历史案例时升级可 ready（as-
   const ready = await settle(e, "ready");
   assert.equal(ready.status, "ready", JSON.stringify(ready));
   if (ready.status !== "ready") throw new Error("expected ready");
-  assert.ok(
-    ready.plan.memberCases?.some((c) => c.name === "标签去空格转小写"),
-  );
+  assert.ok(ready.plan.memberCases?.some((c) => c.name === "标签去空格转小写"));
   assert.ok(ready.plan.affectedAcceptance?.complete);
 });
 
@@ -391,6 +392,153 @@ test("经公开规划入口：只交新名案例时旧案例仍继承，不能�
     JSON.stringify(ready.plan.memberCases),
   );
   assert.ok(ready.plan.memberCases?.some((c) => c.name === "标签另名正例"));
+});
+
+test("经公开规划入口：另名矛盾案例被拒绝，原名修订仍须独立确认", async (t) => {
+  const w = await dualWorkspace(t);
+  const { e, freeze, runId } = await freezeTags(t, w);
+  const revised = {
+    ...tagsMemberCases[0],
+    expected: {
+      kind: "commit" as const,
+      state: "open",
+      fields: { tags: "Hello" },
+    },
+  };
+  freeze.finish = {
+    summary: "标签改为保留大小写",
+    changes: ["升级 tags"],
+    outcome: "保留大小写",
+    dataImpact: "升级 tags",
+    memberUpgrades: [{ pluginId: "tags" }],
+    memberCases: [{ ...revised, name: "另名保留大小写" }, tagsMemberCases[1]],
+    acceptanceReason: "用户要求标签保留大小写",
+    workflowRules: [],
+  };
+  await e.command({
+    type: "continue",
+    operationId: "conflicting-cases",
+    runId,
+    baseVersion: w.composition().versionId,
+    text: "标签保留大小写",
+  });
+  const blocked = await settle(e);
+  assert.equal(blocked.status, "blocked", JSON.stringify(blocked));
+  assert.match(blocked.message, /案例.*冲突/);
+  freeze.finish = {
+    ...freeze.finish,
+    memberCases: [revised, tagsMemberCases[1]],
+  };
+  await e.command({
+    type: "continue",
+    operationId: "revise-original-case",
+    runId: blocked.id,
+    baseVersion: w.composition().versionId,
+    text: "沿用原案例名修订预期",
+  });
+  const pending = await settle(e);
+  assert.equal(pending.status, "awaiting-acceptance", JSON.stringify(pending));
+  if (pending.status !== "awaiting-acceptance")
+    throw new Error("expected confirmation");
+  assert.ok(
+    pending.plan.acceptanceChanges?.some((c) => c.rule === revised.name),
+  );
+  await assert.rejects(
+    e.command({
+      type: "start",
+      operationId: "premature-conflict-start",
+      runId: pending.id,
+      planId: pending.plan.id,
+    }),
+  );
+  const confirmed = await e.command({
+    type: "confirm-acceptance",
+    operationId: "confirm-case-revision",
+    runId: pending.id,
+    planId: pending.plan.id,
+    revisionId: pending.acceptanceRevision!.id,
+  });
+  assert.equal(confirmed.run?.status, "ready");
+});
+
+test("经公开规划入口：同触发冲突可在原预算修正，对象键顺序不影响识别", async (t) => {
+  for (const mode of ["member", "extension"] as const)
+    await t.test(mode, async (t) => {
+      const w = await dualWorkspace(t);
+      const positive = {
+        name: "正例",
+        member: "panel",
+        state: "open",
+        fields: { a: "1", b: "2" },
+        action: "markNote",
+        input: { x: "3", y: "4" },
+        expected: {
+          kind: "commit" as const,
+          state: "open",
+          fields: { a: "1", b: "2", noteMark: "ok" },
+        },
+      };
+      const negative = {
+        ...positive,
+        name: "拒绝",
+        state: "done",
+        expected: { kind: "reject" as const },
+      };
+      const conflict = {
+        ...positive,
+        name: "矛盾",
+        fields: { b: "2", a: "1" },
+        input: { y: "4", x: "3" },
+        expected: { kind: "reject" as const },
+      };
+      const casePlan = (
+        cases: import("../../src/shared/acceptance-cases.js").MemberAcceptanceCase[],
+      ) =>
+        mode === "member"
+          ? {
+              memberAdditions: [{ pluginId: "panel", name: "备注面板" }],
+              memberCases: cases,
+            }
+          : {
+              extensions: {
+                actions: [{ id: "markNote", label: "备注", from: ["open"] }],
+                fields: [{ key: "noteMark", label: "备注", type: "text" }],
+                cases: cases.map(({ member: _member, ...c }) =>
+                  c.name === "矛盾" ? { ...c, member: "ignored" } : c),
+              },
+            };
+      const planning = new PlanningDriver({
+        workflowRules: [],
+        ...casePlan([positive, negative, conflict]),
+      });
+      const driver: Driver = {
+        async generate(request) {
+          const response = await planning.generate(request);
+          if (response.calls.some((c) => c.name === "propose_plan"))
+            planning.finish = {
+              workflowRules: [],
+              ...casePlan([
+                positive,
+                negative,
+                { ...positive, name: "同义正例" },
+              ]),
+            };
+          return response;
+        },
+      };
+      const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+      t.after(() => e.close());
+      await e.command({
+        type: "request",
+        operationId: "conflicting-same-request",
+        text: "增加备注动作",
+      });
+      const ready = await settle(e);
+      assert.equal(ready.status, "ready", JSON.stringify(ready));
+      assert.equal(ready.budget?.callsUsed, 4);
+      assert.match(JSON.stringify(planning.requests), /业务案例冲突/);
+      assert.equal(w.composition().revision, 2);
+    });
 });
 
 test("经公开规划入口：新增成员注册未覆盖的额外命令时候选失败且正式组合不变", async (t) => {

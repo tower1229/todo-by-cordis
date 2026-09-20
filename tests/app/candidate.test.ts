@@ -450,15 +450,12 @@ test("A10: protected paths, type-only escapes and forged validation reports stop
       const w = await Workspace.open(join(dir, "workspace.db"));
       const fallback = new ExecutionDriver(
         new PlanningDriver({
-          writableScope:
-            attack === "source"
-              ? ["business/view.ts"]
-              : [
-                  "business/entry.ts",
-                  "business/view.ts",
-                  "business/config.json",
-                  "business/compatibility.json",
-                ],
+          writableScope: [
+            "business/entry.ts",
+            "business/view.ts",
+            "business/config.json",
+            "business/compatibility.json",
+          ],
         }),
       );
       const driver: Driver = {
@@ -540,6 +537,13 @@ test("A10: protected paths, type-only escapes and forged validation reports stop
       assert.equal(snapshot.run?.status, "blocked");
       assert.equal(snapshot.candidates?.length, 1);
       assert.equal(snapshot.candidates?.[0].passed, false);
+      if (attack === "source")
+        assert.match(
+          snapshot.candidates![0].diagnostic!,
+          /单源码入口未获冻结范围授权/,
+        );
+      if (attack === "scope")
+        assert.match(snapshot.candidates![0].diagnostic!, /冻结可写范围/);
       assert.equal(w.composition().revision, 1);
     });
   }

@@ -28,6 +28,38 @@ export type BusinessExtensions = {
     expected: AcceptanceExpected;
   }[];
 };
+
+/** Case names preserve history; identical triggers must have one oracle. */
+function requireConsistentCases(
+  cases: (BusinessExtensions["cases"][number] & { member?: string })[],
+  memberBound = false,
+) {
+  const seen = new Map<string, { name: string; expected: string }>();
+  for (const c of cases) {
+    const trigger = hash({
+      member: memberBound ? c.member : null,
+      state: c.state,
+      fields: c.fields,
+      action: c.action,
+      input: c.input,
+    });
+    const expected = hash(
+      c.expected.kind === "reject"
+        ? { kind: "reject" }
+        : {
+            kind: "commit",
+            state: c.expected.state,
+            fields: c.expected.fields,
+          },
+    );
+    const old = seen.get(trigger);
+    if (old && old.expected !== expected)
+      throw new Error(
+        `业务案例冲突：${old.name} 与 ${c.name} 对 ${memberBound ? c.member : "workflow"}:${c.action} 的相同初始数据和输入要求不同结果。请沿用原案例名称修订预期并提供 acceptanceReason，等待独立验收确认；不能另起名称绕过历史案例。`,
+      );
+    seen.set(trigger, { name: c.name, expected });
+  }
+}
 const record = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
 const strings = (v: unknown): v is Record<string, string> =>
@@ -86,8 +118,10 @@ export function parseExtensions(
       ["actions", "fields", "cases"].every(
         (key) => Array.isArray(value[key]) && value[key].length === 0,
       ))
-  )
+  ) {
+    if (previous) requireConsistentCases(previous.cases);
     return previous ? structuredClone(previous) : undefined;
+  }
   if (
     !record(value) ||
     !Array.isArray(value.actions) ||
@@ -189,6 +223,7 @@ export function parseExtensions(
       ),
     ];
   }
+  requireConsistentCases(extension.cases);
   return extension;
 }
 export function extensionCases(extension: BusinessExtensions | undefined) {
@@ -232,12 +267,14 @@ export function resolveMemberCases(
   submitted: MemberAcceptanceCase[] | "omit";
   merged: MemberAcceptanceCase[] | undefined;
 } {
-  if (value === undefined || (Array.isArray(value) && value.length === 0))
+  if (value === undefined || (Array.isArray(value) && value.length === 0)) {
+    if (previous) requireConsistentCases(previous, true);
     return {
       omitted: true,
       submitted: "omit",
       merged: previous ? structuredClone(previous) : undefined,
     };
+  }
   if (!Array.isArray(value) || value.length > 40)
     throw new Error("成员业务案例无效");
   const parsed: MemberAcceptanceCase[] = [];
@@ -271,6 +308,7 @@ export function resolveMemberCases(
         ),
       ]
     : parsed;
+  requireConsistentCases(merged, true);
   requireActionPairs(
     merged,
     (c) => `${c.member}:${c.action}`,
