@@ -13,7 +13,7 @@
     "syntheticFault": "A deliberately invalid candidate is followed by a model-stub correction within the same budget; this is not real Agent repair evidence"
   },
   "realModelEvidence": {
-    "status": "thirteen-attempts-one-full-run-no-complete-pair",
+    "status": "fourteen-attempts-one-full-run-no-complete-pair",
     "required": "Two independent clean synthetic workspaces on the same fixed clean source commit",
     "entrypoint": "pnpm accept:v1 --authorize-real-model",
     "runs": [
@@ -70,6 +70,11 @@
         "archive": "issue-30-acceptance/attempt-13/pair.json",
         "status": "failed",
         "diagnostic": "Run 1 passed the entire six-step scenario. Run 2 passed tag candidate verification but the browser did not submit an optional completion form; no passing pair claimed."
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-14/pair.json",
+        "status": "failed",
+        "diagnostic": "Gemini fetch failed during first-run planning on call 3 before any candidate. Public unauthenticated HTTPS endpoint was reachable afterwards; this does not prove the failed model request recovered. No automatic retry."
       }
     ],
     "latestFailure": "Attempt 11 submitted a candidate importing ../../shared/contracts.js outside the allowed bundle boundary. Protected import gate correctly blocked execution; no candidate was applied. No new host defect is established by this failure, so no extra outer retry is used to chase a pass.",
@@ -79,7 +84,7 @@
   "completionGates": {
     "reliableAcceptance": "deterministic-passed-real-pair-incomplete",
     "completeExperience": "deterministic-passed-real-pair-incomplete",
-    "repeatableRealIteration": "failed-not-complete",
+    "repeatableRealIteration": "blocked-on-gemini-transport-and-missing-two-pass-pair",
     "deliveryDocumentation": "describes-current-limits"
   },
   "limitations": [
@@ -91,7 +96,7 @@
   "localValidation": {
     "node": "24.18.0",
     "pnpm": "12.3.4",
-    "typecheck": "pnpm typecheck passed; explicit acceptance driver typecheck passed. Broad test-file typecheck still reports pre-existing optional-value errors outside modified test sections.",
+    "typecheck": "pnpm typecheck and explicit acceptance driver typecheck passed. Broad unrelated test-file typecheck not claimed.",
     "build": "passed",
     "unit": {
       "command": "pnpm test",
@@ -115,12 +120,12 @@
       "Concurrent unit runs hit short existing candidate-settle deadlines; final serial full run passed",
       "Old browser test still expected the removed simulated summary; aligned assertions with current experience and apply controls"
     ],
-    "evidenceBoundary": "Thirteen historical real attempts include one complete independent run, not a passing pair or production acceptance",
+    "evidenceBoundary": "230 deterministic application tests and 36 browser tests passed. Fourteen historical real attempts include one full independent run on 94b6607, not a passing pair on the current implementation and not production acceptance.",
     "ci": {
-      "commit": "94b660776882a1dcb7d8beada7669be3b506522c",
-      "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/35490858891",
+      "commit": "8ccb3c9ed21041e7e4b86fd30e089ca040476b54",
+      "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/35491798745",
       "status": "passed"
     }
   },
-  "implementationCommit": "94b660776882a1dcb7d8beada7669be3b506522c"
+  "implementationCommit": "8ccb3c9ed21041e7e4b86fd30e089ca040476b54"
 }

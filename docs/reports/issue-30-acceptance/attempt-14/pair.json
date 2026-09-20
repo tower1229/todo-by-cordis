@@ -1,0 +1,23 @@
+{
+  "schema": "cordis.v1-acceptance-pair/1",
+  "pairId": "d7c339da-60ea-4dc9-814f-925fb2e9e402",
+  "commit": "8ccb3c9ed21041e7e4b86fd30e089ca040476b54",
+  "passed": false,
+  "runs": [
+    {
+      "id": "bae2ca53-b894-4c14-9378-bec49c38f057",
+      "directory": "run-1",
+      "status": "failed",
+      "originalEventsSha256": "e012f052f7f43c852b24d3df2af7fb296e9c7ffd4f5d1ca4a35f5e0c2fe268c1",
+      "archivedEventsSha256": "284d493e1aec716c6b05c262cb986f9105a21cf31f5c2b465d517e79f8f87ead"
+    }
+  ],
+  "repairEvidence": "not-exercised",
+  "repairs": [],
+  "note": "未执行故障修复不得声称 Agent 自修复通过；失败现场保留，不覆盖旧报告。",
+  "archive": {
+    "events": "gzip JSONL; original provider signatures omitted; local roots replaced",
+    "databasesIncluded": false,
+    "credentialsIncluded": false
+  }
+}
