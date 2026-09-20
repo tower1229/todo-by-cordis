@@ -621,6 +621,10 @@ test("generation tool requires the frozen bundle format instead of advertising l
         const schema = tool.parameters as { properties: Record<string, unknown>; required?: string[] };
         assert.equal("source" in schema.properties, false);
         assert.ok(schema.required?.includes("files"));
+        const members = schema.properties.members as { items: { properties: { source: { description?: string } } } };
+        assert.match(members.items.properties.source.description ?? "", /self-contained/);
+        assert.match(members.items.properties.source.description ?? "", /including type imports/);
+        assert.match(request.instruction, /Only the workflow files/);
         checked = true;
       }
       const response = await fixture.generate(request, signal);
@@ -635,6 +639,7 @@ test("generation tool requires the frozen bundle format instead of advertising l
   assert.equal(ready.status, "ready");
   if (ready.status !== "ready") throw new Error("not ready");
   await e.command({ type: "start", operationId: "format-start", runId: ready.id, planId: ready.plan.id });
-  assert.equal((await settle(e)).status, "awaiting-apply");
+  const finished = await settle(e);
+  assert.equal(finished.status, "awaiting-apply", JSON.stringify(finished));
   assert.equal(checked, true);
 });

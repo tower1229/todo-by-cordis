@@ -13,7 +13,7 @@
     "syntheticFault": "A deliberately invalid candidate is followed by a model-stub correction within the same budget; this is not real Agent repair evidence"
   },
   "realModelEvidence": {
-    "status": "six-attempts-without-complete-pair",
+    "status": "seven-attempts-without-complete-pair",
     "required": "Two independent clean synthetic workspaces on the same fixed clean source commit",
     "entrypoint": "pnpm accept:v1 --authorize-real-model",
     "runs": [
@@ -40,10 +40,14 @@
       {
         "archive": "issue-30-acceptance/attempt-06/pair.json",
         "status": "failed"
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-07/pair.json",
+        "status": "failed"
       }
     ],
-    "latestFailure": "Attempt 06 passed tags and counter, then generation reported conflicting inherited preserve-case and newly named lowercase cases. Host now rejects conflicting frozen cases during planning and requires same-name revision plus independent acceptance confirmation.",
-    "nextPair": "Requires explicit authorization to send relevant repository source, plans and synthetic acceptance data to Google Gemini (gemini-3.1-pro-preview), with API usage charges. Automatic approval rejected the attempt-07 command before execution."
+    "latestFailure": "Attempt 07 stopped at the first candidate: auxiliary member source imported the workflow-only ./contract.js. The submission descriptions now distinguish workflow TypeScript files from self-contained auxiliary modules; the import protection remains unchanged.",
+    "nextPair": "Explicit Gemini data transfer and API usage authorization received. Start two fresh clean workspaces after committing the contract-description correction."
   },
   "completionGates": {
     "reliableAcceptance": "deterministic-only",

@@ -623,3 +623,44 @@ test("合法 panel 源码仍可通过候选授权核对", async (t) => {
   const done = await settle(e, "awaiting-apply");
   assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
 });
+
+test("辅助成员不得导入工作流契约", async (t) => {
+  const w = await dualWorkspace(t);
+  const panelSource = 'import type { Plugin } from "./contract.js";\n' + await panelPluginCode();
+  const planning = new PlanningDriver({
+    summary: "叠加备注面板并冻结验收",
+    changes: ["新增 panel"],
+    outcome: "可打备注",
+    dataImpact: "新增 panel",
+    memberAdditions: [{ pluginId: "panel", name: "备注面板插件" }],
+    memberCases: panelMemberCases,
+  });
+  const e = new Evolution(
+    w.db,
+    new ExecutionDriver(planning, "aux-workflow", "双贡献组合", 1, [
+      { pluginId: "panel", source: panelSource },
+    ]),
+    new EvolutionDomain(w),
+  );
+  t.after(async () => {
+    await e.close();
+  });
+  await e.command({
+    type: "request",
+    text: "增加合法备注面板",
+    operationId: "plan-add-panel-ok-auth",
+  });
+  const ready = await settle(e, "ready");
+  assert.equal(ready.status, "ready");
+  if (ready.status !== "ready") throw new Error("expected ready");
+  await e.command({
+    type: "start",
+    operationId: "start-add-panel-ok-auth",
+    runId: ready.id,
+    planId: ready.plan.id,
+  });
+  const done = await settle(e);
+  assert.equal(done.status, "blocked", JSON.stringify(done));
+  assert.match(done.message, /未授权类型或运行依赖.*contract/);
+  assert.equal(w.composition().revision, 2);
+});

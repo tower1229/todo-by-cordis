@@ -1359,7 +1359,7 @@ export class Evolution {
               {
                 name: "submit_candidate",
                 description:
-                  "Build and independently verify complete TypeScript source; optional members overlays auxiliary plugins declared in the frozen plan",
+                  "Build and independently verify workflow TypeScript files and optional self-contained auxiliary modules declared in the frozen plan",
                 parameters: {
                   type: "object",
                   ...(!(plan.memberEnabled || plan.writableScope.includes("active-source")) ? { required: ["files"] } : {}),
@@ -1384,7 +1384,10 @@ export class Evolution {
                         type: "object",
                         properties: {
                           pluginId: { type: "string" },
-                          source: { type: "string" },
+                          source: {
+                            type: "string",
+                            description: "Complete self-contained auxiliary module: export default an object with contribute and decide as needed. No imports or re-exports, including type imports; no contract.js or other files are supplied to this module. Use plain JavaScript or inline erasable types. Do not describe a second workflow. Register the frozen member actions in contribute.commands.",
+                          },
                         },
                         required: ["pluginId", "source"],
                       },
