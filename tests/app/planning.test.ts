@@ -1345,3 +1345,94 @@ for (const repair of [false, true])
     assert.deepEqual(w.composition(), before);
     if (!repair) assert.match(run.message ?? "", /缺少冻结验收案例/);
   });
+
+for (const invalid of [{}, { rules: "invalid" }, { rules: [], extra: true }]) {
+  test(`invalid verification arguments remain correctable: ${JSON.stringify(invalid)}`, async (t) => {
+    const dir = mkdtempSync(join(tmpdir(), "cordis-verification-args-"));
+    const w = await Workspace.open(join(dir, "workspace.db"));
+    const fixture = new PlanningDriver();
+    let injected = false;
+    let sawDiagnostic = false;
+    const driver: Driver = {
+      async generate(request) {
+        const result = await fixture.generate(request);
+        if (
+          !injected &&
+          result.calls.some((c) => c.name === "describe_verification")
+        ) {
+          injected = true;
+          return {
+            ...result,
+            calls: [{ name: "describe_verification", args: invalid }],
+          };
+        }
+        if (injected)
+          sawDiagnostic ||= JSON.stringify(request.history).includes(
+            "INVALID_VERIFICATION_ARGUMENTS",
+          );
+        return result;
+      },
+    };
+    const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+    t.after(async () => {
+      await e.close();
+      await w.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    await e.command({
+      type: "request",
+      text: "完成前复盘",
+      operationId: "request",
+    });
+    for (
+      let i = 0;
+      i < 100 && (await e.observe()).run?.status === "planning";
+      i++
+    )
+      await new Promise((r) => setTimeout(r, 10));
+    const run = (await e.observe()).run!;
+    assert.equal(run.status, "ready");
+    assert.ok(sawDiagnostic);
+    assert.equal(run.budget?.callsUsed, 4);
+    assert.equal(w.composition().revision, 1);
+  });
+}
+
+test("repeated invalid verification arguments exhaust original budget without evidence", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-verification-budget-"));
+  const w = await Workspace.open(join(dir, "workspace.db"));
+  const fixture = new PlanningDriver();
+  const driver: Driver = {
+    async generate(request) {
+      const result = await fixture.generate(request);
+      return JSON.stringify(request.history).includes("inspect_application")
+        ? { ...result, calls: [{ name: "describe_verification", args: {} }] }
+        : result;
+    },
+  };
+  const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+  t.after(async () => {
+    await e.close();
+    await w.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  await e.command({
+    type: "request",
+    text: "完成前复盘",
+    operationId: "request",
+  });
+  for (
+    let i = 0;
+    i < 200 && (await e.observe()).run?.status === "planning";
+    i++
+  )
+    await new Promise((r) => setTimeout(r, 10));
+  const run = (await e.observe()).run!;
+  assert.equal(run.status, "failed");
+  assert.equal(run.budget?.callsUsed, 12);
+  assert.equal(
+    run.evidence?.some((x) => x.ref === "verification-definition"),
+    false,
+  );
+  assert.equal(w.composition().revision, 1);
+});

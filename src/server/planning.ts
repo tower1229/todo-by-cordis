@@ -465,8 +465,17 @@ export function readInvestigation(
   context: Investigation,
 ): InvestigationRead {
   if (name === "describe_verification") {
-    if (Object.keys(args).length !== 1) throw new Error("工具参数无效");
-    const rules = parseRules(args.rules);
+    let rules: WorkflowRule[];
+    try {
+      if (Object.keys(args).length !== 1 || !Object.hasOwn(args, "rules"))
+        throw new Error("须且只能提供 rules");
+      rules = parseRules(args.rules);
+    } catch (error) {
+      return {
+        error: "INVALID_VERIFICATION_ARGUMENTS",
+        message: `${error instanceof Error ? error.message : "字段验收配置无效"}。请按工具契约提供 rules 数组；无完成字段时显式提供 []。未生成验收定义或读取证据，请在原预算内修正。`,
+      };
+    }
     const content = { rules, cases: workflowCases(rules) };
     return { ref: "verification-definition", hash: hash(content), content };
   }
