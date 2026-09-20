@@ -22,6 +22,28 @@ test("首版桩层经公开控制面完成四次变更、隔离体验和独立�
       events.filter((e) => e.type === "experience-checked").length,
       4,
     );
+    const combined = events.find(
+      (e) => e.type === "candidate-evidence" && e.phase === 1,
+    );
+    assert.ok(combined);
+    const evidence = combined.evidence as {
+      capabilities: {
+        id: string;
+        capability: string;
+        provider: string;
+        version: string;
+        ready: boolean;
+      }[];
+    };
+    const commands = evidence.capabilities.filter(
+      (c) => c.capability === "command.register",
+    );
+    assert.deepEqual(commands.map((c) => c.provider).sort(), [
+      "member:counter",
+      "member:tags",
+    ]);
+    assert.equal(new Set(commands.map((c) => c.id)).size, 2);
+    assert.ok(commands.every((c) => c.ready && c.version));
     assert.ok(events.some((e) => e.type === "restart-restore-checked"));
     assert.ok(events.some((e) => e.type === "lifecycle-subset-checked"));
   } finally {

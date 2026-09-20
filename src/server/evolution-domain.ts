@@ -54,6 +54,7 @@ import type { BusinessBundle } from "../release/types.js";
 import { hash } from "../release/storage.js";
 import type { ExtensionContribution } from "./business/contracts.js";
 import { emptyContribution } from "./business/contracts.js";
+import { ExtensionRegistry } from "./extensions/registry.js";
 import { resolveUiContributions } from "./extensions/ui-slots.js";
 
 type Rule = {
@@ -336,7 +337,8 @@ export class EvolutionDomain implements Domain {
         .filter(
           (old) =>
             !plan.capabilityChanges.some(
-              (c) => c.capability === old.capability,
+              (c) =>
+                c.capability === old.capability && c.provider === old.provider,
             ),
         )
         .map((old) => ({
@@ -408,7 +410,7 @@ export class EvolutionDomain implements Domain {
       source: base.source,
       instruction: (target.payload as Goal).memberEnabled
         ? `The frozen plan only changes member enabled status: ${JSON.stringify((target.payload as Goal).memberEnabled)}. Read read_contract and read_current_source, then submit_candidate with {source: read_current_source.source} byte-for-byte unchanged, no members or files. The host records and validates the status candidate; never edit implementation, acceptance or publish.`
-        : `Implement the frozen plan using submit_candidate with files [{path,content}] and optional members [{pluginId,source}] when the plan declares memberAdditions or memberUpgrades. Read read_contract and read_current_source first. When upgrading an existing auxiliary member, call read_member with that pluginId and its exact versionId from the frozen composition before rewriting. The business artifact requires business/entry.ts (default Plugin), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed. Only the workflow files receive business/contract.ts from the trusted host; never submit it. Workflow files may use type imports from ./contract.js and other imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. Any action requiring user input must return input-required with its declared field keys and labels when those input keys are absent, so the host action form can collect values; explicitly supplied invalid values must still reject. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. Frozen memberCases are isolated Workspace assertions for auxiliary members (target member, action, initial data, input, expected final data or reject); implement them, do not rely on smoke. view fields must exactly match describe().fields keys in order. Auxiliary members[].source is a separate self-contained module, not a workflow Plugin and not linked to files: no imports or re-exports (including import type or ./contract.js). Use plain JavaScript or inline erasable types. Export contribute/decide as needed; register the frozen member actions in contribute.commands. Do not describe a second workflow. UI slots are optional because the host renders declared actions and input-required forms; if present, only slot "task.detail" is supported and each registration requires a non-empty title. When memberAdditions is set, submit exactly those pluginIds as members with complete JavaScript module source (export default plugin with contribute/decide as needed); host records them as new auxiliary members. When memberUpgrades is set, submit exactly those existing auxiliary pluginIds with replacement source; host records new versionIds and inherits unmodified members with exact versionId/enabled/role. If only upgrading auxiliaries and the workflow source is unchanged from the base, preserve the exact source; for a file-bundle plan submit its parsed files without edits (the source field is only allowed when exposed by submit_candidate), so the host can pin the workflow member to the exact base versionId. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
+        : `Implement the frozen plan using submit_candidate with files [{path,content}] and optional members [{pluginId,source}] when the plan declares memberAdditions or memberUpgrades. Read read_contract and read_current_source first. When upgrading an existing auxiliary member, call read_member with that pluginId and its exact versionId from the frozen composition before rewriting. The business artifact requires business/entry.ts (default export a plain Plugin object with own describe/decide methods, never a class instance or prototype methods), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed. Only the workflow files receive business/contract.ts from the trusted host; never submit it. Workflow files may use type imports from ./contract.js and other imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. Any action requiring user input must return input-required with its declared field keys and labels when those input keys are absent, so the host action form can collect values; explicitly supplied invalid values must still reject. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. Frozen memberCases are isolated Workspace assertions for auxiliary members (target member, action, initial data, input, expected final data or reject); implement them, do not rely on smoke. view fields must exactly match describe().fields keys in order. Auxiliary members[].source is a separate self-contained module, not a workflow Plugin and not linked to files: no imports or re-exports (including import type or ./contract.js). Use plain JavaScript or inline erasable types. Export contribute/decide as needed; register the frozen member actions in contribute.commands. Do not describe a second workflow. UI slots are optional because the host renders declared actions and input-required forms; if present, only slot "task.detail" is supported and each registration requires a non-empty title. When memberAdditions is set, submit exactly those pluginIds as members with complete JavaScript module source (export default plugin with contribute/decide as needed); host records them as new auxiliary members. When memberUpgrades is set, submit exactly those existing auxiliary pluginIds with replacement source; host records new versionIds and inherits unmodified members with exact versionId/enabled/role. If only upgrading auxiliaries and the workflow source is unchanged from the base, preserve the exact source; for a file-bundle plan submit its parsed files without edits (the source field is only allowed when exposed by submit_candidate), so the host can pin the workflow member to the exact base versionId. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
     };
   }
   readMember(pluginId: string, versionId: string) {
@@ -464,7 +466,10 @@ export class EvolutionDomain implements Domain {
       if (submitted.workflowSource !== base.source || submitted.members.length)
         throw new ProtectedCandidateError("启停候选禁止修改源码或成员实现");
       stage("验证辅助成员启用状态候选");
-      const version = this.workspace.recordMemberEnabledVersion(goal.memberEnabled.pluginId, goal.memberEnabled.enabled);
+      const version = this.workspace.recordMemberEnabledVersion(
+        goal.memberEnabled.pluginId,
+        goal.memberEnabled.enabled,
+      );
       // Existing host checks validate the exact before/after member lock and unchanged implementation.
       if (!this.memberEnabledExperience(version, "enable-status-check"))
         throw new ProtectedCandidateError("启停候选不是纯状态变更");
@@ -679,6 +684,10 @@ export class EvolutionDomain implements Domain {
     let checks: string[] = [];
     let systemChecks: string[] = [];
     let capabilities: unknown[] = [];
+    const memberRegistrations = new Map<
+      string,
+      ReturnType<ExtensionRegistry["summarize"]>
+    >();
     const verifyGoal = pinWorkflowVersionId
       ? {
           ...goal,
@@ -709,59 +718,124 @@ export class EvolutionDomain implements Domain {
               )
             )
               throw new Error("前端资源与业务接口字段不一致");
-            capabilities = (goal.capabilities ?? []).map((c) => {
-              const provider =
-                c.provider === "active-source"
-                  ? "business/entry.ts"
-                  : c.provider;
-              if (!provider.startsWith("business/"))
+            capabilities = (goal.capabilities ?? [])
+              .filter((c) => !c.provider.startsWith("member:"))
+              .map((c) => {
+                const provider =
+                  c.provider === "active-source"
+                    ? "business/entry.ts"
+                    : c.provider;
+                if (!provider.startsWith("business/"))
+                  return {
+                    id: hash({
+                      pluginId: goal.pluginId,
+                      capability: c.capability,
+                      provider: c.provider,
+                    }),
+                    declared: true,
+                    ready: false,
+                    capability: c.capability,
+                    consumers: c.consumers,
+                    provider: c.provider,
+                  };
+                const module = info.modules.find(
+                  (m) => m.path === provider.replace(/\.ts$/, ".js"),
+                );
+                if (
+                  !module ||
+                  module.status !== "evaluated" ||
+                  !module.exports.length
+                )
+                  throw new Error(`能力提供者未实际加载：${provider}`);
                 return {
                   id: hash({
                     pluginId: goal.pluginId,
                     capability: c.capability,
+                    provider: c.provider,
                   }),
+                  capability: c.capability,
+                  provider: c.provider,
+                  version: hash(
+                    bundle.outputs[provider.replace(/\.ts$/, ".js")],
+                  ),
+                  interface: module.exports,
+                  dependencies: [
+                    ...bundle.files[provider].matchAll(
+                      /from\s*["']([^"']+)["']/g,
+                    ),
+                  ].map((m) => m[1]),
+                  consumers: c.consumers,
                   declared: true,
-                  ready: false,
-                  provider,
+                  ready: true,
+                  evidence: candidate.id,
                 };
-              const module = info.modules.find(
-                (m) => m.path === provider.replace(/\.ts$/, ".js"),
-              );
-              if (
-                !module ||
-                module.status !== "evaluated" ||
-                !module.exports.length
-              )
-                throw new Error(`能力提供者未实际加载：${provider}`);
-              return {
+              });
+          } else {
+            capabilities = (goal.capabilities ?? [])
+              .filter((c) => !c.provider.startsWith("member:"))
+              .map((c) => ({
                 id: hash({
                   pluginId: goal.pluginId,
                   capability: c.capability,
+                  provider: c.provider,
                 }),
-                capability: c.capability,
-                provider,
-                version: hash(
-                  bundle.outputs[provider.replace(/\.ts$/, ".js")],
-                ),
-                interface: module.exports,
-                dependencies: [
-                  ...bundle.files[provider].matchAll(
-                    /from\s*["']([^"']+)["']/g,
-                  ),
-                ].map((m) => m[1]),
-                consumers: c.consumers,
                 declared: true,
-                ready: true,
-                evidence: candidate.id,
-              };
-            });
-          } else {
-            capabilities = (goal.capabilities ?? []).map((c) => ({
-              id: hash({ pluginId: goal.pluginId, capability: c.capability }),
-              declared: true,
-              ready: false,
-              provider: c.provider,
-            }));
+                ready: false,
+                capability: c.capability,
+                consumers: c.consumers,
+                provider: c.provider,
+              }));
+          }
+          for (const declaration of goal.capabilities ?? []) {
+            if (!declaration.provider.startsWith("member:")) continue;
+            const pluginId = declaration.provider.slice(7);
+            const member = resolveVersionMembers(candidate).find(
+              (m) => m.pluginId === pluginId && m.role === "auxiliary",
+            );
+            if (!member)
+              throw new Error(
+                `能力提供者不是候选辅助成员：${declaration.provider}`,
+              );
+            if (!member.enabled) continue;
+            if (!memberRegistrations.has(pluginId)) {
+              const registry = new ExtensionRegistry();
+              const installs = await Promise.all(
+                resolveVersionMembers(candidate)
+                  .filter((m) => m.enabled)
+                  .map(async (m) => ({
+                    pluginId: m.pluginId,
+                    role: m.role,
+                    contribution: await runtime
+                      .invoke<ExtensionContribution>(
+                        "contribute",
+                        undefined,
+                        m.pluginId,
+                      )
+                      .catch(() => emptyContribution()),
+                    workflowFields: m.role === "workflow" ? actual.fields : [],
+                    workflowActions:
+                      m.role === "workflow" ? actual.actions : [],
+                  })),
+              );
+              registry.installAll(installs);
+              const summary = registry.summarize();
+              for (const installed of installs)
+                memberRegistrations.set(installed.pluginId, {
+                  ...summary,
+                  capabilities: summary.capabilities.filter(
+                    (c) => c.providerId === installed.pluginId,
+                  ),
+                });
+            }
+            const registration = memberRegistrations
+              .get(pluginId)!
+              .capabilities.find(
+                (c) => c.interfaceId === declaration.capability,
+              );
+            if (!registration || registration.status !== "active")
+              throw new Error(
+                `辅助成员未实际注册声明能力：${declaration.provider} → ${declaration.capability}`,
+              );
           }
           systemChecks = await verifyProtection(runtime, actual);
           if (pinWorkflowVersionId) {
@@ -800,7 +874,9 @@ export class EvolutionDomain implements Domain {
             );
             if (decision.kind !== "reject")
               throw new Error(`成员未正确装载：${member.pluginId}`);
-            const kind = addedMembers.some((m) => m.pluginId === member.pluginId)
+            const kind = addedMembers.some(
+              (m) => m.pluginId === member.pluginId,
+            )
               ? "added"
               : "upgraded";
             checks.push(`member.${kind}:${member.pluginId}`);
@@ -891,7 +967,10 @@ export class EvolutionDomain implements Domain {
         verifyGoal.affectedAcceptance,
         [...addedMembers, ...upgradedMembers].some((m) => m.enabled),
       );
-      assertWorkspaceCaseCoverage(verifyGoal.affectedAcceptance, workspaceCases);
+      assertWorkspaceCaseCoverage(
+        verifyGoal.affectedAcceptance,
+        workspaceCases,
+      );
       checks.push(
         ...(await verifyViaIsolatedWorkspace(
           this.workspace,
@@ -905,7 +984,11 @@ export class EvolutionDomain implements Domain {
       const { id: _id, entry: _entry, createdAt: _createdAt, ...artifact } = candidate;
       const failed = this.workspace.release.record({
         ...artifact,
-        evidence: { passed: false, rules: goal.fields, workspaceCases: workspaceCasesEvidence },
+        evidence: {
+          passed: false,
+          rules: goal.fields,
+          workspaceCases: workspaceCasesEvidence,
+        },
       });
       throw new CandidateValidationError(
         error instanceof Error ? error.message : "候选验证失败",
@@ -915,7 +998,11 @@ export class EvolutionDomain implements Domain {
     const verifiedAdditions: VersionMember[] = [];
     const verifiedUpgrades: VersionMember[] = [];
     for (const change of draftChanges) {
-      const verifiedMember = this.recordMemberVerified(change, base.id, candidate.id);
+      const verifiedMember = this.recordMemberVerified(
+        change,
+        base.id,
+        candidate.id,
+      );
       if (change.kind === "addition")
         verifiedAdditions.push({
           pluginId: verifiedMember.pluginId,
@@ -947,6 +1034,41 @@ export class EvolutionDomain implements Domain {
       },
       (id) => this.workspace.release.get(id),
     );
+    for (const declaration of goal.capabilities ?? []) {
+      if (!declaration.provider.startsWith("member:")) continue;
+      const pluginId = declaration.provider.slice(7);
+      const member = verifiedMembers.find(
+        (m) => m.pluginId === pluginId && m.role === "auxiliary",
+      );
+      if (!member?.versionId)
+        throw new Error(`缺少已验证成员版本：${declaration.provider}`);
+      const cases = workspaceCasesEvidence.filter((c) => c.member === pluginId);
+      if (!cases.length || cases.some((c) => c.status !== "passed"))
+        throw new Error(
+          `辅助成员能力缺少通过的冻结业务案例：${declaration.provider}`,
+        );
+      capabilities.push({
+        id: hash({
+          pluginId: goal.pluginId,
+          capability: declaration.capability,
+          provider: declaration.provider,
+        }),
+        capability: declaration.capability,
+        provider: declaration.provider,
+        consumers: declaration.consumers,
+        version: member.versionId,
+        declared: true,
+        ready: member.enabled,
+        registration: memberRegistrations
+          .get(pluginId)
+          ?.capabilities.find((c) => c.interfaceId === declaration.capability),
+        workspaceCases: cases.map((c) => ({
+          name: c.name,
+          validatedMemberVersionId: c.memberVersionId,
+        })),
+        evidence: candidate.id,
+      });
+    }
     const verified = this.workspace.release.record({
       pluginId: goal.pluginId,
       name: goal.name,
@@ -1054,7 +1176,9 @@ export class EvolutionDomain implements Domain {
     const bundle = change.draft.bundle;
     const code = change.draft.code;
     if (!bundle?.outputs["business/entry.js"])
-      throw new ProtectedCandidateError("辅助成员缺少可信构建产物，不能记通过版");
+      throw new ProtectedCandidateError(
+        "辅助成员缺少可信构建产物，不能记通过版",
+      );
     if (change.kind === "addition")
       return this.workspace.release.record({
         pluginId: change.planned.pluginId,
@@ -1100,10 +1224,7 @@ export class EvolutionDomain implements Domain {
     signal: AbortSignal,
   ): Promise<ExperienceReport> {
     const version = this.workspace.release.get(versionId);
-    const memberExperience = this.memberEnabledExperience(
-      version,
-      candidateId,
-    );
+    const memberExperience = this.memberEnabledExperience(version, candidateId);
     if (memberExperience) return memberExperience;
     const runtime = await this.workspace.release.start(version);
     try {
@@ -1218,11 +1339,7 @@ export class EvolutionDomain implements Domain {
       return undefined;
     }
     if (this.workspace.activeVersion().id !== base.id)
-      throw new AppError(
-        "PLAN_STALE",
-        "基础版本已变化，请重新规划并确认",
-        409,
-      );
+      throw new AppError("PLAN_STALE", "基础版本已变化，请重新规划并确认", 409);
     if (
       version.pluginId !== base.pluginId ||
       version.source !== base.source ||
@@ -1316,7 +1433,9 @@ export class EvolutionDomain implements Domain {
 }
 
 /** Cases for isolated Workspace command/query acceptance (after decide pre-checks). */
-export function workspaceAcceptanceCases(goal: Goal): WorkspaceAcceptanceCase[] {
+export function workspaceAcceptanceCases(
+  goal: Goal,
+): WorkspaceAcceptanceCase[] {
   const valid = validFieldInputs(goal.fields);
   const cases: WorkspaceAcceptanceCase[] = [
     {

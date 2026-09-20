@@ -19,6 +19,18 @@ import {
   type UiContributionFault,
 } from "./ui-slots.js";
 
+/** Interfaces with executable auxiliary contributions (query/service remain stubs). */
+export const executableMemberInterfaces = [
+  "command.register",
+  "fields.register",
+  "task.beforeCommit",
+  "task.events",
+  "schedule.register",
+  "lifecycle",
+  "ui.slot",
+  "diagnostics.annotate",
+] as const;
+
 type InstalledPlugin = {
   pluginId: string;
   role: VersionMemberRole;
@@ -137,7 +149,9 @@ export class ExtensionRegistry {
     return this.plugins.flatMap((p) => p.contribution.schedules ?? []);
   }
 
-  knownCommandIds(workflowActions: Action[] = this.workflowActions): Set<string> {
+  knownCommandIds(
+    workflowActions: Action[] = this.workflowActions,
+  ): Set<string> {
     const ids = new Set(workflowActions.map((a) => a.id));
     for (const command of this.commands()) ids.add(command.id);
     return ids;

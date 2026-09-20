@@ -1,3 +1,4 @@
+import { parse } from "@babel/parser";
 import { stripTypeScriptTypes } from "node:module";
 import { posix } from "node:path";
 import { hash } from "./storage.js";
@@ -30,8 +31,7 @@ export function memberArtifactFiles(source: string): Record<string, string> {
  * Same checkBusinessImports gate as main candidates; emits VM modules without forking tsc.
  */
 export function synthesizeMemberBundle(source: string): BusinessBundle {
-  if (!source?.trim())
-    throw new ProtectedCandidateError("辅助成员源码为空");
+  if (!source?.trim()) throw new ProtectedCandidateError("辅助成员源码为空");
   const files = memberArtifactFiles(source);
   checkBusinessImports(files);
   const outputs: Record<string, string> = {};
@@ -55,9 +55,7 @@ export function isGeneratedMember(evidence: unknown): boolean {
     return false;
   const row = evidence as { generated?: unknown; origin?: unknown };
   if (row.generated === true) return true;
-  return (
-    typeof row.origin === "string" && row.origin.startsWith("evolution-")
-  );
+  return typeof row.origin === "string" && row.origin.startsWith("evolution-");
 }
 
 /** All files are data until the trusted compiler and linker accept the graph. */
@@ -130,36 +128,140 @@ export function checkBusinessImports(files: Record<string, string>) {
         `未授权类型或运行依赖：${path} → ${specifier}`,
       );
   };
+  const forbidden = new Set([
+    "import",
+    "require",
+    "eval",
+    "Function",
+    "process",
+    "global",
+    "globalThis",
+    "fetch",
+    "WebSocket",
+  ]);
   for (const [path, source] of Object.entries(files)) {
     if (!path.endsWith(".ts")) continue;
-    if (/\/\/\/\s*<reference/.test(source))
-      throw new ProtectedCandidateError(`未授权编译指令：${path}`);
-    // Unsupported types are correctable build errors, not permission changes.
-    // They still fail before compilation and consume the original candidate budget.
-    if (/\b(enum|any)\b/.test(source))
-      typeError ??= new Error(`不支持的类型 any/enum，请在冻结范围内修正：${path}`);
-    for (const match of source.matchAll(
-      /(?:from\s*|import\s*)["']([^"']+)["']/g,
-    )) {
-      checkImport(path, match[1]);
-    }
-    // Strip types before checking runtime dependencies; the runtime linker checks again.
-    // Enums cannot be stripped. Inspect their source for protected capabilities;
-    // typeError still prevents building it, after all files have been checked.
-    const code = /\benum\b/.test(source) ? source : stripTypeScriptTypes(source);
-    const remaining = code.replace(
-      /(?:import\s+(?:[\w$*,{}\s]+\s+from\s+)?|export\s+(?:\*|\{[^}]*\})\s+from\s+)["']([^"']+)["']\s*;?/g,
-      (_match, specifier: string) => {
-        checkImport(path, specifier);
-        return "";
-      },
-    );
+    const syntax = parse(source, {
+      sourceType: "module",
+      plugins: ["typescript"],
+      createImportExpressions: true,
+    });
     if (
-      /\b(import|require|eval|Function|process|global|globalThis|fetch|WebSocket)\b/.test(
-        remaining,
+      syntax.comments?.some(
+        (c) => c.type === "CommentLine" && /^\/\s*<reference/.test(c.value),
       )
     )
-      throw new ProtectedCandidateError(`未授权运行能力：${path}`);
+      throw new ProtectedCandidateError(`未授权编译指令：${path}`);
+    let hasEnum = false;
+    walkSyntax(syntax.program, (node) => {
+      if (
+        [
+          "ImportDeclaration",
+          "ExportNamedDeclaration",
+          "ExportAllDeclaration",
+        ].includes(node.type)
+      ) {
+        const target = node.source;
+        if (
+          target &&
+          typeof target === "object" &&
+          "value" in target &&
+          typeof target.value === "string"
+        )
+          checkImport(path, target.value);
+      }
+      if (
+        [
+          "ImportExpression",
+          "Import",
+          "TSImportType",
+          "TSImportEqualsDeclaration",
+        ].includes(node.type)
+      )
+        throw new ProtectedCandidateError(`未授权运行能力：${path}`);
+      if (node.type === "TSAnyKeyword" || node.type === "TSEnumDeclaration") {
+        hasEnum ||= node.type === "TSEnumDeclaration";
+        typeError ??= new Error(
+          `不支持的类型 any/enum，请在冻结范围内修正：${path}`,
+        );
+      }
+    });
+    // Types and prose are not executable identifiers. Enums remain forbidden;
+    // inspect their original tree so they cannot mask a protected capability.
+    const runtime = hasEnum
+      ? syntax
+      : parse(stripTypeScriptTypes(source), {
+          sourceType: "module",
+          createImportExpressions: true,
+        });
+    walkSyntax(runtime.program, (node, parent, key) => {
+      if (
+        node.type === "Identifier" &&
+        typeof node.name === "string" &&
+        forbidden.has(node.name) &&
+        !isStaticName(parent, key)
+      )
+        throw new ProtectedCandidateError(`未授权运行能力：${path}`);
+    });
   }
   if (typeError) throw typeError;
+}
+
+type SyntaxNode = { type: string; [key: string]: unknown };
+function isStaticName(parent: SyntaxNode | undefined, key: string | undefined) {
+  if (!parent) return false;
+  if (
+    [
+      "ObjectProperty",
+      "ObjectMethod",
+      "ClassProperty",
+      "ClassMethod",
+      "MemberExpression",
+      "OptionalMemberExpression",
+    ].includes(parent.type)
+  )
+    return (
+      (key === "key" || key === "property") &&
+      !parent.computed &&
+      !parent.shorthand
+    );
+  return (
+    (parent.type === "ImportSpecifier" && key === "imported") ||
+    (parent.type === "ExportSpecifier" && key === "exported")
+  );
+}
+function walkSyntax(
+  value: unknown,
+  visit: (node: SyntaxNode, parent?: SyntaxNode, key?: string) => void,
+  parent?: SyntaxNode,
+  key?: string,
+) {
+  if (Array.isArray(value)) {
+    for (const child of value) walkSyntax(child, visit, parent, key);
+  } else if (value && typeof value === "object") {
+    const node = value as Record<string, unknown>;
+    const syntax =
+      typeof node.type === "string" ? (node as SyntaxNode) : parent;
+    if (typeof node.type === "string") visit(node as SyntaxNode, parent, key);
+    for (const [childKey, child] of Object.entries(node))
+      if (
+        ![
+          "loc",
+          "start",
+          "end",
+          "extra",
+          "comments",
+          "leadingComments",
+          "trailingComments",
+          "innerComments",
+        ].includes(childKey) &&
+        // Re-export specifiers name external bindings; the source is still gated.
+        !(
+          node.type === "ExportNamedDeclaration" &&
+          node.source &&
+          childKey === "specifiers"
+        )
+      )
+        walkSyntax(child, visit, syntax, childKey);
+  }
 }

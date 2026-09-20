@@ -1265,3 +1265,83 @@ test("first business bundle requires its four paths before ready and can correct
       assert.deepEqual(w.composition(), before);
     });
 });
+
+for (const repair of [false, true])
+  test(`existing member capability requires frozen cases before ready: repair=${repair}`, async (t) => {
+    const { activateDual } = await import("./dual-composition-fixture.js");
+    const directory = mkdtempSync(join(tmpdir(), "cordis-provider-cases-"));
+    const w = await Workspace.open(join(directory, "workspace.db"));
+    await activateDual(w);
+    const fixture = new PlanningDriver({
+      capabilityChanges: [
+        {
+          capability: "command.register",
+          provider: "member:tags",
+          consumers: ["src/web/ActionForm.tsx"],
+          change: "保留标签能力",
+        },
+      ],
+    });
+    let proposals = 0;
+    const e = new Evolution(
+      w.db,
+      {
+        async generate(request) {
+          const reply = await fixture.generate(request);
+          if (
+            reply.calls[0]?.name === "propose_plan" &&
+            ++proposals > 1 &&
+            repair
+          )
+            reply.calls[0].args.memberCases = [
+              {
+                name: "标签成功",
+                member: "tags",
+                state: "open",
+                fields: {},
+                action: "setTags",
+                input: { tags: "keep" },
+                expected: {
+                  kind: "commit",
+                  state: "open",
+                  fields: { tags: "keep" },
+                },
+              },
+              {
+                name: "标签拒绝",
+                member: "tags",
+                state: "done",
+                fields: {},
+                action: "setTags",
+                input: {},
+                expected: { kind: "reject" },
+              },
+            ];
+          return reply;
+        },
+      },
+      new EvolutionDomain(w),
+    );
+    t.after(async () => {
+      await e.close();
+      await w.close();
+      rmSync(directory, { recursive: true, force: true });
+    });
+    const before = w.composition();
+    await e.command({
+      type: "request",
+      operationId: "member-cases",
+      text: "保留标签能力",
+    });
+    for (
+      let i = 0;
+      i < 200 && (await e.observe()).run?.status === "planning";
+      i++
+    )
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    const run = (await e.observe()).run!;
+    assert.equal(run.status, repair ? "ready" : "blocked", JSON.stringify(run));
+    assert.equal(proposals, 2);
+    assert.deepEqual(w.composition(), before);
+    if (!repair) assert.match(run.message ?? "", /缺少冻结验收案例/);
+  });

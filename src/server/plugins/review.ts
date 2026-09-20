@@ -1,4 +1,4 @@
-import type { Workflow } from "../../shared/contracts.js";
+import type { Workflow } from "./contract.js";
 export const workflow: Workflow = {
   definition: {
     id: "review",

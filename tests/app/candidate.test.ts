@@ -18,6 +18,9 @@ import { ExecutionDriver } from "./execution-fixture.js";
 import { evolutionWithExperience } from "./evolution-session-fixture.js";
 import { source } from "./evolution-fixture.js";
 import type { Driver } from "../../src/evolution/driver.js";
+import { candidateScope } from "./evolution-fixture.js";
+import { panelPluginCode } from "../fixtures/member-ui.js";
+import { panelMemberCases } from "./member-case-fixtures.js";
 
 async function settled(e: Evolution) {
   for (let i = 0; i < 1000; i++) {
@@ -32,56 +35,65 @@ async function settled(e: Evolution) {
   throw new Error("execution timeout");
 }
 
-for (const [failure, broken] of [
-  ["compiler", "const broken: string = 42; export default broken;"],
-  ["any", "const broken: any = 42; export default broken;"],
-  ["enum", "enum Broken { value }; export default Broken;"],
-  ["repeated-any", "const broken: any = 42; export default broken;"],
+for (const [binding, provider, capability] of [
+  ["有效成员", "member:panel", "command.register"],
+  ["不存在的成员", "member:missing", "command.register"],
+  ["未注册能力", "member:panel", "schedule.register"],
+  ["未知接口", "member:panel", "panel.note"],
+  ["占位接口", "member:panel", "query.filter"],
 ] as const)
-test(`A05: repairs ${failure} failure within the frozen budget and retains immutable attempts`, async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "cordis-candidate-"));
-  const w = await Workspace.open(join(dir, "workspace.db"));
-  const original = w.composition();
-  const fallback = new ExecutionDriver(
-    new PlanningDriver({
-      writableScope: [
-        "business/entry.ts",
-        "business/provider.ts",
-        "business/view.ts",
-        "business/config.json",
-        "business/compatibility.json",
-      ],
-    }),
-  );
-  let attempts = 0;
-  const driver: Driver = {
-    async generate(request, signal) {
-      const reply = await fallback.generate(request);
-      if (reply.calls[0]?.name !== "submit_candidate") return reply;
-      attempts++;
-      return {
-        ...reply,
-        calls: [
+  test(`首次新增辅助成员可原样继承宿主源码：${binding}`, async (t) => {
+    const dir = mkdtempSync(join(tmpdir(), "cordis-builtin-portable-"));
+    const w = await Workspace.open(join(dir, "workspace.db"));
+    const base = w.activeVersion();
+    const fallback = new ExecutionDriver(
+      new PlanningDriver({
+        workflowRules: [],
+        writableScope: [
+          ...candidateScope,
+          "business/provider.ts",
+          "business/relay.ts",
+        ],
+        memberAdditions: [{ pluginId: "panel", name: "备注面板" }],
+        memberCases: panelMemberCases,
+        capabilityChanges: [
           {
-            name: "submit_candidate",
-            args: {
+            capability,
+            provider,
+            consumers: ["src/web/ActionForm.tsx"],
+            change: "新增备注命令",
+          },
+        ],
+      }),
+    );
+    const member = await panelPluginCode();
+    const e = new Evolution(
+      w.db,
+      {
+        async generate(request, signal) {
+          const reply = await fallback.generate(request, signal);
+          if (reply.calls[0]?.name === "submit_candidate")
+            reply.calls[0].args = {
               files: [
                 {
                   path: "business/entry.ts",
                   content:
-                    'import plugin from "./provider.js"; export default plugin;',
+                    base.source +
+                    '\nimport { process as processTask } from "./relay.js"; processTask();\n// any enum process import "outside" are words, not capabilities.\nconst note = "Cannot process any task with enum data"; const pattern = /process|any/; const data = {process: "待办流程"};',
+                },
+                {
+                  path: "business/relay.ts",
+                  content:
+                    'export { process as process } from "./provider.js";',
                 },
                 {
                   path: "business/provider.ts",
                   content:
-                    attempts === 1 || failure === "repeated-any"
-                      ? broken
-                      : source("default", "轻快完成"),
+                    'const processTask = () => "ok"; export { processTask as process };',
                 },
                 {
                   path: "business/view.ts",
-                  content:
-                    'export default { title: "复盘", fields: ["reflection"] };',
+                  content: 'export default {title:"轻快完成",fields:[]};',
                 },
                 { path: "business/config.json", content: "{}" },
                 {
@@ -89,73 +101,195 @@ test(`A05: repairs ${failure} failure within the frozen budget and retains immut
                   content: '{"preserveUnknownFields":true}',
                 },
               ],
-            },
-          },
+              members: [{ pluginId: "panel", source: member }],
+            };
+          return reply;
+        },
+      },
+      new EvolutionDomain(w),
+    );
+    t.after(async () => {
+      await e.close();
+      await w.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    await e.command({
+      type: "request",
+      operationId: "portable-plan",
+      text: "新增备注面板，其他行为不变",
+    });
+    const ready = (await settled(e)).run;
+    if (binding === "不存在的成员") {
+      assert.equal(ready?.status, "blocked", JSON.stringify(ready));
+      assert.match(ready?.message ?? "", /不是已存在或计划新增的辅助成员/);
+      return;
+    }
+    if (binding === "未知接口" || binding === "占位接口") {
+      assert.equal(ready?.status, "blocked", JSON.stringify(ready));
+      assert.match(ready?.message ?? "", /辅助成员能力接口尚不支持/);
+      return;
+    }
+    assert.ok(ready?.status === "ready");
+    await e.command({
+      type: "start",
+      operationId: "portable-start",
+      runId: ready.id,
+      planId: ready.plan.id,
+    });
+    const result = await settled(e);
+    if (binding === "未注册能力") {
+      assert.equal(result.run?.status, "failed", JSON.stringify(result));
+      assert.ok(result.candidates?.every((c) => !c.passed));
+      assert.match(
+        result.candidates?.[0].diagnostic ?? "",
+        /未实际注册声明能力/,
+      );
+      assert.equal(w.composition().versionId, base.id);
+      return;
+    }
+    assert.equal(result.run?.status, "awaiting-apply", JSON.stringify(result));
+    assert.equal(w.composition().versionId, base.id);
+    const verified = w.release.get(result.run!.versionId!);
+    const evidence = verified.evidence as {
+      capabilities: { provider: string; version: string; ready: boolean }[];
+    };
+    const boundMember = verified.members?.find((m) => m.pluginId === "panel");
+    assert.ok(boundMember?.versionId);
+    assert.ok(
+      evidence.capabilities.some(
+        (c) =>
+          c.provider === "member:panel" &&
+          c.version === boundMember.versionId &&
+          c.ready,
+      ),
+    );
+  });
+
+for (const [failure, broken] of [
+  ["compiler", "const broken: string = 42; export default broken;"],
+  ["any", "const broken: any = 42; export default broken;"],
+  ["enum", "enum Broken { value }; export default Broken;"],
+  ["repeated-any", "const broken: any = 42; export default broken;"],
+] as const)
+  test(`A05: repairs ${failure} failure within the frozen budget and retains immutable attempts`, async (t) => {
+    const dir = mkdtempSync(join(tmpdir(), "cordis-candidate-"));
+    const w = await Workspace.open(join(dir, "workspace.db"));
+    const original = w.composition();
+    const fallback = new ExecutionDriver(
+      new PlanningDriver({
+        writableScope: [
+          "business/entry.ts",
+          "business/provider.ts",
+          "business/view.ts",
+          "business/config.json",
+          "business/compatibility.json",
         ],
-      };
-    },
-  };
-  const e = new Evolution(w.db, driver, new EvolutionDomain(w));
-  t.after(async () => {
-    await e.close();
-    await w.close();
-    rmSync(dir, { recursive: true, force: true });
-  });
-  await e.command({
-    type: "request",
-    text: "完成前填写复盘",
-    operationId: "request",
-  });
-  const ready = (await settled(e)).run!;
-  assert.equal(ready.status, "ready");
-  if (ready.status !== "ready") return;
-  await e.command({
-    type: "start",
-    runId: ready.id,
-    planId: ready.plan.id,
-    operationId: "start",
-  });
-  const snapshot = await settled(e);
-  if (failure === "repeated-any") {
-    assert.equal(snapshot.run?.status, "failed");
+      }),
+    );
+    let attempts = 0;
+    const driver: Driver = {
+      async generate(request, signal) {
+        const reply = await fallback.generate(request);
+        if (reply.calls[0]?.name !== "submit_candidate") return reply;
+        attempts++;
+        return {
+          ...reply,
+          calls: [
+            {
+              name: "submit_candidate",
+              args: {
+                files: [
+                  {
+                    path: "business/entry.ts",
+                    content:
+                      'import plugin from "./provider.js"; export default plugin;',
+                  },
+                  {
+                    path: "business/provider.ts",
+                    content:
+                      attempts === 1 || failure === "repeated-any"
+                        ? broken
+                        : source("default", "轻快完成"),
+                  },
+                  {
+                    path: "business/view.ts",
+                    content:
+                      'export default { title: "复盘", fields: ["reflection"] };',
+                  },
+                  { path: "business/config.json", content: "{}" },
+                  {
+                    path: "business/compatibility.json",
+                    content: '{"preserveUnknownFields":true}',
+                  },
+                ],
+              },
+            },
+          ],
+        };
+      },
+    };
+    const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+    t.after(async () => {
+      await e.close();
+      await w.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    await e.command({
+      type: "request",
+      text: "完成前填写复盘",
+      operationId: "request",
+    });
+    const ready = (await settled(e)).run!;
+    assert.equal(ready.status, "ready");
+    if (ready.status !== "ready") return;
+    await e.command({
+      type: "start",
+      runId: ready.id,
+      planId: ready.plan.id,
+      operationId: "start",
+    });
+    const snapshot = await settled(e);
+    if (failure === "repeated-any") {
+      assert.equal(snapshot.run?.status, "failed");
+      assert.equal(attempts, 2);
+      assert.equal(snapshot.candidates?.length, 2);
+      assert.ok(snapshot.candidates?.every((c) => !c.passed));
+      assert.match(snapshot.run?.message ?? "", /相同候选失败/);
+      assert.equal(w.composition().versionId, original.versionId);
+      return;
+    }
+    assert.equal(
+      snapshot.run?.status,
+      "awaiting-apply",
+      JSON.stringify(snapshot),
+    );
     assert.equal(attempts, 2);
-    assert.equal(snapshot.candidates?.length, 2);
-    assert.ok(snapshot.candidates?.every((c) => !c.passed));
-    assert.match(snapshot.run?.message ?? "", /相同候选失败/);
+    assert.equal(snapshot.run?.budget?.candidatesRemaining, 1);
     assert.equal(w.composition().versionId, original.versionId);
-    return;
-  }
-  assert.equal(
-    snapshot.run?.status,
-    "awaiting-apply",
-    JSON.stringify(snapshot),
-  );
-  assert.equal(attempts, 2);
-  assert.equal(snapshot.run?.budget?.candidatesRemaining, 1);
-  assert.equal(w.composition().versionId, original.versionId);
-  assert.ok(
-    snapshot.events?.some(
-      (event) =>
-        event.status === "failed" && /string|number|any|enum/.test(event.detail ?? ""),
-    ),
-  );
-  const candidates = snapshot.candidates!;
-  assert.equal(candidates.length, 2);
-  assert.notEqual(candidates[0].id, candidates[1].id);
-  assert.equal(candidates[0].passed, false);
-  assert.equal(candidates[1].passed, true);
-  assert.ok(candidates[0].diagnostic);
-  assert.equal(candidates[1].planId, ready.plan.id);
-  assert.ok(candidates[1].evidenceHash);
-  const version = w.release.get(snapshot.run!.versionId!);
-  assert.ok(version.bundle?.outputs["business/view.js"]);
-  const path = join(w.release.directory, version.id, "business/view.js");
-  const alias = join(dir, "aliased-view.js");
-  writeFileSync(alias, readFileSync(path));
-  unlinkSync(path);
-  symlinkSync(alias, path);
-  await assert.rejects(w.release.start(version), /路径|符号链接/);
-});
+    assert.ok(
+      snapshot.events?.some(
+        (event) =>
+          event.status === "failed" &&
+          /string|number|any|enum/.test(event.detail ?? ""),
+      ),
+    );
+    const candidates = snapshot.candidates!;
+    assert.equal(candidates.length, 2);
+    assert.notEqual(candidates[0].id, candidates[1].id);
+    assert.equal(candidates[0].passed, false);
+    assert.equal(candidates[1].passed, true);
+    assert.ok(candidates[0].diagnostic);
+    assert.equal(candidates[1].planId, ready.plan.id);
+    assert.ok(candidates[1].evidenceHash);
+    const version = w.release.get(snapshot.run!.versionId!);
+    assert.ok(version.bundle?.outputs["business/view.js"]);
+    const path = join(w.release.directory, version.id, "business/view.js");
+    const alias = join(dir, "aliased-view.js");
+    writeFileSync(alias, readFileSync(path));
+    unlinkSync(path);
+    symlinkSync(alias, path);
+    await assert.rejects(w.release.start(version), /路径|符号链接/);
+  });
 
 test("new provider and consumer implement an additional action with frozen independent cases", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "cordis-capability-"));
@@ -459,7 +593,37 @@ test("new provider and consumer implement an additional action with frozen indep
 });
 
 test("A10: protected paths, type-only escapes and forged validation reports stop the frozen execution", async (t) => {
-  for (const attack of ["path", "type-import", "reference", "mixed-import", "mixed-reference", "mixed-enum-runtime", "report", "scope", "source"]) {
+  const prefixes: Record<string, string> = {
+    "type-import": 'import type { Secret } from "/tmp/private.ts";\n',
+    reference: '/// <reference path="/tmp/private.ts" />\n',
+    "mixed-import":
+      'import type { Secret } from "/tmp/private.ts"; const bad: any = 1;\n',
+    "mixed-reference": "const bad: any = 1;\n",
+    "mixed-enum-runtime": "enum Bad { value = process.pid };\n",
+    "computed-runtime": 'const value = { [process.pid]: "no" };\n',
+    "shorthand-runtime": "const value = { process };\n",
+    "template-runtime": "const value = `literal ${process.pid}`;\n",
+    "escaped-runtime": "const value = pro\\u0063ess.pid;\n",
+    "dynamic-import": 'const value = import("./contract.js");\n',
+    "import-type": 'type Value = import("/tmp/private.ts").Secret;\n',
+  };
+  for (const attack of [
+    "path",
+    "type-import",
+    "reference",
+    "mixed-import",
+    "mixed-reference",
+    "mixed-enum-runtime",
+    "template-runtime",
+    "computed-runtime",
+    "shorthand-runtime",
+    "escaped-runtime",
+    "dynamic-import",
+    "import-type",
+    "report",
+    "scope",
+    "source",
+  ]) {
     await t.test(attack, async (t) => {
       const dir = mkdtempSync(join(tmpdir(), "cordis-protection-"));
       const w = await Workspace.open(join(dir, "workspace.db"));
@@ -491,9 +655,8 @@ test("A10: protected paths, type-only escapes and forged validation reports stop
                     {
                       path: "business/entry.ts",
                       content:
-                        (attack === "type-import" || attack === "mixed-import"
-                          ? 'import type { Secret } from "/tmp/private.ts";\n'
-                          : attack === "reference" ? '/// <reference path="/tmp/private.ts" />\n' : "") + (attack === "mixed-enum-runtime" ? "enum Bad { value = process.pid };\n" : attack.startsWith("mixed-") ? "const bad: any = 1;\n" : "") + source("default", "轻快完成"),
+                        (prefixes[attack] ?? "") +
+                        source("default", "轻快完成"),
                     },
                     {
                       path: "business/view.ts",

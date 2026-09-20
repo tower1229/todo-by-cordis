@@ -1,3 +1,4 @@
+import { executableMemberInterfaces } from "./extensions/registry.js";
 import { businessPath } from "../release/business-bundle.js";
 import {
   parseExtensions,
@@ -230,7 +231,7 @@ export const planningInstruction = `你是本应用唯一的自迭代 Agent，�
 纯辅助成员启停使用 memberEnabled:{pluginId,enabled}，仅变更一个现有辅助成员的 enabled。writableScope 为 []，保留已有 workflowRules、extensions 和 memberCases，不得同时新增或升级成员、修改源码或修订验收；仍需调查与 describe_verification。宿主生成状态候选，体验与应用确认独立。
 对于 workflow/1，先 describe_verification(rules) 取得可信检查器定义，把返回 cases 原样作为 acceptance、rules 作为 workflowRules。新增动作通过 extensions 单独提交冻结数据化案例，acceptance 仍填写 describe_verification 返回 cases；辅助成员业务要求通过 memberCases 冻结目标成员、动作、初始数据、输入、预期最终数据与拒绝案例，由隔离 Workspace 检查器解释，不能仅靠成员冒烟。超出这些检查器的行为保留原目标并阻塞。必须读取 active-contract 和 active-acceptance，规则改变须提供 acceptanceReason 说明用户要求与原因，宿主展示旧新差异并等待独立确认；不能为通过候选而改规则。已有成员级正例与拒绝案例必须继续参与验收，不能因无关变更悄悄丢失。修订既有行为时必须沿用 active-acceptance 中原案例 name 并提供 acceptanceReason；不要为新预期另起案例名，因为旧案例仍会继承，同一成员、动作、初始数据和输入不能要求不同结果。新增辅助成员必须在本次计划提交该成员动作的成对冻结案例；升级辅助成员时，省略/空 memberCases 仅表示 as-is 继承该成员历史成对案例（无历史基线则阻塞），若提交了 memberCases 却未覆盖被升级成员的受影响动作（含历史动作与本次提交动作）则视为错绑并阻塞。宿主用 AffectedAcceptance 在规划与候选阶段共用同一套「受影响动作 ↔ 冻结案例」规则。
 提交前核对 inspect_application.planningRequirements，evidence 包含全部 requiredEvidence 及相关消费方的已读 ref/hash。propose_plan 被宿主拒绝时按工具返回的诊断继续只读调查和修正计划，不降级原目标，不削弱检查器；真实阻塞如实保留。
-propose_plan 包含 summary、changes、outcome、dataImpact、excluded、evidence(ref/hash，必须引用真实读过的资料)、capabilityChanges(capability/provider/consumers/change)、acceptance(given/when/then/checker)、steps(id/purpose/dependsOn/artifact/evidence)、writableScope、compatibility、rollback、preview、application、restartImpact、dependencies(所需包名)、unresolved；若要在既有组合上叠加一个新辅助成员（不替换既有成员），另附 memberAdditions:[{pluginId,name}]（本阶段最多一项，pluginId 不得与现有 members 冲突）；若要只升级某个已有辅助成员，另附 memberUpgrades:[{pluginId}]（本阶段最多一项，必须是现有 auxiliary，且不得与 memberAdditions 同时出现）。辅助成员业务验收另附 memberCases（目标成员、动作、初始数据、输入、预期最终数据与拒绝案例）。capabilityChanges、evidence、acceptance、steps 必须非空；新增辅助成员同样需要声明能力提供者与实际消费方，writableScope 声明候选组合 business/* 产物。若活动版本尚无 business/entry.ts，首次选择 business/* 文件封装时，即使只新增辅助成员，也必须显式包含 business/entry.ts、business/view.ts、business/config.json、business/compatibility.json 四个必需路径，再加本次新增业务文件；不能只列辅助成员文件。宿主不会自动扩充授权范围。memberEnabled 只在纯启停请求中提交，其他改进必须省略。宿主会派生 compositionIntent（改谁/保留谁）供用户查看；dataImpact 仍须如实说明字段与数据后果。summary 与 outcome 用用户可理解的短句描述目标与可见效果，不要把内部文件路径、JSON 样例或沙箱机制写进这两项。验收应覆盖正例、边界、已有行为和数据保留。不要自行声称验收已通过。ready 由宿主校验决定。
+propose_plan 包含 summary、changes、outcome、dataImpact、excluded、evidence(ref/hash，必须引用真实读过的资料)、capabilityChanges(capability/provider/consumers/change)、acceptance(given/when/then/checker)、steps(id/purpose/dependsOn/artifact/evidence)、writableScope、compatibility、rollback、preview、application、restartImpact、dependencies(所需包名)、unresolved；若要在既有组合上叠加一个新辅助成员（不替换既有成员），另附 memberAdditions:[{pluginId,name}]（本阶段最多一项，pluginId 不得与现有 members 冲突）；若要只升级某个已有辅助成员，另附 memberUpgrades:[{pluginId}]（本阶段最多一项，必须是现有 auxiliary，且不得与 memberAdditions 同时出现）。辅助成员业务验收另附 memberCases（目标成员、动作、初始数据、输入、预期最终数据与拒绝案例）。capabilityChanges、evidence、acceptance、steps 必须非空；新增辅助成员同样需要声明能力提供者与实际消费方；辅助成员能力的 provider 必须写 member:<pluginId>，不需要在主 bundle 中复制同名源码或增加空导入。capability 必须是精确的宿主接口名 ${executableMemberInterfaces.join("、")}，不能写成员动作名；每个声明成员必须有冻结的成对 memberCases。主工作流能力仍用 active-source 或实际加载的 business/* 文件；writableScope 只声明主工作流产物，辅助源码由 memberAdditions/memberUpgrades 单独授权。若活动版本尚无 business/entry.ts，首次选择 business/* 文件封装时，即使只新增辅助成员，也必须显式包含 business/entry.ts、business/view.ts、business/config.json、business/compatibility.json 四个必需路径，再加本次新增业务文件；不能只列辅助成员文件。宿主不会自动扩充授权范围。memberEnabled 只在纯启停请求中提交，其他改进必须省略。宿主会派生 compositionIntent（改谁/保留谁）供用户查看；dataImpact 仍须如实说明字段与数据后果。summary 与 outcome 用用户可理解的短句描述目标与可见效果，不要把内部文件路径、JSON 样例或沙箱机制写进这两项。验收应覆盖正例、边界、已有行为和数据保留。不要自行声称验收已通过。ready 由宿主校验决定。
 修复故障的请求必须在 propose_plan 中设置 intent:"repair"，绑定旧版故障，不以修改需求期望冒充修复。宿主先运行旧版相同验收；无法复现或执行错误则阻塞。
 用户点击开始后才会生成候选；验证通过后停在待应用，正式应用须另行确认，不得把开始当作应用授权。宿主提供 workflow/1 字段检查器、business-actions/1 新增动作检查器，以及隔离 Workspace 检查器解释的 memberCases。新增纯业务动作可用 extensions 提供 actions、fields、cases，extensions.cases 只能引用 extensions.actions 中的动作；complete/reopen 的回归由 workflow/1 自动验证，不能放入 extensions.cases。每个动作至少一个 commit 正例和 reject 反例，完整数据化用例在开始前展示冻结；不能移除既有行为。可写范围使用 business/entry.ts、business/view.ts、business/config.json、business/compatibility.json 及同目录新增提供者 .ts 文件。新文件无需虚构已读证据。其他 IO、通知交付、控制协议变更仍须维护者升级。`;
 const obj = (
@@ -348,8 +349,15 @@ export const planningTools = [
         type: "array",
         minItems: 1,
         items: obj({
-          capability: text,
-          provider: text,
+          capability: {
+            ...text,
+            description: `For member providers use an exact executable interface: ${executableMemberInterfaces.join(", ")}. Action IDs are not capability interfaces.`,
+          },
+          provider: {
+            ...text,
+            description:
+              "Use member:<pluginId> for an existing or planned auxiliary member; active-source or a loaded business/* module for workflow implementation. Never duplicate a member into a workflow file just to declare its provider.",
+          },
           consumers: {
             ...list,
             description:
@@ -471,7 +479,7 @@ export function readInvestigation(
             planningRequirements: {
               requiredEvidence,
               capabilityReferences:
-                "capabilityChanges 的 provider 和 consumers 使用已读取的源码 ref，不是插件 id；例如 active-source 与 src/web/ActionForm.tsx。",
+                "capabilityChanges 的辅助成员 provider 使用 member:<pluginId>（已存在或本计划新增的 auxiliary）；主工作流 provider 和 consumers 使用已读取源码 ref，例如 active-source 与 src/web/ActionForm.tsx。不要把辅助成员伪装成主 bundle 文件。",
               derivedReadOnly:
                 "active-contract 是 active-source 中 describe() 的派生定义，不是可单独编辑文件；active-acceptance 是受保护验收记录，不可写入。修改字段应修改 active-source 的 describe/decide，计划用 workflowRules 表达新规则。",
               publication:
@@ -864,7 +872,25 @@ export function parsePlan(
     change: planText(c.change),
   }));
   for (const c of capabilityChanges) {
-    const unread = [c.provider, ...c.consumers].filter(
+    const memberProvider = c.provider.startsWith("member:")
+      ? c.provider.slice(7)
+      : undefined;
+    if (memberProvider !== undefined && !allowedMembers.has(memberProvider))
+      blockers.push(`能力提供者不是已存在或计划新增的辅助成员：${c.provider}`);
+    if (memberProvider !== undefined) {
+      if (!executableMemberInterfaces.some((id) => id === c.capability))
+        blockers.push(
+          `辅助成员能力接口尚不支持：${c.capability}；使用 ${executableMemberInterfaces.join("、")}`,
+        );
+      if (!memberCases?.some((item) => item.member === memberProvider))
+        blockers.push(
+          `辅助成员能力缺少冻结验收案例：${memberProvider}；请提交该成员动作的成对 memberCases`,
+        );
+    }
+    const unread = [
+      ...(memberProvider === undefined ? [c.provider] : []),
+      ...c.consumers,
+    ].filter(
       (ref) =>
         !seen.some((e) => e.ref === ref) &&
         !(

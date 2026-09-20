@@ -26,7 +26,10 @@ const counterSource = `export default {
 };`;
 
 /** Only CI supplies implementations; never imported by the real-model entrypoint. */
-export function v1FixtureDriver(syntheticCandidateFault = false, declareTagField = true): Driver {
+export function v1FixtureDriver(
+  syntheticCandidateFault = false,
+  declareTagField = true,
+): Driver {
   let phase = -1;
   let faultInjected = false;
   let planning: PlanningDriver;
@@ -85,6 +88,18 @@ export function v1FixtureDriver(syntheticCandidateFault = false, declareTagField
               "停用标签",
               "启用标签",
             ][phase],
+            ...(phase <= 2
+              ? {
+                  capabilityChanges: [
+                    {
+                      capability: "command.register",
+                      provider: phase === 1 ? "member:counter" : "member:tags",
+                      consumers: ["src/web/ActionForm.tsx"],
+                      change: "成员命令变化",
+                    },
+                  ],
+                }
+              : {}),
             workflowRules:
               phase < 3
                 ? []
@@ -170,7 +185,8 @@ export function v1FixtureDriver(syntheticCandidateFault = false, declareTagField
           members: [
             {
               pluginId: phase === 1 ? "counter" : "tags",
-              source: phase === 1 ? counterSource : tagsSource(true, declareTagField),
+              source:
+                phase === 1 ? counterSource : tagsSource(true, declareTagField),
             },
           ],
         });
