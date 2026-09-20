@@ -29,6 +29,7 @@ const counterSource = `export default {
 export function v1FixtureDriver(
   syntheticCandidateFault = false,
   declareTagField = true,
+  optionalCompletionField = false,
 ): Driver {
   let phase = -1;
   let faultInjected = false;
@@ -100,10 +101,9 @@ export function v1FixtureDriver(
                   ],
                 }
               : {}),
-            workflowRules:
-              phase < 3
-                ? []
-                : [
+            workflowRules: [
+              ...(optionalCompletionField ? [{ key: "retained", label: "保留历史", required: false, minLength: 0, maxLength: 10 }] : []),
+              ...(phase < 3 ? [] : [
                     {
                       key: "reflection",
                       label: "复盘",
@@ -111,7 +111,8 @@ export function v1FixtureDriver(
                       minLength: 1,
                       maxLength: 5000,
                     },
-                  ],
+                  ]),
+            ],
             writableScope:
               phase >= 4 ? [] : phase > 0 ? candidateScope : ["active-source"],
             ...(phase < 2
@@ -159,11 +160,16 @@ export function v1FixtureDriver(
         ?.response.result.source;
       if (!current) return reply("read_current_source", {});
       if (phase >= 4) return reply("submit_candidate", { source: current });
-      if (phase === 3)
-        return reply(
-          "submit_candidate",
-          JSON.parse(candidateSource(source("default", "轻快完成"))),
-        );
+      if (phase === 3) {
+        let code = source("default", "轻快完成");
+        if (optionalCompletionField) code = code
+          .replace("fields:[{key:'reflection'", "fields:[{key:'retained',label:'保留历史',type:'text',required:false},{key:'reflection'")
+          .replace("const value=input.reflection?.trim();", "const retained=(input.retained??task.fields.retained??'').trim(); if([...retained].length>10) return {kind:'reject',message:'过长'}; const value=input.reflection?.trim();")
+          .replace("fields:{...task.fields,reflection:value}", "fields:{...task.fields,retained,reflection:value}");
+        const candidate = JSON.parse(candidateSource(code)) as {files:{path:string;content:string}[]};
+        if (optionalCompletionField) candidate.files.find((f) => f.path === "business/view.ts")!.content = 'export default {title:"复盘",fields:["retained","reflection"]};';
+        return reply("submit_candidate", candidate);
+      }
       if (phase > 0)
         return reply("submit_candidate", {
           ...(current.startsWith("{")
@@ -173,7 +179,7 @@ export function v1FixtureDriver(
                   { path: "business/entry.ts", content: current },
                   {
                     path: "business/view.ts",
-                    content: 'export default {title:"轻快完成",fields:[]};',
+                    content: `export default {title:"轻快完成",fields:${optionalCompletionField ? '["retained"]' : "[]"}};`,
                   },
                   { path: "business/config.json", content: "{}" },
                   {
@@ -197,8 +203,14 @@ export function v1FixtureDriver(
           phase === 0
             ? `import type { Plugin } from './contract.js';
 const plugin: Plugin = {
- describe: () => ({id:'default',name:'轻快完成',version:'1',initialState:'open',states:{open:{label:'未完成',category:'open'},done:{label:'已完成',category:'done'}},actions:[{id:'complete',label:'完成',from:['open']},{id:'reopen',label:'重新打开',from:['done']}],fields:[]}),
- decide({task,action}) {
+ describe: () => ({id:'default',name:'轻快完成',version:'1',initialState:'open',states:{open:{label:'未完成',category:'open'},done:{label:'已完成',category:'done'}},actions:[{id:'complete',label:'完成',from:['open']},{id:'reopen',label:'重新打开',from:['done']}],fields:${optionalCompletionField ? "[{key:'retained',label:'保留历史',type:'text',required:false}]" : "[]"}}),
+ decide({task,action,input}) {
+ ${optionalCompletionField ? `if(action==='complete' && task.state==='open') {
+ if(!Object.hasOwn(input,'retained')) return {kind:'input-required',fields:plugin.describe().fields};
+ const retained=input.retained.trim();
+ if([...retained].length>10) return {kind:'reject',message:'过长'};
+ return {kind:'commit',state:'done',fields:{...task.fields,retained}};
+ }` : ""}
  if ((action==='complete' && task.state==='open') || (action==='reopen' && task.state==='done')) return {kind:'commit',state:action==='complete'?'done':'open',fields:task.fields};
  return {kind:'reject',message:'不可用'};
  }

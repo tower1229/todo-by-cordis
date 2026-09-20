@@ -51,6 +51,7 @@ export function v1Browser(
         await page!.getByRole("button", { name, exact: true }).click();
         return contribution?.label ?? action.label;
       }
+      let latestTask = session.task;
       if (bindings.tags && phase !== 4) {
         const formResponse = page.waitForResponse((r) =>
           r.url().endsWith("/api/experience/commands") &&
@@ -68,28 +69,53 @@ export function v1Browser(
         await page.getByRole("button", { name: label, exact: true }).click();
         const saved = await response;
         assert.equal(saved.status(), 200);
-        assert.equal((await saved.json()).task.fields[bindings.tags.field], phase >= 2 ? "browsertag" : "BrowserTag");
+        latestTask = (await saved.json() as CommandResult).task!;
+        assert.equal(latestTask.fields[bindings.tags.field], phase >= 2 ? "browsertag" : "BrowserTag");
       }
       if (bindings.counter) {
         const response = page.waitForResponse((r) => r.url().endsWith("/api/experience/commands") && r.request().postDataJSON().actionId === bindings.counter!.action);
         await clickAction(bindings.counter.action);
         const saved = await response;
         assert.equal(saved.status(), 200);
-        assert.equal((await saved.json()).task.fields[bindings.counter.field], String(Number(session.task.fields[bindings.counter.field] ?? "0") + 1));
+        const previousCount = Number(latestTask.fields[bindings.counter.field] ?? "0");
+        latestTask = (await saved.json() as CommandResult).task!;
+        assert.equal(latestTask.fields[bindings.counter.field], String(previousCount + 1));
       }
       const complete = session.composition.workflow.actions.find((action) => action.id === "complete");
       const reopen = session.composition.workflow.actions.find((action) => action.id === "reopen");
       assert.ok(complete && reopen);
-      await page.getByRole("button", { name: complete.label, exact: true }).click();
-      if (phase >= 3) {
-        const reflection = session.composition.retainedFields.find(
-          (field) => session.task.fields[field.key] === "完成复盘",
+      async function submitWorkflowAction(id: string, label: string) {
+        const pending = page!.waitForResponse((response) =>
+          response.url().endsWith("/api/experience/commands") &&
+          response.request().postDataJSON().actionId === id,
         );
-        assert.ok(reflection, "候选体验须保留复盘字段");
-        await page.getByLabel(reflection.label, { exact: true }).fill("浏览器完成复盘");
-        await page.getByRole("button", { name: complete.label, exact: true }).click();
+        await page!.getByRole("button", { name: label, exact: true }).click();
+        const response = await pending;
+        assert.equal(response.status(), 200);
+        return await response.json() as CommandResult;
       }
-      await page.getByRole("button", { name: reopen.label, exact: true }).click();
+      let completed = await submitWorkflowAction("complete", complete.label);
+      if (completed.decision?.kind === "input-required") {
+        for (const field of completed.decision.fields) {
+          const value = field.key === bindings.reflection
+            ? "浏览器完成复盘"
+            : latestTask.fields[field.key] ?? "";
+          await page.getByLabel(field.label, { exact: true }).fill(value);
+        }
+        completed = await submitWorkflowAction("complete", complete.label);
+      }
+      assert.equal(completed.decision?.kind, "commit", "完成表单必须实际提交成功");
+      assert.equal(completed.task?.state, "done");
+      if (phase >= 3) {
+        assert.ok(bindings.reflection, "候选体验须保留复盘字段");
+        assert.equal(completed.task?.fields[bindings.reflection], "浏览器完成复盘");
+      }
+      for (const [key, value] of Object.entries(latestTask.fields))
+        if (key !== bindings.reflection) assert.equal(completed.task?.fields[key], value, `完成须保留 ${key}`);
+      const reopened = await submitWorkflowAction("reopen", reopen.label);
+      assert.equal(reopened.decision?.kind, "commit");
+      assert.equal(reopened.task?.state, "open");
+      assert.deepEqual(reopened.task?.fields, completed.task?.fields);
       await expect(page.getByRole("button", { name: complete.label, exact: true })).toBeVisible();
       await page.screenshot({ path, fullPage: true });
       await page.getByLabel("备注", { exact: true }).fill("浏览器隔离写入");

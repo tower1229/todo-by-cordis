@@ -1,0 +1,30 @@
+{
+  "schema": "cordis.v1-acceptance-pair/1",
+  "pairId": "c4a4ac83-04d4-466e-855d-224a130b2318",
+  "commit": "94b660776882a1dcb7d8beada7669be3b506522c",
+  "passed": false,
+  "runs": [
+    {
+      "id": "bf27aab7-0448-4e49-ae47-76a8110ecfce",
+      "directory": "run-1",
+      "status": "passed",
+      "originalEventsSha256": "4ae5cb537c8b0917174f751e991f485218eb7a585f1e33f77ae4f41919260027",
+      "archivedEventsSha256": "c24c04a0825ca14c2c38b6443dc30a96c689dc0b1eb76326424425b15cf99703"
+    },
+    {
+      "id": "ae2347f0-34ac-4018-9281-9f8f52556575",
+      "directory": "run-2",
+      "status": "failed",
+      "originalEventsSha256": "1e8d440b612f6b521a0bfc58af976753b823de72906b9214df74fae58c790ea7",
+      "archivedEventsSha256": "cb16e263dc735d32c500b35d70fb99aa2d551a3100994a63ad2ab25a0c386079"
+    }
+  ],
+  "repairEvidence": "not-exercised",
+  "repairs": [],
+  "note": "未执行故障修复不得声称 Agent 自修复通过；失败现场保留，不覆盖旧报告。",
+  "archive": {
+    "events": "gzip JSONL; original provider signatures omitted; local roots replaced",
+    "databasesIncluded": false,
+    "credentialsIncluded": false
+  }
+}

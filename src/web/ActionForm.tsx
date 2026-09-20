@@ -55,7 +55,9 @@ export function InputForm({
               type: "action",
               taskId: form.task.id,
               actionId: form.actionId,
-              input,
+              input: Object.fromEntries(
+                form.fields.map((field) => [field.key, input[field.key] ?? ""]),
+              ),
               expectedRevision: form.task.revision,
               compositionRevision: form.revision,
             },

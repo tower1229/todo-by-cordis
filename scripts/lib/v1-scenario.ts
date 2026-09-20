@@ -146,7 +146,10 @@ export async function runV1Acceptance(options: V1Options) {
       const missing = await send("complete");
       assert.equal(missing.decision?.kind, "input-required");
       assert.deepEqual(read(), before);
-      await send("complete", { [reflection]: "  完成复盘  " });
+      await send("complete", {
+        ...Object.fromEntries(composition.workflow.fields.map((field) => [field.key, read().fields[field.key] ?? ""])),
+        [reflection]: "  完成复盘  ",
+      });
       assert.equal(read().state, "done");
       assert.equal(read().fields[reflection], "完成复盘");
       if (counter) await assert.rejects(send(counter.action));
@@ -226,8 +229,13 @@ export async function runV1Acceptance(options: V1Options) {
       if (phase === 0) tags = binding(ready.plan);
       if (phase === 1) counter = binding(ready.plan);
       if (phase === 3) {
-        reflection = ready.plan.workflowRules[0]?.key;
-        assert.ok(reflection, "复盘规则缺失");
+        const addedRules = ready.plan.workflowRules.filter((rule) =>
+          (!base.workflow.fields.some((field) => field.key === rule.key) ||
+            ready.plan.acceptanceChanges.some((change) => change.rule === rule.key)) &&
+          rule.required && rule.minLength === 1 && rule.maxLength === 5000,
+        );
+        assert.equal(addedRules.length, 1, "复盘需求须绑定唯一新增或经确认修订的必填 1–5000 字规则");
+        reflection = addedRules[0].key;
         restoreVersion = base.versionId;
       }
       await command({

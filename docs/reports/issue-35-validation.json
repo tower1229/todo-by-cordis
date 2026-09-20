@@ -13,7 +13,7 @@
     "syntheticFault": "A deliberately invalid candidate is followed by a model-stub correction within the same budget; this is not real Agent repair evidence"
   },
   "realModelEvidence": {
-    "status": "twelve-attempts-without-complete-pair",
+    "status": "thirteen-attempts-one-full-run-no-complete-pair",
     "required": "Two independent clean synthetic workspaces on the same fixed clean source commit",
     "entrypoint": "pnpm accept:v1 --authorize-real-model",
     "runs": [
@@ -65,6 +65,11 @@
         "archive": "issue-30-acceptance/attempt-12/pair.json",
         "status": "failed",
         "diagnostic": "Third phase passed business validation but unchanged workflow lost its exact version lock because JSON property order changed. Counter candidate was genuinely repaired by the Agent within the original budget."
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-13/pair.json",
+        "status": "failed",
+        "diagnostic": "Run 1 passed the entire six-step scenario. Run 2 passed tag candidate verification but the browser did not submit an optional completion form; no passing pair claimed."
       }
     ],
     "latestFailure": "Attempt 11 submitted a candidate importing ../../shared/contracts.js outside the allowed bundle boundary. Protected import gate correctly blocked execution; no candidate was applied. No new host defect is established by this failure, so no extra outer retry is used to chase a pass.",
@@ -93,29 +98,29 @@
       "passed": 230,
       "failed": 0,
       "fileConcurrency": 1,
-      "evidenceSource": "Local full run on implementation 47243f4; subsequent JSON-order regression passed all four v1 scenario tests."
+      "evidenceSource": "Local complete application suite after optional completion form and rule-binding fixes"
     },
     "browser": {
       "command": "pnpm test:e2e",
-      "passed": 35,
+      "passed": 36,
       "failed": 0,
-      "evidenceSource": "Local full run on implementation 47243f4"
+      "evidenceSource": "Local complete browser suite after optional completion form and rule-binding fixes"
     },
     "authorizationGate": "without --authorize-real-model rejected before provider construction",
     "review": {
-      "standards": "No outstanding findings after AST static name and re-export fixes",
-      "spec": "No outstanding findings after member provider gates and JSON-order pin review"
+      "standards": "AST static names and re-exports rechecked; no outstanding findings",
+      "spec": "Member gates, exact bundle locks, optional form submission and receipt-driven browser checks reviewed; no outstanding findings"
     },
     "earlierFailures": [
       "Concurrent unit runs hit short existing candidate-settle deadlines; final serial full run passed",
       "Old browser test still expected the removed simulated summary; aligned assertions with current experience and apply controls"
     ],
-    "evidenceBoundary": "Deterministic model stubs and Chromium passed; twelve historical real attempts do not form a passing pair or production acceptance",
+    "evidenceBoundary": "Thirteen historical real attempts include one complete independent run, not a passing pair or production acceptance",
     "ci": {
-      "commit": "47243f4b21584dd8711e97a693f3f1e035fa67a7",
-      "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/35490391478",
+      "commit": "94b660776882a1dcb7d8beada7669be3b506522c",
+      "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/35490858891",
       "status": "passed"
     }
   },
-  "implementationCommit": "47243f4b21584dd8711e97a693f3f1e035fa67a7"
+  "implementationCommit": "94b660776882a1dcb7d8beada7669be3b506522c"
 }
