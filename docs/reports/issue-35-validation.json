@@ -13,7 +13,7 @@
     "syntheticFault": "A deliberately invalid candidate is followed by a model-stub correction within the same budget; this is not real Agent repair evidence"
   },
   "realModelEvidence": {
-    "status": "nine-attempts-without-complete-pair",
+    "status": "ten-attempts-without-complete-pair",
     "required": "Two independent clean synthetic workspaces on the same fixed clean source commit",
     "entrypoint": "pnpm accept:v1 --authorize-real-model",
     "runs": [
@@ -52,10 +52,14 @@
       {
         "archive": "issue-30-acceptance/attempt-09/pair.json",
         "status": "failed"
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-10/pair.json",
+        "status": "failed"
       }
     ],
-    "latestFailure": "Attempt 09 passed candidate business verification but browser acceptance assumed input fields were statically registered. Driver now reads the real input-required decision fields; both static and dynamic field variants pass deterministic full-six-step browser coverage.",
-    "nextPair": "Explicit Gemini data transfer and API usage authorization received. Start two fresh clean workspaces after committing the browser driver correction."
+    "latestFailure": "Attempt 10 exhausted three candidates: unsupported types, unloaded provider, then missing UI title. The generation contract incorrectly marked task.detail.title optional while runtime requires it; contract and prompt now require title. Agent corrections occurred but no successful repair or full run is claimed.",
+    "nextPair": "Explicit Gemini data transfer and API usage authorization received. Start two fresh clean workspaces after committing the UI contract alignment."
   },
   "completionGates": {
     "reliableAcceptance": "deterministic-only",

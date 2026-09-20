@@ -10,7 +10,7 @@ import {
   HOST_UI_SLOTS,
   resolveUiContributions,
 } from "../../src/server/extensions/ui-slots.js";
-import { EvolutionDomain } from "../../src/server/evolution-domain.js";
+import { EvolutionDomain, contract } from "../../src/server/evolution-domain.js";
 import {
   uiDetailDefinition,
   uiDetailReleaseInput,
@@ -262,4 +262,20 @@ test("isolated experience surfaces ui contributions and simulates a write", asyn
   assert.ok(report.checks.some((c) => c.includes("ui.action:markProof")));
   assert.ok(report.checks.some((c) => /ui\.write:commit|ui\.write:ok/.test(c)));
   assert.equal(w.query().tasks.length, 0);
+});
+
+
+test("生成契约与 task.detail 运行校验都要求 title", async (t) => {
+  const w = await setup(t);
+  const files = (title: boolean) => ({
+    "business/entry.ts": `import type { ExtensionContribution } from './contract.js';
+      const contribution: ExtensionContribution = {uiSlots:[{id:'detail',slot:'task.detail'${title ? ",title:'详情'" : ""}}]};
+      export default contribution;`,
+    "business/view.ts": "export default {title:'test',fields:[]};",
+    "business/config.json": "{}",
+    "business/compatibility.json": '{"preserveUnknownFields":true}',
+  });
+  await assert.rejects(w.release.buildBundle(files(false), contract, new AbortController().signal), /title/);
+  const bundle = await w.release.buildBundle(files(true), contract, new AbortController().signal);
+  assert.ok(bundle.outputs["business/entry.js"]);
 });
