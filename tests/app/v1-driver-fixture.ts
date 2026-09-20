@@ -7,8 +7,8 @@ import {
 } from "./evolution-fixture.js";
 import { tagsTrimOnlyMemberCases } from "./member-case-fixtures.js";
 
-const tagsSource = (lower: boolean) => `export default {
- contribute() { return {fields:[{key:'tags',label:'标签',type:'text'}],commands:[{id:'setTags',label:'设标签',from:['open','done']}]}; },
+const tagsSource = (lower: boolean, declareField: boolean) => `export default {
+ contribute() { return {${declareField ? "fields:[{key:'tags',label:'标签',type:'text'}]," : ""}commands:[{id:'setTags',label:'设标签',from:['open','done']}]}; },
  decide({task,action,input}) {
   if(action!=='setTags') return {kind:'reject',message:'未知动作'};
   if(!Object.hasOwn(input??{},'tags'))return {kind:'input-required',fields:[{key:'tags',label:'标签',type:'text',required:true}]};
@@ -26,7 +26,7 @@ const counterSource = `export default {
 };`;
 
 /** Only CI supplies implementations; never imported by the real-model entrypoint. */
-export function v1FixtureDriver(syntheticCandidateFault = false): Driver {
+export function v1FixtureDriver(syntheticCandidateFault = false, declareTagField = true): Driver {
   let phase = -1;
   let faultInjected = false;
   let planning: PlanningDriver;
@@ -170,7 +170,7 @@ export function v1FixtureDriver(syntheticCandidateFault = false): Driver {
           members: [
             {
               pluginId: phase === 1 ? "counter" : "tags",
-              source: phase === 1 ? counterSource : tagsSource(true),
+              source: phase === 1 ? counterSource : tagsSource(true, declareTagField),
             },
           ],
         });
@@ -192,8 +192,8 @@ const plugin: Plugin = {
           {
             pluginId: phase === 1 ? "counter" : "tags",
             source: inject
-              ? tagsSource(false).replace(".trim()", "")
-              : tagsSource(false),
+              ? tagsSource(false, declareTagField).replace(".trim()", "")
+              : tagsSource(false, declareTagField),
           },
         ],
       });

@@ -5,6 +5,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { join } from "node:path";
 import type { V1Options } from "./v1-scenario.js";
+import type { CommandResult } from "../../src/shared/contracts.js";
 
 /** Real page, real session API; only synthetic data is captured. */
 export function v1Browser(
@@ -51,9 +52,17 @@ export function v1Browser(
         return contribution?.label ?? action.label;
       }
       if (bindings.tags && phase !== 4) {
+        const formResponse = page.waitForResponse((r) =>
+          r.url().endsWith("/api/experience/commands") &&
+          r.request().postDataJSON().actionId === bindings.tags!.action);
         const label = await clickAction(bindings.tags.action);
-        const field = session.composition.retainedFields.find((item) => item.key === bindings.tags!.field);
-        assert.ok(field);
+        const form = await formResponse;
+        assert.equal(form.status(), 200);
+        const receipt = await form.json() as CommandResult;
+        assert.equal(receipt.decision?.kind, "input-required");
+        assert.ok(receipt.decision?.kind === "input-required");
+        const field = receipt.decision.fields.find((item) => item.key === bindings.tags!.field);
+        assert.ok(field, "标签动作须通过 input-required 返回冻结输入字段");
         await page.getByLabel(field.label, { exact: true }).fill("  BrowserTag  ");
         const response = page.waitForResponse((r) => r.url().endsWith("/api/experience/commands") && r.request().postDataJSON().input);
         await page.getByRole("button", { name: label, exact: true }).click();

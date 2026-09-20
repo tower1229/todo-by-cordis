@@ -13,7 +13,7 @@
     "syntheticFault": "A deliberately invalid candidate is followed by a model-stub correction within the same budget; this is not real Agent repair evidence"
   },
   "realModelEvidence": {
-    "status": "eight-attempts-without-complete-pair",
+    "status": "nine-attempts-without-complete-pair",
     "required": "Two independent clean synthetic workspaces on the same fixed clean source commit",
     "entrypoint": "pnpm accept:v1 --authorize-real-model",
     "runs": [
@@ -48,10 +48,14 @@
       {
         "archive": "issue-30-acceptance/attempt-08/pair.json",
         "status": "failed"
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-09/pair.json",
+        "status": "failed"
       }
     ],
-    "latestFailure": "Attempt 08 generated forbidden any types and was immediately blocked. Host now keeps any/enum forbidden but reports them as correctable build failures within the same candidate budget; protected directives, imports and paths still block immediately.",
-    "nextPair": "Explicit Gemini data transfer and API usage authorization received. Start two fresh clean workspaces after committing the bounded type-error correction."
+    "latestFailure": "Attempt 09 passed candidate business verification but browser acceptance assumed input fields were statically registered. Driver now reads the real input-required decision fields; both static and dynamic field variants pass deterministic full-six-step browser coverage.",
+    "nextPair": "Explicit Gemini data transfer and API usage authorization received. Start two fresh clean workspaces after committing the browser driver correction."
   },
   "completionGates": {
     "reliableAcceptance": "deterministic-only",
@@ -72,15 +76,15 @@
     "build": "passed",
     "unit": {
       "command": "pnpm test",
-      "passed": 213,
+      "passed": 216,
       "failed": 0,
-      "fileConcurrency": 1,
-      "additionalRegression": "Three subsequent mixed-protection cases passed through the public candidate control plane; full CI verifies the final commit."
+      "fileConcurrency": 1
     },
     "browser": {
       "command": "pnpm test:e2e",
       "passed": 34,
-      "failed": 0
+      "failed": 0,
+      "additionalRegression": "Both static and dynamic action-input variants passed the full six-step fixture through Chromium after the acceptance driver fix."
     },
     "authorizationGate": "without --authorize-real-model rejected before provider construction",
     "review": {
@@ -91,7 +95,12 @@
       "Concurrent unit runs hit short existing candidate-settle deadlines; final serial full run passed",
       "Old browser test still expected the removed simulated summary; aligned assertions with current experience and apply controls"
     ],
-    "evidenceBoundary": "Local deterministic model stubs and Chromium on the implementation revision; six historical real-model attempts are not a passing pair or production acceptance"
+    "evidenceBoundary": "Local deterministic model stubs and Chromium on the implementation revision; six historical real-model attempts are not a passing pair or production acceptance",
+    "ci": {
+      "commit": "33385a57b022fd08795ad7331bda857a2c1805c0",
+      "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/35486814447",
+      "status": "passed"
+    }
   },
   "implementationCommit": "7cabace0552797f371cc0ba5ee322dac51e41b2a"
 }
