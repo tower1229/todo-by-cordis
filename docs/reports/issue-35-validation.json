@@ -13,7 +13,7 @@
     "syntheticFault": "A deliberately invalid candidate is followed by a model-stub correction within the same budget; this is not real Agent repair evidence"
   },
   "realModelEvidence": {
-    "status": "eighteen-attempts-one-full-run-no-complete-pair",
+    "status": "nineteen-attempts-one-full-run-no-complete-pair",
     "required": "Two independent clean synthetic workspaces on the same fixed clean source commit",
     "entrypoint": "pnpm accept:v1 --authorize-real-model",
     "runs": [
@@ -95,16 +95,21 @@
         "archive": "issue-30-acceptance/attempt-18/pair.json",
         "status": "failed",
         "diagnostic": "Tags passed supplied-input business cases but rejected absent input instead of returning a form. Browser click returned 400 before application."
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-19/pair.json",
+        "status": "failed",
+        "diagnostic": "Gemini fetch failed on first-run tag generation call 7 before returning a candidate. No automatic outer retry; source commit 878b83a4d98d862f7c63c323c8ae13fbeb20a5a6."
       }
     ],
-    "latestFailure": "Attempt 18: candidate action could not open its required input form.",
-    "nextPair": "Fresh pair after reviewed, validated and committed frozen-case-bound member input-form verification.",
+    "latestFailure": "Attempt 19: provider request failed with fetch failed during tag candidate generation; this is not a completed business validation.",
+    "nextPair": "Requires a fresh complete pair on a fixed clean source after resolving or reassessing provider transport availability. Prior single runs cannot be combined.",
     "naturalRepairEvidence": "attempt-12 phase 1 and attempt-15 phase 0: failed candidate followed by Agent-generated passing correction in the same frozen plan and original budget; neither full pair passed."
   },
   "completionGates": {
     "reliableAcceptance": "deterministic-passed-real-pair-incomplete",
     "completeExperience": "deterministic-passed-real-pair-incomplete",
-    "repeatableRealIteration": "pending-fresh-pair-after-input-form-fix",
+    "repeatableRealIteration": "blocked-by-provider-fetch-failure-no-complete-pair",
     "deliveryDocumentation": "describes-current-limits"
   },
   "limitations": [
@@ -140,12 +145,12 @@
       "Concurrent unit runs hit short existing candidate-settle deadlines; final serial full run passed",
       "Old browser test still expected the removed simulated summary; aligned assertions with current experience and apply controls"
     ],
-    "evidenceBoundary": "247 deterministic application tests and 36 browser tests passed before input form source commit. Eighteen historical real attempts include one full run, but no passing pair.",
+    "evidenceBoundary": "247 deterministic application tests and 36 browser tests passed before the input form source commit. Nineteen historical real attempts include one full independent run, but no passing pair at the current source.",
     "ci": {
-      "commit": "66b918ada289015556439de7ccd5a2ef787588d7",
-      "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/35496225718",
+      "commit": "878b83a4d98d862f7c63c323c8ae13fbeb20a5a6",
+      "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/35496889520",
       "status": "passed"
     }
   },
-  "implementationCommit": "66b918ada289015556439de7ccd5a2ef787588d7"
+  "implementationCommit": "878b83a4d98d862f7c63c323c8ae13fbeb20a5a6"
 }
