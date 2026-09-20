@@ -30,6 +30,7 @@ export function v1FixtureDriver(
   syntheticCandidateFault = false,
   declareTagField = true,
   optionalCompletionField = false,
+  counterFieldLoss: "none" | "decide" | "beforeCommit" = "none",
 ): Driver {
   let phase = -1;
   let faultInjected = false;
@@ -102,8 +103,20 @@ export function v1FixtureDriver(
                 }
               : {}),
             workflowRules: [
-              ...(optionalCompletionField ? [{ key: "retained", label: "保留历史", required: false, minLength: 0, maxLength: 10 }] : []),
-              ...(phase < 3 ? [] : [
+              ...(optionalCompletionField
+                ? [
+                    {
+                      key: "retained",
+                      label: "保留历史",
+                      required: false,
+                      minLength: 0,
+                      maxLength: 10,
+                    },
+                  ]
+                : []),
+              ...(phase < 3
+                ? []
+                : [
                     {
                       key: "reflection",
                       label: "复盘",
@@ -162,18 +175,41 @@ export function v1FixtureDriver(
       if (phase >= 4) return reply("submit_candidate", { source: current });
       if (phase === 3) {
         let code = source("default", "轻快完成");
-        if (optionalCompletionField) code = code
-          .replace("fields:[{key:'reflection'", "fields:[{key:'retained',label:'保留历史',type:'text',required:false},{key:'reflection'")
-          .replace("const value=input.reflection?.trim();", "const retained=(input.retained??task.fields.retained??'').trim(); if([...retained].length>10) return {kind:'reject',message:'过长'}; const value=input.reflection?.trim();")
-          .replace("fields:{...task.fields,reflection:value}", "fields:{...task.fields,retained,reflection:value}");
-        const candidate = JSON.parse(candidateSource(code)) as {files:{path:string;content:string}[]};
-        if (optionalCompletionField) candidate.files.find((f) => f.path === "business/view.ts")!.content = 'export default {title:"复盘",fields:["retained","reflection"]};';
+        if (optionalCompletionField)
+          code = code
+            .replace(
+              "fields:[{key:'reflection'",
+              "fields:[{key:'retained',label:'保留历史',type:'text',required:false},{key:'reflection'",
+            )
+            .replace(
+              "const value=input.reflection?.trim();",
+              "const retained=(input.retained??task.fields.retained??'').trim(); if([...retained].length>10) return {kind:'reject',message:'过长'}; const value=input.reflection?.trim();",
+            )
+            .replace(
+              "fields:{...task.fields,reflection:value}",
+              "fields:{...task.fields,retained,reflection:value}",
+            );
+        const candidate = JSON.parse(candidateSource(code)) as {
+          files: { path: string; content: string }[];
+        };
+        if (optionalCompletionField)
+          candidate.files.find((f) => f.path === "business/view.ts")!.content =
+            'export default {title:"复盘",fields:["retained","reflection"]};';
         return reply("submit_candidate", candidate);
       }
       if (phase > 0)
         return reply("submit_candidate", {
           ...(current.startsWith("{")
-            ? { files: (JSON.parse(current) as { files: {path:string;content:string}[] }).files.slice().reverse().map(({path,content}) => ({content,path})) }
+            ? {
+                files: (
+                  JSON.parse(current) as {
+                    files: { path: string; content: string }[];
+                  }
+                ).files
+                  .slice()
+                  .reverse()
+                  .map(({ path, content }) => ({ content, path })),
+              }
             : {
                 files: [
                   { path: "business/entry.ts", content: current },
@@ -192,7 +228,21 @@ export function v1FixtureDriver(
             {
               pluginId: phase === 1 ? "counter" : "tags",
               source:
-                phase === 1 ? counterSource : tagsSource(true, declareTagField),
+                phase === 1
+                  ? counterFieldLoss === "decide"
+                    ? counterSource.replace("...task.fields,", "")
+                    : counterFieldLoss === "beforeCommit"
+                      ? counterSource
+                          .replace(
+                            "return {fields:",
+                            "return {beforeCommit:true,fields:",
+                          )
+                          .replace(
+                            "export default {",
+                            "export default {beforeCommit({action,draft}) {return action==='increment' ? {kind:'ok',fields:{count:draft.fields.count}} : {kind:'ok'};},",
+                          )
+                      : counterSource
+                  : tagsSource(true, declareTagField),
             },
           ],
         });
@@ -205,12 +255,16 @@ export function v1FixtureDriver(
 const plugin: Plugin = {
  describe: () => ({id:'default',name:'轻快完成',version:'1',initialState:'open',states:{open:{label:'未完成',category:'open'},done:{label:'已完成',category:'done'}},actions:[{id:'complete',label:'完成',from:['open']},{id:'reopen',label:'重新打开',from:['done']}],fields:${optionalCompletionField ? "[{key:'retained',label:'保留历史',type:'text',required:false}]" : "[]"}}),
  decide({task,action,input}) {
- ${optionalCompletionField ? `if(action==='complete' && task.state==='open') {
+ ${
+   optionalCompletionField
+     ? `if(action==='complete' && task.state==='open') {
  if(!Object.hasOwn(input,'retained')) return {kind:'input-required',fields:plugin.describe().fields};
  const retained=input.retained.trim();
  if([...retained].length>10) return {kind:'reject',message:'过长'};
  return {kind:'commit',state:'done',fields:{...task.fields,retained}};
- }` : ""}
+ }`
+     : ""
+ }
  if ((action==='complete' && task.state==='open') || (action==='reopen' && task.state==='done')) return {kind:'commit',state:action==='complete'?'done':'open',fields:task.fields};
  return {kind:'reject',message:'不可用'};
  }

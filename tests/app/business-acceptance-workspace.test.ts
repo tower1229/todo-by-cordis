@@ -395,58 +395,80 @@ test("完整组合继承候选的隔离 Workspace 验收绑定整组合，体验
   );
 });
 
-test("只接受正整数字符串的动作：冻结 15/abc 案例通过隔离 Workspace 验收，不靠 probe 猜测", async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), "cordis-pos-int-"));
-  const w = await Workspace.open(join(directory, "workspace.db"));
-  t.after(async () => {
-    await w.close().catch(() => undefined);
-    await rm(directory, { recursive: true, force: true });
+for (const caseName of ["正整数字符串", "长".repeat(180)]) {
+  test(`冻结严格输入及保护证据：${caseName.length} 字案例名`, async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), "cordis-pos-int-"));
+    const w = await Workspace.open(join(directory, "workspace.db"));
+    t.after(async () => {
+      await w.close().catch(() => undefined);
+      await rm(directory, { recursive: true, force: true });
+    });
+    const extensions = structuredClone(positiveIntegerExtensions);
+    extensions.cases[0]!.name = caseName;
+    const original = structuredClone(extensions);
+    const planning = new PlanningDriver({
+      writableScope: [...candidateScope],
+      extensions,
+    });
+    const e = new Evolution(
+      w.db,
+      estimateDriver(planning, "strict"),
+      new EvolutionDomain(w),
+    );
+    t.after(async () => {
+      await e.close();
+    });
+    await e.command({
+      type: "request",
+      text: "未完成任务可填写正整数字符串预估分钟",
+      operationId: "plan-estimate-int",
+    });
+    const ready = await settle(e, "ready");
+    assert.equal(ready.status, "ready", JSON.stringify(ready));
+    if (ready.status !== "ready") throw new Error("expected ready");
+    await e.command({
+      type: "start",
+      operationId: "start-estimate-int",
+      runId: ready.id,
+      planId: ready.plan.id,
+    });
+    const done = await settle(e, "awaiting-apply");
+    assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
+    const evidence = w.release.get(done.versionId!).evidence as {
+      checks?: string[];
+      workspaceCases: import("../../src/server/workspace-acceptance.js").WorkspaceCaseEvidence[];
+    };
+    assert.ok(
+      evidence.checks?.includes(`workspace:${caseName}`),
+      evidence.checks?.join("\n"),
+    );
+    assert.ok(evidence.checks?.includes("workspace:非正整拒绝"));
+    assert.ok(
+      evidence.checks?.filter((check) => check === `workspace:${caseName}`)
+        .length === 1,
+    );
+    assert.ok(
+      evidence.checks?.filter((check) => check === "workspace:非正整拒绝")
+        .length === 1,
+    );
+    const business = evidence.workspaceCases.find(
+      (c) => c.name === `workspace:${caseName}`,
+    );
+    assert.ok(business);
+    assert.equal(business.kind, "frozen-business");
+    assert.deepEqual(business.initial.fields, {});
+    assert.deepEqual(business.input, { estimateMinutes: "15" });
+    const protection = evidence.workspaceCases.find(
+      (c) => c.protectionOf === `workspace:${caseName}`,
+    );
+    assert.ok(protection);
+    assert.equal(protection.kind, "system-protection");
+    assert.deepEqual(protection.input, business.input);
+    assert.equal(protection.initial.fields.host_retained, "preserve");
+    assert.equal(protection.actual.fields?.host_retained, "preserve");
+    assert.deepEqual(extensions, original);
   });
-  const planning = new PlanningDriver({
-    writableScope: [...candidateScope],
-    extensions: positiveIntegerExtensions,
-  });
-  const e = new Evolution(
-    w.db,
-    estimateDriver(planning, "strict"),
-    new EvolutionDomain(w),
-  );
-  t.after(async () => {
-    await e.close();
-  });
-  await e.command({
-    type: "request",
-    text: "未完成任务可填写正整数字符串预估分钟",
-    operationId: "plan-estimate-int",
-  });
-  const ready = await settle(e, "ready");
-  assert.equal(ready.status, "ready", JSON.stringify(ready));
-  if (ready.status !== "ready") throw new Error("expected ready");
-  await e.command({
-    type: "start",
-    operationId: "start-estimate-int",
-    runId: ready.id,
-    planId: ready.plan.id,
-  });
-  const done = await settle(e, "awaiting-apply");
-  assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
-  const evidence = w.release.get(done.versionId!).evidence as {
-    checks?: string[];
-  };
-  assert.ok(
-    evidence.checks?.includes("workspace:正整数字符串"),
-    evidence.checks?.join("\n"),
-  );
-  assert.ok(evidence.checks?.includes("workspace:非正整拒绝"));
-  assert.ok(
-    evidence.checks?.filter((check) => check === "workspace:正整数字符串")
-      .length === 1,
-  );
-  assert.ok(
-    evidence.checks?.filter((check) => check === "workspace:非正整拒绝")
-      .length === 1,
-  );
-});
+}
 
 test("非正整仍被写入的实现无法靠 decide 层蒙混，隔离 Workspace 冻结案例拒绝", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "cordis-pos-int-bad-"));

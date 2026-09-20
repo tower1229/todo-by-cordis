@@ -137,3 +137,37 @@ test("启停候选篡改源码不能应用且完整验收失败", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+for (const loss of ["decide", "beforeCommit"] as const)
+  test(`计数丢弃未知字段须在待应用前失败：${loss}`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), "cordis-retention-gate-"));
+    const snapshots: import("../../src/shared/assistant.js").AssistantSnapshot[] =
+      [];
+    const events: Record<string, unknown>[] = [];
+    try {
+      await assert.rejects(
+        runV1Acceptance({
+          directory,
+          driver: v1FixtureDriver(false, true, false, loss),
+          mode: "deterministic-subset",
+          record: (event) => {
+            events.push(event);
+            if (event.type === "settled" && event.phase === 1)
+              snapshots.push(
+                event.snapshot as import("../../src/shared/assistant.js").AssistantSnapshot,
+              );
+          },
+        }),
+      );
+      assert.equal(snapshots.at(-1)?.run?.status, "failed");
+      assert.ok(!snapshots.some((s) => s.run?.status === "awaiting-apply"));
+      assert.ok(snapshots.at(-1)?.candidates?.every((c) => !c.passed));
+      assert.match(
+        snapshots.at(-1)?.candidates?.[0].diagnostic ?? "",
+        /preserve-unknown-fields/,
+      );
+      assert.ok(!events.some((e) => e.phase === 1 && e.type === "applied"));
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });

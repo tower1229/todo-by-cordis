@@ -13,7 +13,7 @@
     "syntheticFault": "A deliberately invalid candidate is followed by a model-stub correction within the same budget; this is not real Agent repair evidence"
   },
   "realModelEvidence": {
-    "status": "fifteen-attempts-one-full-run-no-complete-pair",
+    "status": "sixteen-attempts-one-full-run-no-complete-pair",
     "required": "Two independent clean synthetic workspaces on the same fixed clean source commit",
     "entrypoint": "pnpm accept:v1 --authorize-real-model",
     "runs": [
@@ -80,16 +80,21 @@
         "archive": "issue-30-acceptance/attempt-15/pair.json",
         "status": "failed",
         "diagnostic": "Tags were corrected by the Agent and applied within the original budget. Counter generation stopped after read_member used an incorrect exact member version; read-only lookup errors were terminal instead of returned as correctable tool results."
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-16/pair.json",
+        "status": "failed",
+        "diagnostic": "Counter passed frozen isolated cases but discarded existing tags during complete candidate experience. Mandatory unknown-field retention was missing from unified Workspace verification."
       }
     ],
-    "latestFailure": "Attempt 15: wrong exact member lookup terminated generation before call budget exhaustion; denied read did not reveal source or change formal composition.",
-    "nextPair": "A fresh pair will run only after the bounded read-only lookup correction is reviewed, validated and committed; prior runs are not reused.",
+    "latestFailure": "Attempt 16: counter replaced task fields, losing tags during isolated experience before apply.",
+    "nextPair": "Fresh pair after reviewed and committed unknown-field system protection, without changing frozen business inputs or reusing earlier runs.",
     "naturalRepairEvidence": "attempt-12 phase 1 and attempt-15 phase 0: failed candidate followed by Agent-generated passing correction in the same frozen plan and original budget; neither full pair passed."
   },
   "completionGates": {
     "reliableAcceptance": "deterministic-passed-real-pair-incomplete",
     "completeExperience": "deterministic-passed-real-pair-incomplete",
-    "repeatableRealIteration": "pending-fresh-pair-after-member-read-fix",
+    "repeatableRealIteration": "pending-fresh-pair-after-field-retention-fix",
     "deliveryDocumentation": "describes-current-limits"
   },
   "limitations": [
@@ -105,32 +110,32 @@
     "build": "passed",
     "unit": {
       "command": "pnpm test",
-      "passed": 235,
+      "passed": 238,
       "failed": 0,
       "fileConcurrency": 1,
-      "evidenceSource": "Local full working-tree validation of the bounded member-read correction before its source commit"
+      "evidenceSource": "Full local working-tree regression before unknown-field protection source commit"
     },
     "browser": {
       "command": "pnpm test:e2e",
       "passed": 36,
       "failed": 0,
-      "evidenceSource": "Local full browser suite after bounded member-read correction"
+      "evidenceSource": "Full local browser regression after unknown-field protection"
     },
     "authorizationGate": "without --authorize-real-model rejected before provider construction",
     "review": {
-      "standards": "No outstanding findings; six targeted read_member regressions independently passed",
-      "spec": "Denied reads reveal no source, exact membership remains enforced, original budget is unchanged, and infrastructure failures remain fatal"
+      "standards": "No outstanding findings; long case names use short task IDs and remain complete in evidence",
+      "spec": "Frozen cases remain unchanged; mandatory unknown-field retention uses the same action/input and distinct system-protection evidence"
     },
     "earlierFailures": [
       "Concurrent unit runs hit short existing candidate-settle deadlines; final serial full run passed",
       "Old browser test still expected the removed simulated summary; aligned assertions with current experience and apply controls"
     ],
-    "evidenceBoundary": "235 deterministic application tests and 36 browser tests passed before the bounded member-read source commit. Fifteen historical real attempts include one full independent run, but no passing pair on the current implementation.",
+    "evidenceBoundary": "238 deterministic application tests and 36 browser tests passed before unknown-field protection source commit. Sixteen historical real attempts include one full run, but no passing pair.",
     "ci": {
-      "commit": "8ccb3c9ed21041e7e4b86fd30e089ca040476b54",
-      "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/35491798745",
+      "commit": "25f6de0e2728567c7db788430bbcb01eccde6277",
+      "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/35495224167",
       "status": "passed"
     }
   },
-  "implementationCommit": "8ccb3c9ed21041e7e4b86fd30e089ca040476b54"
+  "implementationCommit": "25f6de0e2728567c7db788430bbcb01eccde6277"
 }

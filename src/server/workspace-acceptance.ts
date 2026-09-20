@@ -25,9 +25,12 @@ export type WorkspaceAcceptanceCase = {
   action: string;
   input: Record<string, string>;
   expected: AcceptanceExpected;
+  protectionOf?: string;
 };
 
 export type WorkspaceCaseEvidence = {
+  kind: "frozen-business" | "system-protection";
+  protectionOf?: string;
   name: string;
   compositionVersionId: string;
   member: string;
@@ -146,7 +149,9 @@ export async function verifyViaIsolatedWorkspace(
     memberVersionId: string | undefined,
   ) => {
     receipt.status = "passed";
-    receipt.diagnostic = "冻结案例与持久化最终事实一致";
+    receipt.diagnostic = c.protectionOf
+      ? "系统数据保留约束与持久化最终事实一致"
+      : "冻结案例与持久化最终事实一致";
     checks.push(c.name);
     if (c.member && memberVersionId)
       checks.push(`member-version:${c.member}@${memberVersionId}`);
@@ -162,12 +167,42 @@ export async function verifyViaIsolatedWorkspace(
         .join(",")}`,
     );
     let registry = isolated.extensionRegistry();
-    for (const c of cases) {
+    // Keep frozen business cases untouched. Separately exercise the mandatory
+    // unknown-field retention contract with the same known-valid action input.
+    const occupied = new Set([
+      ...isolated.composition().retainedFields.map((field) => field.key),
+      ...cases.flatMap((c) => [
+        ...Object.keys(c.fields),
+        ...Object.keys(c.input),
+        ...(c.expected.kind === "commit" ? Object.keys(c.expected.fields) : []),
+      ]),
+    ]);
+    let retainedKey = "host_retained";
+    while (occupied.has(retainedKey)) retainedKey += "_";
+    const protectionCases: WorkspaceAcceptanceCase[] = cases.flatMap((c) =>
+      c.expected.kind !== "commit"
+        ? []
+        : [
+            {
+              ...c,
+              name: `system:preserve-unknown-fields:${c.name}`,
+              protectionOf: c.name,
+              fields: { ...c.fields, [retainedKey]: "preserve" },
+              expected: {
+                ...c.expected,
+                fields: { ...c.expected.fields, [retainedKey]: "preserve" },
+              },
+            },
+          ],
+    );
+    for (const c of [...cases, ...protectionCases]) {
       signal.throwIfAborted();
       const targetMember = members.find((m) =>
         c.member ? m.pluginId === c.member : m.role === "workflow",
       );
       receipt = {
+        kind: c.protectionOf ? "system-protection" : "frozen-business",
+        ...(c.protectionOf ? { protectionOf: c.protectionOf } : {}),
         name: c.name,
         compositionVersionId: candidate.id,
         member: c.member ?? targetMember?.pluginId ?? candidate.pluginId,
@@ -219,7 +254,7 @@ export async function verifyViaIsolatedWorkspace(
           const compositionRevision = isolated.composition().revision;
           const created = await isolated.command({
             type: "create",
-            title: `case:${c.name}`,
+            title: `case:${randomUUID()}`,
             compositionRevision,
             operationId: randomUUID(),
           });

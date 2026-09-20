@@ -25,3 +25,5 @@ status: accepted
 隔离体验：解析与任务页同一套 `uiContributions` 描述；待应用候选经 `experience` 命令打开宿主绑定的隔离会话（运行、候选、组合版本与验收证据），默认合成测试任务，写入仅落隔离库。浏览器经 `/api/experience` 访问，不能指定数据库路径；仍保留 `domain.experience()` 供结构级模拟报告（非浏览器主路径）。
 
 架构目录中其余扩展点（`query.filter|sort`、除 workflow 外的 `service.provide`）可登记并出现在 `composition.extensions` 能力摘要中，状态为 `stub` 或 `declared`，本阶段不改变查询 SQL。不恢复 V1 capability broker / 容器市场。`workflow/1` 验收继续有效；存在非空扩展贡献时标记 `extensions/1`。生成侧 `business/contract.ts`（evolution `contract` 字符串）须包含可选 `contribute` 与钩子方法签名。真实 Runtime 子进程须能反射并调用这些方法。自迭代 Agent 仍不能修改本类宿主约束。
+
+隔离 Workspace 验收保留原冻结案例不变；另从成功案例派生未知字段保留的系统保护检查，沿用相同动作和业务输入，仅追加不与已注册字段或案例字段重名的历史字段。命令、beforeCommit、持久化和查询后的最终字段均须保留它；失败按候选错误进入原预算内修正。证据以 `frozen-business` / `system-protection` 和 `protectionOf` 分别标记，不把系统保护伪装成用户冻结业务事实。测试任务标题使用短 ID，完整案例名只保存在证据中。
