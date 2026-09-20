@@ -1,7 +1,7 @@
 {
   "schema": "cordis.issue35.delivery-status/1",
   "issue": 35,
-  "status": "awaiting-authorized-real-model-acceptance",
+  "status": "awaiting-real-model-pair-after-host-fixes",
   "deterministicEvidence": {
     "kind": "model-stub",
     "tests": [
@@ -13,10 +13,37 @@
     "syntheticFault": "A deliberately invalid candidate is followed by a model-stub correction within the same budget; this is not real Agent repair evidence"
   },
   "realModelEvidence": {
-    "status": "not-run",
+    "status": "six-attempts-without-complete-pair",
     "required": "Two independent clean synthetic workspaces on the same fixed clean source commit",
     "entrypoint": "pnpm accept:v1 --authorize-real-model",
-    "runs": []
+    "runs": [
+      {
+        "archive": "issue-30-acceptance/attempt-01/pair.json",
+        "status": "failed"
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-02/pair.json",
+        "status": "failed"
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-03/pair.json",
+        "status": "failed"
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-04/pair.json",
+        "status": "failed"
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-05/pair.json",
+        "status": "interrupted"
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-06/pair.json",
+        "status": "failed"
+      }
+    ],
+    "latestFailure": "Attempt 06 passed tags and counter, then generation reported conflicting inherited preserve-case and newly named lowercase cases. Host now rejects conflicting frozen cases during planning and requires same-name revision plus independent acceptance confirmation.",
+    "nextPair": "Requires explicit authorization to send relevant repository source, plans and synthetic acceptance data to Google Gemini (gemini-3.1-pro-preview), with API usage charges. Automatic approval rejected the attempt-07 command before execution."
   },
   "completionGates": {
     "reliableAcceptance": "deterministic-only",
@@ -28,7 +55,7 @@
     "No full real-model pass is claimed until pair.json reports two passing runs at the same commit",
     "No real Agent fault repair is claimed by the synthetic fixture",
     "Any host fix requires a new commit and two fresh full runs; old evidence remains historical",
-    "Browser interaction checks candidate UI, reconnect and isolated edits; business actions are also checked through the same public experience API"
+    "Browser interaction checks candidate tags, counter, workflow completion/reopen, reconnect and isolated edits; formal tasks and composition remain unchanged before separate apply."
   ],
   "localValidation": {
     "node": "24.18.0",
@@ -37,25 +64,25 @@
     "build": "passed",
     "unit": {
       "command": "pnpm test",
-      "passed": 194,
+      "passed": 208,
       "failed": 0,
       "fileConcurrency": 1
     },
     "browser": {
       "command": "pnpm test:e2e",
-      "passed": 28,
+      "passed": 34,
       "failed": 0
     },
     "authorizationGate": "without --authorize-real-model rejected before provider construction",
     "review": {
-      "standards": 0,
-      "specFound": 2,
-      "specFixedAndRechecked": 2
+      "standards": "Extra extension member property bypass found, fixed and rechecked",
+      "spec": "No outstanding findings in conflict gate patch"
     },
     "earlierFailures": [
       "Concurrent unit runs hit short existing candidate-settle deadlines; final serial full run passed",
       "Old browser test still expected the removed simulated summary; aligned assertions with current experience and apply controls"
     ],
-    "evidenceBoundary": "Local deterministic model stubs and Chromium; not real-model or production acceptance"
-  }
+    "evidenceBoundary": "Local deterministic model stubs and Chromium on the implementation revision; six historical real-model attempts are not a passing pair or production acceptance"
+  },
+  "implementationCommit": "7cabace0552797f371cc0ba5ee322dac51e41b2a"
 }
