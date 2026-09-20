@@ -167,7 +167,7 @@ export function v1FixtureDriver(
       if (phase > 0)
         return reply("submit_candidate", {
           ...(current.startsWith("{")
-            ? JSON.parse(current)
+            ? { files: (JSON.parse(current) as { files: {path:string;content:string}[] }).files.slice().reverse().map(({path,content}) => ({content,path})) }
             : {
                 files: [
                   { path: "business/entry.ts", content: current },

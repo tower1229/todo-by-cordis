@@ -13,7 +13,7 @@
     "syntheticFault": "A deliberately invalid candidate is followed by a model-stub correction within the same budget; this is not real Agent repair evidence"
   },
   "realModelEvidence": {
-    "status": "eleven-attempts-without-complete-pair",
+    "status": "twelve-attempts-without-complete-pair",
     "required": "Two independent clean synthetic workspaces on the same fixed clean source commit",
     "entrypoint": "pnpm accept:v1 --authorize-real-model",
     "runs": [
@@ -60,10 +60,16 @@
       {
         "archive": "issue-30-acceptance/attempt-11/pair.json",
         "status": "failed"
+      },
+      {
+        "archive": "issue-30-acceptance/attempt-12/pair.json",
+        "status": "failed",
+        "diagnostic": "Third phase passed business validation but unchanged workflow lost its exact version lock because JSON property order changed. Counter candidate was genuinely repaired by the Agent within the original budget."
       }
     ],
     "latestFailure": "Attempt 11 submitted a candidate importing ../../shared/contracts.js outside the allowed bundle boundary. Protected import gate correctly blocked execution; no candidate was applied. No new host defect is established by this failure, so no extra outer retry is used to chase a pass.",
-    "nextPair": "Not started. Current failure remains recorded; further work must preserve protected import rules, original per-run limits and the two-clean-workspace completion criterion. Gemini data transfer and API usage were explicitly authorized."
+    "nextPair": "Not started. Current failure remains recorded; further work must preserve protected import rules, original per-run limits and the two-clean-workspace completion criterion. Gemini data transfer and API usage were explicitly authorized.",
+    "naturalRepairEvidence": "attempt-12 phase 1: failed candidate then passing corrected candidate in the same frozen plan; full pair still failed"
   },
   "completionGates": {
     "reliableAcceptance": "deterministic-passed-real-pair-incomplete",
@@ -84,32 +90,32 @@
     "build": "passed",
     "unit": {
       "command": "pnpm test",
-      "passed": 217,
+      "passed": 230,
       "failed": 0,
       "fileConcurrency": 1,
-      "evidenceSource": "Final implementation CI; local full run had 213 tests, followed by targeted new boundary and UI contract regressions."
+      "evidenceSource": "Local full run on implementation 47243f4; subsequent JSON-order regression passed all four v1 scenario tests."
     },
     "browser": {
       "command": "pnpm test:e2e",
       "passed": 35,
       "failed": 0,
-      "evidenceSource": "Final implementation CI, including both static and dynamic action-input six-step scenarios."
+      "evidenceSource": "Local full run on implementation 47243f4"
     },
     "authorizationGate": "without --authorize-real-model rejected before provider construction",
     "review": {
-      "standards": "Extra extension member property bypass found, fixed and rechecked",
-      "spec": "No outstanding findings in conflict gate patch"
+      "standards": "No outstanding findings after AST static name and re-export fixes",
+      "spec": "No outstanding findings after member provider gates and JSON-order pin review"
     },
     "earlierFailures": [
       "Concurrent unit runs hit short existing candidate-settle deadlines; final serial full run passed",
       "Old browser test still expected the removed simulated summary; aligned assertions with current experience and apply controls"
     ],
-    "evidenceBoundary": "Deterministic model stubs and Chromium verified on the implementation revision; eleven historical real-model attempts are not a passing pair or production acceptance",
+    "evidenceBoundary": "Deterministic model stubs and Chromium passed; twelve historical real attempts do not form a passing pair or production acceptance",
     "ci": {
-      "commit": "da0c55b793c8eb9639a0e7ca45aca3de0f7fa293",
-      "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/35487402639",
+      "commit": "47243f4b21584dd8711e97a693f3f1e035fa67a7",
+      "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/35490391478",
       "status": "passed"
     }
   },
-  "implementationCommit": "da0c55b793c8eb9639a0e7ca45aca3de0f7fa293"
+  "implementationCommit": "47243f4b21584dd8711e97a693f3f1e035fa67a7"
 }

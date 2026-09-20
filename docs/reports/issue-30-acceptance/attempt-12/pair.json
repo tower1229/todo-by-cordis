@@ -1,0 +1,59 @@
+{
+  "schema": "cordis.v1-acceptance-pair/1",
+  "pairId": "04b3c197-8d84-414a-a65d-6be482a569a8",
+  "commit": "47243f4b21584dd8711e97a693f3f1e035fa67a7",
+  "passed": false,
+  "runs": [
+    {
+      "id": "500b82a1-038b-4060-aacc-0330d88d51dd",
+      "directory": "run-1",
+      "status": "failed",
+      "originalEventsSha256": "dc4fc97ceef8c760e8696afca2675ba4e0afb55a193a6766ebfd2fe3c65f918d",
+      "archivedEventsSha256": "5f218a51613071acf79b72d8650a866c8fe5b490b16a80039890a721435d2b8f"
+    }
+  ],
+  "repairEvidence": "generated-candidate-correction-observed",
+  "repairs": [
+    {
+      "trialId": "500b82a1-038b-4060-aacc-0330d88d51dd",
+      "phase": 1,
+      "type": "generated-candidate-correction",
+      "runId": "42f642c6-7887-4603-846d-c7cc2f882c38",
+      "faultOrigin": "natural-flow",
+      "failedCandidates": [
+        {
+          "id": "dc21c5c52a9137d7361b1b2f8b258a8f3a55d33b289bd9eb18b3d44ae50ba19b",
+          "planId": "38edffc9-4062-409d-be22-e8d8dc31e420",
+          "baseVersion": "0fb9a9751acd16b362fd58bf5edbb293081b5f184c7cb5d47b9c497d6266fee8",
+          "attempt": 1,
+          "passed": false,
+          "sourceHash": "50faf5cfa5e64be8c81f045e556d24b6c58a39dfef950b35301c27860fa04c98",
+          "diagnostic": "Cannot read properties of undefined (reading 'kind')",
+          "versionId": "13571b585bfbeb6b126d49e92b91de9f7c94b77702536005466e2d64efa224e7"
+        }
+      ],
+      "correctedCandidate": {
+        "id": "4f0d05531aaec64717354dcfb598b489d00866bced22d337a711f4ee4b8ec044",
+        "planId": "38edffc9-4062-409d-be22-e8d8dc31e420",
+        "baseVersion": "0fb9a9751acd16b362fd58bf5edbb293081b5f184c7cb5d47b9c497d6266fee8",
+        "attempt": 2,
+        "passed": true,
+        "sourceHash": "f7998f62e84fad0f2d159cae61d64bc33f76aae7f9d68f82bc507f4a94c56834",
+        "evidenceHash": "daeb5d011ce6fc3b9da7b3fddba59729ab7e0109d94a3f03d7f2ce22c352ad57",
+        "versionId": "43479ded4d6bdd56455d8b090332d601f8f56740cd1e7d87493a6d356a1514ac"
+      },
+      "budget": {
+        "callsUsed": 7,
+        "callsRemaining": 5,
+        "candidatesRemaining": 1,
+        "millisecondsRemaining": 486586.85975
+      }
+    }
+  ],
+  "note": "未执行故障修复不得声称 Agent 自修复通过；失败现场保留，不覆盖旧报告。",
+  "archive": {
+    "events": "gzip JSONL; original provider signatures omitted; local roots replaced",
+    "databasesIncluded": false,
+    "credentialsIncluded": false
+  }
+}

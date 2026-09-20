@@ -130,8 +130,19 @@ function workflowUnchangedForUpgrade(
 ) {
   if (!plannedUpgrades.length || plannedAdditions.length || goal.extensions)
     return false;
-  if (workflowSource !== base.source || goal.pluginId !== base.pluginId)
-    return false;
+  if (goal.pluginId !== base.pluginId) return false;
+  if (workflowSource !== base.source) {
+    if (!base.bundle || !workflowSource.startsWith('{"files":')) return false;
+    const submittedFiles = parseBusinessFiles(
+      (JSON.parse(workflowSource) as { files: unknown }).files,
+    );
+    const baselineFiles = Object.fromEntries(
+      Object.entries(base.bundle.files).filter(([path]) => path !== "business/contract.ts"),
+    );
+    // JSON property/array order is transport formatting, not workflow source.
+    // Every business path and source byte must still match the trusted baseline.
+    if (!equal(submittedFiles, baselineFiles)) return false;
+  }
   return equal(
     fieldContract(
       goal.fields.map((f) => ({
