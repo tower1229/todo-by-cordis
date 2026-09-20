@@ -116,6 +116,7 @@ export function parseBusinessFiles(value: unknown): Record<string, string> {
 }
 
 export function checkBusinessImports(files: Record<string, string>) {
+  let typeError: Error | undefined;
   const checkImport = (path: string, specifier: string) => {
     const resolved = posix
       .join(posix.dirname(path), specifier)
@@ -131,15 +132,21 @@ export function checkBusinessImports(files: Record<string, string>) {
   };
   for (const [path, source] of Object.entries(files)) {
     if (!path.endsWith(".ts")) continue;
-    if (/\/\/\/\s*<reference|\b(enum|any)\b/.test(source))
-      throw new ProtectedCandidateError(`未授权编译指令或类型：${path}`);
+    if (/\/\/\/\s*<reference/.test(source))
+      throw new ProtectedCandidateError(`未授权编译指令：${path}`);
+    // Unsupported types are correctable build errors, not permission changes.
+    // They still fail before compilation and consume the original candidate budget.
+    if (/\b(enum|any)\b/.test(source))
+      typeError ??= new Error(`不支持的类型 any/enum，请在冻结范围内修正：${path}`);
     for (const match of source.matchAll(
       /(?:from\s*|import\s*)["']([^"']+)["']/g,
     )) {
       checkImport(path, match[1]);
     }
     // Strip types before checking runtime dependencies; the runtime linker checks again.
-    const code = stripTypeScriptTypes(source);
+    // Enums cannot be stripped. Inspect their source for protected capabilities;
+    // typeError still prevents building it, after all files have been checked.
+    const code = /\benum\b/.test(source) ? source : stripTypeScriptTypes(source);
     const remaining = code.replace(
       /(?:import\s+(?:[\w$*,{}\s]+\s+from\s+)?|export\s+(?:\*|\{[^}]*\})\s+from\s+)["']([^"']+)["']\s*;?/g,
       (_match, specifier: string) => {
@@ -154,4 +161,5 @@ export function checkBusinessImports(files: Record<string, string>) {
     )
       throw new ProtectedCandidateError(`未授权运行能力：${path}`);
   }
+  if (typeError) throw typeError;
 }

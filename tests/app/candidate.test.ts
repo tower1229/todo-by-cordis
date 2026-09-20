@@ -32,7 +32,13 @@ async function settled(e: Evolution) {
   throw new Error("execution timeout");
 }
 
-test("A05: complete multifile candidate repairs a real compiler failure and retains immutable attempts", async (t) => {
+for (const [failure, broken] of [
+  ["compiler", "const broken: string = 42; export default broken;"],
+  ["any", "const broken: any = 42; export default broken;"],
+  ["enum", "enum Broken { value }; export default Broken;"],
+  ["repeated-any", "const broken: any = 42; export default broken;"],
+] as const)
+test(`A05: repairs ${failure} failure within the frozen budget and retains immutable attempts`, async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "cordis-candidate-"));
   const w = await Workspace.open(join(dir, "workspace.db"));
   const original = w.composition();
@@ -68,8 +74,8 @@ test("A05: complete multifile candidate repairs a real compiler failure and reta
                 {
                   path: "business/provider.ts",
                   content:
-                    attempts === 1
-                      ? "const broken: string = 42; export default broken;"
+                    attempts === 1 || failure === "repeated-any"
+                      ? broken
                       : source("default", "轻快完成"),
                 },
                 {
@@ -110,6 +116,15 @@ test("A05: complete multifile candidate repairs a real compiler failure and reta
     operationId: "start",
   });
   const snapshot = await settled(e);
+  if (failure === "repeated-any") {
+    assert.equal(snapshot.run?.status, "failed");
+    assert.equal(attempts, 2);
+    assert.equal(snapshot.candidates?.length, 2);
+    assert.ok(snapshot.candidates?.every((c) => !c.passed));
+    assert.match(snapshot.run?.message ?? "", /相同候选失败/);
+    assert.equal(w.composition().versionId, original.versionId);
+    return;
+  }
   assert.equal(
     snapshot.run?.status,
     "awaiting-apply",
@@ -121,7 +136,7 @@ test("A05: complete multifile candidate repairs a real compiler failure and reta
   assert.ok(
     snapshot.events?.some(
       (event) =>
-        event.status === "failed" && /string|number/.test(event.detail ?? ""),
+        event.status === "failed" && /string|number|any|enum/.test(event.detail ?? ""),
     ),
   );
   const candidates = snapshot.candidates!;
@@ -444,7 +459,7 @@ test("new provider and consumer implement an additional action with frozen indep
 });
 
 test("A10: protected paths, type-only escapes and forged validation reports stop the frozen execution", async (t) => {
-  for (const attack of ["path", "type-import", "report", "scope", "source"]) {
+  for (const attack of ["path", "type-import", "reference", "mixed-import", "mixed-reference", "mixed-enum-runtime", "report", "scope", "source"]) {
     await t.test(attack, async (t) => {
       const dir = mkdtempSync(join(tmpdir(), "cordis-protection-"));
       const w = await Workspace.open(join(dir, "workspace.db"));
@@ -476,14 +491,14 @@ test("A10: protected paths, type-only escapes and forged validation reports stop
                     {
                       path: "business/entry.ts",
                       content:
-                        (attack === "type-import"
+                        (attack === "type-import" || attack === "mixed-import"
                           ? 'import type { Secret } from "/tmp/private.ts";\n'
-                          : "") + source("default", "轻快完成"),
+                          : attack === "reference" ? '/// <reference path="/tmp/private.ts" />\n' : "") + (attack === "mixed-enum-runtime" ? "enum Bad { value = process.pid };\n" : attack.startsWith("mixed-") ? "const bad: any = 1;\n" : "") + source("default", "轻快完成"),
                     },
                     {
                       path: "business/view.ts",
                       content:
-                        "export default {title:'复盘',fields:['reflection']};",
+                        (attack === "mixed-reference" ? '/// <reference path="/tmp/private.ts" />\n' : "") + "export default {title:'复盘',fields:['reflection']};",
                     },
                     { path: "business/config.json", content: "{}" },
                     {
