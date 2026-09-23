@@ -1,47 +1,23 @@
-import { serve } from "@hono/node-server";
-import { serveStatic } from "@hono/node-server/serve-static";
-import { Workspace } from "./workspace.js";
-import { createApp } from "./app.js";
 import { existsSync } from "node:fs";
 import { Evolution } from "../evolution/evolution.js";
 import { Gemini } from "../evolution/gemini.js";
 import { EvolutionDomain } from "./evolution-domain.js";
-import { ExperienceSessionHost } from "./experience-session.js";
+import { startHost } from "./host/bootstrap.js";
+
 if (existsSync(".env")) process.loadEnvFile(".env");
-const workspace = await Workspace.open(
-  process.env.DATABASE_PATH ?? ".runtime/workspace.db",
-);
-const experienceSessions = new ExperienceSessionHost(workspace);
-const domain = new EvolutionDomain(workspace);
-const assistant =
-  process.env.GEMINI_API_KEY && process.env.AI_DISABLED !== "1"
-    ? new Evolution(
-        workspace.db,
-        new Gemini(process.env.GEMINI_API_KEY),
-        domain,
-        experienceSessions,
-      )
-    : undefined;
-const app = createApp(workspace, assistant, experienceSessions);
-app.use("/*", serveStatic({ root: "./dist/web" }));
-app.get("*", serveStatic({ path: "./dist/web/index.html" }));
-const server = serve(
-  {
-    fetch: app.fetch,
-    hostname: "127.0.0.1",
-    port: Number(process.env.PORT ?? 4517),
+
+await startHost({
+  databasePath: process.env.DATABASE_PATH ?? ".runtime/workspace.db",
+  port: Number(process.env.PORT ?? 4517),
+  logLabel: "Cordis",
+  createAssistant: (workspace, sessions) => {
+    if (!process.env.GEMINI_API_KEY || process.env.AI_DISABLED === "1")
+      return undefined;
+    return new Evolution(
+      workspace.db,
+      new Gemini(process.env.GEMINI_API_KEY),
+      new EvolutionDomain(workspace),
+      sessions,
+    );
   },
-  (info) => console.log(`Cordis: http://127.0.0.1:${info.port}`),
-);
-let stopping = false;
-const stop = async () => {
-  if (stopping) return;
-  stopping = true;
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-  await assistant?.close();
-  await experienceSessions.close();
-  await workspace.close();
-  process.exit(0);
-};
-process.on("SIGINT", stop);
-process.on("SIGTERM", stop);
+});

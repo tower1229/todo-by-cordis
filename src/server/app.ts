@@ -11,10 +11,24 @@ import {
   ExperienceSessionHost,
 } from "./experience-session.js";
 import type { Command } from "../shared/contracts.js";
+import {
+  isControllableClock,
+  type ControllableClock,
+} from "./host/clock.js";
+
+export type CreateAppOptions = {
+  /**
+   * Host-test only. When a controllable clock was injected at Workspace.open,
+   * expose advance for browser harnesses. Never registered in production.
+   */
+  testClock?: ControllableClock;
+};
+
 export function createApp(
   workspace: Workspace,
   assistant: AssistantService = unavailableAssistant,
   sessions: ExperienceSessionHost = new ExperienceSessionHost(workspace),
+  options: CreateAppOptions = {},
 ) {
   const app = new Hono();
   app.onError((error, c) => {
@@ -115,5 +129,22 @@ export function createApp(
       throw new AppError("INVALID_INPUT", "操作标识无效");
     return c.json(await sessions.command(sessionId, command));
   });
+
+  const testClock = options.testClock;
+  if (testClock && isControllableClock(testClock)) {
+    app.post("/api/test/clock/advance", async (c) => {
+      const body = (await c.req.json()) as { ms?: unknown };
+      if (
+        typeof body.ms !== "number" ||
+        !Number.isFinite(body.ms) ||
+        body.ms < 0
+      )
+        throw new AppError("INVALID_INPUT", "时钟推进毫秒无效");
+      await testClock.advance(body.ms);
+      return c.json({ now: testClock.now() });
+    });
+    app.get("/api/test/clock", (c) => c.json({ now: testClock.now() }));
+  }
+
   return app;
 }

@@ -1,0 +1,9 @@
+{
+  "schema": "cordis.stability-eval-baseline-index/1",
+  "issue": 37,
+  "prechange": "stub-prechange",
+  "productCommit": "8200f8a2957045ed232d0254a9efc627672b6fb3",
+  "sourceCommit": "8200f8a2957045ed232d0254a9efc627672b6fb3",
+  "evidenceKind": "model-stub",
+  "note": "改造前桩层基线；真实模型基线需 pnpm accept:stability-baseline --authorize-real-model。桩层证据不得冒充真实 LLM。"
+}

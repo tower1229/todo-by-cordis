@@ -1,4 +1,6 @@
 import type { ScheduleRegistration } from "../business/contracts.js";
+import type { HostClock } from "../host/clock.js";
+import { systemClock } from "../host/clock.js";
 
 export type ScheduleFireHandler = (
   job: ScheduleRegistration,
@@ -62,11 +64,13 @@ export function resolveFireTime(
 }
 
 export class OnlineScheduler {
-  private timers = new Map<string, NodeJS.Timeout>();
+  private timers = new Map<string, { clear(): void }>();
   private fired = new Set<string>();
 
+  constructor(private readonly clock: HostClock = systemClock) {}
+
   cancelAll() {
-    for (const timer of this.timers.values()) clearTimeout(timer);
+    for (const timer of this.timers.values()) timer.clear();
     this.timers.clear();
     this.fired.clear();
   }
@@ -77,10 +81,13 @@ export class OnlineScheduler {
 
   arm(
     jobs: ScheduleRegistration[],
-    options: { fire: ScheduleFireHandler; now?: number },
+    options: {
+      fire: ScheduleFireHandler;
+      now?: number;
+    },
   ) {
     this.cancelAll();
-    const now = options.now ?? Date.now();
+    const now = options.now ?? this.clock.now();
     for (const job of jobs) {
       const when = resolveFireTime(job.at, job.timezone);
       if (when === null) continue;
@@ -92,11 +99,11 @@ export class OnlineScheduler {
         }
         continue;
       }
-      const timer = setTimeout(() => {
+      const timer = this.clock.setTimeout(() => {
         this.timers.delete(job.dedupeKey);
         if (this.fired.has(job.dedupeKey)) return;
         this.fired.add(job.dedupeKey);
-        void options.fire(job);
+        return options.fire(job);
       }, delay);
       this.timers.set(job.dedupeKey, timer);
     }

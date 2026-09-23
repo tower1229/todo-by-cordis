@@ -52,7 +52,18 @@ type InspectContent = {
       count: number;
     }[];
   };
-  capabilities?: Record<string, unknown>[];
+  baseServices?: {
+    id: string;
+    kind: string;
+    interfaceId: string;
+    status: string;
+  }[];
+  capabilities?: {
+    interfaceId?: string;
+    providerId?: string;
+    ready?: boolean;
+    source?: string;
+  }[];
   checkers?: { id: string }[];
 };
 
@@ -212,6 +223,30 @@ test("inspect_application surfaces live members and extension registry after dis
       .map((c) => `${c.interfaceId}:${c.providerId}:${c.status}:${c.count}`)
       .sort(),
     "inspect extensions must match live composition registry",
+  );
+  assert.deepEqual(
+    inspect.baseServices,
+    live.baseServices,
+    "inspect baseServices must match live composition",
+  );
+  assert.ok(
+    (inspect.baseServices ?? []).some(
+      (s) =>
+        s.id === "host:online-scheduler" &&
+        s.kind === "host-base" &&
+        s.interfaceId === "schedule.runtime",
+    ),
+    "host online scheduler must appear in baseServices",
+  );
+  assert.ok(
+    (inspect.capabilities ?? []).some(
+      (c) =>
+        c.interfaceId === "schedule.runtime" &&
+        c.providerId === "host:online-scheduler" &&
+        c.ready === true &&
+        !c.source?.startsWith("member-source/"),
+    ),
+    "host schedule.runtime capability must be ready without member-source refs",
   );
   const caps = inspect.extensions!.capabilities;
   assert.ok(

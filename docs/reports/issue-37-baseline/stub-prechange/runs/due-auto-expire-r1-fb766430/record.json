@@ -1,0 +1,15 @@
+{
+  "scenarioId": "due-auto-expire",
+  "evidenceKind": "model-stub",
+  "expectedOutcomeClass": "current-blocker",
+  "observedOutcomeClass": "current-blocker",
+  "capabilitySelectionCorrect": true,
+  "errorBlockingCorrect": true,
+  "firstPlanPassed": true,
+  "firstCandidatePassed": null,
+  "fullPathSucceeded": false,
+  "repairedInOriginalBudget": false,
+  "durationMs": 4472,
+  "usage": null,
+  "failureClass": null
+}

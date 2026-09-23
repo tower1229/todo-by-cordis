@@ -51,6 +51,14 @@ export type CompositionMember = {
   enabled: boolean;
   role: CompositionMemberRole;
 };
+/** Host-owned base service; not a composition member and not writable by ordinary self-iteration. */
+export type BaseServiceSummary = {
+  id: string;
+  kind: "host-base";
+  interfaceId: "schedule.runtime";
+  status: "active" | "stopped" | "released";
+};
+
 export type Composition = {
   revision: number;
   workflow: WorkflowDefinition;
@@ -67,6 +75,8 @@ export type Composition = {
     at: string;
   };
   members: CompositionMember[];
+  /** Host-managed services (e.g. online scheduler). Distinct from members. */
+  baseServices: BaseServiceSummary[];
   retainedFields: Field[];
   extensions: ExtensionSummary;
   uiContributions: ResolvedUiContribution[];

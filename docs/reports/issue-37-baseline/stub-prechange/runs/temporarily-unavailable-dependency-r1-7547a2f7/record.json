@@ -1,0 +1,15 @@
+{
+  "scenarioId": "temporarily-unavailable-dependency",
+  "evidenceKind": "model-stub",
+  "expectedOutcomeClass": "accurate-block",
+  "observedOutcomeClass": "accurate-block",
+  "capabilitySelectionCorrect": true,
+  "errorBlockingCorrect": true,
+  "firstPlanPassed": true,
+  "firstCandidatePassed": null,
+  "fullPathSucceeded": false,
+  "repairedInOriginalBudget": false,
+  "durationMs": 2442,
+  "usage": null,
+  "failureClass": null
+}

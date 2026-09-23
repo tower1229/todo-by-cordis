@@ -31,7 +31,12 @@ import {
   type TaskEventResult,
 } from "./business/contracts.js";
 import { ExtensionRegistry } from "./extensions/registry.js";
-import { OnlineScheduler } from "./extensions/scheduler.js";
+import { systemClock, type HostClock } from "./host/clock.js";
+import {
+  isControllableClock,
+  type ControllableClock,
+} from "./host/clock.js";
+import { OnlineScheduleService } from "./host/online-schedule-service.js";
 import {
   compositionBuildHash,
   compositionMembers,
@@ -60,12 +65,17 @@ function assertMemberEnabledArgs(pluginId: unknown, enabled: unknown) {
     throw new AppError("INVALID_INPUT", "启用状态无效");
 }
 
-type Options = {
+export type WorkspaceOpenOptions = {
   launch?: (version: LaunchTarget) => Promise<RuntimeLike>;
   checkpoint?: (stage: string) => void;
   beforeOpenWrites?: () => Promise<void>;
   /** When true, activateForAcceptance may publish without evidence.passed. */
   acceptanceProbe?: boolean;
+  /**
+   * Host startup clock. Production uses the real clock; tests may inject a
+   * controllable clock. Not exposed to ordinary page/candidate/LLM tools.
+   */
+  clock?: HostClock;
 };
 
 export class Workspace {
@@ -82,13 +92,16 @@ export class Workspace {
   private retiring = new Set<Promise<void>>();
   private launch: (version: LaunchTarget) => Promise<RuntimeLike>;
   private readonly extensions = new ExtensionRegistry();
-  private readonly scheduler = new OnlineScheduler();
+  private readonly clock: HostClock;
+  private readonly scheduleService: OnlineScheduleService;
   private diagnosticsNotes: string[] = [];
   private constructor(
     filename: string,
-    private options: Options,
+    private options: WorkspaceOpenOptions,
   ) {
     mkdirSync(dirname(filename), { recursive: true });
+    this.clock = options.clock ?? systemClock;
+    this.scheduleService = new OnlineScheduleService(this.clock);
     this.launch = options.launch ?? ((version) => Runtime.start(version));
     this.db = new DatabaseSync(filename);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
@@ -158,7 +171,7 @@ export class Workspace {
         .run(version.id, version.name, id);
     }
   }
-  static async open(filename: string, options: Options = {}) {
+  static async open(filename: string, options: WorkspaceOpenOptions = {}) {
     const workspace = new Workspace(filename, options);
     await workspace.restart();
     return workspace;
@@ -319,7 +332,7 @@ export class Workspace {
     runtime.onFailure = () => {
       if (this.stopped || this.runtime !== runtime) return;
       this.status = "unavailable";
-      this.scheduler.cancelAll();
+      this.scheduleService.stop();
       if (!this.automaticRestartUsed) {
         this.automaticRestartUsed = true;
         void this.restart(false);
@@ -416,7 +429,7 @@ export class Workspace {
     this.armSchedules(runtime);
   }
   private async teardownExtensions(runtime: RuntimeLike) {
-    this.scheduler.cancelAll();
+    this.scheduleService.stop();
     for (const pluginId of this.extensions.lifecycleProviders("quiesce"))
       this.recordAnnotations(
         await this.invokeOptional<HookAnnotations>(
@@ -470,7 +483,7 @@ export class Workspace {
     return jobs;
   }
   private armSchedules(runtime: RuntimeLike) {
-    this.scheduler.arm(this.expandScheduleJobs(), {
+    this.scheduleService.bind(this.expandScheduleJobs(), {
       fire: async (job) => {
         if (this.runtime !== runtime || this.status !== "ready") return;
         const taskId = job.onFire.taskId;
@@ -515,7 +528,14 @@ export class Workspace {
     return this.extensions;
   }
   schedulerState() {
-    return { armed: this.scheduler.armedCount() };
+    return { armed: this.scheduleService.armedCount() };
+  }
+  /** Present only when a controllable clock was injected at open (host tests). */
+  testHarness():
+    | { clock: ControllableClock; scheduleService: OnlineScheduleService }
+    | undefined {
+    if (!isControllableClock(this.clock)) return undefined;
+    return { clock: this.clock, scheduleService: this.scheduleService };
   }
   private async runBeforeCommit(
     runtime: RuntimeLike,
@@ -687,6 +707,7 @@ export class Workspace {
       ...(this.activationPending() ? { activationPending: true } : {}),
       ...(recovery ? { recovery } : {}),
       members,
+      baseServices: [this.scheduleService.summary()],
       retainedFields: retained,
       extensions,
       uiContributions: this.extensions.uiContributions(base.actions),
@@ -1218,7 +1239,7 @@ export class Workspace {
             if (priorRuntime && priorRuntime !== this.runtime) {
               await this.teardownExtensions(priorRuntime).catch(() => undefined);
             } else {
-              this.scheduler.cancelAll();
+              this.scheduleService.stop();
               this.extensions.clear();
             }
             if (this.runtime)
@@ -1259,7 +1280,7 @@ export class Workspace {
               this.runtime.onFailure = undefined;
               const failedRuntime = this.runtime;
               this.runtime = undefined;
-              this.scheduler.cancelAll();
+              this.scheduleService.stop();
               this.extensions.clear();
               const cleanup = failedRuntime
                 .close()
@@ -1294,6 +1315,7 @@ export class Workspace {
       await this.teardownExtensions(this.runtime).catch(() => undefined);
       await this.runtime.close();
     }
+    this.scheduleService.release();
     await Promise.all(this.retiring);
     this.db.close();
   }

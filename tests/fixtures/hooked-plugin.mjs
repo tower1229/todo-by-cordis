@@ -32,12 +32,18 @@ export default {
       return { kind: "commit", state: "open", fields: task.fields };
     if (action === "ping")
       return { kind: "commit", state: task.state, fields: task.fields };
-    if (action === "setDue")
+    if (action === "setDue") {
+      if (!Object.hasOwn(input ?? {}, "dueAt"))
+        return {
+          kind: "input-required",
+          fields: [{ key: "dueAt", label: "截止", type: "text" }],
+        };
       return {
         kind: "commit",
         state: task.state,
         fields: { ...task.fields, dueAt: input?.dueAt ?? "" },
       };
+    }
     return { kind: "reject", message: "未知动作" };
   },
   contribute() {
