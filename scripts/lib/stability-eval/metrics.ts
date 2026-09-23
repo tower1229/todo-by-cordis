@@ -6,6 +6,7 @@ export const failureClasses = [
   "host-defect",
   "tool-protocol",
   "transport",
+  "evaluator",
 ] as const;
 export type FailureClass = (typeof failureClasses)[number];
 
@@ -14,6 +15,8 @@ export type ObservedOutcomeClass = OutcomeClass | "failed";
 export type ScenarioRunRecord = {
   scenarioId: string;
   evidenceKind: "model-stub" | "real-model";
+  evidenceComplete?: boolean;
+  recoveredBrowserSucceeded?: boolean;
   expectedOutcomeClass: OutcomeClass;
   observedOutcomeClass: ObservedOutcomeClass;
   /** null when transport failed before capability judgement. */
@@ -25,11 +28,16 @@ export type ScenarioRunRecord = {
   fullPathSucceeded: boolean;
   repairedInOriginalBudget: boolean;
   durationMs: number;
+  durationScope?: "recovery-only";
   usage: { promptTokens: number; completionTokens: number } | null;
   failureClass: FailureClass | null;
 };
 
-export type Rate = { numerator: number; denominator: number; rate: number | null };
+export type Rate = {
+  numerator: number;
+  denominator: number;
+  rate: number | null;
+};
 
 export type StabilityMetrics = {
   capabilitySelectionAccuracy: Rate;
@@ -70,6 +78,7 @@ export function computeStabilityMetrics(
   let repairs = 0;
   let repairEligible = 0;
   let durationTotal = 0;
+  let durationSamples = 0;
   let promptTokens = 0;
   let completionTokens = 0;
   let usageSamples = 0;
@@ -78,7 +87,10 @@ export function computeStabilityMetrics(
   ) as Record<FailureClass, number>;
 
   for (const run of runs) {
-    durationTotal += run.durationMs;
+    if (run.durationScope !== "recovery-only") {
+      durationTotal += run.durationMs;
+      durationSamples++;
+    }
     if (run.usage) {
       promptTokens += run.usage.promptTokens;
       completionTokens += run.usage.completionTokens;
@@ -117,7 +129,7 @@ export function computeStabilityMetrics(
     firstCandidatePassRate: rate(firstCandidatePass, firstCandidateJudged),
     fullPathSuccessRate: rate(fullPathPass, runs.length),
     inBudgetRepairRate: rate(repairs, repairEligible),
-    durationMs: { total: durationTotal, samples: runs.length },
+    durationMs: { total: durationTotal, samples: durationSamples },
     costUsage: {
       promptTokens,
       completionTokens,
@@ -140,6 +152,12 @@ export function classifyFailure(input: {
   if (input.hostDefect) return "host-defect";
   if (input.documentationGap) return "documentation-gap";
   const text = input.message ?? "";
+  if (
+    /Evaluator binding|Archive verification|strict mode violation|locator\.click: Timeout/i.test(
+      text,
+    )
+  )
+    return "evaluator";
   if (
     /fetch failed|ECONNRESET|ECONNREFUSED|socket hang up|429|UNAVAILABLE|Gemini fetch/i.test(
       text,

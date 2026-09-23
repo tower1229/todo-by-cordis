@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   computeStabilityMetrics,
+  classifyFailure,
   type ScenarioRunRecord,
 } from "../../scripts/lib/stability-eval/metrics.js";
 
@@ -89,5 +90,37 @@ test("指标列出分母并区分能力选择、错误阻塞、首个计划/候�
     "host-defect": 0,
     "tool-protocol": 0,
     transport: 1,
+    evaluator: 0,
   });
+});
+
+test("恢复浏览器的耗时不能混入完整场景耗时统计", () => {
+  const metrics = computeStabilityMetrics([
+    base({ scenarioId: "fresh" }),
+    base({
+      scenarioId: "recovered",
+      durationScope: "recovery-only",
+      durationMs: 123,
+      fullPathSucceeded: false,
+      recoveredBrowserSucceeded: true,
+      observedOutcomeClass: "failed",
+      failureClass: "evaluator",
+    }),
+  ]);
+  assert.deepEqual(metrics.durationMs, { total: 1000, samples: 1 });
+  assert.equal(metrics.fullPathSuccessRate.numerator, 1);
+  assert.equal(metrics.failureClassCounts.evaluator, 1);
+});
+
+test("无法唯一定位注册 UI 时归类评估器错误", () => {
+  assert.equal(
+    classifyFailure({
+      message: "locator.click: strict mode violation: resolved to 2 elements",
+    }),
+    "evaluator",
+  );
+  assert.equal(
+    classifyFailure({ message: "locator.click: Timeout 30000ms exceeded" }),
+    "evaluator",
+  );
 });

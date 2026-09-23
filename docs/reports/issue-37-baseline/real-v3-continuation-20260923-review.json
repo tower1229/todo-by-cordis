@@ -1,0 +1,91 @@
+{
+  "schema": "cordis.stability-eval-real-review/1",
+  "archive": "docs/reports/issue-37-baseline/real-v3-continuation-20260923",
+  "productCommit": "8200f8a2957045ed232d0254a9efc627672b6fb3",
+  "harnessContentHash": "af7297a958d3658b2c76dd1c172cd24a90f241064760b6dd6b0c121b145f3288",
+  "manifestHash": "dbe4d43ec261b643feee71511c0f576b91c892196ac48185c6bcab97d136ec73",
+  "archiveIntegrityPassed": true,
+  "allSevenLogicalModelTrialsArchived": true,
+  "uninterruptedSevenScenarioBaselineComplete": false,
+  "originalEvaluatorFailureRetained": true,
+  "recoveryInvokedAdditionalModelCalls": false,
+  "finalCodeDiffersFromFrozenHarness": [
+    "scripts/lib/stability-eval/bindings.ts",
+    "scripts/lib/stability-eval/browser.ts",
+    "scripts/lib/stability-eval/driver-fixture.ts",
+    "scripts/lib/stability-eval/metrics.ts",
+    "scripts/lib/stability-eval/scenario.ts"
+  ],
+  "checks": [
+    {
+      "scenario": "counter-add",
+      "outcome": "full-path-success",
+      "recoveredBrowserSucceeded": null,
+      "calls": 6,
+      "candidates": 1,
+      "failureClass": null,
+      "record": "docs/reports/issue-37-baseline/real-v3-continuation-20260923/runs/counter-add-r1-7b29b1aa/record.json",
+      "evidenceHash": "bcdaafa35e0467669e34385c986018ffc67b8029d693d00e2d63f869492328c8"
+    },
+    {
+      "scenario": "due-auto-expire",
+      "outcome": "failed",
+      "recoveredBrowserSucceeded": null,
+      "calls": 5,
+      "candidates": 0,
+      "failureClass": "evaluator",
+      "record": "docs/reports/issue-37-baseline/real-v3-continuation-20260923/runs/due-auto-expire-r1-47fc2cb1/record.json",
+      "evidenceHash": "030ceae58199ecd59bc2fc2fa8b08c683740fc0835193514a9f69a736e244e58"
+    },
+    {
+      "scenario": "member-upgrade-tags",
+      "outcome": "failed",
+      "recoveredBrowserSucceeded": null,
+      "calls": 8,
+      "candidates": 3,
+      "failureClass": "model-understanding-or-generation",
+      "record": "docs/reports/issue-37-baseline/real-v3-continuation-20260923/runs/member-upgrade-tags-r1-f110d65f/record.json",
+      "evidenceHash": "5e16cc54d8b0ca5ebbd6bd5b08799bc66929556e340f7c9740ea2c8679b6510b"
+    },
+    {
+      "scenario": "missing-capability-push",
+      "outcome": "accurate-block",
+      "recoveredBrowserSucceeded": null,
+      "calls": 6,
+      "candidates": 0,
+      "failureClass": null,
+      "record": "docs/reports/issue-37-baseline/real-v3-continuation-20260923/runs/missing-capability-push-r1-118d12ba/record.json",
+      "evidenceHash": "976c80da8093bfd00216776a7c21eaa4698895ef9bbcb3dcf9aee4b3afed9a15"
+    },
+    {
+      "scenario": "rule-revision-reflection",
+      "outcome": "failed",
+      "recoveredBrowserSucceeded": null,
+      "calls": 5,
+      "candidates": 1,
+      "failureClass": "model-understanding-or-generation",
+      "record": "docs/reports/issue-37-baseline/real-v3-continuation-20260923/runs/rule-revision-reflection-r1-864c02ae/record.json",
+      "evidenceHash": "24072ad1b4182da83d856b764f2e84b4167354767cc863ea85eb5e9196468d5b"
+    },
+    {
+      "scenario": "tags-add",
+      "outcome": "failed",
+      "recoveredBrowserSucceeded": true,
+      "calls": 6,
+      "candidates": 1,
+      "failureClass": "evaluator",
+      "record": "docs/reports/issue-37-baseline/real-v3-continuation-20260923/runs/tags-add-r1-ca100f10/record.json",
+      "evidenceHash": "4aba5064bdec3cb8d829137ce138a8226c01982e0851a4b36d5a179153b35edb"
+    },
+    {
+      "scenario": "temporarily-unavailable-dependency",
+      "outcome": "accurate-block",
+      "recoveredBrowserSucceeded": null,
+      "calls": 3,
+      "candidates": 0,
+      "failureClass": null,
+      "record": "docs/reports/issue-37-baseline/real-v3-continuation-20260923/runs/temporarily-unavailable-dependency-r1-60671bc3/record.json",
+      "evidenceHash": "e9ff4ba1a0ece325d94ba7ec9c91b24dfda298e8c96d02118f754a1f35d2ea98"
+    }
+  ]
+}

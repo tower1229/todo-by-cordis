@@ -1,0 +1,4 @@
+{
+  "message": "Command failed: /Users/zangtao/.nvm/versions/node/v24.18.0/bin/node --import tsx scripts/accept-stability-baseline.ts --isolated-baseline --authorize-real-model",
+  "preservedDirectory": "/var/folders/3g/sbd2x9l51tb9gkn_k1y2j_7w0000gn/T/cordis-baseline-product-qZ1RBt"
+}

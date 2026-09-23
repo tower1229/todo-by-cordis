@@ -1,0 +1,22 @@
+{
+  "schema": "cordis.stability-eval-quality-review/1",
+  "archive": "real-v2-20260923",
+  "archiveSummaryHash": "419ff0a08139eca244cd50d124d2dc76a006180cbb2af599684ff4811346d5d6",
+  "completeBaseline": false,
+  "reason": "Two scenarios were stopped by a browser planning-state race, so the archived host-defect classifications are not reliable product conclusions. Original archive is preserved unchanged.",
+  "invalidScenarios": [
+    "member-upgrade-tags",
+    "rule-revision-reflection"
+  ],
+  "validFullPaths": [
+    "tags-add",
+    "counter-add"
+  ],
+  "validBlockedPaths": [
+    "due-auto-expire",
+    "missing-capability-push",
+    "temporarily-unavailable-dependency"
+  ],
+  "repair": "Manifest v3 harness waits for submitted-command acknowledgement and host planning state; captures pre-shutdown state separately. No additional real-model runs have been started.",
+  "additionalRealModelAuthorizationRequired": true
+}

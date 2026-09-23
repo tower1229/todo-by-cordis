@@ -1,0 +1,91 @@
+{
+  "schema": "cordis.issue-37-38-fix-validation/1",
+  "sourceCommit": "f81802d3cce0a34d775ebabc8d5e0b1992f6d6a2",
+  "sourceClean": false,
+  "sourceFileHashes": {
+    "scripts/accept-stability-baseline.ts": "a7d08e4e45f85a38f1710a686a4bca5947091a13bf16b881b4ff7c1023118509",
+    "scripts/lib/stability-eval/archive.ts": "151641d9579dedf59a2bb36361f06a2d1ad0600b7d7e19640cfcd9c917e7c5ee",
+    "scripts/lib/stability-eval/bindings.ts": "8870ee8037fe5912a20fa9e45aed244ea4b58e687299891ca2c89ed4aa2c0f19",
+    "scripts/lib/stability-eval/browser.ts": "e49b8d032535dc7d0daa7d05084f1809c6bb8421369387462eafa4a52907b6bc",
+    "scripts/lib/stability-eval/driver-fixture.ts": "6e1eb96a55c8893eac10833447c9c4cffb59b14c40c44b9a3ac88a1ecbe0e72d",
+    "scripts/lib/stability-eval/environment.ts": "47f45cf3225f2635c4633b3e99f7fae36dda58054ddd8b59b4d06538a49e6a60",
+    "scripts/lib/stability-eval/manifest.ts": "835811057f60d5ea2bcbecfdbd73598ea80aa39bbe2dc95d5258d8d9741c5de3",
+    "scripts/lib/stability-eval/metrics.ts": "faf724de62edccb44db773075173f5263029cf7616a4573a43351ad89dfd0757",
+    "scripts/lib/stability-eval/scenario.ts": "2a406a7c1716d4474dbdc403ca42267a05df80c289609ed3d7581f52fb944939",
+    "scripts/lib/stability-eval/scoring.ts": "12602e03d1402e254965f114dd1e879d4e45093610fab0f1c7da2fe4bf35370c",
+    "src/server/experience-session.ts": "f6487bd809a4c5f2aedbeb78fa7c6c5903ff438107867c13809b73265fa530ac",
+    "tests/app/stability-eval-archive.test.ts": "0b50581bba6af8d0f6a974bad4f9f8c40bc9f9e95b3c0741084c0ad4ebe198db",
+    "tests/app/stability-eval-metrics.test.ts": "7327fe7e138ce71bb236178f5415fa7cdd4c5986f5181b661eb171f9aadeedf4",
+    "tests/app/stability-eval-scoring.test.ts": "f0d1b82fc40c06b0e5c69c5992ba251ee69b512f1555093c1c9215d5fe43b0a3",
+    "tests/e2e/schedule.spec.ts": "87321982c79274120142fbeda995323f714b3da4cb70f94bec3fd4de92da5706",
+    "tests/e2e/stability-baseline.spec.ts": "3a01fbd01a8e1074bcb137b95a6ae1ba7973614a33001d0ce44769d9b44de88f"
+  },
+  "checks": {
+    "typecheck": "passed",
+    "harnessTypecheck": "passed",
+    "build": "passed",
+    "targetedUnitTests": {
+      "passed": 29,
+      "failed": 0
+    },
+    "browserTests": {
+      "passed": 19,
+      "failed": 0,
+      "includes": [
+        "pending experience schedule cancellation before deadline",
+        "open experience schedule firing control",
+        "dynamic UI contribution labels",
+        "browser response wait rejection"
+      ]
+    },
+    "diffCheck": "passed",
+    "independentReview": "no outstanding high severity findings in final scoped static review",
+    "archiveSecretScan": {
+      "filesChecked": 174,
+      "exactApiKeyLeaks": 0
+    }
+  },
+  "realModelBaseline": {
+    "complete": false,
+    "status": "archived-with-evaluator-failures",
+    "currentAttemptArchive": "issue-37-baseline/real-v3-continuation-20260923",
+    "qualityReview": "issue-37-baseline/real-v3-continuation-20260923-review.json",
+    "productCommit": "8200f8a2957045ed232d0254a9efc627672b6fb3",
+    "harnessContentHash": "af7297a958d3658b2c76dd1c172cd24a90f241064760b6dd6b0c121b145f3288",
+    "manifestHash": "dbe4d43ec261b643feee71511c0f576b91c892196ac48185c6bcab97d136ec73",
+    "allSevenLogicalTrialsArchived": true,
+    "archiveIntegrityPassed": true,
+    "validScenarios": 5,
+    "invalidScenarios": 2,
+    "fullPathSuccesses": 1,
+    "accurateBlocks": 2,
+    "modelGenerationFailures": 2,
+    "evaluatorFailures": 2,
+    "recoveredBrowserSuccesses": 1,
+    "totalLogicalTrialCalls": 39,
+    "newCallsInContinuation": 33,
+    "recoveryAdditionalCalls": 0,
+    "externalAutomaticRetries": 0,
+    "modelCandidateCodeEdited": false,
+    "finalCodeDiffersFromFrozenHarness": [
+      "scripts/lib/stability-eval/bindings.ts",
+      "scripts/lib/stability-eval/browser.ts",
+      "scripts/lib/stability-eval/driver-fixture.ts",
+      "scripts/lib/stability-eval/metrics.ts",
+      "scripts/lib/stability-eval/scenario.ts"
+    ],
+    "additionalAuthorizationGranted": true,
+    "authorizedBatchFinished": true
+  },
+  "delivery": {
+    "committed": false,
+    "pushed": false,
+    "githubIssuesChanged": false
+  },
+  "remainingLimitations": [
+    "真实 tags 首场景发生评估器异常；同一候选浏览器恢复成功，原失败仍计入统计。",
+    "自动过期场景被已冻结评估器的 120 秒等待提前中断，不能归为模型失败。",
+    "最终评估器已修复共享 600 秒预算、UI 文案定位及取证错误记录，但未追加真实模型批次。",
+    "遵守每场景一次和无外层重试，本次不把 #37 真实基线缺口标记为已补齐。"
+  ]
+}

@@ -39,10 +39,10 @@ test("准确阻塞计分看 blockReason/依赖文案，而非仅 observed===expe
     scenario: scenario("temporarily-unavailable-dependency"),
     observedOutcomeClass: "accurate-block",
     blockReason: "investigation",
-    message: "环境依赖不可用：uninstalled-notifier",
+    message: "环境依赖不可用：@types/node",
     plan: {
       summary: "可选提醒",
-      unresolved: ["环境依赖不可用：uninstalled-notifier 暂不可用"],
+      unresolved: ["环境依赖不可用：@types/node 暂不可用"],
       capabilityChanges: [
         {
           capability: "workflow",
@@ -95,7 +95,8 @@ test("缺失推送阻塞要求 maintainer-capability 或推送相关文案", () 
 
 test("无 --authorize-real-model 时拒绝真模型意图", () => {
   assert.throws(
-    () => assertRealModelAuthorization(["node", "accept-stability-baseline.ts"]),
+    () =>
+      assertRealModelAuthorization(["node", "accept-stability-baseline.ts"]),
     /显式授权|authorize-real-model/,
   );
   assert.doesNotThrow(() =>

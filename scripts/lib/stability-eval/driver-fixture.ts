@@ -1,5 +1,8 @@
 import type { Driver, ModelRequest } from "../../../src/evolution/driver.js";
-import { PlanningDriver, toolReply } from "../../../tests/app/planning-fixture.js";
+import {
+  PlanningDriver,
+  toolReply,
+} from "../../../tests/app/planning-fixture.js";
 import {
   candidateScope,
   source,
@@ -10,7 +13,7 @@ import {
 } from "../../../tests/app/member-case-fixtures.js";
 
 const tagsSource = (lower: boolean) => `export default {
- contribute() { return {fields:[{key:'tags',label:'标签',type:'text'}],commands:[{id:'setTags',label:'设标签',from:['open','done']}]}; },
+ contribute() { return {uiSlots:[{id:'tag-detail',slot:'task.detail',title:'标签',fields:[{key:'tags',label:'标签'}],actions:[{commandId:'setTags',label:'编辑标签'}]}],fields:[{key:'tags',label:'标签',type:'text'}],commands:[{id:'setTags',label:'设标签',from:['open','done']}]}; },
  decide({task,action,input}) {
   if(action!=='setTags') return {kind:'reject',message:'未知动作'};
   if(!Object.hasOwn(input??{},'tags'))return {kind:'input-required',fields:[{key:'tags',label:'标签',type:'text',required:true}]};
@@ -138,7 +141,9 @@ function planFinish(
         writableScope: ["active-source"],
       };
     case "due-auto-expire":
-      throw new Error("due-auto-expire 必须走 dueBaselineStubDriver，不得经 planFinish");
+      throw new Error(
+        "due-auto-expire 必须走 dueBaselineStubDriver，不得经 planFinish",
+      );
     case "missing-capability-push":
       return {
         summary: "外部推送通知",
@@ -160,8 +165,6 @@ function planFinish(
       return {
         summary: "可选提醒时间字段",
         outcome: "环境依赖不可用时不能开始",
-        dependencies: ["uninstalled-notifier"],
-        unresolved: ["环境依赖不可用：uninstalled-notifier 暂不可用"],
         writableScope: candidateScope,
         capabilityChanges: [
           {

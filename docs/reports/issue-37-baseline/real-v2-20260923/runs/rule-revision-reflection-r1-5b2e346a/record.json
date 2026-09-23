@@ -1,0 +1,16 @@
+{
+  "scenarioId": "rule-revision-reflection",
+  "evidenceKind": "real-model",
+  "evidenceComplete": true,
+  "expectedOutcomeClass": "full-path-success",
+  "observedOutcomeClass": "failed",
+  "capabilitySelectionCorrect": null,
+  "errorBlockingCorrect": null,
+  "firstPlanPassed": null,
+  "firstCandidatePassed": null,
+  "fullPathSucceeded": false,
+  "repairedInOriginalBudget": false,
+  "durationMs": 5493,
+  "usage": null,
+  "failureClass": "host-defect"
+}

@@ -1,0 +1,8 @@
+{
+  "source": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/issue-37-baseline/real-v3-20260923",
+  "originalFailure": {
+    "message": "Command failed: /Users/zangtao/.nvm/versions/node/v24.18.0/bin/node --import tsx scripts/accept-stability-baseline.ts --isolated-baseline --authorize-real-model",
+    "preservedDirectory": "/var/folders/3g/sbd2x9l51tb9gkn_k1y2j_7w0000gn/T/cordis-baseline-product-qZ1RBt"
+  },
+  "policy": "No additional model calls for recovered tags trial; original evaluator failure remains in metrics"
+}

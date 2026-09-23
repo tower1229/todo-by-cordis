@@ -1,0 +1,19 @@
+{
+  "scenarioId": "temporarily-unavailable-dependency",
+  "evidenceKind": "real-model",
+  "evidenceComplete": true,
+  "expectedOutcomeClass": "accurate-block",
+  "observedOutcomeClass": "accurate-block",
+  "capabilitySelectionCorrect": true,
+  "errorBlockingCorrect": true,
+  "firstPlanPassed": true,
+  "firstCandidatePassed": null,
+  "fullPathSucceeded": false,
+  "repairedInOriginalBudget": false,
+  "durationMs": 44570,
+  "usage": {
+    "promptTokens": 77418,
+    "completionTokens": 4571
+  },
+  "failureClass": null
+}

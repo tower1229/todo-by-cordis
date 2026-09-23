@@ -1,15 +1,28 @@
+import type { AssistantSnapshot } from "../../../src/shared/assistant.js";
 import { Hono } from "hono";
 import assert from "node:assert/strict";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { chromium, expect, type Browser, type Page } from "@playwright/test";
+import {
+  chromium,
+  expect,
+  type Browser,
+  type Page,
+  type Response,
+} from "@playwright/test";
 import { join } from "node:path";
 import type { createApp } from "../../../src/server/app.js";
 import type { CommandResult } from "../../../src/shared/contracts.js";
 import type { StabilityScenario } from "./manifest.js";
 
 export type ExperienceBindings = {
-  tags?: { actionLabel: string; fieldLabel: string; expected: string };
+  tags?: {
+    actionLabel: string;
+    fieldLabel: string;
+    fieldKey: string;
+    inputKey: string;
+    expected: string;
+  };
   counter?: { actionLabel: string; fieldKey: string };
   reflection?: { fieldLabel: string };
 };
@@ -18,6 +31,7 @@ export type BrowserPathResult = {
   status: "passed" | "blocked-observed" | "failed";
   viewport: { width: number; height: number };
   openedImprovePanel: boolean;
+  resumedExistingCandidate?: boolean;
   confirmedPlan?: boolean;
   confirmedAcceptance?: boolean;
   experienced?: boolean;
@@ -31,41 +45,13 @@ export type BrowserPathResult = {
   recoveryEntryVisible: boolean;
   screenshot: string;
   pageErrors: string[];
+  evidenceErrors?: string[];
+  cleanupErrors?: string[];
   observedRunStatus?: string;
   message?: string;
 };
 
 type App = ReturnType<typeof createApp>;
-
-/** Static experience bindings per frozen scenario id (stub and real share the same UI path). */
-export function experienceBindingsFor(
-  scenarioId: string,
-): ExperienceBindings | undefined {
-  switch (scenarioId) {
-    case "tags-add":
-      return {
-        tags: {
-          actionLabel: "设标签",
-          fieldLabel: "标签",
-          expected: "BrowserTag",
-        },
-      };
-    case "member-upgrade-tags":
-      return {
-        tags: {
-          actionLabel: "设标签",
-          fieldLabel: "标签",
-          expected: "browsertag",
-        },
-      };
-    case "counter-add":
-      return { counter: { actionLabel: "加一", fieldKey: "count" } };
-    case "rule-revision-reflection":
-      return { reflection: { fieldLabel: "复盘" } };
-    default:
-      return undefined;
-  }
-}
 
 /** Drive real improve-panel → confirm → experience → apply → recovery entry. */
 export async function runStabilityBrowserPath(input: {
@@ -74,7 +60,13 @@ export async function runStabilityBrowserPath(input: {
   scenario: StabilityScenario;
   clarificationAnswer?: string;
   bindings?: ExperienceBindings;
+  resolveBindings?: () => Promise<ExperienceBindings | undefined>;
+  configurePage?: (page: Page) => Promise<void>;
+  resumeExistingCandidate?: boolean;
+  budgetMs?: number;
 }): Promise<BrowserPathResult> {
+  const deadline = Date.now() + (input.budgetMs ?? 600_000) + 15_000;
+  const remaining = () => Math.max(1, deadline - Date.now());
   const browserApp = new Hono().route("/", input.app);
   browserApp.use("/*", serveStatic({ root: "./dist/web" }));
   browserApp.get("*", serveStatic({ path: "./dist/web/index.html" }));
@@ -86,6 +78,21 @@ export async function runStabilityBrowserPath(input: {
   let browser: Browser | undefined;
   let page: Page | undefined;
   const errors: string[] = [];
+  let latestRun: AssistantSnapshot["run"] = null;
+  const currentRunStatus = (): string | undefined => latestRun?.status;
+  const updateRun = (run: AssistantSnapshot["run"]) => {
+    if (run && (!latestRun || run.updatedAt >= latestRun.updatedAt))
+      latestRun = run;
+  };
+  const throwIfRunFailed = () => {
+    if (
+      latestRun &&
+      ["failed", "interrupted", "cancelled"].includes(latestRun.status)
+    )
+      throw new Error(
+        "message" in latestRun ? latestRun.message : latestRun.status,
+      );
+  };
   const screenshot = join(input.directory, `browser-${input.scenario.id}.png`);
   const result: BrowserPathResult = {
     status: "failed",
@@ -106,59 +113,127 @@ export async function runStabilityBrowserPath(input: {
     browser = await chromium.launch();
     page = await browser.newPage({ viewport: result.viewport });
     page.on("pageerror", (error) => errors.push(error.message));
+    page.on("response", async (response) => {
+      if (
+        !["/api/assistant", "/api/assistant/commands"].includes(
+          new URL(response.url()).pathname,
+        )
+      )
+        return;
+      try {
+        const snapshot = (await response.json()) as AssistantSnapshot;
+        updateRun(snapshot.run);
+      } catch {
+        /* Connection may close during failure capture. */
+      }
+    });
+    await input.configurePage?.(page);
     await page.goto(`http://127.0.0.1:${address.port}`);
     await page.getByRole("button", { name: "改进应用", exact: true }).click();
     result.openedImprovePanel = true;
 
-    const composer = page.getByRole("textbox", { name: "告诉 AI 你的需求" });
-    await composer.fill(input.scenario.request);
-    await page.getByRole("button", { name: "发送需求" }).click();
+    if (!input.resumeExistingCandidate) {
+      const composer = page.getByRole("textbox", { name: "告诉 AI 你的需求" });
+      await composer.fill(input.scenario.request);
+      const submitted = await responseForAction(
+        page,
+        (response) =>
+          new URL(response.url()).pathname === "/api/assistant/commands" &&
+          response.request().method() === "POST",
+        () => page!.getByRole("button", { name: "发送需求" }).click(),
+      );
+      updateRun(((await submitted.json()) as AssistantSnapshot).run);
 
-    await expect
-      .poll(async () => detectPlanningState(page!), { timeout: 120_000 })
-      .not.toBe("waiting");
-
-    if (await isBlocked(page))
-      return await finishBlocked(page, result, screenshot, errors);
-
-    if (
-      (await page.getByText(/\?|？/).first().isVisible().catch(() => false)) &&
-      input.clarificationAnswer
-    ) {
-      await page
-        .getByRole("textbox", { name: "告诉 AI 你的需求" })
-        .fill(input.clarificationAnswer);
-      await page.getByRole("button", { name: "发送需求" }).click();
       await expect
-        .poll(async () => detectPlanningState(page!), { timeout: 120_000 })
+        .poll(
+          async () =>
+            !latestRun || latestRun.status === "planning"
+              ? "waiting"
+              : ["failed", "interrupted", "cancelled"].includes(
+                    latestRun.status,
+                  )
+                ? "failed"
+                : detectPlanningState(page!, latestRun.status),
+          { timeout: remaining() },
+        )
         .not.toBe("waiting");
-    }
 
-    if (await isBlocked(page))
-      return await finishBlocked(page, result, screenshot, errors);
+      throwIfRunFailed();
+      if (await isBlocked(page))
+        return await finishBlocked(page, result, screenshot, errors);
 
-    const confirmAcceptance = page.getByRole("button", {
-      name: "确认业务验收修订",
-      exact: true,
-    });
-    if (await confirmAcceptance.isVisible().catch(() => false)) {
-      await confirmAcceptance.click();
-      result.confirmedAcceptance = true;
+      if (
+        currentRunStatus() === "awaiting-input" &&
+        input.clarificationAnswer
+      ) {
+        await page
+          .getByRole("textbox", { name: "告诉 AI 你的需求" })
+          .fill(input.clarificationAnswer);
+        const answered = await responseForAction(
+          page,
+          (response) =>
+            new URL(response.url()).pathname === "/api/assistant/commands" &&
+            response.request().method() === "POST",
+          () => page!.getByRole("button", { name: "发送需求" }).click(),
+        );
+        updateRun(((await answered.json()) as AssistantSnapshot).run);
+        await expect
+          .poll(
+            async () =>
+              !latestRun || latestRun.status === "planning"
+                ? "waiting"
+                : ["failed", "interrupted", "cancelled"].includes(
+                      latestRun.status,
+                    )
+                  ? "failed"
+                  : detectPlanningState(page!, latestRun.status),
+            { timeout: remaining() },
+          )
+          .not.toBe("waiting");
+      }
+
+      throwIfRunFailed();
+      if (await isBlocked(page))
+        return await finishBlocked(page, result, screenshot, errors);
+
+      const confirmAcceptance = page.getByRole("button", {
+        name: "确认业务验收修订",
+        exact: true,
+      });
+      if (await confirmAcceptance.isVisible().catch(() => false)) {
+        await confirmAcceptance.click();
+        result.confirmedAcceptance = true;
+        await expect(
+          page.getByRole("button", { name: "开始执行", exact: true }),
+        ).toBeVisible({ timeout: remaining() });
+      }
+
       await expect(
-        page.getByRole("button", { name: "开始执行", exact: true }),
-      ).toBeVisible({ timeout: 120_000 });
+        page.getByRole("region", { name: "待确认方案" }),
+      ).toBeVisible();
+      result.confirmedPlan = true;
+      await page.getByRole("button", { name: "开始执行", exact: true }).click();
+
+      await expect
+        .poll(
+          async () =>
+            latestRun &&
+            ["failed", "interrupted", "cancelled"].includes(latestRun.status)
+              ? "failed"
+              : detectExecutionState(page!),
+          { timeout: remaining() },
+        )
+        .toMatch(/awaiting-apply|blocked|failed/);
+
+      throwIfRunFailed();
+      if (await isBlocked(page))
+        return await finishBlocked(page, result, screenshot, errors);
+    } else {
+      result.resumedExistingCandidate = true;
+      await expect(
+        page.getByRole("button", { name: "体验", exact: true }),
+      ).toBeVisible();
     }
-
-    await expect(page.getByRole("region", { name: "待确认方案" })).toBeVisible();
-    result.confirmedPlan = true;
-    await page.getByRole("button", { name: "开始执行", exact: true }).click();
-
-    await expect
-      .poll(async () => detectExecutionState(page!), { timeout: 180_000 })
-      .toMatch(/awaiting-apply|blocked|failed/);
-
-    if (await isBlocked(page))
-      return await finishBlocked(page, result, screenshot, errors);
 
     if (input.scenario.requiresExperience) {
       await page.getByRole("button", { name: "体验", exact: true }).click();
@@ -168,7 +243,7 @@ export async function runStabilityBrowserPath(input: {
       result.experienced = true;
       result.experienceActions = await exerciseExperience(
         page,
-        input.bindings ?? experienceBindingsFor(input.scenario.id),
+        input.bindings ?? (await input.resolveBindings?.()),
       );
       await page.getByRole("button", { name: "结束体验", exact: true }).click();
       await page.getByRole("button", { name: "改进应用", exact: true }).click();
@@ -198,19 +273,33 @@ export async function runStabilityBrowserPath(input: {
     return result;
   } catch (error) {
     result.message = error instanceof Error ? error.message : String(error);
+    if (!page)
+      (result.evidenceErrors ??= []).push(
+        "Browser page unavailable; screenshot could not be captured",
+      );
     await page
       ?.screenshot({ path: screenshot, fullPage: true })
-      .catch(() => undefined);
-    throw error;
+      .catch((error) => {
+        (result.evidenceErrors ??= []).push(String(error));
+      });
+    return result;
   } finally {
-    await browser?.close();
-    await new Promise<void>((resolve, reject) =>
-      server.close((error) => (error ? reject(error) : resolve())),
+    await browser?.close().catch((error) => {
+      (result.cleanupErrors ??= []).push(String(error));
+    });
+    await new Promise<void>((resolve) =>
+      server.close((error) => {
+        if (error) (result.cleanupErrors ??= []).push(String(error));
+        resolve();
+      }),
     );
   }
 }
 
-async function detectPlanningState(page: Page): Promise<string> {
+async function detectPlanningState(
+  page: Page,
+  status: string,
+): Promise<string> {
   if (await isBlocked(page)) return "blocked";
   if (
     await page
@@ -227,11 +316,11 @@ async function detectPlanningState(page: Page): Promise<string> {
   )
     return "awaiting-acceptance";
   if (
+    status === "awaiting-input" &&
     (await page
       .getByRole("textbox", { name: "告诉 AI 你的需求" })
       .isVisible()
-      .catch(() => false)) &&
-    (await page.getByText(/\?|？/).first().isVisible().catch(() => false))
+      .catch(() => false))
   )
     return "awaiting-input";
   return "waiting";
@@ -278,117 +367,107 @@ async function finishBlocked(
   return result;
 }
 
+/** Attach rejection handlers before either the click or response wait can fail. */
+export async function responseForAction(
+  page: Page,
+  predicate: (response: Response) => boolean,
+  action: () => Promise<unknown>,
+  timeout = 30_000,
+): Promise<Response> {
+  const [response] = await Promise.all([
+    page.waitForResponse(predicate, { timeout }),
+    action(),
+  ]);
+  return response;
+}
+
+function actionButton(page: Page, label: string) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // The host's contribution buttons append the synthetic task title to their accessible name.
+  return page.getByRole("button", {
+    name: new RegExp(`^${escaped}(?: 候选体验任务)?$`),
+  });
+}
+
 async function exerciseExperience(
   page: Page,
   bindings: ExperienceBindings | undefined,
 ): Promise<NonNullable<BrowserPathResult["experienceActions"]>> {
   const actions: NonNullable<BrowserPathResult["experienceActions"]> = {};
+  const commandResponse = (r: Response) =>
+    r.url().endsWith("/api/experience/commands") &&
+    r.request().method() === "POST";
   if (bindings?.tags) {
-    const formPending = page.waitForResponse(
-      (r) =>
-        r.url().endsWith("/api/experience/commands") &&
-        r.request().method() === "POST" &&
-        !r.request().postDataJSON()?.input,
+    const form = await responseForAction(page, commandResponse, () =>
+      actionButton(page, bindings.tags!.actionLabel).click(),
     );
-    await page
-      .getByRole("button", { name: new RegExp(`^${bindings.tags.actionLabel}`) })
-      .first()
-      .click();
-    const form = await formPending;
     assert.equal(form.status(), 200);
     const receipt = (await form.json()) as CommandResult;
     assert.equal(receipt.decision?.kind, "input-required");
-    await page
-      .getByLabel(bindings.tags.fieldLabel, { exact: true })
-      .fill("  BrowserTag  ");
-    const label = bindings.tags.actionLabel;
-    const savedPending = page.waitForResponse(
-      (r) =>
-        r.url().endsWith("/api/experience/commands") &&
-        Boolean(r.request().postDataJSON()?.input),
+    const field = receipt.decision.fields.find(
+      (f) => f.key === bindings.tags!.inputKey,
     );
-    await page.getByRole("button", { name: new RegExp(`^${label}`) }).first().click();
-    const saved = await savedPending;
+    assert.ok(
+      field,
+      "Evaluator binding: frozen input field absent from actual form",
+    );
+    await page.getByLabel(field.label, { exact: true }).fill("  BrowserTag  ");
+    const saved = await responseForAction(page, commandResponse, () =>
+      actionButton(page, bindings.tags!.actionLabel).click(),
+    );
     assert.equal(saved.status(), 200);
     const task = ((await saved.json()) as CommandResult).task!;
-    const field =
-      Object.entries(task.fields).find(
-        ([, value]) => value === bindings.tags!.expected,
-      )?.[0] ??
-      Object.keys(task.fields).find((key) => /tag/i.test(key));
-    assert.ok(field, "体验须写出标签字段");
-    assert.equal(task.fields[field], bindings.tags.expected);
-    actions.tagSet = task.fields[field];
+    assert.equal(task.fields[bindings.tags.fieldKey], bindings.tags.expected);
+    actions.tagSet = task.fields[bindings.tags.fieldKey];
   }
-
   if (bindings?.counter) {
-    const pending = page.waitForResponse(
-      (r) =>
-        r.url().endsWith("/api/experience/commands") &&
-        r.request().method() === "POST",
+    const saved = await responseForAction(page, commandResponse, () =>
+      actionButton(page, bindings.counter!.actionLabel).click(),
     );
-    await page
-      .getByRole("button", {
-        name: new RegExp(`^${bindings.counter.actionLabel}`),
-      })
-      .first()
-      .click();
-    const saved = await pending;
     assert.equal(saved.status(), 200);
     const task = ((await saved.json()) as CommandResult).task!;
-    const value =
-      task.fields[bindings.counter.fieldKey] ?? task.fields.count ?? "";
-    assert.ok(value, "体验须写出计数字段");
-    assert.equal(Number(value) >= 1, true, `计数应至少为 1，实际 ${value}`);
-    actions.counterValue = String(value);
+    assert.equal(Number(task.fields[bindings.counter.fieldKey]), 1);
+    actions.counterValue = task.fields[bindings.counter.fieldKey];
   }
-
   const complete = page.getByRole("button", { name: "完成", exact: true });
   if (await complete.isVisible().catch(() => false)) {
-    let pending = page.waitForResponse(
-      (r) =>
-        r.url().endsWith("/api/experience/commands") &&
-        r.request().postDataJSON()?.actionId === "complete",
-    );
-    await complete.click();
-    let receipt = (await (await pending).json()) as CommandResult;
+    const matchesComplete = (r: Response) =>
+      commandResponse(r) && r.request().postDataJSON()?.actionId === "complete";
+    let receipt = (await (
+      await responseForAction(page, matchesComplete, () => complete.click())
+    ).json()) as CommandResult;
     if (receipt.decision?.kind === "input-required") {
-      const reflectionLabel =
+      const label =
         bindings?.reflection?.fieldLabel ??
         receipt.decision.fields.find(
           (f) => /复盘|reflection/i.test(f.key) || /复盘/.test(f.label),
         )?.label;
-      if (reflectionLabel) {
-        await page
-          .getByLabel(reflectionLabel, { exact: true })
-          .fill("浏览器完成复盘");
+      if (label) {
+        await page.getByLabel(label, { exact: true }).fill("浏览器完成复盘");
         actions.reflectionSet = "浏览器完成复盘";
       }
-      pending = page.waitForResponse(
-        (r) =>
-          r.url().endsWith("/api/experience/commands") &&
-          r.request().postDataJSON()?.actionId === "complete",
-      );
-      await page.getByRole("button", { name: "完成", exact: true }).click();
-      receipt = (await (await pending).json()) as CommandResult;
+      receipt = (await (
+        await responseForAction(page, matchesComplete, () => complete.click())
+      ).json()) as CommandResult;
     }
     assert.equal(receipt.decision?.kind, "commit");
     assert.equal(receipt.task?.state, "done");
     const reopen = page.getByRole("button", { name: "重新打开", exact: true });
     if (await reopen.isVisible().catch(() => false)) {
-      pending = page.waitForResponse(
-        (r) =>
-          r.url().endsWith("/api/experience/commands") &&
-          r.request().postDataJSON()?.actionId === "reopen",
-      );
-      await reopen.click();
-      const reopened = (await (await pending).json()) as CommandResult;
+      const reopened = (await (
+        await responseForAction(
+          page,
+          (r) =>
+            commandResponse(r) &&
+            r.request().postDataJSON()?.actionId === "reopen",
+          () => reopen.click(),
+        )
+      ).json()) as CommandResult;
       assert.equal(reopened.decision?.kind, "commit");
       assert.equal(reopened.task?.state, "open");
       actions.completedAndReopened = true;
     }
   }
-
   return actions;
 }
 

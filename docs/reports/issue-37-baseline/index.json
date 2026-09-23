@@ -5,5 +5,24 @@
   "productCommit": "8200f8a2957045ed232d0254a9efc627672b6fb3",
   "sourceCommit": "8200f8a2957045ed232d0254a9efc627672b6fb3",
   "evidenceKind": "model-stub",
-  "note": "改造前桩层基线；真实模型基线需 pnpm accept:stability-baseline --authorize-real-model。桩层证据不得冒充真实 LLM。"
+  "note": "历史桩基线与真实尝试均保留。v3 崩溃后在新归档恢复同一候选，未追加其模型调用；其余六场景各首次运行。七场景已完整归档，但两个评估器失败使真实基线仍不完整。最终修复后的评估器仅通过本地回归，未追加付费批次。",
+  "realModelAttempts": [
+    {
+      "path": "real-v2-20260923",
+      "review": "real-v2-20260923-review.json",
+      "completeBaseline": false
+    },
+    {
+      "path": "real-v3-20260923",
+      "completeBaseline": false,
+      "status": "first-scenario-evaluator-crash-source-preserved"
+    },
+    {
+      "path": "real-v3-continuation-20260923",
+      "review": "real-v3-continuation-20260923-review.json",
+      "completeBaseline": false,
+      "allSevenLogicalTrialsArchived": true
+    }
+  ],
+  "realModelBaselineComplete": false
 }

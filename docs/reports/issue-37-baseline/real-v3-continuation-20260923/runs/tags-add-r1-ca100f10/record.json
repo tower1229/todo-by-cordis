@@ -1,0 +1,21 @@
+{
+  "scenarioId": "tags-add",
+  "evidenceKind": "real-model",
+  "evidenceComplete": true,
+  "expectedOutcomeClass": "full-path-success",
+  "observedOutcomeClass": "failed",
+  "recoveredBrowserSucceeded": true,
+  "capabilitySelectionCorrect": true,
+  "errorBlockingCorrect": null,
+  "firstPlanPassed": false,
+  "firstCandidatePassed": true,
+  "fullPathSucceeded": false,
+  "repairedInOriginalBudget": false,
+  "durationMs": 3576,
+  "durationScope": "recovery-only",
+  "usage": {
+    "promptTokens": 131815,
+    "completionTokens": 19371
+  },
+  "failureClass": "evaluator"
+}

@@ -1,4 +1,22 @@
-import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import {
+  archiveWorkspace,
+  writeVerifiedJson,
+  usageFromCalls,
+  firstPlanResult,
+} from "./archive.js";
+import { dependencyFault } from "./environment.js";
+import { resolveExperienceBindings } from "./bindings.js";
+import type { InvestigatedPlan } from "../../../src/shared/assistant.js";
+import type { WorkspaceCaseEvidence } from "../../../src/server/workspace-acceptance.js";
+import {
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  existsSync,
+  cpSync,
+  readFileSync,
+  readdirSync,
+} from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../../src/server/workspace.js";
@@ -19,11 +37,7 @@ import {
   type ObservedOutcomeClass,
   type ScenarioRunRecord,
 } from "./metrics.js";
-import {
-  experienceBindingsFor,
-  runStabilityBrowserPath,
-  type BrowserPathResult,
-} from "./browser.js";
+import { runStabilityBrowserPath, type BrowserPathResult } from "./browser.js";
 import {
   scoreCapabilityAndBlocking,
   type SettledPlanEvidence,
@@ -37,6 +51,9 @@ export type StabilityRunOptions = {
   evidenceKind: "model-stub" | "real-model";
   driver?: Driver;
   clarificationAnswer?: string;
+  browserRun?: typeof runStabilityBrowserPath;
+  archive?: typeof archiveWorkspace;
+  resumeExistingCandidate?: boolean;
 };
 
 export type StabilityScenarioResult = {
@@ -52,7 +69,10 @@ function clarificationFor(scenario: StabilityScenario): string | undefined {
   return undefined;
 }
 
-async function prepareWorkspace(scenario: StabilityScenario, directory: string) {
+async function prepareWorkspace(
+  scenario: StabilityScenario,
+  directory: string,
+) {
   const w = await Workspace.open(join(directory, "workspace.db"));
   if (scenario.id === "member-upgrade-tags") await activateDual(w);
   await w.command({
@@ -69,6 +89,7 @@ function observeOutcome(
   browserStatus: string,
   runStatus: string | undefined,
 ): ObservedOutcomeClass {
+  if (browserStatus === "failed") return "failed";
   if (
     scenario.expectedOutcomeClass === "current-blocker" &&
     (browserStatus === "blocked-observed" || runStatus === "blocked")
@@ -90,6 +111,60 @@ function observeOutcome(
 
 export async function runStabilityScenario(
   options: StabilityRunOptions,
+): Promise<StabilityScenarioResult> {
+  const started = Date.now();
+  let fault: ReturnType<typeof dependencyFault> | undefined;
+  try {
+    fault =
+      options.scenario.id === "temporarily-unavailable-dependency"
+        ? dependencyFault(options.directory)
+        : undefined;
+    return await runScenarioInEnvironment(options, fault);
+  } catch (error) {
+    const record: ScenarioRunRecord = {
+      scenarioId: options.scenario.id,
+      evidenceKind: options.evidenceKind,
+      evidenceComplete: false,
+      expectedOutcomeClass: options.scenario.expectedOutcomeClass,
+      observedOutcomeClass: "failed",
+      capabilitySelectionCorrect: null,
+      errorBlockingCorrect: null,
+      firstPlanPassed: null,
+      firstCandidatePassed: null,
+      fullPathSucceeded: false,
+      repairedInOriginalBudget: false,
+      durationMs: Date.now() - started,
+      usage: null,
+      failureClass: "evaluator",
+    };
+    const eventsPath = join(options.directory, "events.jsonl");
+    writeFileSync(
+      eventsPath,
+      JSON.stringify(
+        redactSensitive({
+          type: "setup-or-finalization-error",
+          message: String(error),
+          record,
+        }),
+      ) + "\n",
+      { flag: "a", mode: 0o600 },
+    );
+    if (!existsSync(join(options.directory, "record.json")))
+      writeVerifiedJson(join(options.directory, "record.json"), record);
+    // A completed record may exist if only finalization failed; preserve it and add failure evidence.
+    writeVerifiedJson(join(options.directory, "incomplete-run.json"), {
+      record,
+      message: String(error),
+    });
+    return { record, eventsPath, preservedDirectory: options.directory };
+  } finally {
+    fault?.restore();
+  }
+}
+
+async function runScenarioInEnvironment(
+  options: StabilityRunOptions,
+  fault?: ReturnType<typeof dependencyFault>,
 ): Promise<StabilityScenarioResult> {
   assertManifestFrozen(options.manifest);
 
@@ -129,12 +204,47 @@ export async function runStabilityScenario(
         : options.manifest.model.realModelId,
   });
 
-  let w = await prepareWorkspace(options.scenario, options.directory);
+  if (fault) recordEvent({ type: "environment-fault", ...fault.evidence });
+  const w = options.resumeExistingCandidate
+    ? await Workspace.open(join(options.directory, "workspace.db"))
+    : await prepareWorkspace(options.scenario, options.directory);
   const sessions = new ExperienceSessionHost(w);
+  const planningReplies: unknown[] = [];
+  const observedDriver: Driver = {
+    async generate(request, signal) {
+      const reply = await driver.generate(request, signal);
+      if (!request.tools?.some((tool) => tool.name === "submit_candidate")) {
+        const observation = {
+          request: { tools: request.tools },
+          response: {
+            candidates: [
+              {
+                content: {
+                  parts: reply.calls.map((call) => ({ functionCall: call })),
+                },
+              },
+            ],
+          },
+        };
+        planningReplies.push(observation);
+        recordEvent({ type: "planning-reply", calls: reply.calls });
+      }
+      return reply;
+    },
+  };
+  const domain = new EvolutionDomain(w);
+  if (fault) {
+    const environment = domain.context().environment;
+    recordEvent({ type: "host-environment", environment });
+    if (!environment.missing.includes("@types/node")) {
+      await w.close();
+      throw new Error("Evaluator dependency fault was not visible to the Host");
+    }
+  }
   const evolution = new Evolution(
     w.db,
-    driver,
-    new EvolutionDomain(w),
+    observedDriver,
+    domain,
     sessions,
     options.manifest.budget,
   );
@@ -156,16 +266,55 @@ export async function runStabilityScenario(
   let settledMessage: string | undefined;
   let planEvidence: SettledPlanEvidence | null = null;
 
+  let archiveComplete = false;
+  let firstPlanPassed: boolean | null = null;
   try {
-    browserResult = await runStabilityBrowserPath({
+    browserResult = await (options.browserRun ?? runStabilityBrowserPath)({
       app,
+      resumeExistingCandidate: options.resumeExistingCandidate,
+      budgetMs: options.manifest.budget.milliseconds,
       directory: options.directory,
       scenario: options.scenario,
       clarificationAnswer:
         options.clarificationAnswer ?? clarificationFor(options.scenario),
-      bindings: experienceBindingsFor(options.scenario.id),
+      resolveBindings: async () => {
+        const snapshot = await evolution.observe();
+        const plan =
+          snapshot.run && "plan" in snapshot.run
+            ? snapshot.run.plan
+            : undefined;
+        const session = sessions.observe();
+        if (!plan || session.status !== "active")
+          throw new Error("Evaluator binding: missing confirmed plan/session");
+        const composition = sessions.readSnapshot(session.id).composition;
+        const evidence = w.release.get(composition.versionId).evidence as {
+          passed?: boolean;
+          workspaceCases?: WorkspaceCaseEvidence[];
+        };
+        const bindings = resolveExperienceBindings({
+          scenarioId: options.scenario.id,
+          plan: plan as InvestigatedPlan,
+          composition,
+          evidence,
+        });
+        return bindings;
+      },
     });
-    const snapshot = await evolution.observe();
+  } catch (error) {
+    failureMessage = error instanceof Error ? error.message : String(error);
+    recordEvent({ type: "browser-error", message: failureMessage });
+  }
+  // Preserve the observed outcome before shutdown changes a live run to interrupted.
+  const beforeShutdown = await evolution.observe();
+  recordEvent({ type: "before-shutdown", snapshot: beforeShutdown });
+  // Stop in-flight work before archiving; cancellation itself is retained in the DB.
+  await evolution
+    .close()
+    .catch((error) =>
+      recordEvent({ type: "shutdown-error", message: String(error) }),
+    );
+  try {
+    const snapshot = beforeShutdown;
     runStatus = snapshot.run?.status;
     blockReason =
       snapshot.run && "blockReason" in snapshot.run
@@ -177,6 +326,8 @@ export async function runStabilityScenario(
         : undefined;
     if (snapshot.run && "plan" in snapshot.run && snapshot.run.plan) {
       planEvidence = {
+        memberCases: snapshot.run.plan.memberCases,
+        workflowRules: snapshot.run.plan.workflowRules,
         summary: snapshot.run.plan.summary,
         unresolved: snapshot.run.plan.unresolved,
         capabilityChanges: snapshot.run.plan.capabilityChanges?.map((c) => ({
@@ -192,18 +343,12 @@ export async function runStabilityScenario(
         .get() as { body: string } | undefined;
       if (row) {
         const stored = JSON.parse(row.body) as {
-          plan?: {
-            summary?: string;
-            unresolved?: string[];
-            capabilityChanges?: {
-              capability: string;
-              provider: string;
-              change: string;
-            }[];
-          };
+          plan?: SettledPlanEvidence;
         };
         if (stored.plan) {
           planEvidence = {
+            memberCases: stored.plan.memberCases,
+            workflowRules: stored.plan.workflowRules,
             summary: stored.plan.summary,
             unresolved: stored.plan.unresolved,
             capabilityChanges: stored.plan.capabilityChanges?.map((c) => ({
@@ -254,37 +399,41 @@ export async function runStabilityScenario(
         firstCandidatePassed === false;
     }
 
-    const calls = w.db
-      .prepare("SELECT body FROM evolution_calls")
-      .all() as { body: string }[];
+    const calls = w.db.prepare("SELECT body FROM evolution_calls").all() as {
+      body: string;
+    }[];
     recordEvent({
       type: "calls",
       count: calls.length,
-      samples: calls
-        .slice(0, 20)
-        .map((row) => redactSensitive(JSON.parse(row.body))),
+      samples: calls.map((row) => redactSensitive(JSON.parse(row.body))),
     });
 
-    let promptTokens = 0;
-    let completionTokens = 0;
-    let sawUsage = false;
-    for (const row of calls) {
-      const body = JSON.parse(row.body) as {
-        usage?: {
-          promptTokens?: number;
-          completionTokens?: number;
-          promptTokenCount?: number;
-          candidatesTokenCount?: number;
-        };
-      };
-      if (!body.usage) continue;
-      sawUsage = true;
-      promptTokens +=
-        body.usage.promptTokens ?? body.usage.promptTokenCount ?? 0;
-      completionTokens +=
-        body.usage.completionTokens ?? body.usage.candidatesTokenCount ?? 0;
-    }
-    if (sawUsage) usage = { promptTokens, completionTokens };
+    const callBodies = calls.map((row) => JSON.parse(row.body));
+    usage = usageFromCalls(callBodies);
+    firstPlanPassed = firstPlanResult(
+      options.resumeExistingCandidate
+        ? readFileSync(join(options.directory, "prior-events.jsonl"), "utf8")
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line))
+            .filter((event) => event.type === "planning-reply")
+            .map((event) => ({
+              response: {
+                candidates: [
+                  {
+                    content: {
+                      parts: event.calls.map((call: unknown) => ({
+                        functionCall: call,
+                      })),
+                    },
+                  },
+                ],
+              },
+            }))
+        : planningReplies,
+      Boolean(browserResult?.confirmedPlan || options.resumeExistingCandidate),
+      browserResult?.status === "blocked-observed",
+    );
 
     recordEvent({
       type: "formal-fingerprint-after",
@@ -296,7 +445,7 @@ export async function runStabilityScenario(
       note: "只读补充证据；不得用 API 成功替代浏览器用户路径。",
     });
   } catch (error) {
-    failureMessage = error instanceof Error ? error.message : String(error);
+    failureMessage ??= error instanceof Error ? error.message : String(error);
     recordEvent({
       type: "failure",
       message: failureMessage,
@@ -307,29 +456,65 @@ export async function runStabilityScenario(
       viewport: { width: 390, height: 844 },
       openedImprovePanel: false,
       recoveryEntryVisible: false,
-      screenshot: join(
-        options.directory,
-        `browser-${options.scenario.id}.png`,
-      ),
+      screenshot: join(options.directory, `browser-${options.scenario.id}.png`),
       pageErrors: [],
       message: failureMessage,
     };
   } finally {
-    await evolution.close();
-    await sessions.close();
-    await w.close();
-    rmSync(join(options.directory, "workspace.db"), { force: true });
-    rmSync(join(options.directory, "artifacts"), {
-      recursive: true,
-      force: true,
-    });
+    try {
+      const evidenceHash = (options.archive ?? archiveWorkspace)(
+        w.db,
+        options.directory,
+      );
+      recordEvent({ type: "archive-verified", evidenceHash });
+      archiveComplete =
+        Boolean(browserResult) && !browserResult?.evidenceErrors?.length;
+      if (browserResult?.evidenceErrors?.length)
+        recordEvent({
+          type: "browser-evidence-errors",
+          errors: browserResult.evidenceErrors,
+        });
+      if (browserResult?.cleanupErrors?.length)
+        recordEvent({
+          type: "browser-cleanup-errors",
+          errors: browserResult.cleanupErrors,
+        });
+    } catch (error) {
+      failureMessage ??= `Archive verification: ${String(error)}`;
+      recordEvent({
+        type: "archive-error",
+        message: String(error),
+        preservedDirectory: options.directory,
+      });
+    }
+    for (const close of [() => sessions.close(), () => w.close()]) {
+      try {
+        await close();
+      } catch (error) {
+        archiveComplete = false;
+        recordEvent({ type: "cleanup-error", message: String(error) });
+      }
+    }
   }
+  browserResult ??= {
+    status: "failed",
+    viewport: { width: 390, height: 844 },
+    openedImprovePanel: false,
+    recoveryEntryVisible: false,
+    screenshot: "",
+    pageErrors: [],
+    message: failureMessage,
+  };
+  failureMessage ??= browserResult.message;
+  if (!archiveComplete) browserResult.status = "failed";
 
-  const observed = observeOutcome(
-    options.scenario,
-    browserResult!.status,
-    runStatus ?? browserResult!.observedRunStatus,
-  );
+  const observed = !archiveComplete
+    ? "failed"
+    : observeOutcome(
+        options.scenario,
+        browserResult!.status,
+        runStatus ?? browserResult!.observedRunStatus,
+      );
 
   const reachedReadyOnFirstPlan = Boolean(browserResult!.confirmedPlan);
   const blockedWithoutReady =
@@ -354,11 +539,17 @@ export async function runStabilityScenario(
   });
 
   const matchesExpectation = observed === options.scenario.expectedOutcomeClass;
-  const failureClass =
-    matchesExpectation && observed !== "failed"
+  const evaluatorStoppedLiveRun =
+    browserResult.status === "failed" &&
+    ["planning", "executing"].includes(beforeShutdown.run?.status ?? "");
+  const failureClass = evaluatorStoppedLiveRun
+    ? "evaluator"
+    : matchesExpectation
       ? null
       : classifyFailure({
-          message: failureMessage ?? browserResult!.message,
+          message: [failureMessage, settledMessage, browserResult!.message]
+            .filter(Boolean)
+            .join(" "),
           transportFailed: /fetch failed|ECONNRESET|UNAVAILABLE/i.test(
             failureMessage ?? "",
           ),
@@ -370,13 +561,18 @@ export async function runStabilityScenario(
   const record: ScenarioRunRecord = {
     scenarioId: options.scenario.id,
     evidenceKind: options.evidenceKind,
+    evidenceComplete: archiveComplete,
     expectedOutcomeClass: options.scenario.expectedOutcomeClass,
-    observedOutcomeClass: observed,
+    observedOutcomeClass: options.resumeExistingCandidate ? "failed" : observed,
+    recoveredBrowserSucceeded: options.resumeExistingCandidate
+      ? observed === "full-path-success"
+      : undefined,
     capabilitySelectionCorrect: scored.capabilitySelectionCorrect,
     errorBlockingCorrect: scored.errorBlockingCorrect,
-    firstPlanPassed: scored.firstPlanPassed,
+    firstPlanPassed,
     firstCandidatePassed,
     fullPathSucceeded:
+      !options.resumeExistingCandidate &&
       observed === "full-path-success" &&
       Boolean(
         browserResult!.experienced || !options.scenario.requiresExperience,
@@ -391,15 +587,30 @@ export async function runStabilityScenario(
       ),
     repairedInOriginalBudget,
     durationMs: Date.now() - started,
+    durationScope: options.resumeExistingCandidate
+      ? "recovery-only"
+      : undefined,
     usage,
-    failureClass,
+    failureClass: options.resumeExistingCandidate ? "evaluator" : failureClass,
   };
   recordEvent({ type: "metrics-record", record });
-  writeFileSync(
-    join(options.directory, "record.json"),
-    JSON.stringify(redactSensitive(record), null, 2) + "\n",
-    { mode: 0o600 },
-  );
+  writeVerifiedJson(join(options.directory, "record.json"), record);
+  // Both evidence and metrics must be verified before deleting the synthetic source.
+  if (archiveComplete) {
+    try {
+      rmSync(join(options.directory, "workspace.db"), { force: true });
+      rmSync(join(options.directory, "artifacts"), {
+        recursive: true,
+        force: true,
+      });
+      rmSync(join(options.directory, "environment"), {
+        recursive: true,
+        force: true,
+      });
+    } catch (error) {
+      recordEvent({ type: "cleanup-error", message: String(error) });
+    }
+  }
   return {
     record,
     eventsPath,
@@ -414,6 +625,7 @@ export async function runFrozenBaselineSuite(input: {
   driverFactory?: (scenarioId: string) => Driver;
   scenarioFilter?: string[];
   harnessCommit?: string;
+  continuationRoot?: string;
 }): Promise<{
   runs: StabilityScenarioResult[];
   records: ScenarioRunRecord[];
@@ -433,30 +645,100 @@ export async function runFrozenBaselineSuite(input: {
     { flag: "wx", mode: 0o600 },
   );
   const runs: StabilityScenarioResult[] = [];
+  let priorDirectory: string | undefined;
+  if (input.continuationRoot) {
+    const identity = JSON.parse(
+      readFileSync(join(input.continuationRoot, "identity.json"), "utf8"),
+    );
+    const previousRuns = readdirSync(join(input.continuationRoot, "runs"));
+    if (
+      identity.productCommit !== input.manifest.productCommit ||
+      previousRuns.length !== 1 ||
+      !previousRuns[0]!.startsWith("tags-add-r1-")
+    )
+      throw new Error(
+        "Continuation requires exactly one historical tags trial",
+      );
+    priorDirectory = join(input.continuationRoot, "runs", previousRuns[0]!);
+    if (existsSync(join(priorDirectory, "record.json")))
+      throw new Error("Completed trials cannot be retried");
+    writeVerifiedJson(join(input.root, "continuation.json"), {
+      source: input.continuationRoot,
+      originalFailure: JSON.parse(
+        readFileSync(
+          join(input.continuationRoot, "runner-failure.json"),
+          "utf8",
+        ),
+      ),
+      policy:
+        "No additional model calls for recovered tags trial; original evaluator failure remains in metrics",
+    });
+  }
   for (const scenario of input.manifest.scenarios) {
     if (input.scenarioFilter && !input.scenarioFilter.includes(scenario.id))
       continue;
-    for (
-      let i = 0;
-      i < input.manifest.runs.independentRunsPerScenario;
-      i++
-    ) {
+    for (let i = 0; i < input.manifest.runs.independentRunsPerScenario; i++) {
       const directory = join(
         input.root,
         "runs",
         `${scenario.id}-r${i + 1}-${randomUUID().slice(0, 8)}`,
       );
       mkdirSync(directory, { recursive: true });
+      const resume = scenario.id === "tags-add" && priorDirectory !== undefined;
+      if (resume) {
+        for (const entry of readdirSync(priorDirectory!)) {
+          if (entry === "events.jsonl")
+            cpSync(
+              join(priorDirectory!, entry),
+              join(directory, "prior-events.jsonl"),
+            );
+          else
+            cpSync(join(priorDirectory!, entry), join(directory, entry), {
+              recursive: true,
+            });
+        }
+        const { DatabaseSync } = await import("node:sqlite");
+        const db = new DatabaseSync(join(directory, "workspace.db"));
+        try {
+          const row = db
+            .prepare(
+              "SELECT body FROM evolution_runs ORDER BY rowid DESC LIMIT 1",
+            )
+            .get() as { body: string };
+          if (JSON.parse(row.body).run?.status !== "awaiting-apply")
+            throw new Error(
+              "Continuation requires an existing verified candidate awaiting apply",
+            );
+          writeVerifiedJson(join(directory, "recovery-source.json"), {
+            source: priorDirectory,
+            run: JSON.parse(row.body),
+            callsBefore: db
+              .prepare("SELECT COUNT(*) AS count FROM evolution_calls")
+              .get(),
+          });
+        } finally {
+          db.close();
+        }
+      }
       const result = await runStabilityScenario({
         directory,
         scenario,
         manifest: input.manifest,
         evidenceKind: input.evidenceKind,
-        driver: input.driverFactory?.(scenario.id),
+        resumeExistingCandidate: resume,
+        driver: resume
+          ? {
+              async generate() {
+                throw new Error("Recovery forbids additional model calls");
+              },
+            }
+          : input.driverFactory?.(scenario.id),
       });
-      rmSync(join(directory, "artifacts"), { recursive: true, force: true });
-      rmSync(join(directory, "workspace.db"), { force: true });
       runs.push(result);
+      if (resume && !result.record.recoveredBrowserSucceeded)
+        throw new Error(
+          "Recovered browser failed; no remaining scenarios started",
+        );
     }
   }
   return { runs, records: runs.map((r) => r.record) };

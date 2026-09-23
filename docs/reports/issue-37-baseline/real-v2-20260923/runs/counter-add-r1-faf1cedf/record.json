@@ -1,0 +1,16 @@
+{
+  "scenarioId": "counter-add",
+  "evidenceKind": "real-model",
+  "evidenceComplete": true,
+  "expectedOutcomeClass": "full-path-success",
+  "observedOutcomeClass": "full-path-success",
+  "capabilitySelectionCorrect": true,
+  "errorBlockingCorrect": null,
+  "firstPlanPassed": true,
+  "firstCandidatePassed": true,
+  "fullPathSucceeded": true,
+  "repairedInOriginalBudget": false,
+  "durationMs": 154621,
+  "usage": null,
+  "failureClass": null
+}

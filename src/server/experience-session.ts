@@ -15,6 +15,8 @@ import {
 import { Workspace } from "./workspace.js";
 import { importCompositionVersions } from "./workspace-acceptance.js";
 
+import type { HostClock } from "./host/clock.js";
+
 const TASK_TITLE = "候选体验任务";
 
 export type ExperienceSessionSnapshot = ExperienceSessionView & {
@@ -42,6 +44,7 @@ export class ExperienceSessionHost {
   constructor(
     private formal: Workspace,
     private ttlMs = 30 * 60 * 1000,
+    private clockFactory?: () => HostClock,
   ) {}
 
   private snapshot(active: ActiveSession): ExperienceSessionSnapshot {
@@ -89,6 +92,7 @@ export class ExperienceSessionHost {
     const directory = await mkdtemp(join(tmpdir(), "cordis-experience-"));
     const isolated = await Workspace.open(join(directory, "workspace.db"), {
       acceptanceProbe: true,
+      clock: this.clockFactory?.(),
     });
     try {
       importCompositionVersions(this.formal, isolated, version);
@@ -121,7 +125,9 @@ export class ExperienceSessionHost {
       return this.snapshot(this.active);
     } catch (error) {
       await isolated.close().catch(() => undefined);
-      await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+      await rm(directory, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
       throw error;
     }
   }
@@ -172,11 +178,7 @@ export class ExperienceSessionHost {
       this.formal.composition().revision !==
       this.active.formalCompositionRevision
     )
-      throw new AppError(
-        "EXPERIENCE_STALE",
-        "体验会话已失效，请重新打开",
-        409,
-      );
+      throw new AppError("EXPERIENCE_STALE", "体验会话已失效，请重新打开", 409);
     return this.active;
   }
 
@@ -207,11 +209,7 @@ export class ExperienceSessionHost {
   }
 
   rejectUntrustedFields(body: Record<string, unknown>) {
-    if (
-      "databasePath" in body ||
-      "dbPath" in body ||
-      "filename" in body
-    )
+    if ("databasePath" in body || "dbPath" in body || "filename" in body)
       throw new AppError("FORBIDDEN", "不能指定数据库路径", 403);
   }
 
