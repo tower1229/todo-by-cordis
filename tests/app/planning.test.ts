@@ -77,6 +77,59 @@ test("investigation separates online scheduler health, registration, use and che
   );
 });
 
+test("capability guides are delivered on demand and only delivered hashes count as evidence", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-guides-"));
+  const w = await Workspace.open(join(dir, "workspace.db"));
+  t.after(async () => {
+    await w.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const context = capture(w);
+  const inspected = readInvestigation("inspect_application", {}, context);
+  assert.ok("documents" in inspected);
+  assert.ok(
+    !inspected.documents?.some((item) => item.ref.startsWith("guide/")),
+  );
+  assert.ok("content" in inspected);
+  assert.match(JSON.stringify(inspected.content), /统一写入/);
+  const guides = readInvestigation(
+    "read_guides",
+    { refs: ["guide/command.register"] },
+    context,
+  );
+  assert.ok("documents" in guides);
+  assert.equal(guides.documents?.[0]?.ref, "guide/command.register");
+  assert.match(String(guides.documents?.[0]?.content), /input-required/);
+  const guideHash = guides.documents![0].hash;
+  const unearned = readInvestigation(
+    "read_guides",
+    {
+      refs: ["guide/command.register"],
+      knownHashes: { "guide/command.register": guideHash },
+    },
+    context,
+  );
+  assert.ok("documents" in unearned);
+  assert.match(String(unearned.documents?.[0]?.content), /input-required/);
+  const reused = readInvestigation(
+    "read_guides",
+    {
+      refs: ["guide/command.register"],
+      knownHashes: { "guide/command.register": guideHash },
+    },
+    context,
+    [{ ref: "guide/command.register", hash: guideHash }],
+  );
+  assert.ok("documents" in reused);
+  assert.equal(reused.documents?.[0]?.content, null);
+  const denied = readInvestigation(
+    "read_guides",
+    { refs: ["guide/unknown"] },
+    context,
+  );
+  assert.ok("error" in denied);
+});
+
 test("describeBlockers maps maintainer capability gaps to a short user message", () => {
   const described = describeBlockers([
     "因不能真实调用外部 IO 及系统缺少定时提醒调度基础环境，到时间提醒将被报告为技术阻塞",

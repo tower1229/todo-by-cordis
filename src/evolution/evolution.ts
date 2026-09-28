@@ -22,6 +22,10 @@ import {
   CandidateValidationError,
 } from "../release/business-bundle.js";
 import { hash } from "../release/storage.js";
+import {
+  capabilityGuides,
+  type CapabilityGuideRef,
+} from "../server/capability-guides.js";
 import { ExperienceSessionHost } from "../server/experience-session.js";
 import { experienceSessionBanner } from "../shared/assistant.js";
 export type Target = {
@@ -37,6 +41,7 @@ export interface Domain {
     name: string,
     args: Record<string, unknown>,
     context: Investigation,
+    delivered?: PlanEvidence[],
   ): InvestigationRead;
   parse(
     value: unknown,
@@ -63,6 +68,17 @@ export interface Domain {
     instruction: string;
     contract: string;
     source: string;
+    scaffold?: {
+      writablePaths: string[];
+      memberPluginIds: string[];
+      inheritedMembers: {
+        pluginId: string;
+        versionId?: string;
+        enabled: boolean;
+        role: string;
+      }[];
+      contractInjection: string;
+    };
   };
   /** Exact member source/contract/acceptance for generation-time reads. */
   readMember(
@@ -1261,7 +1277,12 @@ export class Evolution {
           this.save(r);
           return;
         }
-        const result = this.domain.read(call.name, call.args, context);
+        const result = this.domain.read(
+          call.name,
+          call.args,
+          context,
+          r.run.evidence ?? [],
+        );
         if ("ref" in result) {
           const delivered = [result, ...(result.documents ?? [])];
           const deliveredRefs = new Set(
@@ -1292,6 +1313,7 @@ export class Evolution {
     if (!this.alive(r.run.id)) return;
     this.domain.check(target, revision);
     const context = this.domain.generation(target);
+    const deliveredGuides = new Set<CapabilityGuideRef>();
     let history: unknown[] = [];
     let message: string | undefined = JSON.stringify({
       plan,
@@ -1357,16 +1379,44 @@ export class Evolution {
                 },
               },
               {
+                name: "read_guide",
+                description:
+                  "Read one host-owned capability guide by exact ref",
+                parameters: {
+                  type: "object",
+                  properties: { ref: { type: "string" } },
+                  required: ["ref"],
+                },
+              },
+              {
+                name: "read_scaffold",
+                description:
+                  "Read only the frozen authorized candidate shape and trusted contract injection point",
+                parameters: { type: "object", properties: {} },
+              },
+              {
                 name: "submit_candidate",
                 description:
                   "Build and independently verify workflow TypeScript files and optional self-contained auxiliary modules declared in the frozen plan",
                 parameters: {
                   type: "object",
-                  ...(!(plan.memberEnabled || plan.writableScope.includes("active-source")) ? { required: ["files"] } : {}),
+                  ...(!(
+                    plan.memberEnabled ||
+                    plan.writableScope.includes("active-source")
+                  )
+                    ? { required: ["files"] }
+                    : {}),
                   properties: {
-                    ...((plan.memberEnabled || plan.writableScope.includes("active-source")) ? {
-                      source: { type: "string", description: "Frozen plan permits this exact single-source submission" },
-                    } : {}),
+                    ...(plan.memberEnabled ||
+                    plan.writableScope.includes("active-source")
+                      ? {
+                          source: {
+                            type: "string",
+                            description:
+                              "Frozen plan permits this exact single-source submission",
+                          },
+                        }
+                      : {}),
                     files: {
                       type: "array",
                       items: {
@@ -1386,7 +1436,8 @@ export class Evolution {
                           pluginId: { type: "string" },
                           source: {
                             type: "string",
-                            description: "Complete self-contained auxiliary module: export default an object with contribute and decide as needed. No imports or re-exports, including type imports; no contract.js or other files are supplied to this module. Use plain JavaScript or inline erasable types. Do not describe a second workflow. Register the frozen member actions in contribute.commands.",
+                            description:
+                              "Complete self-contained auxiliary module: export default an object with contribute and decide as needed. No imports or re-exports, including type imports; no contract.js or other files are supplied to this module. Use plain JavaScript or inline erasable types. Do not describe a second workflow. Register the frozen member actions in contribute.commands.",
                           },
                         },
                         required: ["pluginId", "source"],
@@ -1444,17 +1495,74 @@ export class Evolution {
                 Object.keys(call.args).length !== 2 ||
                 typeof call.args.pluginId !== "string" ||
                 typeof call.args.versionId !== "string"
-              ) throw new AppError("INVALID_MEMBER_READ", "读取成员资料参数无效：需要 pluginId 和精确 versionId");
-              result = this.domain.readMember(call.args.pluginId, call.args.versionId);
+              )
+                throw new AppError(
+                  "INVALID_MEMBER_READ",
+                  "读取成员资料参数无效：需要 pluginId 和精确 versionId",
+                );
+              result = this.domain.readMember(
+                call.args.pluginId,
+                call.args.versionId,
+              );
               this.toolEvent(r, "read_member", "succeeded", attempt);
             } catch (error) {
-              if (!(error instanceof AppError) ||
-                  !["INVALID_MEMBER_READ", "UNKNOWN_PLUGIN"].includes(error.code)) throw error;
+              if (
+                !(error instanceof AppError) ||
+                !["INVALID_MEMBER_READ", "UNKNOWN_PLUGIN"].includes(error.code)
+              )
+                throw error;
               // A denied read exposes no source. The next model call may correct
               // identifiers within the same call/deadline budget; never retry here.
               result = { error: error.message };
-              this.toolEvent(r, "read_member", "failed", attempt, error.message);
+              this.toolEvent(
+                r,
+                "read_member",
+                "failed",
+                attempt,
+                error.message,
+              );
             }
+          } else if (call.name === "read_guide") {
+            this.toolEvent(r, "read_guide", "started", attempt);
+            const ref = call.args.ref;
+            if (
+              Object.keys(call.args).length !== 1 ||
+              typeof ref !== "string" ||
+              !Object.hasOwn(capabilityGuides, ref)
+            ) {
+              result = {
+                error: "REF_UNAVAILABLE",
+                message: "指南引用无效；请使用规划阶段的指南目录",
+              };
+              this.toolEvent(
+                r,
+                "read_guide",
+                "failed",
+                attempt,
+                "指南引用无效",
+              );
+            } else {
+              const guideRef = ref as CapabilityGuideRef;
+              result = {
+                ref,
+                hash: hash(capabilityGuides[guideRef]),
+                ...(deliveredGuides.has(guideRef)
+                  ? { reused: true }
+                  : { content: capabilityGuides[guideRef] }),
+              };
+              deliveredGuides.add(guideRef);
+              this.toolEvent(r, "read_guide", "succeeded", attempt);
+            }
+          } else if (call.name === "read_scaffold") {
+            this.toolEvent(r, "read_scaffold", "started", attempt);
+            result =
+              Object.keys(call.args).length === 0 && context.scaffold
+                ? context.scaffold
+                : {
+                    error: "INVALID_SCAFFOLD_READ",
+                    message: "骨架读取参数无效",
+                  };
+            this.toolEvent(r, "read_scaffold", "succeeded", attempt);
           } else if (call.name === "patch_candidate") {
             this.toolEvent(r, "patch_candidate", "started", attempt);
             this.toolEvent(

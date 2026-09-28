@@ -13,32 +13,13 @@ import { typedWorkflowMemberDriver } from "./member-driver-fixture.js";
 import { candidateSource, source } from "./evolution-fixture.js";
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
 import { tagsTrimOnlyMemberCases } from "./member-case-fixtures.js";
+import { tagsReferenceSource } from "../../src/server/capability-guides.js";
 import {
   assertFormalFingerprintUnchanged,
   formalWorkspaceFingerprint,
 } from "../../scripts/lib/shortened-real-model.js";
 
-const tagsTrimOnlySource = `export default {
-  contribute() {
-    return {
-      fields: [{ key: "tags", label: "标签", type: "text" }],
-      commands: [{ id: "setTags", label: "设标签", from: ["open", "done"] }],
-    };
-  },
-  decide(data) {
-    const { task, action, input } = data;
-    if (action === "setTags") {
-      const tags = String(input?.tags ?? "").trim();
-      if (!tags) return { kind: "reject", message: "标签为空" };
-      return {
-        kind: "commit",
-        state: task.state,
-        fields: { ...task.fields, tags },
-      };
-    }
-    return { kind: "reject", message: "未知动作" };
-  },
-};`;
+const tagsTrimOnlySource = tagsReferenceSource;
 
 const tagsLowercaseSource = `export default {
   contribute() {
@@ -140,7 +121,10 @@ test("缩短试跑两阶段桩：新增 tags 去空格 → 确认修订后升级
       ) {
         const content = JSON.stringify(request.history);
         if (!content.includes("read_contract"))
-          return { ...toolReply("read_contract", {}), history: request.history };
+          return {
+            ...toolReply("read_contract", {}),
+            history: request.history,
+          };
         if (!content.includes("read_current_source"))
           return {
             ...toolReply("read_current_source", {}),

@@ -24,6 +24,19 @@ export const tagsTrimOnlyMemberCases = [
     input: { tags: "   " },
     expected: { kind: "reject" as const },
   },
+  {
+    name: "标签保留未知字段",
+    member: "tags",
+    state: "open",
+    fields: { retained: "原值" },
+    action: "setTags",
+    input: { tags: "  新标签  " },
+    expected: {
+      kind: "commit" as const,
+      state: "open",
+      fields: { retained: "原值", tags: "新标签" },
+    },
+  },
 ];
 
 export const tagsMemberCases = [

@@ -411,6 +411,14 @@ async function exerciseExperience(
       field,
       "Evaluator binding: frozen input field absent from actual form",
     );
+    await page.getByLabel(field.label, { exact: true }).fill("   ");
+    const blank = await responseForAction(page, commandResponse, () =>
+      actionButton(page, bindings.tags!.actionLabel).click(),
+    );
+    assert.ok(
+      blank.status() >= 400,
+      "Blank tag must be rejected by the real browser path",
+    );
     await page.getByLabel(field.label, { exact: true }).fill("  BrowserTag  ");
     const saved = await responseForAction(page, commandResponse, () =>
       actionButton(page, bindings.tags!.actionLabel).click(),

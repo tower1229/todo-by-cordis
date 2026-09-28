@@ -137,7 +137,9 @@ function workflowUnchangedForUpgrade(
       (JSON.parse(workflowSource) as { files: unknown }).files,
     );
     const baselineFiles = Object.fromEntries(
-      Object.entries(base.bundle.files).filter(([path]) => path !== "business/contract.ts"),
+      Object.entries(base.bundle.files).filter(
+        ([path]) => path !== "business/contract.ts",
+      ),
     );
     // JSON property/array order is transport formatting, not workflow source.
     // Every business path and source byte must still match the trusted baseline.
@@ -261,8 +263,13 @@ export class EvolutionDomain implements Domain {
   }
   planningInstruction = planningInstruction;
   planningTools = planningTools;
-  read(name: string, args: Record<string, unknown>, context: Investigation) {
-    return readInvestigation(name, args, context);
+  read(
+    name: string,
+    args: Record<string, unknown>,
+    context: Investigation,
+    delivered: PlanEvidence[] = [],
+  ) {
+    return readInvestigation(name, args, context, delivered);
   }
   parse(value: unknown, context: Investigation, seen: PlanEvidence[]) {
     const parsed = parsePlan(value, context, seen);
@@ -416,12 +423,35 @@ export class EvolutionDomain implements Domain {
   }
   generation(target: Target) {
     const base = this.workspace.release.get(target.baseVersion);
+    const goal = target.payload as Goal;
     return {
       contract,
       source: base.source,
+      scaffold: {
+        writablePaths: goal.scope ?? [],
+        memberPluginIds: [
+          ...(goal.memberAdditions ?? []),
+          ...(goal.memberUpgrades ?? []),
+        ].map((member) => member.pluginId),
+        inheritedMembers: resolveVersionMembers(base)
+          .filter(
+            (member) =>
+              !(goal.memberUpgrades ?? []).some(
+                (upgrade) => upgrade.pluginId === member.pluginId,
+              ),
+          )
+          .map(({ pluginId, versionId, enabled, role }) => ({
+            pluginId,
+            versionId,
+            enabled,
+            role,
+          })),
+        contractInjection:
+          "宿主仅向已授权的主工作流 business/* 构建注入 business/contract.ts；成员源码不接受契约注入",
+      },
       instruction: (target.payload as Goal).memberEnabled
         ? `The frozen plan only changes member enabled status: ${JSON.stringify((target.payload as Goal).memberEnabled)}. Read read_contract and read_current_source, then submit_candidate with {source: read_current_source.source} byte-for-byte unchanged, no members or files. The host records and validates the status candidate; never edit implementation, acceptance or publish.`
-        : `Implement the frozen plan using submit_candidate with files [{path,content}] and optional members [{pluginId,source}] when the plan declares memberAdditions or memberUpgrades. Read read_contract and read_current_source first. When upgrading an existing auxiliary member, call read_member with that pluginId and its exact versionId from the frozen composition before rewriting. The business artifact requires business/entry.ts (default export a plain Plugin object with own describe/decide methods, never a class instance or prototype methods), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed. Only the workflow files receive business/contract.ts from the trusted host; never submit it. Workflow files may use type imports from ./contract.js and other imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. Any action requiring user input must return input-required with its declared field keys and labels when those input keys are absent, so the host action form can collect values; explicitly supplied invalid values must still reject. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. Frozen memberCases are isolated Workspace assertions for auxiliary members (target member, action, initial data, input, expected final data or reject); implement them, do not rely on smoke. view fields must exactly match describe().fields keys in order. Auxiliary members[].source is a separate self-contained module, not a workflow Plugin and not linked to files: no imports or re-exports (including import type or ./contract.js). Use plain JavaScript or inline erasable types. Export contribute/decide as needed; register the frozen member actions in contribute.commands. Do not describe a second workflow. UI slots are optional because the host renders declared actions and input-required forms; if present, only slot "task.detail" is supported and each registration requires a non-empty title. When memberAdditions is set, submit exactly those pluginIds as members with complete JavaScript module source (export default plugin with contribute/decide as needed); host records them as new auxiliary members. When memberUpgrades is set, submit exactly those existing auxiliary pluginIds with replacement source; host records new versionIds and inherits unmodified members with exact versionId/enabled/role. If only upgrading auxiliaries and the workflow source is unchanged from the base, preserve the exact source; for a file-bundle plan submit its parsed files without edits (the source field is only allowed when exposed by submit_candidate), so the host can pin the workflow member to the exact base versionId. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
+        : `First read_scaffold for the frozen packaging, contract injection and inherited composition; read_guide can fetch an exact capability guide such as guide/command.register on demand. Guide contents do not grant scope or verification authority. Implement the frozen plan using submit_candidate with files [{path,content}] and optional members [{pluginId,source}] when the plan declares memberAdditions or memberUpgrades. Read read_contract and read_current_source first. When upgrading an existing auxiliary member, call read_member with that pluginId and its exact versionId from the frozen composition before rewriting. The business artifact requires business/entry.ts (default export a plain Plugin object with own describe/decide methods, never a class instance or prototype methods), business/view.ts (default JSON serializable presentation {title,fields:string[]}), business/config.json (business data only), business/compatibility.json ({"preserveUnknownFields":true}), and optional business/*.ts providers/interfaces. Only exact planned writable paths are allowed. Only the workflow files receive business/contract.ts from the trusted host; never submit it. Workflow files may use type imports from ./contract.js and other imports may only be relative './*.js' resolving within submitted TS files; no runtime dependencies, IO, globals, eval, any or enum. Config can be represented in a typed business module when used; JSON config and compatibility are versioned data, not scripts. Keep pluginId, name, existing states/actions, fields and unknown task.fields. workflowRules require trimmed Unicode lengths and required-input form on complete; reopen preserves fields. Any action requiring user input must return input-required with its declared field keys and labels when those input keys are absent, so the host action form can collect values; explicitly supplied invalid values must still reject. extensions define additional actions/fields with frozen cases; implement all of them, do not weaken cases. Frozen memberCases are isolated Workspace assertions for auxiliary members (target member, action, initial data, input, expected final data or reject); implement them, do not rely on smoke. view fields must exactly match describe().fields keys in order. Auxiliary members[].source is a separate self-contained module, not a workflow Plugin and not linked to files: no imports or re-exports (including import type or ./contract.js). Use plain JavaScript or inline erasable types. Export contribute/decide as needed; register the frozen member actions in contribute.commands. Do not describe a second workflow. UI slots are optional because the host renders declared actions and input-required forms; if present, only slot "task.detail" is supported and each registration requires a non-empty title. When memberAdditions is set, submit exactly those pluginIds as members with complete JavaScript module source (export default plugin with contribute/decide as needed); host records them as new auxiliary members. When memberUpgrades is set, submit exactly those existing auxiliary pluginIds with replacement source; host records new versionIds and inherits unmodified members with exact versionId/enabled/role. If only upgrading auxiliaries and the workflow source is unchanged from the base, preserve the exact source; for a file-bundle plan submit its parsed files without edits (the source field is only allowed when exposed by submit_candidate), so the host can pin the workflow member to the exact base versionId. Host builds and independently checks; repair real errors within scope. report_blocker if scope/control changes are necessary. Never publish or invent a pass report. Successful validation waits for user apply.`,
     };
   }
   readMember(pluginId: string, versionId: string) {
@@ -489,8 +519,7 @@ export class EvolutionDomain implements Domain {
     if (
       goal.repairEvidence &&
       (goal.repairEvidence.baseVersion !== base.id ||
-        goal.repairEvidence.definitionHash !==
-          acceptanceDefinitionHash(goal))
+        goal.repairEvidence.definitionHash !== acceptanceDefinitionHash(goal))
     )
       throw new ProtectedCandidateError("修复断言与旧版证据不一致");
     stage("构建候选");
@@ -992,7 +1021,12 @@ export class EvolutionDomain implements Domain {
         )),
       );
     } catch (error: unknown) {
-      const { id: _id, entry: _entry, createdAt: _createdAt, ...artifact } = candidate;
+      const {
+        id: _id,
+        entry: _entry,
+        createdAt: _createdAt,
+        ...artifact
+      } = candidate;
       const failed = this.workspace.release.record({
         ...artifact,
         evidence: {
