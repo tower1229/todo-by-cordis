@@ -287,6 +287,7 @@ for (const endBeforeFire of [true, false]) {
     const { EvolutionDomain } = await import(
       "../../src/server/evolution-domain.js"
     );
+    const { bindPlan, capture } = await import("../../src/server/planning.js");
     const { createControllableClock } = await import(
       "../../src/server/host/clock.js"
     );
@@ -373,7 +374,7 @@ for (const endBeforeFire of [true, false]) {
       sessions,
     );
     // Seed a verified, unapplied candidate; all session and business operations below use the real browser/control plane.
-    const plan = {
+    const planDraft = {
       id: "schedule-plan",
       compositionRevision: workspace.composition().revision,
       baseVersion: formalVersion.id,
@@ -391,6 +392,10 @@ for (const endBeforeFire of [true, false]) {
       cases: [],
       steps: [],
       unresolved: [],
+    };
+    const plan = {
+      ...planDraft,
+      binding: bindPlan(planDraft, capture(workspace), []),
     };
     const run = {
       id: "schedule-run",

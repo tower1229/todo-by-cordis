@@ -9,7 +9,14 @@ import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { createApp } from "../../src/server/app.js";
 import type { Driver } from "../../src/evolution/driver.js";
 import { describeBlockers } from "../../src/shared/assistant.js";
-import { capture, readInvestigation } from "../../src/server/planning.js";
+import {
+  bindPlan,
+  capture,
+  planBindingFailure,
+  readInvestigation,
+} from "../../src/server/planning.js";
+import { capabilityGuides } from "../../src/server/capability-guides.js";
+import { hash } from "../../src/release/storage.js";
 import { createControllableClock } from "../../src/server/host/clock.js";
 
 test("investigation separates online scheduler health, registration, use and checker coverage", async (t) => {
@@ -128,6 +135,140 @@ test("capability guides are delivered on demand and only delivered hashes count 
     context,
   );
   assert.ok("error" in denied);
+  const original = capabilityGuides["guide/command.register"];
+  try {
+    capabilityGuides["guide/command.register"] =
+      `${original}\nchanged during investigation`;
+    const stale = readInvestigation(
+      "read_guides",
+      { refs: ["guide/command.register"] },
+      context,
+    );
+    assert.ok("error" in stale);
+    assert.equal(stale.error, "REF_STALE");
+  } finally {
+    capabilityGuides["guide/command.register"] = original;
+  }
+});
+
+test("frozen plan rejects changed material, provider, authorization and checker while ignoring unrelated capability", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-plan-binding-"));
+  const workspace = await Workspace.open(join(dir, "workspace.db"));
+  t.after(async () => {
+    await workspace.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const context = capture(workspace);
+  const guide = "guide/command.register";
+  const binding = bindPlan(
+    {
+      cases: [
+        {
+          given: "任务待办",
+          when: "完成",
+          then: "已完成",
+          checker: "workflow/1",
+        },
+      ],
+      capabilityChanges: [],
+      requiredCapabilities: [
+        {
+          interfaceId: "schedule.runtime",
+          providerId: "host:online-scheduler",
+        },
+      ],
+    },
+    context,
+    [
+      { ref: "active-source", hash: context.files["active-source"].hash },
+      { ref: guide, hash: hash(capabilityGuides[guide]) },
+    ],
+  );
+  assert.equal(planBindingFailure(binding, context), undefined);
+  const unrelated = structuredClone(context);
+  unrelated.capabilities.push({
+    ...context.capabilities[0],
+    interfaceId: "unrelated/1",
+  });
+  assert.equal(planBindingFailure(binding, unrelated), undefined);
+  const changedFile = structuredClone(context);
+  changedFile.files["active-source"].hash = "stale-cache";
+  assert.match(planBindingFailure(binding, changedFile)!, /调查资料已变化/);
+  const changedProvider = structuredClone(context);
+  const provider = changedProvider.capabilities.find(
+    (item) => item.interfaceId === "schedule.runtime",
+  )!;
+  provider.providerVersion = "schedule.runtime/2";
+  assert.match(planBindingFailure(binding, changedProvider)!, /所需能力已变化/);
+  provider.providerVersion = context.capabilities.find(
+    (item) => item.interfaceId === "schedule.runtime",
+  )!.providerVersion;
+  provider.contractVersion = "schedule.runtime/2";
+  assert.match(planBindingFailure(binding, changedProvider)!, /所需能力已变化/);
+  provider.contractVersion = context.capabilities.find(
+    (item) => item.interfaceId === "schedule.runtime",
+  )!.contractVersion;
+  provider.authorized = false;
+  assert.match(planBindingFailure(binding, changedProvider)!, /所需能力已变化/);
+  const changedChecker = structuredClone(binding);
+  changedChecker.checkers[0].version = "obsolete-checker";
+  assert.match(planBindingFailure(changedChecker, context)!, /检查器已变化/);
+  const workflow = bindPlan(
+    {
+      cases: [
+        { given: "待办", when: "完成", then: "已完成", checker: "workflow/1" },
+      ],
+      capabilityChanges: [
+        {
+          capability: "workflow",
+          provider: "active-source",
+          consumers: [],
+          change: "扩充完成规则",
+        },
+      ],
+    },
+    context,
+    [],
+  );
+  assert.ok(
+    workflow.capabilities.some(
+      (item) =>
+        item.interfaceId === "workflow.provide" &&
+        item.providerId === context.pluginId,
+    ),
+  );
+  const changedWorkflow = structuredClone(context);
+  changedWorkflow.capabilities.find(
+    (item) => item.interfaceId === "workflow.provide",
+  )!.providerVersion = "incompatible-provider";
+  assert.match(
+    planBindingFailure(workflow, changedWorkflow)!,
+    /所需能力已变化/,
+  );
+  const memberEnabled = bindPlan(
+    {
+      cases: [],
+      capabilityChanges: [],
+      memberEnabled: { pluginId: "tags", enabled: false },
+    },
+    context,
+    [],
+  );
+  assert.ok(
+    memberEnabled.checkers.some((item) => item.id === "host-member-enabled/1"),
+  );
+  const unknownChecker = bindPlan(
+    {
+      cases: [
+        { given: "输入", when: "执行", then: "结果", checker: "unknown/1" },
+      ],
+      capabilityChanges: [],
+    },
+    context,
+    [],
+  );
+  assert.match(planBindingFailure(unknownChecker, context)!, /检查器已变化/);
+  assert.match(planBindingFailure(undefined, context)!, /缺少宿主资料快照/);
 });
 
 test("describeBlockers maps maintainer capability gaps to a short user message", () => {

@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
 import { Evolution } from "../../src/evolution/evolution.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
+import { bindPlan, capture } from "../../src/server/planning.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
 import { hash } from "../../src/release/storage.js";
@@ -57,7 +58,7 @@ function memberEnabledPlan(
         given: "tags 已启用且任务含 tags 字段",
         when: "应用停用候选",
         then: "贡献退出且字段值保留",
-        checker: "host",
+        checker: "host-member-enabled/1",
       },
     ],
     steps: [
@@ -80,6 +81,14 @@ function memberEnabledPlan(
   };
 }
 
+function bindFixturePlan(plan: InvestigatedPlan, workspace: Workspace) {
+  const context = capture(workspace);
+  plan.binding = bindPlan(plan, context, [
+    { ref: "active-source", hash: context.files["active-source"].hash },
+    { ref: "active-contract", hash: context.files["active-contract"].hash },
+  ]);
+}
+
 /** Fixture: dual composition + enable-status candidate already in awaiting-apply. */
 async function awaitingMemberEnabledApply(
   t: TestContext,
@@ -96,6 +105,7 @@ async function awaitingMemberEnabledApply(
   const before = w.composition();
   const candidateVersion = w.recordMemberEnabledVersion(pluginId, enabled);
   const plan = memberEnabledPlan(before.versionId, before.revision);
+  bindFixturePlan(plan, w);
   const candidateId = "cand-member-enabled";
   const evidenceHash = hash({
     candidateId,
@@ -131,7 +141,7 @@ async function awaitingMemberEnabledApply(
         target: {
           kind: "plugin",
           baseVersion: before.versionId,
-          payload: { kind: "member-enabled", pluginId, enabled },
+          payload: { kind: "member-enabled", pluginId, enabled, binding: plan.binding },
         },
         plan,
         versionId: candidateVersion.id,
@@ -387,6 +397,7 @@ test("self-iteration apply re-enable restores contributions with retained field 
   const before = w.composition();
   const candidateVersion = w.recordMemberEnabledVersion("tags", true);
   const plan = memberEnabledPlan(before.versionId, before.revision);
+  bindFixturePlan(plan, w);
   plan.summary = "再启用标签插件";
   plan.outcome = "启用 tags";
   plan.changes = ["将 tags 成员 enabled 设为 true"];
@@ -424,7 +435,7 @@ test("self-iteration apply re-enable restores contributions with retained field 
         target: {
           kind: "plugin",
           baseVersion: before.versionId,
-          payload: { kind: "member-enabled", pluginId: "tags", enabled: true },
+          payload: { kind: "member-enabled", pluginId: "tags", enabled: true, binding: plan.binding },
         },
         plan,
         versionId: candidateVersion.id,
@@ -596,6 +607,7 @@ test("impure enable-status candidate does not take member-enabled experience sho
     members: pure.members!,
   });
   const plan = memberEnabledPlan(before.versionId, before.revision);
+  bindFixturePlan(plan, w);
   const candidateId = "cand-member-impure";
   const evidenceHash = hash({
     candidateId,
@@ -630,7 +642,7 @@ test("impure enable-status candidate does not take member-enabled experience sho
         target: {
           kind: "plugin",
           baseVersion: before.versionId,
-          payload: { kind: "member-enabled", pluginId: "tags", enabled: false },
+          payload: { kind: "member-enabled", pluginId: "tags", enabled: false, binding: plan.binding },
         },
         plan,
         versionId: impure.id,

@@ -195,6 +195,12 @@ test("缩短试跑两阶段桩：新增 tags 去空格 → 确认修订后升级
     });
     const awaiting = await settle(e, "awaiting-apply");
     assert.equal(awaiting.status, "awaiting-apply");
+    if (operation === "phase2")
+      assert.ok(
+        awaiting.plan.binding?.materials.some(
+          (item) => item.ref === "guide/command.register",
+        ),
+      );
     assertFormalFingerprintUnchanged(
       `${operation}-before-apply`,
       formalBefore,

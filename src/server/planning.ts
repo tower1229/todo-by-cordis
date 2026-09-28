@@ -35,9 +35,156 @@ import type {
 import type { ExtensionCapabilityStatus } from "./business/contracts.js";
 import type {
   InvestigatedPlan,
+  PlanBinding,
   PlanEvidence,
   WorkflowRule,
 } from "../shared/assistant.js";
+
+const checkerSources: Record<string, string> = {
+  "workflow/1": "src/server/evolution-domain.ts",
+  "business-actions/1": "src/server/business-verification.ts",
+  "workspace/1": "src/server/workspace-acceptance.ts",
+  "host-member-enabled/1": "src/server/evolution-domain.ts",
+};
+
+function checkerVersion(id: string): string | undefined {
+  const source = checkerSources[id];
+  return source
+    ? hash({ id, source: readFileSync(resolve(source), "utf8") })
+    : undefined;
+}
+
+export function bindPlan(
+  plan: Pick<
+    InvestigatedPlan,
+    | "requiredCapabilities"
+    | "capabilityChanges"
+    | "cases"
+    | "memberCases"
+    | "memberEnabled"
+  >,
+  context: Investigation,
+  delivered: PlanEvidence[],
+): PlanBinding {
+  const materials = delivered.filter(
+    (item) =>
+      context.files[item.ref] || Object.hasOwn(capabilityGuides, item.ref),
+  );
+  const needed = [
+    ...(plan.requiredCapabilities ?? []).map((item) => ({
+      interfaceId: item.interfaceId,
+      providerId: item.providerId,
+    })),
+    ...plan.capabilityChanges
+      .filter((item) => item.provider.startsWith("member:"))
+      .map((item) => ({
+        interfaceId: item.capability,
+        providerId: item.provider.slice(7),
+      })),
+    ...plan.capabilityChanges
+      .filter((item) => item.provider === "active-source")
+      .map(() => ({
+        interfaceId: "workflow.provide",
+        providerId: context.pluginId,
+      })),
+    ...plan.capabilityChanges
+      .filter((item) => item.provider.startsWith("host:"))
+      .map((item) => ({
+        interfaceId: item.capability,
+        providerId: item.provider,
+      })),
+  ];
+  const capabilities = needed
+    .filter(
+      (item, index) =>
+        needed.findIndex(
+          (other) =>
+            other.interfaceId === item.interfaceId &&
+            other.providerId === item.providerId,
+        ) === index,
+    )
+    .flatMap((item) => {
+      const current = context.capabilities.find(
+        (capability) =>
+          capability.interfaceId === item.interfaceId &&
+          capability.providerId === item.providerId,
+      );
+      if (!current) return [];
+      return [
+        {
+          ...item,
+          providerVersion: current.providerVersion,
+          contractVersion: current.contractVersion,
+          ready: current.ready,
+          enabled: current.enabled,
+          authorized: current.authorized,
+          checkerCoverage: current.checkerCoverage,
+        },
+      ];
+    });
+  const checkerIds = new Set([
+    ...plan.cases.map((item) => item.checker),
+    ...(plan.memberEnabled ? ["host-member-enabled/1"] : []),
+    ...(plan.memberCases?.length ? ["workspace/1"] : []),
+    ...(plan.requiredCapabilities ?? [])
+      .map((item) => item.checker)
+      .filter((item): item is string => !!item),
+  ]);
+  return {
+    guideCatalog: context.guideHashes,
+    materials,
+    capabilities,
+    checkers: [...checkerIds].map((id) => ({
+      id,
+      version: context.checkerVersions[id] ?? "",
+    })),
+  };
+}
+
+export function planBindingFailure(
+  binding: PlanBinding | undefined,
+  current: Investigation,
+): string | undefined {
+  if (!binding) return "计划缺少宿主资料快照";
+  for (const item of binding.materials) {
+    const currentHash = item.ref.startsWith("guide/")
+      ? Object.hasOwn(capabilityGuides, item.ref)
+        ? hash(capabilityGuides[item.ref])
+        : undefined
+      : current.files[item.ref]?.hash;
+    if (currentHash !== item.hash)
+      return `调查资料已变化：${item.ref}；请重新调查并确认`;
+  }
+  for (const item of binding.capabilities) {
+    const live = current.capabilities.find(
+      (capability) =>
+        capability.interfaceId === item.interfaceId &&
+        capability.providerId === item.providerId,
+    );
+    if (
+      !live ||
+      !live.installed ||
+      live.enabled !== item.enabled ||
+      !live.healthy ||
+      live.ready !== item.ready ||
+      !live.authorized ||
+      live.providerVersion !== item.providerVersion ||
+      live.contractVersion !== item.contractVersion ||
+      !item.checkerCoverage.every((checker) =>
+        live.checkerCoverage.includes(checker),
+      )
+    )
+      return `所需能力已变化：${item.interfaceId} / ${item.providerId}；请重新调查并确认`;
+  }
+  for (const item of binding.checkers)
+    if (
+      !item.version ||
+      !current.checkerVersions[item.id] ||
+      current.checkerVersions[item.id] !== item.version
+    )
+      return `检查器已变化：${item.id}；请重新调查并确认`;
+  return undefined;
+}
 
 // This is a host-owned read catalog, never a model-supplied path or executable.
 const sources = [
@@ -107,6 +254,8 @@ export type InvestigationCapability = {
 };
 
 export type Investigation = {
+  guideHashes: Record<string, string>;
+  checkerVersions: Record<string, string>;
   revision: number;
   versionId: string;
   pluginId: string;
@@ -345,6 +494,15 @@ export function capture(workspace: Workspace): Investigation {
     }),
   );
   return {
+    guideHashes: Object.fromEntries(
+      Object.entries(capabilityGuides).map(([ref, content]) => [
+        ref,
+        hash(content),
+      ]),
+    ),
+    checkerVersions: Object.fromEntries(
+      Object.keys(checkerSources).map((id) => [id, checkerVersion(id)!]),
+    ),
     revision: composition.revision,
     versionId: composition.versionId,
     pluginId: active.pluginId,
@@ -659,10 +817,19 @@ export function readInvestigation(
         error: "REF_UNAVAILABLE",
         message: "指南引用或参数无效；只能读取目录中的精确 ref",
       };
+    if (
+      (refs as CapabilityGuideRef[]).some(
+        (ref) => hash(capabilityGuides[ref]) !== context.guideHashes[ref],
+      )
+    )
+      return {
+        error: "REF_STALE",
+        message: "指南在调查期间已变化，请重新调查",
+      };
     const hashes = (known ?? {}) as Record<string, unknown>;
     const documents = (refs as CapabilityGuideRef[]).map((ref) => {
       const content = capabilityGuides[ref];
-      const guideHash = hash(content);
+      const guideHash = context.guideHashes[ref];
       return {
         ref,
         hash: guideHash,
@@ -713,7 +880,7 @@ export function readInvestigation(
             },
             guideIndex: capabilityGuideIndex.map((ref) => ({
               ref,
-              hash: hash(capabilityGuides[ref]),
+              hash: context.guideHashes[ref],
             })),
             planningRequirements: {
               requiredEvidence,
@@ -1285,6 +1452,21 @@ export function parsePlan(
       dataImpact: planText(v.dataImpact),
       excluded: strings(v.excluded),
       evidence,
+      binding: bindPlan(
+        {
+          cases: [
+            ...cases,
+            ...extensionCases(extensions),
+            ...memberCaseSummaries(memberCases),
+          ],
+          memberCases,
+          memberEnabled,
+          requiredCapabilities,
+          capabilityChanges,
+        },
+        context,
+        seen,
+      ),
       workflowRules,
       ruleChanges,
       acceptanceChanges,
