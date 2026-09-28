@@ -11,6 +11,7 @@ import type {
   AssistantStep,
   ExperienceReport,
   InvestigatedPlan,
+  PlanBinding,
   PlanEvidence,
 } from "../shared/assistant.js";
 import { describeBlockers } from "../shared/assistant.js";
@@ -57,7 +58,7 @@ export interface Domain {
     signal: AbortSignal,
   ): Promise<NonNullable<InvestigatedPlan["repairEvidence"]> | undefined>;
   target(plan: InvestigatedPlan): Target;
-  check(target: Target, revision: number): void;
+  check(target: Target, revision: number, plan?: InvestigatedPlan): void;
   isActiveVersion(versionId: string): boolean;
   isReadyVersion(versionId: string): boolean;
   acceptanceEvidence(versionId: string): {
@@ -259,6 +260,22 @@ export class Evolution {
       },
       updatedAt: new Date().toISOString(),
     };
+  }
+  private checkPlan(
+    r: RecordRun,
+    target: Target,
+    revision: number,
+    plan: InvestigatedPlan,
+  ) {
+    try {
+      this.domain.check(target, revision, plan);
+    } catch (error) {
+      if (error instanceof AppError && error.code === "PLAN_STALE") {
+        r.run = { ...r.run, staleReason: error.message };
+        this.save(r);
+      }
+      throw error;
+    }
   }
   private steps(r: RecordRun): AssistantStep[] {
     return "steps" in r.run ? r.run.steps : [];
@@ -552,7 +569,12 @@ export class Evolution {
           409,
         );
       const plan = record.run.plan;
-      this.domain.check(this.domain.target(plan), plan.compositionRevision);
+      this.checkPlan(
+        record,
+        this.domain.target(plan),
+        plan.compositionRevision,
+        plan,
+      );
       const revision = {
         ...record.run.acceptanceRevision,
         confirmedAt: new Date().toISOString(),
@@ -586,7 +608,7 @@ export class Evolution {
           409,
         );
       const target = this.domain.target(plan);
-      this.domain.check(target, plan.compositionRevision);
+      this.checkPlan(record, target, plan.compositionRevision, plan);
       record.target = target;
       record.plan = structuredClone(plan);
       record.versionId = undefined;
@@ -619,7 +641,7 @@ export class Evolution {
         throw new AppError("UNAVAILABLE", "候选体验会话未配置", 503);
       const plan = record.run.plan as InvestigatedPlan;
       const target = record.target ?? this.domain.target(plan);
-      this.domain.check(target, plan.compositionRevision);
+      this.checkPlan(record, target, plan.compositionRevision, plan);
       const snapshot = await this.sessions.start({
         runId: record.run.id,
         candidateId: candidate.id,
@@ -643,7 +665,6 @@ export class Evolution {
       };
     } else if (command.type === "apply") {
       record = this.get(command.runId);
-      this.sessions?.endForRun(record.run.id);
       if (record.run.status !== "awaiting-apply" || !("plan" in record.run))
         throw new AppError("PLAN_STALE", "没有可应用的候选", 409);
       const plan = record.run.plan as InvestigatedPlan;
@@ -661,7 +682,8 @@ export class Evolution {
           409,
         );
       const target = record.target ?? this.domain.target(plan);
-      this.domain.check(target, command.compositionRevision);
+      this.checkPlan(record, target, command.compositionRevision, plan);
+      this.sessions?.endForRun(record.run.id);
       record.target = target;
       record.versionId = candidate.versionId;
       record.applyRevision = command.compositionRevision;
@@ -1311,7 +1333,7 @@ export class Evolution {
     const revision = plan.compositionRevision;
     signal.throwIfAborted();
     if (!this.alive(r.run.id)) return;
-    this.domain.check(target, revision);
+    this.domain.check(target, revision, plan);
     const context = this.domain.generation(target);
     const deliveredGuides = new Set<CapabilityGuideRef>();
     let history: unknown[] = [];
@@ -1324,6 +1346,7 @@ export class Evolution {
     const failures = new Set<string>();
     while (r.candidates < this.limits.candidates) {
       if (!this.alive(r.run.id)) return;
+      this.domain.check(target, revision, plan);
       const attempt = r.candidates + 1;
       const intentNote = plan.compositionIntent
         ? `（${compositionIntentLabel(plan.compositionIntent)}）`
@@ -1543,9 +1566,27 @@ export class Evolution {
               );
             } else {
               const guideRef = ref as CapabilityGuideRef;
+              const guideHash = hash(capabilityGuides[guideRef]);
+              if (plan.binding?.guideCatalog[guideRef] !== guideHash)
+                throw new AppError(
+                  "PLAN_STALE",
+                  `指南已变化：${guideRef}；请重新调查并确认`,
+                  409,
+                );
+              const bindings = [
+                plan.binding,
+                (target.payload as { binding?: PlanBinding }).binding,
+                r.run.status === "executing" ? r.run.plan.binding : undefined,
+              ];
+              for (const binding of bindings) {
+                if (!binding) throw new Error("计划缺少宿主资料快照");
+                if (!binding.materials.some((item) => item.ref === guideRef))
+                  binding.materials.push({ ref: guideRef, hash: guideHash });
+              }
+              this.save(r);
               result = {
                 ref,
-                hash: hash(capabilityGuides[guideRef]),
+                hash: guideHash,
                 ...(deliveredGuides.has(guideRef)
                   ? { reused: true }
                   : { content: capabilityGuides[guideRef] }),
@@ -1574,6 +1615,7 @@ export class Evolution {
             );
             throw new Error("未授权工具：patch_candidate 不在当前执行阶段开放");
           } else if (call.name === "submit_candidate") {
+            this.domain.check(target, revision, plan);
             submitted = true;
             this.toolEvent(r, "submit_candidate", "started", attempt);
             this.endStep(

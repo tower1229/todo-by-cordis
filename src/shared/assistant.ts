@@ -43,6 +43,21 @@ export type WorkflowRule = {
   maxLength: number;
 };
 export type PlanEvidence = { ref: string; hash: string };
+export type PlanBinding = {
+  guideCatalog: Record<string, string>;
+  materials: PlanEvidence[];
+  capabilities: {
+    interfaceId: string;
+    providerId: string;
+    providerVersion: string;
+    contractVersion: string | null;
+    ready: boolean;
+    enabled: boolean;
+    authorized: boolean;
+    checkerCoverage: string[];
+  }[];
+  checkers: { id: string; version: string }[];
+};
 export type AcceptanceRevision = {
   id: string;
   planId: string;
@@ -66,6 +81,7 @@ export type InvestigatedPlan = AssistantPlan & {
   ruleChanges: string[];
   excluded: string[];
   evidence: PlanEvidence[];
+  binding?: PlanBinding;
   capabilityChanges: {
     capability: string;
     provider: string;
@@ -118,6 +134,7 @@ export type RequestRevision = {
   createdAt: string;
 };
 type Run = {
+  staleReason?: string;
   historicalPlan?: AssistantPlan;
   diagnostics?: string[];
   intent?: "improve" | "repair";

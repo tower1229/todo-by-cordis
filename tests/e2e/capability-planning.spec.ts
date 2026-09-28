@@ -10,6 +10,8 @@ import { Evolution } from "../../src/evolution/evolution.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { createApp } from "../../src/server/app.js";
 import { PlanningDriver } from "../app/planning-fixture.js";
+import { ExecutionDriver } from "../app/execution-fixture.js";
+import { ExperienceSessionHost } from "../../src/server/experience-session.js";
 import { activateDual } from "../app/dual-composition-fixture.js";
 import { createControllableClock } from "../../src/server/host/clock.js";
 import { dualWorkflowDefinition } from "../app/dual-composition-fixture.js";
@@ -309,6 +311,7 @@ for (const scenario of cases) {
         ).toHaveCount(0);
       }
     } finally {
+      server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await evolution.close();
       await workspace.close();
@@ -316,6 +319,222 @@ for (const scenario of cases) {
     }
   });
 }
+
+test("browser rejects stale guide before execution and after experience, then accepts a fresh plan", async ({
+  page,
+}) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-stale-guide-browser-"));
+  const workspace = await Workspace.open(join(dir, "workspace.db"));
+  const sessions = new ExperienceSessionHost(workspace);
+  const planning = new PlanningDriver();
+  const execution = new ExecutionDriver(planning);
+  const guideRef = "guide/command.register";
+  const original = capabilityGuides[guideRef];
+  let invalidateDuringExecution = false;
+  const driver: Driver = {
+    async generate(request: ModelRequest, signal) {
+      const reply = await execution.generate(request, signal);
+      if (
+        reply.calls[0]?.name === "propose_plan" &&
+        !JSON.stringify(request.history).includes('"name":"read_guides"')
+      )
+        return {
+          ...reply,
+          calls: [{ name: "read_guides", args: { refs: [guideRef] } }],
+        };
+      if (
+        reply.calls[0]?.name === "submit_candidate" &&
+        invalidateDuringExecution
+      ) {
+        capabilityGuides[guideRef] = `${original}\n资料修订 B`;
+        invalidateDuringExecution = false;
+      }
+      return reply;
+    },
+  };
+  const evolution = new Evolution(
+    workspace.db,
+    driver,
+    new EvolutionDomain(workspace),
+    sessions,
+  );
+  const app = createApp(workspace, evolution, sessions);
+  app.use("/*", serveStatic({ root: "./dist/web" }));
+  app.get("*", serveStatic({ path: "./dist/web/index.html" }));
+  const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 });
+  try {
+    if (!server.listening)
+      await new Promise<void>((resolve) => server.once("listening", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string")
+      throw new Error("No server address");
+    const baseURL = `http://127.0.0.1:${address.port}`;
+    const observe = async () =>
+      (await (await page.request.get(`${baseURL}/api/assistant`)).json()) as {
+        run: {
+          id: string;
+          status: string;
+          message?: string;
+          staleReason?: string;
+          experienceSession?: { status: string };
+          plan: {
+            id: string;
+            binding: { materials: { ref: string; hash: string }[] };
+          };
+        };
+        candidates: { id: string; passed: boolean; evidenceHash: string }[];
+      };
+    await page.goto(baseURL);
+    await page.getByRole("button", { name: "改进应用", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "告诉 AI 你的需求" })
+      .fill("完成前填写复盘");
+    await page.getByRole("button", { name: "发送需求" }).click();
+    await expect.poll(async () => (await observe()).run.status).toBe("ready");
+    const old = await observe();
+    expect(
+      old.run.plan.binding.materials.some((item) => item.ref === guideRef),
+    ).toBe(true);
+    capabilityGuides[guideRef] = `${original}\n资料修订 A`;
+    await page.getByRole("button", { name: "开始执行", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText(
+      `调查资料已变化：${guideRef}`,
+    );
+    expect((await observe()).run.status).toBe("ready");
+    await page.reload();
+    await page.getByRole("button", { name: "改进应用", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText(
+      "请修改需求并重新调查、确认",
+    );
+    expect(workspace.query().total).toBe(0);
+
+    await page.getByRole("button", { name: "修改需求" }).click();
+    await page
+      .getByRole("textbox", { name: "告诉 AI 你的需求" })
+      .fill("完成前填写复盘，按当前指南重新调查");
+    await page.getByRole("button", { name: "发送需求" }).click();
+    await expect.poll(async () => (await observe()).run.status).toBe("ready");
+    const fresh = await observe();
+    expect(fresh.run.plan.id).not.toBe(old.run.plan.id);
+    expect(
+      fresh.run.plan.binding.materials.find((item) => item.ref === guideRef)
+        ?.hash,
+    ).toBe(hash(capabilityGuides[guideRef]));
+    invalidateDuringExecution = true;
+    await page.getByRole("button", { name: "开始执行", exact: true }).click();
+    await expect
+      .poll(async () => (await observe()).run.status, { timeout: 20000 })
+      .toBe("failed");
+    expect((await observe()).run.message).toContain(
+      `调查资料已变化：${guideRef}`,
+    );
+    expect((await observe()).candidates).toHaveLength(0);
+    expect(workspace.query().total).toBe(0);
+
+    await page.getByRole("button", { name: "修改后重试" }).click();
+    await page
+      .getByRole("textbox", { name: "告诉 AI 你的需求" })
+      .fill("完成前填写复盘，执行资料变化后重新调查");
+    await page.getByRole("button", { name: "发送需求" }).click();
+    await expect.poll(async () => (await observe()).run.status).toBe("ready");
+    const executionReady = await observe();
+    await page.getByRole("button", { name: "开始执行", exact: true }).click();
+    await expect
+      .poll(async () => (await observe()).run.status, { timeout: 20000 })
+      .toBe("awaiting-apply");
+    const candidate = (await observe()).candidates.find((item) => item.passed);
+    expect(candidate).toBeTruthy();
+    const experience = await page.request.post(
+      `${baseURL}/api/assistant/commands`,
+      {
+        data: {
+          type: "experience",
+          operationId: randomUUID(),
+          runId: executionReady.run.id,
+          candidateId: candidate!.id,
+        },
+      },
+    );
+    expect(experience.status()).toBe(200);
+    capabilityGuides[guideRef] = `${original}\n资料修订 C`;
+    const apply = await page.request.post(`${baseURL}/api/assistant/commands`, {
+      data: {
+        type: "apply",
+        operationId: randomUUID(),
+        runId: executionReady.run.id,
+        candidateId: candidate!.id,
+        evidenceHash: candidate!.evidenceHash,
+        compositionRevision: workspace.composition().revision,
+      },
+    });
+    expect(apply.status()).toBe(409);
+    expect((await apply.json()).message).toContain(
+      `调查资料已变化：${guideRef}`,
+    );
+    expect((await observe()).run.status).toBe("awaiting-apply");
+    expect((await observe()).run.experienceSession?.status).toBe("active");
+    await page.reload();
+    await page.getByRole("button", { name: "改进应用", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText(
+      "请调整后重新规划、体验并确认新候选",
+    );
+    expect(workspace.query().total).toBe(0);
+
+    const previousVersion = workspace.composition().versionId;
+    await page.getByRole("button", { name: "调整后重新规划" }).click();
+    await page
+      .getByRole("textbox", { name: "告诉 AI 你的需求" })
+      .fill("完成前填写复盘，按最新指南重新调查");
+    await page.getByRole("button", { name: "发送需求" }).click();
+    await expect.poll(async () => (await observe()).run.status).toBe("ready");
+    const renewed = await observe();
+    await page.getByRole("button", { name: "开始执行", exact: true }).click();
+    await expect
+      .poll(async () => (await observe()).run.status, { timeout: 20000 })
+      .toBe("awaiting-apply");
+    const renewedCandidate = (await observe()).candidates.find(
+      (item) => item.passed,
+    )!;
+    const renewedExperience = await page.request.post(
+      `${baseURL}/api/assistant/commands`,
+      {
+        data: {
+          type: "experience",
+          operationId: randomUUID(),
+          runId: renewed.run.id,
+          candidateId: renewedCandidate.id,
+        },
+      },
+    );
+    expect(renewedExperience.status()).toBe(200);
+    const renewedApply = await page.request.post(
+      `${baseURL}/api/assistant/commands`,
+      {
+        data: {
+          type: "apply",
+          operationId: randomUUID(),
+          runId: renewed.run.id,
+          candidateId: renewedCandidate.id,
+          evidenceHash: renewedCandidate.evidenceHash,
+          compositionRevision: workspace.composition().revision,
+        },
+      },
+    );
+    expect(renewedApply.status()).toBe(200);
+    await expect
+      .poll(async () => (await observe()).run.status, { timeout: 20000 })
+      .toBe("succeeded");
+    expect(workspace.composition().versionId).not.toBe(previousVersion);
+    expect(workspace.query().total).toBe(0);
+  } finally {
+    capabilityGuides[guideRef] = original;
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await evolution.close();
+    await workspace.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("browser planning corrects bad guide arguments and rejects an unsent catalog hash", async ({
   page,
@@ -395,6 +614,7 @@ test("browser planning corrects bad guide arguments and rejects an unsent catalo
       page.getByRole("region", { name: "待确认方案" }),
     ).toBeVisible();
   } finally {
+    server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await evolution.close();
     await workspace.close();

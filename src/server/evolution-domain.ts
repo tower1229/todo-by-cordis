@@ -17,6 +17,7 @@ import {
 } from "./workspace-acceptance.js";
 import {
   capture,
+  planBindingFailure,
   planningInstruction,
   planningTools,
   readInvestigation,
@@ -26,6 +27,7 @@ import {
 } from "./planning.js";
 import type {
   PlanEvidence,
+  PlanBinding,
   InvestigatedPlan,
   ExperienceReport,
 } from "../shared/assistant.js";
@@ -67,6 +69,7 @@ type Rule = {
 type MemberAddition = { pluginId: string; name: string };
 type MemberUpgrade = { pluginId: string };
 type Goal = {
+  binding?: PlanBinding;
   memberEnabled?: InvestigatedPlan["memberEnabled"];
   pluginId: string;
   name: string;
@@ -279,6 +282,8 @@ export class EvolutionDomain implements Domain {
     )
       parsed.blockers.push("基础版本已变化，请重新调查");
     const current = capture(this.workspace);
+    const bindingFailure = planBindingFailure(parsed.plan.binding, current);
+    if (bindingFailure) parsed.blockers.push(bindingFailure);
     if (hash(current.files) !== hash(context.files))
       parsed.blockers.push("调查期间实现资料已变化，请重新调查");
     return parsed;
@@ -379,6 +384,7 @@ export class EvolutionDomain implements Domain {
         extensions: plan.extensions,
         scope: plan.writableScope,
         capabilities,
+        binding: plan.binding,
         ...(plan.memberAdditions?.length
           ? { memberAdditions: plan.memberAdditions }
           : {}),
@@ -392,12 +398,15 @@ export class EvolutionDomain implements Domain {
       },
     };
   }
-  check(target: Target, revision: number) {
+  check(target: Target, revision: number, plan?: InvestigatedPlan) {
     if (
       this.workspace.composition().revision !== revision ||
       this.workspace.activeVersion().id !== target.baseVersion
     )
       throw new AppError("PLAN_STALE", "基础版本已变化，请重新规划并确认", 409);
+    const binding = plan?.binding ?? (target.payload as Goal).binding;
+    const failure = planBindingFailure(binding, capture(this.workspace));
+    if (failure) throw new AppError("PLAN_STALE", failure, 409);
   }
   isActiveVersion(versionId: string) {
     return this.workspace.activeVersion().id === versionId;

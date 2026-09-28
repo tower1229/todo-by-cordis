@@ -329,6 +329,14 @@ export function AssistantPanel({
                 执行计划 · 需求修订 {run.plan.requestRevision}
               </h3>
               <PlanSummary plan={run.plan} />
+              {run.staleReason && (
+                <p
+                  role="alert"
+                  className="rounded-md border border-line bg-canvas px-3 py-2 text-sm leading-6"
+                >
+                  {run.staleReason}。请修改需求并重新调查、确认。
+                </p>
+              )}
               {!!run.plan.acceptanceChanges?.length && (
                 <div aria-label="规则比较" className="space-y-3 text-sm">
                   <p className="plan-label">业务验收修订比较</p>
@@ -540,6 +548,14 @@ export function AssistantPanel({
         )}
         {run?.status === "awaiting-apply" && (
           <section className="space-y-5" aria-label="候选结果">
+            {run.staleReason && (
+              <p
+                role="alert"
+                className="rounded-md border border-line bg-canvas px-3 py-2 text-sm leading-6"
+              >
+                {run.staleReason}。请调整后重新规划、体验并确认新候选。
+              </p>
+            )}
             <p
               role="status"
               className="flex items-start gap-2 text-sm leading-6"
