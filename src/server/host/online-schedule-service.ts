@@ -7,6 +7,7 @@ import {
 import type { HostClock } from "./clock.js";
 
 export const ONLINE_SCHEDULER_SERVICE_ID = "host:online-scheduler" as const;
+export const ONLINE_SCHEDULER_CONTRACT = "schedule.runtime/1" as const;
 
 export const onlineScheduleServiceLifecycles = [
   "created",
@@ -53,10 +54,7 @@ export class OnlineScheduleService {
     return this.scheduler.armedCount();
   }
 
-  bind(
-    jobs: ScheduleRegistration[],
-    options: { fire: ScheduleFireHandler },
-  ) {
+  bind(jobs: ScheduleRegistration[], options: { fire: ScheduleFireHandler }) {
     if (this.phase === "released")
       throw new Error("online schedule service already released");
     this.scheduler.arm(jobs, {

@@ -9,6 +9,64 @@ import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { createApp } from "../../src/server/app.js";
 import type { Driver } from "../../src/evolution/driver.js";
 import { describeBlockers } from "../../src/shared/assistant.js";
+import { capture, readInvestigation } from "../../src/server/planning.js";
+import { createControllableClock } from "../../src/server/host/clock.js";
+
+test("investigation separates online scheduler health, registration, use and checker coverage", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-capability-catalog-"));
+  const w = await Workspace.open(join(dir, "workspace.db"), {
+    clock: createControllableClock(Date.parse("2026-09-28T00:00:00Z")),
+  });
+  t.after(async () => {
+    await w.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const inspect = () =>
+    readInvestigation("inspect_application", {}, capture(w));
+  const initial = inspect();
+  if (!("content" in initial)) throw new Error("Inspection failed");
+  const catalog = initial.content as {
+    capabilities: Array<{
+      interfaceId: string;
+      providerId: string;
+      ready: boolean;
+      installed: boolean;
+      healthy: boolean;
+      inUse: boolean;
+      checkerCoverage: string[];
+      contractVersion: string;
+    }>;
+  };
+  const scheduler = catalog.capabilities.find(
+    (item) =>
+      item.interfaceId === "schedule.runtime" &&
+      item.providerId === "host:online-scheduler",
+  );
+  assert.ok(scheduler);
+  assert.equal(scheduler.installed, true);
+  assert.equal(scheduler.ready, true);
+  assert.equal(scheduler.healthy, true);
+  assert.equal(scheduler.inUse, false);
+  assert.equal(scheduler.contractVersion, "schedule.runtime/1");
+  assert.deepEqual(scheduler.checkerCoverage, []);
+  assert.equal(
+    catalog.capabilities.some(
+      (item) => item.interfaceId === "schedule.register" && item.ready,
+    ),
+    false,
+  );
+
+  w.testHarness()?.scheduleService.stop();
+  const stopped = inspect();
+  if (!("content" in stopped)) throw new Error("Inspection failed");
+  const stoppedCatalog = stopped.content as typeof catalog;
+  assert.equal(
+    stoppedCatalog.capabilities.find(
+      (item) => item.interfaceId === "schedule.runtime",
+    )?.healthy,
+    false,
+  );
+});
 
 test("describeBlockers maps maintainer capability gaps to a short user message", () => {
   const described = describeBlockers([
