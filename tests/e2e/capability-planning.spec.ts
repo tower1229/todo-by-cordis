@@ -401,3 +401,61 @@ test("browser planning corrects bad guide arguments and rejects an unsent catalo
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("browser planning can read the bounded task event upgrade guide", async ({
+  page,
+}) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-event-guide-browser-"));
+  const workspace = await Workspace.open(join(dir, "workspace.db"));
+  const base = new PlanningDriver();
+  let readGuide = false;
+  const driver: Driver = {
+    async generate(request: ModelRequest, signal) {
+      const reply = await base.generate(request, signal);
+      if (reply.calls[0]?.name === "propose_plan" && !readGuide) {
+        readGuide = true;
+        return {
+          ...reply,
+          calls: [
+            { name: "read_guides", args: { refs: ["guide/task.events"] } },
+          ],
+        };
+      }
+      return reply;
+    },
+  };
+  const evolution = new Evolution(
+    workspace.db,
+    driver,
+    new EvolutionDomain(workspace),
+  );
+  const app = createApp(workspace, evolution);
+  app.use("/*", serveStatic({ root: "./dist/web" }));
+  app.get("*", serveStatic({ path: "./dist/web/index.html" }));
+  const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 });
+  try {
+    if (!server.listening)
+      await new Promise<void>((resolve) => server.once("listening", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string")
+      throw new Error("No test server address");
+    await page.goto(`http://127.0.0.1:${address.port}`);
+    await page.getByRole("button", { name: "改进应用", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "告诉 AI 你的需求" })
+      .fill("升级标签并订阅任务创建事件");
+    await page.getByRole("button", { name: "发送需求" }).click();
+    await expect
+      .poll(async () => (await evolution.observe()).run?.status)
+      .toBe("ready");
+    const history = JSON.stringify(base.requests.at(-1)?.history);
+    expect(history).toContain("guide/task.events");
+    expect(history).toContain("task.created");
+    expect(history).toContain("不得借事件回调直接写库");
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await evolution.close();
+    await workspace.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
