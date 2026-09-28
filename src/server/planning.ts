@@ -2,7 +2,10 @@ import {
   executableMemberInterfaceDetails,
   executableMemberInterfaces,
 } from "./extensions/registry.js";
-import { ONLINE_SCHEDULER_CONTRACT } from "./host/online-schedule-service.js";
+import {
+  ONLINE_SCHEDULER_CONTRACT,
+  ONLINE_SCHEDULER_SERVICE_ID,
+} from "./host/online-schedule-service.js";
 import { businessPath } from "../release/business-bundle.js";
 import {
   parseExtensions,
@@ -85,7 +88,7 @@ export type InvestigationCapability = {
   contract?: string;
   source?: string;
   acceptance?: string;
-  dependencies?: string[];
+  dependencies: string[];
   contractVersion: string | null;
   providerVersion: string;
   installed: boolean;
@@ -106,6 +109,8 @@ export type Investigation = {
   members: CompositionMember[];
   extensions: ExtensionSummary;
   baseServices: BaseServiceSummary[];
+  /** Exact-version registration fact captured before disable; null means unknown. */
+  disabledMemberSchedules: Record<string, boolean | null>;
   capabilities: InvestigationCapability[];
   files: Record<string, { content: string; hash: string }>;
   environment: {
@@ -125,7 +130,8 @@ function planningCapabilities(
     baseServices: BaseServiceSummary[];
     workflowContractVersion: string;
   },
-  memberCases: { member?: string }[],
+  memberCases: MemberAcceptanceCase[],
+  commands: { id: string; providerId: string }[],
 ): InvestigationCapability[] {
   const compositionReady = composition.status === "ready";
   const members = new Map(composition.members.map((m) => [m.pluginId, m]));
@@ -139,6 +145,21 @@ function planningCapabilities(
     const details = executableMemberInterfaceDetails.find(
       (item) => item.id === c.interfaceId,
     );
+    const registeredCommands = commands.filter(
+      (command) => command.providerId === c.providerId,
+    );
+    const commandCasesCovered =
+      registeredCommands.length > 0 &&
+      registeredCommands.every((command) =>
+        ["commit", "reject"].every((kind) =>
+          memberCases.some(
+            (item) =>
+              item.member === c.providerId &&
+              item.action === command.id &&
+              item.expected?.kind === kind,
+          ),
+        ),
+      );
     return {
       id: `${c.interfaceId}:${c.providerId}`,
       interfaceId: c.interfaceId,
@@ -157,10 +178,14 @@ function planningCapabilities(
       healthy: compositionReady,
       inUse: enabled && c.count > 0 && c.status === "active",
       authorized: executable,
+      dependencies:
+        c.interfaceId === "schedule.register"
+          ? [`schedule.runtime:${ONLINE_SCHEDULER_SERVICE_ID}`]
+          : [],
       checkerCoverage:
         c.interfaceId === "workflow.provide"
           ? ["workflow/1"]
-          : memberCases.some((item) => item.member === c.providerId)
+          : c.interfaceId === "command.register" && commandCasesCovered
             ? ["workspace/1"]
             : [],
       purpose:
@@ -194,6 +219,7 @@ function planningCapabilities(
         (c) => c.interfaceId === "schedule.register" && c.status === "active",
       ),
       authorized: true,
+      dependencies: [],
       checkerCoverage: [],
       purpose: "进程在线期间执行已注册的定时业务动作",
       limitations:
@@ -233,11 +259,35 @@ export function capture(workspace: Workspace): Investigation {
   add("active-contract", JSON.stringify(active.definition));
   add("active-acceptance", JSON.stringify(active.evidence));
   const acceptance = active.evidence as {
-    memberCases?: { member?: string }[];
+    memberCases?: MemberAcceptanceCase[];
   };
   const allMemberCases = Array.isArray(acceptance.memberCases)
     ? acceptance.memberCases
     : [];
+  const disabledMemberSchedules: Investigation["disabledMemberSchedules"] = {};
+  for (const member of composition.members) {
+    if (member.enabled) continue;
+    let version = active;
+    let registration: boolean | null = null;
+    const visited = new Set<string>();
+    while (version) {
+      if (visited.has(version.id)) break;
+      visited.add(version.id);
+      const fact = version.hostScheduleRegistration;
+      if (fact) {
+        if (
+          fact.pluginId === member.pluginId &&
+          fact.versionId === member.versionId
+        ) {
+          registration = fact.registered;
+          break;
+        }
+      }
+      if (!version.parentId) break;
+      version = workspace.release.get(version.parentId);
+    }
+    disabledMemberSchedules[member.pluginId] = registration;
+  }
   for (const member of composition.members) {
     const version = workspace.release.get(member.versionId);
     const sourceRef = `member-source/${member.pluginId}@${member.versionId}`;
@@ -297,12 +347,14 @@ export function capture(workspace: Workspace): Investigation {
     members: composition.members,
     extensions: composition.extensions,
     baseServices: composition.baseServices,
+    disabledMemberSchedules,
     capabilities: planningCapabilities(
       {
         ...composition,
         workflowContractVersion: active.contractVersion,
       },
       allMemberCases,
+      workspace.extensionRegistry().commands(),
     ),
     files,
     environment: {
@@ -605,6 +657,7 @@ export function readInvestigation(
             members: context.members,
             extensions: context.extensions,
             baseServices: context.baseServices,
+            disabledMemberSchedules: context.disabledMemberSchedules,
             capabilities: context.capabilities.map((capability) =>
               capability.interfaceId === "workflow.provide"
                 ? {
@@ -1027,7 +1080,10 @@ export function parsePlan(
       );
   }
   const requiredCapabilities = (
-    v.requiredCapabilities === undefined ? [] : objects(v.requiredCapabilities)
+    v.requiredCapabilities === undefined ||
+    (Array.isArray(v.requiredCapabilities) && !v.requiredCapabilities.length)
+      ? []
+      : objects(v.requiredCapabilities)
   ).map((item) => ({
     interfaceId: planText(item.interfaceId),
     providerId: planText(item.providerId),
@@ -1036,21 +1092,38 @@ export function parsePlan(
       : { contractVersion: planText(item.contractVersion) }),
     ...(item.checker === undefined ? {} : { checker: planText(item.checker) }),
   }));
-  if (
+  const scheduleProviders = new Set(
+    context.capabilities
+      .filter(
+        (item) =>
+          item.interfaceId === "schedule.register" && item.status === "active",
+      )
+      .map((item) => item.providerId),
+  );
+  const needsTimingChecker =
     capabilityChanges.some(
       (change) => change.capability === "schedule.register",
-    )
-  ) {
+    ) ||
+    requiredCapabilities.some(
+      (item) => item.interfaceId === "schedule.register",
+    ) ||
+    memberUpgrades.some((item) => scheduleProviders.has(item.pluginId)) ||
+    (memberEnabled?.enabled === true &&
+      context.disabledMemberSchedules[memberEnabled.pluginId] !== false);
+  if (needsTimingChecker) {
+    for (const requirement of requiredCapabilities)
+      if (requirement.interfaceId === "schedule.register")
+        requirement.checker = "schedule/1";
     const runtime = requiredCapabilities.find(
       (item) =>
         item.interfaceId === "schedule.runtime" &&
-        item.providerId === "host:online-scheduler",
+        item.providerId === ONLINE_SCHEDULER_SERVICE_ID,
     );
     if (runtime) runtime.checker = "schedule/1";
     else
       requiredCapabilities.push({
         interfaceId: "schedule.runtime",
-        providerId: "host:online-scheduler",
+        providerId: ONLINE_SCHEDULER_SERVICE_ID,
         checker: "schedule/1",
       });
   }

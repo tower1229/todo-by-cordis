@@ -37,6 +37,12 @@ export type Version = {
   entry: string;
   /** Absent => single-element composition of this version. */
   members?: VersionMember[];
+  /** Host-observed registration at the moment an exact member version was disabled. */
+  hostScheduleRegistration?: {
+    pluginId: string;
+    versionId: string;
+    registered: boolean;
+  };
 };
 
 export type RuntimePluginTarget = {

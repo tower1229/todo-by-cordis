@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -12,6 +12,87 @@ import { createApp } from "../../src/server/app.js";
 import { PlanningDriver } from "../app/planning-fixture.js";
 import { activateDual } from "../app/dual-composition-fixture.js";
 import { createControllableClock } from "../../src/server/host/clock.js";
+import { dualWorkflowDefinition } from "../app/dual-composition-fixture.js";
+import { auxWorkflowCode } from "../fixtures/member-ui.js";
+import { hookedDefinition } from "../fixtures/hooked.js";
+
+async function activateDisabledScheduleMember(workspace: Workspace) {
+  const workflowCode = await auxWorkflowCode();
+  const scheduleCode = readFileSync(
+    new URL("../fixtures/hooked-plugin.mjs", import.meta.url),
+    "utf8",
+  );
+  const schedule = workspace.release.record({
+    pluginId: "hooked",
+    name: "定时成员",
+    service: "plugin:hooked",
+    contractVersion: "extensions/1",
+    source: scheduleCode,
+    code: scheduleCode,
+    definition: { id: "hooked" },
+    evidence: { passed: true, origin: "test" },
+  });
+  const workflow = workspace.release.record({
+    pluginId: "aux-workflow",
+    name: "带定时成员的组合",
+    service: "workflow",
+    contractVersion: "workflow/1",
+    source: workflowCode,
+    code: workflowCode,
+    definition: dualWorkflowDefinition,
+    evidence: { passed: true, origin: "test" },
+    members: [
+      { pluginId: "aux-workflow", enabled: true, role: "workflow" },
+      {
+        pluginId: "hooked",
+        versionId: schedule.id,
+        enabled: true,
+        role: "auxiliary",
+      },
+    ],
+  });
+  await workspace.activate(
+    {
+      versionId: workflow.id,
+      compositionRevision: workspace.composition().revision,
+      operationId: randomUUID(),
+    },
+    () => undefined,
+  );
+  const current = workspace.composition();
+  await workspace.setMemberEnabled({
+    operationId: randomUUID(),
+    compositionRevision: current.revision,
+    versionId: current.versionId,
+    pluginId: "hooked",
+    enabled: false,
+  });
+}
+
+async function activateStubInterface(workspace: Workspace) {
+  const source = readFileSync(
+    new URL("../fixtures/hooked-plugin.mjs", import.meta.url),
+    "utf8",
+  );
+  const version = workspace.release.record({
+    pluginId: "hooked",
+    name: "宿主接口状态夹具",
+    service: "workflow",
+    contractVersion: "workflow/1",
+    source,
+    code: source,
+    definition: hookedDefinition,
+    evidence: { passed: true, origin: "test" },
+  });
+  await workspace.activate(
+    {
+      versionId: version.id,
+      compositionRevision: workspace.composition().revision,
+      operationId: randomUUID(),
+    },
+    () => undefined,
+  );
+}
 
 const cases = [
   {
@@ -59,6 +140,28 @@ const cases = [
     reason: "已停用",
   },
   {
+    name: "member without schedules can re-enable",
+    setup: "disabled",
+    finish: {
+      workflowRules: [],
+      writableScope: [],
+      memberEnabled: { pluginId: "tags", enabled: true },
+    },
+    status: "ready",
+    reason: "",
+  },
+  {
+    name: "previously registered schedule cannot re-enable without timing checker",
+    setup: "disabled-schedule",
+    finish: {
+      workflowRules: [],
+      writableScope: [],
+      memberEnabled: { pluginId: "hooked", enabled: true },
+    },
+    status: "blocked",
+    reason: "缺少可靠业务验收检查器",
+  },
+  {
     name: "stopped host service",
     setup: "stopped",
     finish: {
@@ -83,6 +186,17 @@ const cases = [
     reason: "未授权",
   },
   {
+    name: "registered stub interface is unsupported",
+    setup: "stub",
+    finish: {
+      requiredCapabilities: [
+        { interfaceId: "query.filter", providerId: "hooked" },
+      ],
+    },
+    status: "blocked",
+    reason: "宿主尚不支持执行该接口",
+  },
+  {
     name: "schedule registration without timing checker",
     finish: {
       capabilityChanges: [
@@ -92,6 +206,16 @@ const cases = [
           consumers: ["src/web/ActionForm.tsx"],
           change: "按任务时间执行已注册动作",
         },
+      ],
+    },
+    status: "blocked",
+    reason: "缺少可靠业务验收检查器",
+  },
+  {
+    name: "existing schedule registration cannot omit its checker",
+    finish: {
+      requiredCapabilities: [
+        { interfaceId: "schedule.register", providerId: "default" },
       ],
     },
     status: "blocked",
@@ -118,6 +242,10 @@ for (const scenario of cases) {
     }
     if ("setup" in scenario && scenario.setup === "stopped")
       workspace.testHarness()?.scheduleService.stop();
+    if ("setup" in scenario && scenario.setup === "disabled-schedule")
+      await activateDisabledScheduleMember(workspace);
+    if ("setup" in scenario && scenario.setup === "stub")
+      await activateStubInterface(workspace);
     const evolution = new Evolution(
       workspace.db,
       new PlanningDriver(scenario.finish),
