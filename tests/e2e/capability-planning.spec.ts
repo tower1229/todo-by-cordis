@@ -156,15 +156,15 @@ const cases = [
     reason: "",
   },
   {
-    name: "previously registered schedule cannot re-enable without timing checker",
+    name: "previously registered schedule can plan with timing checker",
     setup: "disabled-schedule",
     finish: {
       workflowRules: [],
       writableScope: [],
       memberEnabled: { pluginId: "hooked", enabled: true },
     },
-    status: "blocked",
-    reason: "缺少可靠业务验收检查器",
+    status: "ready",
+    reason: "",
   },
   {
     name: "stopped host service",
@@ -202,7 +202,7 @@ const cases = [
     reason: "宿主尚不支持执行该接口",
   },
   {
-    name: "schedule registration without timing checker",
+    name: "schedule registration has timing checker",
     finish: {
       capabilityChanges: [
         {
@@ -213,18 +213,19 @@ const cases = [
         },
       ],
     },
-    status: "blocked",
-    reason: "缺少可靠业务验收检查器",
+    status: "ready",
+    reason: "",
   },
   {
-    name: "existing schedule registration cannot omit its checker",
+    name: "existing schedule registration uses timing checker",
+    setup: "stub",
     finish: {
       requiredCapabilities: [
-        { interfaceId: "schedule.register", providerId: "default" },
+        { interfaceId: "schedule.register", providerId: "hooked" },
       ],
     },
-    status: "blocked",
-    reason: "缺少可靠业务验收检查器",
+    status: "ready",
+    reason: "",
   },
 ] as const;
 
@@ -300,7 +301,10 @@ for (const scenario of cases) {
               item.interfaceId === "schedule.register" &&
               item.status === "active",
           ),
-        ).toBe(false);
+        ).toBe(
+          scenario.name ===
+            "existing schedule registration uses timing checker",
+        );
         await expect(
           page.getByRole("region", { name: "待确认方案" }),
         ).toBeVisible();

@@ -44,7 +44,7 @@ export const executableMemberInterfaceDetails = [
   {
     id: "schedule.register",
     purpose: "登记在线定时业务任务",
-    limitations: "依赖宿主在线调度；尚无定时行为验收检查器",
+    limitations: "依赖宿主在线调度；字段触发由隔离时间检查器验证",
   },
   {
     id: "lifecycle",
@@ -180,8 +180,13 @@ export class ExtensionRegistry {
     );
   }
 
-  schedules(): ScheduleRegistration[] {
-    return this.plugins.flatMap((p) => p.contribution.schedules ?? []);
+  schedules(): (ScheduleRegistration & { providerId: string })[] {
+    return this.plugins.flatMap((p) =>
+      (p.contribution.schedules ?? []).map((schedule) => ({
+        ...schedule,
+        providerId: p.pluginId,
+      })),
+    );
   }
 
   knownCommandIds(
@@ -273,11 +278,12 @@ export class ExtensionRegistry {
     }
     for (const command of this.commands()) {
       if (ids.has(command.id)) continue;
+      if (command.internalOnly) continue;
       ids.add(command.id);
       result.push({
         id: command.id,
         label: command.label,
-        from: command.from?.length ? command.from : ["open"],
+        from: command.from ?? ["open"],
         providerId: command.providerId,
       });
     }
@@ -441,6 +447,11 @@ export class ExtensionRegistry {
         fieldKeys.add(field.key);
       }
       for (const command of install.contribution.commands ?? []) {
+        if (
+          command.internalOnly !== undefined &&
+          typeof command.internalOnly !== "boolean"
+        )
+          throw new AppError("INVALID_EXTENSION", "命令内部触发标记无效");
         if (commandIds.has(command.id))
           throw new AppError(
             "EXTENSION_CONFLICT",

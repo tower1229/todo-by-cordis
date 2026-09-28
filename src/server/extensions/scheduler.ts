@@ -2,15 +2,10 @@ import type { ScheduleRegistration } from "../business/contracts.js";
 import type { HostClock } from "../host/clock.js";
 import { systemClock } from "../host/clock.js";
 
-export type ScheduleFireHandler = (
-  job: ScheduleRegistration,
-) => Promise<void>;
+export type ScheduleFireHandler = (job: ScheduleRegistration) => Promise<void>;
 
 /** Parse ISO with offset/Z, or wall-clock in an IANA timezone. */
-export function resolveFireTime(
-  at: string,
-  timezone?: string,
-): number | null {
+export function resolveFireTime(at: string, timezone?: string): number | null {
   const trimmed = at.trim();
   if (!trimmed) return null;
   if (/([zZ]|[+-]\d{2}:?\d{2})$/.test(trimmed)) {
@@ -35,7 +30,9 @@ export function resolveFireTime(
   const minute = Number(match[5] ?? "0");
   const second = Number(match[6] ?? "0");
   try {
-    const probe = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+    const probe = new Date(
+      Date.UTC(year, month - 1, day, hour, minute, second),
+    );
     const parts = new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
       year: "numeric",
@@ -66,6 +63,7 @@ export function resolveFireTime(
 export class OnlineScheduler {
   private timers = new Map<string, { clear(): void }>();
   private fired = new Set<string>();
+  private static readonly maxTimerDelay = 2_147_483_647;
 
   constructor(private readonly clock: HostClock = systemClock) {}
 
@@ -77,6 +75,28 @@ export class OnlineScheduler {
 
   armedCount() {
     return this.timers.size;
+  }
+
+  private armFuture(
+    job: ScheduleRegistration,
+    when: number,
+    fire: ScheduleFireHandler,
+  ) {
+    const delay = Math.min(
+      Math.max(0, when - this.clock.now()),
+      OnlineScheduler.maxTimerDelay,
+    );
+    const timer = this.clock.setTimeout(() => {
+      this.timers.delete(job.dedupeKey);
+      if (this.fired.has(job.dedupeKey)) return;
+      if (this.clock.now() < when) {
+        this.armFuture(job, when, fire);
+        return;
+      }
+      this.fired.add(job.dedupeKey);
+      return fire(job);
+    }, delay);
+    this.timers.set(job.dedupeKey, timer);
   }
 
   arm(
@@ -99,13 +119,7 @@ export class OnlineScheduler {
         }
         continue;
       }
-      const timer = this.clock.setTimeout(() => {
-        this.timers.delete(job.dedupeKey);
-        if (this.fired.has(job.dedupeKey)) return;
-        this.fired.add(job.dedupeKey);
-        return options.fire(job);
-      }, delay);
-      this.timers.set(job.dedupeKey, timer);
+      this.armFuture(job, when, options.fire);
     }
   }
 }

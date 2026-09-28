@@ -70,6 +70,8 @@ export type CommandRegistration = {
   id: string;
   label: string;
   from?: string[];
+  /** Invocable only through the host's scheduled command path. */
+  internalOnly?: boolean;
 };
 
 export type ScheduleRegistration = {

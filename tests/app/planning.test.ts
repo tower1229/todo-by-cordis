@@ -56,7 +56,7 @@ test("investigation separates online scheduler health, registration, use and che
   assert.equal(scheduler.healthy, true);
   assert.equal(scheduler.inUse, false);
   assert.equal(scheduler.contractVersion, "schedule.runtime/1");
-  assert.deepEqual(scheduler.checkerCoverage, []);
+  assert.deepEqual(scheduler.checkerCoverage, ["schedule/1"]);
   const registration = catalog.capabilities.find(
     (item) =>
       item.interfaceId === "schedule.register" && item.providerId === "default",
@@ -64,7 +64,7 @@ test("investigation separates online scheduler health, registration, use and che
   assert.deepEqual(registration?.dependencies, [
     "schedule.runtime:host:online-scheduler",
   ]);
-  assert.deepEqual(registration?.checkerCoverage, []);
+  assert.deepEqual(registration?.checkerCoverage, ["schedule/1"]);
   assert.equal(
     catalog.capabilities.some(
       (item) => item.interfaceId === "schedule.register" && item.ready,

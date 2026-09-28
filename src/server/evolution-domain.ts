@@ -57,6 +57,7 @@ import { hash } from "../release/storage.js";
 import type { ExtensionContribution } from "./business/contracts.js";
 import { emptyContribution } from "./business/contracts.js";
 import { ExtensionRegistry } from "./extensions/registry.js";
+import { verifyScheduleViaIsolatedWorkspace } from "./schedule-acceptance.js";
 import { resolveUiContributions } from "./extensions/ui-slots.js";
 
 type Rule = {
@@ -231,7 +232,7 @@ export type Workflow = { definition: WorkflowDefinition; decide(task:Task,action
 export type MissPolicy = "skip"|"run-once";
 export type TaskEventKind = "task.created"|"task.updated"|"task.deleted";
 export type ExtensionContribution = {
-  commands?:{id:string;label:string;from?:string[]}[];
+  commands?:{id:string;label:string;from?:string[];internalOnly?:boolean}[];
   fields?:Field[];
   beforeCommit?:boolean;
   events?:TaskEventKind[];
@@ -991,6 +992,13 @@ export class EvolutionDomain implements Domain {
                 throw new Error(
                   `未授权动作：成员 ${member.pluginId} 注册了计划未覆盖的命令 ${unauthorized.join("、")}，请重新规划并提交对应冻结案例`,
                 );
+              const unauthorizedSchedules = (
+                contribution.schedules ?? []
+              ).filter((schedule) => !known.has(schedule.onFire.commandId));
+              if (unauthorizedSchedules.length)
+                throw new Error(
+                  `调度声明越权：成员 ${member.pluginId} 的到期动作未由本成员注册：${unauthorizedSchedules.map((schedule) => schedule.onFire.commandId).join("、")}`,
+                );
               checks.push(`member.authorized:${member.pluginId}`);
             }
           }
@@ -1029,6 +1037,15 @@ export class EvolutionDomain implements Domain {
           (receipt) => workspaceCasesEvidence.push(receipt),
         )),
       );
+      if (verifyGoal.binding?.checkers.some((item) => item.id === "schedule/1"))
+        checks.push(
+          ...(await verifyScheduleViaIsolatedWorkspace(
+            this.workspace,
+            candidate,
+            verifyGoal.memberCases ?? [],
+            signal,
+          )),
+        );
     } catch (error: unknown) {
       const {
         id: _id,

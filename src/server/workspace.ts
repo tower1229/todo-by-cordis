@@ -2,7 +2,13 @@ import { DatabaseSync } from "node:sqlite";
 import { randomUUID, createHash } from "node:crypto";
 import { stripTypeScriptTypes } from "node:module";
 import { Release, type Prepared } from "../release/release.js";
-import type { Version, RuntimeLike, LaunchTarget, VersionMember, VersionMemberRole } from "../release/types.js";
+import type {
+  Version,
+  RuntimeLike,
+  LaunchTarget,
+  VersionMember,
+  VersionMemberRole,
+} from "../release/types.js";
 import { hash, operationHash } from "../release/storage.js";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -32,10 +38,7 @@ import {
 } from "./business/contracts.js";
 import { ExtensionRegistry } from "./extensions/registry.js";
 import { systemClock, type HostClock } from "./host/clock.js";
-import {
-  isControllableClock,
-  type ControllableClock,
-} from "./host/clock.js";
+import { isControllableClock, type ControllableClock } from "./host/clock.js";
 import { OnlineScheduleService } from "./host/online-schedule-service.js";
 import {
   compositionBuildHash,
@@ -451,8 +454,10 @@ export class Workspace {
     this.extensions.clear();
     this.diagnosticsNotes = [];
   }
-  private expandScheduleJobs(): ScheduleRegistration[] {
-    const jobs: ScheduleRegistration[] = [];
+  private expandScheduleJobs(): (ScheduleRegistration & {
+    hostField?: string;
+  })[] {
+    const jobs: (ScheduleRegistration & { hostField?: string })[] = [];
     for (const schedule of this.extensions.schedules()) {
       const kind = schedule.atKind ?? "absolute";
       if (kind === "absolute") {
@@ -472,6 +477,7 @@ export class Workspace {
           ...schedule,
           at: value,
           atKind: "absolute",
+          hostField: fieldKey,
           dedupeKey: `${schedule.dedupeKey}:${task.id}`,
           onFire: {
             ...schedule.onFire,
@@ -490,11 +496,15 @@ export class Workspace {
         if (!taskId) return;
         try {
           const task = this.read(taskId);
-          await this.command({
+          const hostField = (
+            job as ScheduleRegistration & { hostField?: string }
+          ).hostField;
+          if (hostField && task.fields[hostField] !== job.at) return;
+          await this.scheduledCommand({
             type: "action",
             taskId: task.id,
             actionId: job.onFire.commandId,
-            input: job.onFire.input ?? {},
+            input: { ...job.onFire.input, scheduledAt: job.at },
             expectedRevision: task.revision,
             operationId: `schedule:${job.dedupeKey}:${job.at}`,
             compositionRevision: this.current().revision,
@@ -809,6 +819,16 @@ export class Workspace {
     }
   }
   command(command: Command, complete?: () => void): Promise<CommandResult> {
+    return this.executeCommand(command, complete, false);
+  }
+  private scheduledCommand(command: Command): Promise<CommandResult> {
+    return this.executeCommand(command, undefined, true);
+  }
+  private executeCommand(
+    command: Command,
+    complete: (() => void) | undefined,
+    scheduled: boolean,
+  ): Promise<CommandResult> {
     return this.serial(async () => {
       const replay = this.replay(command.operationId, command);
       if (replay) return replay;
@@ -863,6 +883,11 @@ export class Workspace {
           const runtime = this.runtime;
           const definition = this.composition().workflow;
           const registered = this.extensions.commands();
+          const internalOnly = registered.some(
+            (item) => item.id === command.actionId && item.internalOnly,
+          );
+          if (internalOnly && !scheduled && !this.options.acceptanceProbe)
+            throw new AppError("INVALID_ACTION", "到期动作只能由调度触发");
           const allowed =
             definition.actions.some(
               (a) => a.id === command.actionId && a.from.includes(task.state),
@@ -1085,21 +1110,22 @@ export class Workspace {
       versionId: member.versionId ?? active.id,
       enabled: member.pluginId === pluginId ? enabled : member.enabled,
     }));
-    validateCompositionMembers(
-      { ...active, members: recordedMembers },
-      (id) => this.release.get(id),
+    validateCompositionMembers({ ...active, members: recordedMembers }, (id) =>
+      this.release.get(id),
     );
     const hostScheduleRegistration = enabled
       ? undefined
       : {
           pluginId,
           versionId: target.versionId ?? active.id,
-          registered: this.extensions.summarize().capabilities.some(
-            (capability) =>
-              capability.providerId === pluginId &&
-              capability.interfaceId === "schedule.register" &&
-              capability.status === "active",
-          ),
+          registered: this.extensions
+            .summarize()
+            .capabilities.some(
+              (capability) =>
+                capability.providerId === pluginId &&
+                capability.interfaceId === "schedule.register" &&
+                capability.status === "active",
+            ),
         };
     return this.release.record({
       pluginId: active.pluginId,
@@ -1250,7 +1276,9 @@ export class Workspace {
           },
           beforeOpenWrites: async () => {
             if (priorRuntime && priorRuntime !== this.runtime) {
-              await this.teardownExtensions(priorRuntime).catch(() => undefined);
+              await this.teardownExtensions(priorRuntime).catch(
+                () => undefined,
+              );
             } else {
               this.scheduleService.stop();
               this.extensions.clear();

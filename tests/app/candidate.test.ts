@@ -124,12 +124,6 @@ for (const [binding, provider, capability] of [
       assert.match(ready?.message ?? "", /不是已存在或计划新增的辅助成员/);
       return;
     }
-    if (binding === "未注册能力") {
-      assert.equal(ready?.status, "blocked", JSON.stringify(ready));
-      assert.match(ready?.message ?? "", /缺少可靠业务验收检查器/);
-      assert.equal(w.composition().versionId, base.id);
-      return;
-    }
     if (binding === "未知接口" || binding === "占位接口") {
       assert.equal(ready?.status, "blocked", JSON.stringify(ready));
       assert.match(ready?.message ?? "", /辅助成员能力接口尚不支持/);
@@ -143,6 +137,15 @@ for (const [binding, provider, capability] of [
       planId: ready.plan.id,
     });
     const result = await settled(e);
+    if (binding === "未注册能力") {
+      assert.equal(result.run?.status, "failed", JSON.stringify(result));
+      assert.match(
+        result.run?.message ?? "",
+        /未实际注册声明能力.*schedule\.register/,
+      );
+      assert.equal(w.composition().versionId, base.id);
+      return;
+    }
     assert.equal(result.run?.status, "awaiting-apply", JSON.stringify(result));
     assert.equal(w.composition().versionId, base.id);
     const verified = w.release.get(result.run!.versionId!);

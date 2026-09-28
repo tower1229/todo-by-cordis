@@ -45,6 +45,7 @@ const checkerSources: Record<string, string> = {
   "business-actions/1": "src/server/business-verification.ts",
   "workspace/1": "src/server/workspace-acceptance.ts",
   "host-member-enabled/1": "src/server/evolution-domain.ts",
+  "schedule/1": "src/server/schedule-acceptance.ts",
 };
 
 function checkerVersion(id: string): string | undefined {
@@ -341,7 +342,9 @@ function planningCapabilities(
           ? ["workflow/1"]
           : c.interfaceId === "command.register" && commandCasesCovered
             ? ["workspace/1"]
-            : [],
+            : c.interfaceId === "schedule.register"
+              ? ["schedule/1"]
+              : [],
       purpose:
         c.interfaceId === "workflow.provide"
           ? "提供当前任务工作流"
@@ -374,10 +377,10 @@ function planningCapabilities(
       ),
       authorized: true,
       dependencies: [],
-      checkerCoverage: [],
+      checkerCoverage: ["schedule/1"],
       purpose: "进程在线期间执行已注册的定时业务动作",
       limitations:
-        "仅当前进程在线运行；业务任务须由成员注册，尚无定时行为验收检查器",
+        "仅当前进程在线运行；业务任务须由成员注册，定时行为由隔离工作区受控时钟检查",
     };
   });
   return [...fromMembers, ...fromHost];
@@ -942,6 +945,11 @@ export function readInvestigation(
               {
                 id: "workspace/1",
                 scope: "辅助成员动作的冻结正例与拒绝案例；不验证定时触发时间",
+              },
+              {
+                id: "schedule/1",
+                scope:
+                  "隔离工作区受控时钟检查未设置、提前、到点及提前完成；候选必须有设置截止及到期动作的冻结正例",
               },
               {
                 id: "business-actions/1",

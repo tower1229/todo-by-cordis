@@ -19,6 +19,7 @@ import {
   resolveFireTime,
 } from "../../src/server/extensions/scheduler.js";
 import { EXTENSIONS_CONTRACT } from "../../src/server/business/contracts.js";
+import { createControllableClock } from "../../src/server/host/clock.js";
 
 const fixtureDir = dirname(fileURLToPath(import.meta.url));
 const hookedFixturePath = join(fixtureDir, "../fixtures/hooked-plugin.mjs");
@@ -177,12 +178,8 @@ test("registry rejects duplicate fields, workflow collisions, and dual primary s
     },
     definition.fields,
   );
-  assert.ok(
-    registry.mergedFields(definition).some((f) => f.key === "dueAt"),
-  );
-  assert.ok(
-    registry.mergedActions(definition).some((a) => a.id === "ping"),
-  );
+  assert.ok(registry.mergedFields(definition).some((f) => f.key === "dueAt"));
+  assert.ok(registry.mergedActions(definition).some((a) => a.id === "ping"));
 });
 
 test("resolveFireTime handles offset ISO and timezone wall clock", () => {
@@ -247,6 +244,43 @@ test("online scheduler respects missPolicy and cancels timers", async () => {
   assert.equal(scheduler.armedCount(), 0);
 });
 
+test("online scheduler keeps far future deadlines armed without timer overflow", async () => {
+  const start = Date.parse("2026-09-28T00:00:00Z");
+  const clock = createControllableClock(start);
+  const scheduler = new OnlineScheduler({
+    now: () => clock.now(),
+    setTimeout(handler, delay) {
+      assert.ok(delay <= 2_147_483_647, "Node timer delay must fit 32 bits");
+      return clock.setTimeout(handler, delay);
+    },
+  });
+  const fired: string[] = [];
+  const due = start + 2_147_483_647 + 60_000;
+  scheduler.arm(
+    [
+      {
+        id: "far",
+        at: new Date(due).toISOString(),
+        dedupeKey: "far",
+        onFire: { type: "action", commandId: "expire", taskId: "task" },
+        missPolicy: "skip",
+      },
+    ],
+    {
+      fire: async (job) => {
+        fired.push(job.id);
+      },
+    },
+  );
+  assert.equal(scheduler.armedCount(), 1);
+  await clock.advance(2_147_483_647);
+  assert.deepEqual(fired, []);
+  assert.equal(scheduler.armedCount(), 1);
+  await clock.advance(60_000);
+  assert.deepEqual(fired, ["far"]);
+  assert.equal(scheduler.armedCount(), 0);
+});
+
 test("builtin plugin without contribute stays compatible", async (t) => {
   const w = await setup(t);
   const summary = w.composition().extensions;
@@ -293,15 +327,9 @@ test("real Runtime fixture: merge, beforeCommit, events, field schedule, switch 
     () => undefined,
   );
   assert.equal(w.composition().extensions.contractVersion, EXTENSIONS_CONTRACT);
-  assert.ok(
-    w.composition().workflow.fields.some((f) => f.key === "dueAt"),
-  );
-  assert.ok(
-    w.composition().workflow.actions.some((a) => a.id === "ping"),
-  );
-  assert.ok(
-    w.composition().retainedFields.some((f) => f.key === "dueAt"),
-  );
+  assert.ok(w.composition().workflow.fields.some((f) => f.key === "dueAt"));
+  assert.ok(w.composition().workflow.actions.some((a) => a.id === "ping"));
+  assert.ok(w.composition().retainedFields.some((f) => f.key === "dueAt"));
   assert.ok(w.diagnostics().some((n) => n.includes("life:activate")));
 
   const created = await w.command({
@@ -311,7 +339,9 @@ test("real Runtime fixture: merge, beforeCommit, events, field schedule, switch 
     compositionRevision: 2,
   });
   assert.ok(
-    w.diagnostics().some((n) => n.includes(`event:task.created:${created.task!.id}`)),
+    w
+      .diagnostics()
+      .some((n) => n.includes(`event:task.created:${created.task!.id}`)),
   );
 
   await assert.rejects(

@@ -37,6 +37,42 @@ export default {
     return { kind: "reject", message: "未知动作" };
   },
 };`;
+export const dueAutoExpireSource = `export default {
+  contribute() {
+    return {
+      fields: [
+        { key: "dueAt", label: "截止时间", type: "text", description: "ISO 8601 时间，例如 2030-01-01T12:00:00Z" },
+        { key: "expired", label: "已过期", type: "text" },
+      ],
+      commands: [
+        { id: "setDue", label: "设截止", from: ["open"] },
+        { id: "expire", label: "标为过期", from: ["open"], internalOnly: true },
+      ],
+      schedules: [{
+        id: "due-expire", atKind: "field", at: "dueAt", dedupeKey: "due-expire",
+        onFire: { type: "action", commandId: "expire" }, missPolicy: "skip",
+      }],
+      uiSlots: [{ id: "due-detail", slot: "task.detail", title: "截止与过期", fields: [{ key: "dueAt", label: "截止时间" }, { key: "expired", label: "已过期" }], actions: [{ commandId: "setDue", label: "设截止" }] }],
+    };
+  },
+  decide({ task, action, input }) {
+    if (action === "setDue") {
+      if (task.state !== "open") return { kind: "reject", message: "仅未完成任务可设置截止" };
+      if (!Object.hasOwn(input, "dueAt")) return { kind: "input-required", fields: [{ key: "dueAt", label: "截止时间", type: "text", required: true }] };
+      const dueAt = String(input.dueAt).trim();
+      const format = /^\\d{4}-\\d{2}-\\d{2}T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,3})?(?:Z|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$/i;
+      const [year, month, day] = dueAt.slice(0, 10).split("-").map(Number);
+      const calendarDay = Number.isFinite(year) && Number.isFinite(month) && Number.isFinite(day) && new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) === dueAt.slice(0, 10);
+      if (!format.test(dueAt) || !calendarDay || Number.isNaN(Date.parse(dueAt))) return { kind: "reject", message: "请输入有效的 ISO 8601 截止时间，例如 2030-01-01T12:00:00Z" };
+      return { kind: "commit", state: task.state, fields: { ...task.fields, dueAt } };
+    }
+    if (action === "expire") {
+      if (task.state !== "open" || !task.fields.dueAt || task.fields.dueAt !== input.scheduledAt) return { kind: "reject", message: "任务已完成或截止时间已变化" };
+      return { kind: "commit", state: task.state, fields: { ...task.fields, expired: "true" } };
+    }
+    return { kind: "reject", message: "未知动作" };
+  },
+};`;
 const detailedGuides = {
   "guide/command.register": `用途：辅助成员可通过 contribute().commands 注册任务动作，通过 contribute().fields 声明输入字段；宿主按声明呈现动作与输入表单。
 限制：成员源码是独立模块，不导入工作流契约，不提供第二个工作流；只能修改冻结计划授权的成员。不得修改业务验收、系统保护约束或自行宣称验证通过。
@@ -51,6 +87,7 @@ ${tagsReferenceSource}
 ${tagsEventUpgradeSource}
 浏览器验收：需求与指南、候选完整组合体验、独立应用、标签与计数共存、启停及撤回后的任务数据和事件效果。模型桩与真实模型调用分别标记。`,
   "guide/workflow.provide": `用途：主工作流通过 describe 和 decide 定义任务状态、动作和字段。限制：保留既有状态动作及未知 task.fields；只写冻结 business/* 范围，business/contract.ts 由宿主注入。接入：读取精确活动源码与契约，提交完整业务文件，宿主构建并以 workflow/1 冻结案例验证。可运行参考实现：本轮 inspect_application 已发送的 active-source 是当前正式工作流的完整源码；以 read_current_source 获取执行期的精确版本，结合 active-contract 和冻结案例改动，不能照搬旧版以冒充新要求通过。常见错误：把缺失输入直接拒绝，或让 reopen 丢字段。生命周期：构建、隔离验收、体验、应用确认。必测：字段必填、Unicode 长度、重开和数据保留。`,
+  "guide/schedule.register": `用途：通过宿主在线调度在任务截止时间执行业务动作。schedule.runtime 是宿主基础服务，成员只声明 schedule.register；普通自迭代不可修改宿主时钟、检查器和正式写入控制。当前仅保证进程在线期间运行，修改/清除及恢复由后续任务覆盖。\n接入：新增辅助成员注册可选 dueAt 文本字段、设截止动作、到期动作和 atKind="field" 的调度。到期命令须声明 from:["open"] 与 internalOnly:true；宿主按任务状态校验，隐藏普通入口并拒绝手工调用，只由内部定时命令入口触发。未设置截止不武装；设置时间须验证 ISO 8601 并给出可理解错误。宿主到点读取最新任务、核对截止字段仍等于触发时间，通过 Workspace 命令传入 scheduledAt；到期动作仍须核对未完成和 scheduledAt 匹配。字段及结果在现有任务界面展示。\n计划：同时声明 schedule.register 与宿主 schedule.runtime，提供成员动作成对 memberCases；设截止正例须覆盖截止字段，到期正例须有可观察的状态或字段变化。schedule/1 独立在隔离工作区通过受控时钟检查未设截止、提前、到点及提前完成，不接受只调用到期动作的正例冒充。用户在真实浏览器完成方案确认、生成、体验、独立应用及刷新核对。\n可运行辅助成员完整源码：\n${dueAutoExpireSource}`,
 } as const;
 export const capabilityGuides: Record<string, string> = detailedGuides;
 
