@@ -15,6 +15,9 @@ import { createControllableClock } from "../../src/server/host/clock.js";
 import { dualWorkflowDefinition } from "../app/dual-composition-fixture.js";
 import { auxWorkflowCode } from "../fixtures/member-ui.js";
 import { hookedDefinition } from "../fixtures/hooked.js";
+import { capabilityGuides } from "../../src/server/capability-guides.js";
+import { hash } from "../../src/release/storage.js";
+import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
 
 async function activateDisabledScheduleMember(workspace: Workspace) {
   const workflowCode = await auxWorkflowCode();
@@ -313,3 +316,88 @@ for (const scenario of cases) {
     }
   });
 }
+
+test("browser planning corrects bad guide arguments and rejects an unsent catalog hash", async ({
+  page,
+}) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-guide-browser-"));
+  const workspace = await Workspace.open(join(dir, "workspace.db"));
+  const base = new PlanningDriver();
+  let phase = 0;
+  const driver: Driver = {
+    async generate(request: ModelRequest, signal) {
+      const reply = await base.generate(request, signal);
+      if (reply.calls[0]?.name !== "propose_plan") return reply;
+      if (phase++ === 0)
+        return {
+          ...reply,
+          calls: [{ name: "read_guides", args: { refs: ["guide/unknown"] } }],
+        };
+      if (phase === 2)
+        return {
+          ...reply,
+          calls: [
+            {
+              name: "propose_plan",
+              args: {
+                ...reply.calls[0].args,
+                evidence: [
+                  ...(reply.calls[0].args.evidence as {
+                    ref: string;
+                    hash: string;
+                  }[]),
+                  {
+                    ref: "guide/command.register",
+                    hash: hash(capabilityGuides["guide/command.register"]),
+                  },
+                ],
+              },
+            },
+          ],
+        };
+      return reply;
+    },
+  };
+  const evolution = new Evolution(
+    workspace.db,
+    driver,
+    new EvolutionDomain(workspace),
+  );
+  const app = createApp(workspace, evolution);
+  app.use("/*", serveStatic({ root: "./dist/web" }));
+  app.get("*", serveStatic({ path: "./dist/web/index.html" }));
+  const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 });
+  try {
+    if (!server.listening)
+      await new Promise<void>((resolve) => server.once("listening", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string")
+      throw new Error("No test server address");
+    const baseURL = `http://127.0.0.1:${address.port}`;
+    await page.goto(baseURL);
+    await page.getByRole("button", { name: "改进应用", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "告诉 AI 你的需求" })
+      .fill("完成任务前添加复盘");
+    await page.getByRole("button", { name: "发送需求" }).click();
+    await expect
+      .poll(
+        async () =>
+          (await (await page.request.get(`${baseURL}/api/assistant`)).json())
+            .run?.status,
+      )
+      .toBe("ready");
+    expect(phase).toBe(3);
+    const history = JSON.stringify(base.requests.at(-1)?.history);
+    expect(history).toContain("REF_UNAVAILABLE");
+    expect(history).toContain("调查证据不存在或未读取");
+    await expect(
+      page.getByRole("region", { name: "待确认方案" }),
+    ).toBeVisible();
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await evolution.close();
+    await workspace.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

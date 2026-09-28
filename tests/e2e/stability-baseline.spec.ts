@@ -161,6 +161,91 @@ test("真实浏览器绑定不依赖 stub 的成员、动作和字段名称", as
   }
 });
 
+for (const defect of ["missing-form", "lost-field"] as const) {
+  test(`浏览器启动的标签候选拦截 ${defect}`, async () => {
+    const { stabilityStubDriver } = await import(
+      "../../scripts/lib/stability-eval/driver-fixture.js"
+    );
+    const directory = await mkdtemp(
+      join(tmpdir(), `cordis-tag-reject-${defect}-`),
+    );
+    const original = stabilityStubDriver("tags-add");
+    try {
+      const result = await runStabilityScenario({
+        directory,
+        scenario: STABILITY_EVAL_MANIFEST.scenarios[0],
+        manifest: freezeManifest(STABILITY_EVAL_MANIFEST),
+        evidenceKind: "model-stub",
+        driver: {
+          async generate(request, signal) {
+            const reply = await original.generate(request, signal);
+            return {
+              ...reply,
+              calls: reply.calls.map((call) => {
+                if (call.name !== "submit_candidate") return call;
+                const members = call.args.members as {
+                  pluginId: string;
+                  source: string;
+                }[];
+                return {
+                  ...call,
+                  args: {
+                    ...call.args,
+                    members: members.map((member) => {
+                      const source =
+                        defect === "missing-form"
+                          ? member.source.replace(
+                              'return { kind: "input-required", fields: [{ key: "tags", label: "标签", type: "text", required: true }] };',
+                              'return { kind: "reject", message: "缺失输入" };',
+                            )
+                          : member.source.replace(
+                              "{ ...task.fields, tags }",
+                              "{ tags }",
+                            );
+                      expect(source).not.toBe(member.source);
+                      return { ...member, source };
+                    }),
+                  },
+                };
+              }),
+            };
+          },
+        },
+      });
+      const events = await readFile(result.eventsPath, "utf8");
+      const settled = events
+        .split("\n")
+        .filter(Boolean)
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              type?: string;
+              run?: { status?: string };
+              candidates?: { passed: boolean; diagnostic?: string }[];
+            },
+        )
+        .find((event) => event.type === "settled");
+      const diagnostics =
+        settled?.candidates
+          ?.map((candidate) => candidate.diagnostic ?? "")
+          .join("\n") ?? "";
+      expect(result.record.fullPathSucceeded).toBe(false);
+      expect(
+        settled?.candidates?.every((candidate) => candidate.passed === false),
+      ).toBe(true);
+      expect(diagnostics).toMatch(
+        defect === "missing-form"
+          ? /缺失输入须返回 input-required 表单/
+          : /preserve-unknown-fields|标签保留未知字段/,
+      );
+      expect(settled?.run?.status).not.toBe("awaiting-apply");
+      expect(events).not.toContain('"applied":true');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
+
 test("浏览器中途遇到模型传输失败仍归档完整调用和真实失败分类", async () => {
   const { stabilityStubDriver } = await import(
     "../../scripts/lib/stability-eval/driver-fixture.js"

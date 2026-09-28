@@ -426,6 +426,15 @@ async function exerciseExperience(
     assert.equal(saved.status(), 200);
     const task = ((await saved.json()) as CommandResult).task!;
     assert.equal(task.fields[bindings.tags.fieldKey], bindings.tags.expected);
+    if (
+      bindings.tags.fieldKey === "tags" &&
+      bindings.tags.expected === "BrowserTag"
+    )
+      assert.equal(
+        task.fields.retained,
+        "原值",
+        "Unknown task fields must survive the browser action",
+      );
     actions.tagSet = task.fields[bindings.tags.fieldKey];
   }
   if (bindings?.counter) {

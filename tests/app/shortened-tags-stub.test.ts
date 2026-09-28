@@ -130,6 +130,15 @@ test("缩短试跑两阶段桩：新增 tags 去空格 → 确认修订后升级
             ...toolReply("read_current_source", {}),
             history: request.history,
           };
+        if (!content.includes("read_scaffold"))
+          return { ...toolReply("read_scaffold", {}), history: request.history };
+        if (!content.includes("read_guide"))
+          return {
+            ...toolReply("read_guide", { ref: "guide/command.register" }),
+            history: request.history,
+          };
+        assert.match(content, /contractInjection/);
+        assert.match(content, /参考实现/);
         const workflowCode = source("aux-workflow", "双贡献组合", 1);
         return {
           ...toolReply("submit_candidate", {
