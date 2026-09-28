@@ -20,16 +20,51 @@ import {
 } from "./ui-slots.js";
 
 /** Interfaces with executable auxiliary contributions (query/service remain stubs). */
-export const executableMemberInterfaces = [
-  "command.register",
-  "fields.register",
-  "task.beforeCommit",
-  "task.events",
-  "schedule.register",
-  "lifecycle",
-  "ui.slot",
-  "diagnostics.annotate",
+export const executableMemberInterfaceDetails = [
+  {
+    id: "command.register",
+    purpose: "登记任务动作",
+    limitations: "动作由宿主命令路径执行",
+  },
+  {
+    id: "fields.register",
+    purpose: "登记任务字段",
+    limitations: "字段仍受宿主保留规则约束",
+  },
+  {
+    id: "task.beforeCommit",
+    purpose: "提交任务前执行业务检查",
+    limitations: "不能绕过宿主写入约束",
+  },
+  {
+    id: "task.events",
+    purpose: "观察任务变更事件",
+    limitations: "观察失败不会撤回已提交任务",
+  },
+  {
+    id: "schedule.register",
+    purpose: "登记在线定时业务任务",
+    limitations: "依赖宿主在线调度；尚无定时行为验收检查器",
+  },
+  {
+    id: "lifecycle",
+    purpose: "响应成员启停生命周期",
+    limitations: "不能修改宿主发布与恢复控制",
+  },
+  {
+    id: "ui.slot",
+    purpose: "在宿主白名单区域展示业务界面",
+    limitations: "仅支持已实现的槽位及动作分派",
+  },
+  {
+    id: "diagnostics.annotate",
+    purpose: "记录受限诊断信息",
+    limitations: "不覆盖版本或执行追踪",
+  },
 ] as const;
+export const executableMemberInterfaces = executableMemberInterfaceDetails.map(
+  (item) => item.id,
+);
 
 type InstalledPlugin = {
   pluginId: string;
@@ -411,10 +446,7 @@ export class ExtensionRegistry {
             "EXTENSION_CONFLICT",
             `命令重复注册：${command.id}`,
           );
-        if (
-          install.role !== "workflow" &&
-          workflowActionIds.has(command.id)
-        )
+        if (install.role !== "workflow" && workflowActionIds.has(command.id))
           throw new AppError(
             "EXTENSION_CONFLICT",
             `命令与流程定义冲突：${command.id}`,

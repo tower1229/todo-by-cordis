@@ -411,6 +411,14 @@ async function exerciseExperience(
       field,
       "Evaluator binding: frozen input field absent from actual form",
     );
+    await page.getByLabel(field.label, { exact: true }).fill("   ");
+    const blank = await responseForAction(page, commandResponse, () =>
+      actionButton(page, bindings.tags!.actionLabel).click(),
+    );
+    assert.ok(
+      blank.status() >= 400,
+      "Blank tag must be rejected by the real browser path",
+    );
     await page.getByLabel(field.label, { exact: true }).fill("  BrowserTag  ");
     const saved = await responseForAction(page, commandResponse, () =>
       actionButton(page, bindings.tags!.actionLabel).click(),
@@ -418,6 +426,15 @@ async function exerciseExperience(
     assert.equal(saved.status(), 200);
     const task = ((await saved.json()) as CommandResult).task!;
     assert.equal(task.fields[bindings.tags.fieldKey], bindings.tags.expected);
+    if (
+      bindings.tags.fieldKey === "tags" &&
+      bindings.tags.expected === "BrowserTag"
+    )
+      assert.equal(
+        task.fields.retained,
+        "原值",
+        "Unknown task fields must survive the browser action",
+      );
     actions.tagSet = task.fields[bindings.tags.fieldKey];
   }
   if (bindings?.counter) {

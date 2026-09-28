@@ -9,6 +9,126 @@ import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { createApp } from "../../src/server/app.js";
 import type { Driver } from "../../src/evolution/driver.js";
 import { describeBlockers } from "../../src/shared/assistant.js";
+import { capture, readInvestigation } from "../../src/server/planning.js";
+import { createControllableClock } from "../../src/server/host/clock.js";
+
+test("investigation separates online scheduler health, registration, use and checker coverage", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-capability-catalog-"));
+  const w = await Workspace.open(join(dir, "workspace.db"), {
+    clock: createControllableClock(Date.parse("2026-09-28T00:00:00Z")),
+  });
+  t.after(async () => {
+    await w.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const inspect = () =>
+    readInvestigation("inspect_application", {}, capture(w));
+  const initial = inspect();
+  if (!("content" in initial)) throw new Error("Inspection failed");
+  const catalog = initial.content as {
+    capabilities: Array<{
+      interfaceId: string;
+      providerId: string;
+      ready: boolean;
+      installed: boolean;
+      healthy: boolean;
+      inUse: boolean;
+      checkerCoverage: string[];
+      dependencies: string[];
+      contractVersion: string;
+    }>;
+  };
+  const scheduler = catalog.capabilities.find(
+    (item) =>
+      item.interfaceId === "schedule.runtime" &&
+      item.providerId === "host:online-scheduler",
+  );
+  assert.ok(scheduler);
+  assert.equal(scheduler.installed, true);
+  assert.equal(scheduler.ready, true);
+  assert.equal(scheduler.healthy, true);
+  assert.equal(scheduler.inUse, false);
+  assert.equal(scheduler.contractVersion, "schedule.runtime/1");
+  assert.deepEqual(scheduler.checkerCoverage, []);
+  const registration = catalog.capabilities.find(
+    (item) =>
+      item.interfaceId === "schedule.register" && item.providerId === "default",
+  );
+  assert.deepEqual(registration?.dependencies, [
+    "schedule.runtime:host:online-scheduler",
+  ]);
+  assert.deepEqual(registration?.checkerCoverage, []);
+  assert.equal(
+    catalog.capabilities.some(
+      (item) => item.interfaceId === "schedule.register" && item.ready,
+    ),
+    false,
+  );
+
+  w.testHarness()?.scheduleService.stop();
+  const stopped = inspect();
+  if (!("content" in stopped)) throw new Error("Inspection failed");
+  const stoppedCatalog = stopped.content as typeof catalog;
+  assert.equal(
+    stoppedCatalog.capabilities.find(
+      (item) => item.interfaceId === "schedule.runtime",
+    )?.healthy,
+    false,
+  );
+});
+
+test("capability guides are delivered on demand and only delivered hashes count as evidence", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "cordis-guides-"));
+  const w = await Workspace.open(join(dir, "workspace.db"));
+  t.after(async () => {
+    await w.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const context = capture(w);
+  const inspected = readInvestigation("inspect_application", {}, context);
+  assert.ok("documents" in inspected);
+  assert.ok(
+    !inspected.documents?.some((item) => item.ref.startsWith("guide/")),
+  );
+  assert.ok("content" in inspected);
+  assert.match(JSON.stringify(inspected.content), /统一写入/);
+  const guides = readInvestigation(
+    "read_guides",
+    { refs: ["guide/command.register"] },
+    context,
+  );
+  assert.ok("documents" in guides);
+  assert.equal(guides.documents?.[0]?.ref, "guide/command.register");
+  assert.match(String(guides.documents?.[0]?.content), /input-required/);
+  const guideHash = guides.documents![0].hash;
+  const unearned = readInvestigation(
+    "read_guides",
+    {
+      refs: ["guide/command.register"],
+      knownHashes: { "guide/command.register": guideHash },
+    },
+    context,
+  );
+  assert.ok("documents" in unearned);
+  assert.match(String(unearned.documents?.[0]?.content), /input-required/);
+  const reused = readInvestigation(
+    "read_guides",
+    {
+      refs: ["guide/command.register"],
+      knownHashes: { "guide/command.register": guideHash },
+    },
+    context,
+    [{ ref: "guide/command.register", hash: guideHash }],
+  );
+  assert.ok("documents" in reused);
+  assert.equal(reused.documents?.[0]?.content, null);
+  const denied = readInvestigation(
+    "read_guides",
+    { refs: ["guide/unknown"] },
+    context,
+  );
+  assert.ok("error" in denied);
+});
 
 test("describeBlockers maps maintainer capability gaps to a short user message", () => {
   const described = describeBlockers([

@@ -286,7 +286,18 @@ async function runScenarioInEnvironment(
         const session = sessions.observe();
         if (!plan || session.status !== "active")
           throw new Error("Evaluator binding: missing confirmed plan/session");
-        const composition = sessions.readSnapshot(session.id).composition;
+        const sessionSnapshot = sessions.readSnapshot(session.id);
+        if (options.scenario.id === "tags-add") {
+          sessions
+            .workspaceFor(session.id)
+            .seedAcceptanceTask(
+              sessionSnapshot.task.id,
+              sessionSnapshot.task.state,
+              { ...sessionSnapshot.task.fields, retained: "原值" },
+              sessionSnapshot.task.revision,
+            );
+        }
+        const composition = sessionSnapshot.composition;
         const evidence = w.release.get(composition.versionId).evidence as {
           passed?: boolean;
           workspaceCases?: WorkspaceCaseEvidence[];

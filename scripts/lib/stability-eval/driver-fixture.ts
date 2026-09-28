@@ -1,4 +1,5 @@
 import type { Driver, ModelRequest } from "../../../src/evolution/driver.js";
+import { tagsReferenceSource } from "../../../src/server/capability-guides.js";
 import {
   PlanningDriver,
   toolReply,
@@ -12,7 +13,9 @@ import {
   tagsTrimOnlyMemberCases,
 } from "../../../tests/app/member-case-fixtures.js";
 
-const tagsSource = (lower: boolean) => `export default {
+const tagsSource = (lower: boolean) =>
+  lower
+    ? `export default {
  contribute() { return {uiSlots:[{id:'tag-detail',slot:'task.detail',title:'标签',fields:[{key:'tags',label:'标签'}],actions:[{commandId:'setTags',label:'编辑标签'}]}],fields:[{key:'tags',label:'标签',type:'text'}],commands:[{id:'setTags',label:'设标签',from:['open','done']}]}; },
  decide({task,action,input}) {
   if(action!=='setTags') return {kind:'reject',message:'未知动作'};
@@ -21,7 +24,8 @@ const tagsSource = (lower: boolean) => `export default {
   if(!tags) return {kind:'reject',message:'标签为空'};
   return {kind:'commit',state:task.state,fields:{...task.fields,tags}};
  }
-};`;
+};`
+    : tagsReferenceSource;
 
 const counterSource = `export default {
  contribute() { return {fields:[{key:'count',label:'计数',type:'text'}],commands:[{id:'increment',label:'加一',from:['open']}]}; },

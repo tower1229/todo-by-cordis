@@ -1089,6 +1089,18 @@ export class Workspace {
       { ...active, members: recordedMembers },
       (id) => this.release.get(id),
     );
+    const hostScheduleRegistration = enabled
+      ? undefined
+      : {
+          pluginId,
+          versionId: target.versionId ?? active.id,
+          registered: this.extensions.summarize().capabilities.some(
+            (capability) =>
+              capability.providerId === pluginId &&
+              capability.interfaceId === "schedule.register" &&
+              capability.status === "active",
+          ),
+        };
     return this.release.record({
       pluginId: active.pluginId,
       name: `${active.name}（${enabled ? "启用" : "停用"} ${pluginId}）`,
@@ -1099,6 +1111,7 @@ export class Workspace {
       code: active.code,
       definition: active.definition,
       evidence: active.evidence,
+      ...(hostScheduleRegistration ? { hostScheduleRegistration } : {}),
       ...(active.bundle ? { bundle: active.bundle } : {}),
       members: recordedMembers,
     });
