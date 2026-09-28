@@ -58,7 +58,7 @@ function memberEnabledPlan(
         given: "tags 已启用且任务含 tags 字段",
         when: "应用停用候选",
         then: "贡献退出且字段值保留",
-        checker: "host",
+        checker: "host-member-enabled/1",
       },
     ],
     steps: [

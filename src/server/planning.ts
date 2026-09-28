@@ -47,17 +47,21 @@ const checkerSources: Record<string, string> = {
   "host-member-enabled/1": "src/server/evolution-domain.ts",
 };
 
-function checkerVersion(id: string): string {
+function checkerVersion(id: string): string | undefined {
   const source = checkerSources[id];
   return source
     ? hash({ id, source: readFileSync(resolve(source), "utf8") })
-    : hash(id);
+    : undefined;
 }
 
 export function bindPlan(
   plan: Pick<
     InvestigatedPlan,
-    "requiredCapabilities" | "capabilityChanges" | "cases" | "memberCases"
+    | "requiredCapabilities"
+    | "capabilityChanges"
+    | "cases"
+    | "memberCases"
+    | "memberEnabled"
   >,
   context: Investigation,
   delivered: PlanEvidence[],
@@ -76,6 +80,18 @@ export function bindPlan(
       .map((item) => ({
         interfaceId: item.capability,
         providerId: item.provider.slice(7),
+      })),
+    ...plan.capabilityChanges
+      .filter((item) => item.provider === "active-source")
+      .map(() => ({
+        interfaceId: "workflow.provide",
+        providerId: context.pluginId,
+      })),
+    ...plan.capabilityChanges
+      .filter((item) => item.provider.startsWith("host:"))
+      .map((item) => ({
+        interfaceId: item.capability,
+        providerId: item.provider,
       })),
   ];
   const capabilities = needed
@@ -108,6 +124,7 @@ export function bindPlan(
     });
   const checkerIds = new Set([
     ...plan.cases.map((item) => item.checker),
+    ...(plan.memberEnabled ? ["host-member-enabled/1"] : []),
     ...(plan.memberCases?.length ? ["workspace/1"] : []),
     ...(plan.requiredCapabilities ?? [])
       .map((item) => item.checker)
@@ -119,7 +136,7 @@ export function bindPlan(
     capabilities,
     checkers: [...checkerIds].map((id) => ({
       id,
-      version: context.checkerVersions[id] ?? checkerVersion(id),
+      version: context.checkerVersions[id] ?? "",
     })),
   };
 }
@@ -161,8 +178,9 @@ export function planBindingFailure(
   }
   for (const item of binding.checkers)
     if (
-      (current.checkerVersions[item.id] ?? checkerVersion(item.id)) !==
-      item.version
+      !item.version ||
+      !current.checkerVersions[item.id] ||
+      current.checkerVersions[item.id] !== item.version
     )
       return `检查器已变化：${item.id}；请重新调查并确认`;
   return undefined;
@@ -483,7 +501,7 @@ export function capture(workspace: Workspace): Investigation {
       ]),
     ),
     checkerVersions: Object.fromEntries(
-      Object.keys(checkerSources).map((id) => [id, checkerVersion(id)]),
+      Object.keys(checkerSources).map((id) => [id, checkerVersion(id)!]),
     ),
     revision: composition.revision,
     versionId: composition.versionId,
@@ -1442,6 +1460,7 @@ export function parsePlan(
             ...memberCaseSummaries(memberCases),
           ],
           memberCases,
+          memberEnabled,
           requiredCapabilities,
           capabilityChanges,
         },

@@ -213,6 +213,61 @@ test("frozen plan rejects changed material, provider, authorization and checker 
   const changedChecker = structuredClone(binding);
   changedChecker.checkers[0].version = "obsolete-checker";
   assert.match(planBindingFailure(changedChecker, context)!, /检查器已变化/);
+  const workflow = bindPlan(
+    {
+      cases: [
+        { given: "待办", when: "完成", then: "已完成", checker: "workflow/1" },
+      ],
+      capabilityChanges: [
+        {
+          capability: "workflow",
+          provider: "active-source",
+          consumers: [],
+          change: "扩充完成规则",
+        },
+      ],
+    },
+    context,
+    [],
+  );
+  assert.ok(
+    workflow.capabilities.some(
+      (item) =>
+        item.interfaceId === "workflow.provide" &&
+        item.providerId === context.pluginId,
+    ),
+  );
+  const changedWorkflow = structuredClone(context);
+  changedWorkflow.capabilities.find(
+    (item) => item.interfaceId === "workflow.provide",
+  )!.providerVersion = "incompatible-provider";
+  assert.match(
+    planBindingFailure(workflow, changedWorkflow)!,
+    /所需能力已变化/,
+  );
+  const memberEnabled = bindPlan(
+    {
+      cases: [],
+      capabilityChanges: [],
+      memberEnabled: { pluginId: "tags", enabled: false },
+    },
+    context,
+    [],
+  );
+  assert.ok(
+    memberEnabled.checkers.some((item) => item.id === "host-member-enabled/1"),
+  );
+  const unknownChecker = bindPlan(
+    {
+      cases: [
+        { given: "输入", when: "执行", then: "结果", checker: "unknown/1" },
+      ],
+      capabilityChanges: [],
+    },
+    context,
+    [],
+  );
+  assert.match(planBindingFailure(unknownChecker, context)!, /检查器已变化/);
   assert.match(planBindingFailure(undefined, context)!, /缺少宿主资料快照/);
 });
 
