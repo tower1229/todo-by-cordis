@@ -6,6 +6,7 @@ import {
 } from "../../scripts/lib/stability-eval/manifest.js";
 import { scoreCapabilityAndBlocking } from "../../scripts/lib/stability-eval/scoring.js";
 import { assertRealModelAuthorization } from "../../scripts/lib/stability-eval/authorization.js";
+import { postchangeManifest } from "../../scripts/lib/stability-eval/postchange.js";
 
 const scenario = (id: string): StabilityScenario => {
   const found = STABILITY_EVAL_MANIFEST.scenarios.find((s) => s.id === id);
@@ -106,4 +107,36 @@ test("无 --authorize-real-model 时拒绝真模型意图", () => {
       "--authorize-real-model",
     ]),
   );
+});
+
+test("#46 截止时间计划须选择宿主调度和成员业务注册，且成功路径不按阻塞计分", () => {
+  const due = postchangeManifest("a".repeat(40)).scenarios.find(
+    (item) => item.id === "due-auto-expire",
+  );
+  assert.ok(due);
+  const score = (providers: string[]) =>
+    scoreCapabilityAndBlocking({
+      scenario: due,
+      observedOutcomeClass: "full-path-success",
+      plan: {
+        capabilityChanges: providers.map((provider) => ({
+          provider,
+          capability: provider.startsWith("host:")
+            ? "schedule.runtime"
+            : "schedule.register",
+          change: "按截止执行",
+        })),
+      },
+      reachedReadyOnFirstPlan: true,
+      blockedWithoutReady: false,
+    });
+  assert.equal(
+    score(["host:online-scheduler"]).capabilitySelectionCorrect,
+    false,
+  );
+  assert.equal(score(["member:due"]).capabilitySelectionCorrect, false);
+  const correct = score(["host:online-scheduler", "member:due"]);
+  assert.equal(correct.capabilitySelectionCorrect, true);
+  assert.equal(correct.errorBlockingCorrect, null);
+  assert.equal(correct.firstPlanPassed, true);
 });

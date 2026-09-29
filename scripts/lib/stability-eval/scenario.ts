@@ -63,7 +63,11 @@ export type StabilityScenarioResult = {
 };
 
 function clarificationFor(scenario: StabilityScenario): string | undefined {
-  if (scenario.id === "due-auto-expire") return "坚持完整能力，等待维护者补齐";
+  if (
+    scenario.id === "due-auto-expire" &&
+    scenario.expectedOutcomeClass === "current-blocker"
+  )
+    return "坚持完整能力，等待维护者补齐";
   if (scenario.id === "missing-capability-push")
     return "坚持完整外部推送与离线送达";
   return undefined;
@@ -307,9 +311,14 @@ async function runScenarioInEnvironment(
           plan: plan as InvestigatedPlan,
           composition,
           evidence,
+          schedules: sessions
+            .workspaceFor(session.id)
+            .extensionRegistry()
+            .schedules(),
         });
         return bindings;
       },
+      restartHost: () => w.restart(),
     });
   } catch (error) {
     failureMessage = error instanceof Error ? error.message : String(error);
@@ -590,12 +599,21 @@ async function runScenarioInEnvironment(
       ) &&
       Boolean(browserResult!.applied || !options.scenario.requiresApply) &&
       browserResult!.recoveryEntryVisible &&
-      Boolean(
-        !options.scenario.requiresExperience ||
-          browserResult!.experienceActions?.completedAndReopened ||
-          browserResult!.experienceActions?.tagSet ||
-          browserResult!.experienceActions?.counterValue,
-      ),
+      (options.scenario.id !== "due-auto-expire" ||
+        options.scenario.expectedOutcomeClass !== "full-path-success" ||
+        browserResult!.formalDueLifecyclePassed === true) &&
+      (options.scenario.id === "due-auto-expire" &&
+      options.scenario.expectedOutcomeClass === "full-path-success"
+        ? Boolean(
+            browserResult!.experienceActions?.dueEditedAndCleared &&
+              browserResult!.experienceActions?.dueFiredInExperience,
+          )
+        : Boolean(
+            !options.scenario.requiresExperience ||
+              browserResult!.experienceActions?.completedAndReopened ||
+              browserResult!.experienceActions?.tagSet ||
+              browserResult!.experienceActions?.counterValue,
+          )),
     repairedInOriginalBudget,
     durationMs: Date.now() - started,
     durationScope: options.resumeExistingCandidate

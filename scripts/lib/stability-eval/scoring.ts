@@ -51,6 +51,21 @@ export function scoreCapabilityAndBlocking(input: SettledScoringInput): {
         : null;
       break;
     case "due-auto-expire":
+      if (scenario.expectedOutcomeClass === "full-path-success") {
+        capabilitySelectionCorrect = Boolean(
+          plan?.capabilityChanges?.some(
+            (change) =>
+              change.capability === "schedule.runtime" &&
+              change.provider === "host:online-scheduler",
+          ) &&
+            plan?.capabilityChanges?.some(
+              (change) =>
+                change.capability === "schedule.register" &&
+                change.provider.startsWith("member:"),
+            ),
+        );
+        break;
+      }
       capabilitySelectionCorrect =
         /定时|调度|timer|scheduler/i.test(text) ||
         providers.some((p) => /scheduler|timer/i.test(p));

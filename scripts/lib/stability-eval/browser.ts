@@ -25,6 +25,15 @@ export type ExperienceBindings = {
   };
   counter?: { actionLabel: string; fieldKey: string };
   reflection?: { fieldLabel: string };
+  due?: {
+    memberId: string;
+    actionLabel: string;
+    inputKey: string;
+    inputLabel: string;
+    expiredKey: string;
+    expiredLabel: string;
+    expiredExpected: string;
+  };
 };
 
 export type BrowserPathResult = {
@@ -40,8 +49,11 @@ export type BrowserPathResult = {
     counterValue?: string;
     reflectionSet?: string;
     completedAndReopened?: boolean;
+    dueEditedAndCleared?: boolean;
+    dueFiredInExperience?: boolean;
   };
   applied?: boolean;
+  formalDueLifecyclePassed?: boolean;
   recoveryEntryVisible: boolean;
   screenshot: string;
   pageErrors: string[];
@@ -64,6 +76,7 @@ export async function runStabilityBrowserPath(input: {
   configurePage?: (page: Page) => Promise<void>;
   resumeExistingCandidate?: boolean;
   budgetMs?: number;
+  restartHost?: () => Promise<void>;
 }): Promise<BrowserPathResult> {
   const deadline = Date.now() + (input.budgetMs ?? 600_000) + 15_000;
   const remaining = () => Math.max(1, deadline - Date.now());
@@ -102,6 +115,7 @@ export async function runStabilityBrowserPath(input: {
     screenshot,
     pageErrors: errors,
   };
+  let bindings: ExperienceBindings | undefined;
   try {
     if (!server.listening)
       await new Promise<void>((resolve, reject) => {
@@ -241,10 +255,8 @@ export async function runStabilityBrowserPath(input: {
         page.getByRole("status", { name: "候选体验提示" }),
       ).toContainText("候选体验 · 测试数据 · 尚未应用");
       result.experienced = true;
-      result.experienceActions = await exerciseExperience(
-        page,
-        input.bindings ?? (await input.resolveBindings?.()),
-      );
+      bindings = input.bindings ?? (await input.resolveBindings?.());
+      result.experienceActions = await exerciseExperience(page, bindings);
       await page.getByRole("button", { name: "结束体验", exact: true }).click();
       await page.getByRole("button", { name: "改进应用", exact: true }).click();
     }
@@ -264,6 +276,27 @@ export async function runStabilityBrowserPath(input: {
         .toBe(true);
       result.applied = true;
       result.observedRunStatus = "succeeded";
+      if (
+        input.scenario.id === "due-auto-expire" &&
+        input.scenario.expectedOutcomeClass === "full-path-success"
+      ) {
+        if (!bindings?.due || !input.restartHost)
+          throw new Error(
+            "Evaluator binding: due lifecycle controls unavailable",
+          );
+        const formalDue = await exerciseFormalDueLifecycle({
+          page,
+          browser,
+          bindings: bindings.due,
+          restartHost: input.restartHost,
+          pageChanged: (next) => {
+            page = next;
+            next.on("pageerror", (error) => errors.push(error.message));
+          },
+        });
+        page = formalDue.page;
+        result.formalDueLifecyclePassed = true;
+      }
     }
 
     await openRecoveryEntry(page, result);
@@ -446,6 +479,57 @@ async function exerciseExperience(
     assert.equal(Number(task.fields[bindings.counter.fieldKey]), 1);
     actions.counterValue = task.fields[bindings.counter.fieldKey];
   }
+  if (bindings?.due) {
+    const setDue = async (value: string) => {
+      const form = await responseForAction(page, commandResponse, () =>
+        actionButton(page, bindings.due!.actionLabel).click(),
+      );
+      assert.equal(form.status(), 200);
+      const receipt = (await form.json()) as CommandResult;
+      assert.equal(receipt.decision?.kind, "input-required");
+      const field = receipt.decision.fields.find(
+        (item) => item.key === bindings.due!.inputKey,
+      );
+      assert.ok(field, "Evaluator binding: due input absent from form");
+      await page.getByLabel(field.label, { exact: true }).fill(value);
+      const saved = await responseForAction(page, commandResponse, () =>
+        actionButton(page, bindings.due!.actionLabel).click(),
+      );
+      assert.equal(saved.status(), 200);
+      return (await saved.json()) as CommandResult;
+    };
+    const first = new Date(Date.now() + 60_000).toISOString();
+    assert.equal(
+      (await setDue(first)).task?.fields[bindings.due.inputKey],
+      first,
+    );
+    const second = new Date(Date.now() + 120_000).toISOString();
+    assert.equal(
+      (await setDue(second)).task?.fields[bindings.due.inputKey],
+      second,
+    );
+    const cleared = await setDue("");
+    assert.equal(cleared.task?.fields[bindings.due.inputKey], undefined);
+    actions.dueEditedAndCleared = true;
+    const firingAt = new Date(Date.now() + 5_000).toISOString();
+    assert.equal(
+      (await setDue(firingAt)).task?.fields[bindings.due.inputKey],
+      firingAt,
+    );
+    await expect
+      .poll(
+        async () => {
+          await page.reload();
+          return page
+            .getByText(bindings.due!.expiredLabel, { exact: true })
+            .locator("..")
+            .innerText();
+        },
+        { timeout: 12_000 },
+      )
+      .toContain(bindings.due.expiredExpected);
+    actions.dueFiredInExperience = true;
+  }
   const complete = page.getByRole("button", { name: "完成", exact: true });
   if (await complete.isVisible().catch(() => false)) {
     const matchesComplete = (r: Response) =>
@@ -486,6 +570,99 @@ async function exerciseExperience(
     }
   }
   return actions;
+}
+
+async function exerciseFormalDueLifecycle(input: {
+  page: Page;
+  browser: Browser;
+  bindings: NonNullable<ExperienceBindings["due"]>;
+  restartHost: () => Promise<void>;
+  pageChanged: (page: Page) => void;
+}): Promise<{ page: Page }> {
+  let { page } = input;
+  const title = "后测截止时间任务";
+  await page.reload();
+  await page
+    .getByRole("textbox", { name: "添加任务", exact: true })
+    .fill(title);
+  await page.getByRole("button", { name: "添加", exact: true }).click();
+  const setDue = async (value: string) => {
+    await page
+      .getByRole("button", { name: `编辑 ${title}`, exact: true })
+      .click();
+    await page
+      .getByRole("button", {
+        name: `${input.bindings.actionLabel} ${title}`,
+        exact: true,
+      })
+      .click();
+    const form = page.getByRole("dialog");
+    await form
+      .getByLabel(input.bindings.inputLabel, { exact: true })
+      .fill(value);
+    await form
+      .getByRole("button", {
+        name: input.bindings.actionLabel,
+        exact: true,
+      })
+      .click();
+    await expect(form).toHaveCount(0);
+    await page.keyboard.press("Escape");
+  };
+  await setDue(new Date(Date.now() + 60_000).toISOString());
+  await setDue("");
+  const firingAt = new Date(Date.now() + 7_000).toISOString();
+  await setDue(firingAt);
+  const url = page.url();
+  await page.close();
+  await input.restartHost();
+  await new Promise((resolve) => setTimeout(resolve, 7_200));
+  page = await input.browser.newPage({ viewport: { width: 390, height: 844 } });
+  input.pageChanged(page);
+  await page.goto(url);
+  await page
+    .getByRole("button", { name: `编辑 ${title}`, exact: true })
+    .click();
+  await expect(
+    page.getByText(input.bindings.expiredLabel, { exact: true }).locator(".."),
+  ).toContainText(input.bindings.expiredExpected);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "更多选项", exact: true }).click();
+  await page.getByRole("menuitem", { name: "工作区设置" }).click();
+  await page
+    .getByRole("button", {
+      name: `停用 ${input.bindings.memberId}`,
+      exact: true,
+    })
+    .click();
+  await page
+    .getByRole("button", {
+      name: `启用 ${input.bindings.memberId}`,
+      exact: true,
+    })
+    .click();
+  await page.getByRole("button", { name: "撤回上个版本", exact: true }).click();
+  await page
+    .getByRole("button", { name: "关闭工作区设置", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: `编辑 ${title}`, exact: true })
+    .click();
+  const editor = page.getByRole("dialog");
+  await expect(editor.getByText(firingAt, { exact: true })).toBeVisible();
+  await expect(
+    editor.getByText(input.bindings.expiredExpected, { exact: true }),
+  ).toBeVisible();
+  const list = (await (
+    await page.request.get(new URL("/api/tasks", page.url()).toString())
+  ).json()) as { tasks: { title: string; fields: Record<string, string> }[] };
+  const task = list.tasks.find((item) => item.title === title);
+  assert.equal(task?.fields[input.bindings.inputKey], firingAt);
+  assert.equal(
+    task?.fields[input.bindings.expiredKey],
+    input.bindings.expiredExpected,
+  );
+  return { page };
 }
 
 async function openRecoveryEntry(

@@ -23,7 +23,9 @@ import {
 } from "./lib/stability-eval/archive.js";
 import { linkDependencies } from "./lib/stability-eval/environment.js";
 import { assertRealModelAuthorization } from "./lib/stability-eval/authorization.js";
+import { postchangeManifest } from "./lib/stability-eval/postchange.js";
 
+const postchange = process.argv.includes("--postchange");
 const real =
   process.argv.includes("--authorize-real-model") &&
   !process.argv.includes("--stub");
@@ -51,10 +53,22 @@ function treeHashes(directory: string, prefix = ""): Record<string, string> {
 }
 
 if (!child) {
+  if (
+    postchange &&
+    execFileSync("git", ["status", "--porcelain"], {
+      encoding: "utf8",
+    }).trim()
+  )
+    throw new Error("#46 后测必须从干净提交运行");
+  const productCommit = postchange
+    ? execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim()
+    : BASELINE_PRODUCT_COMMIT;
   const root = resolve(
     process.env.STABILITY_EVAL_PATH ??
       join(
-        "docs/reports/issue-37-baseline",
+        postchange
+          ? "docs/reports/issue-46-postchange"
+          : "docs/reports/issue-37-baseline",
         `${real ? "real" : "stub"}-${new Date().toISOString().replace(/[:.]/g, "-")}`,
       ),
   );
@@ -64,13 +78,14 @@ if (!child) {
     throw new Error("GEMINI_API_KEY is not configured");
   const source = process.cwd();
   const directory = mkdtempSync(join(tmpdir(), "cordis-baseline-product-"));
-  const archive = execFileSync("git", ["archive", BASELINE_PRODUCT_COMMIT], {
+  const archive = execFileSync("git", ["archive", productCommit], {
     maxBuffer: 64 * 1024 * 1024,
   });
   execFileSync("tar", ["-x", "-C", directory], { input: archive });
   const productFiles = treeHashes(join(directory, "src"));
   const harnessFiles = [
     "scripts/accept-stability-baseline.ts",
+    "scripts/lib/stability-eval/postchange.ts",
     ...Object.keys(treeHashes("scripts/lib/stability-eval")).map(
       (path) => `scripts/lib/stability-eval/${path}`,
     ),
@@ -89,7 +104,7 @@ if (!child) {
     join(directory, "node_modules"),
   );
   const identity = {
-    productCommit: BASELINE_PRODUCT_COMMIT,
+    productCommit,
     productTreeHash: digest(JSON.stringify(productFiles)),
     productFiles,
     harnessCommit: execFileSync("git", ["rev-parse", "HEAD"], {
@@ -109,6 +124,7 @@ if (!child) {
         "tsx",
         "scripts/accept-stability-baseline.ts",
         "--isolated-baseline",
+        ...(postchange ? ["--postchange"] : []),
         real ? "--authorize-real-model" : "--stub",
       ],
       {
@@ -139,7 +155,7 @@ if (!child) {
     lockHash: string;
   };
   if (
-    identity.productCommit !== BASELINE_PRODUCT_COMMIT ||
+    (!postchange && identity.productCommit !== BASELINE_PRODUCT_COMMIT) ||
     identity.productTreeHash !== digest(JSON.stringify(treeHashes("src"))) ||
     identity.lockHash !== digest(readFileSync("pnpm-lock.yaml"))
   )
@@ -154,7 +170,11 @@ if (!child) {
     "./lib/stability-eval/metrics.js"
   );
   const { Gemini } = await import("../src/evolution/gemini.js");
-  const manifest = freezeManifest(STABILITY_EVAL_MANIFEST);
+  const manifest = freezeManifest(
+    postchange
+      ? postchangeManifest(identity.productCommit)
+      : STABILITY_EVAL_MANIFEST,
+  );
   const evidenceKind = real ? "real-model" : "model-stub";
   const { records } = await runFrozenBaselineSuite({
     root,
