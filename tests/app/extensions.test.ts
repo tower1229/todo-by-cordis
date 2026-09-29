@@ -187,6 +187,19 @@ test("resolveFireTime handles offset ISO and timezone wall clock", () => {
   assert.equal(zoned, Date.parse("2026-01-15T12:00:00Z"));
   const offset = resolveFireTime("2026-01-15T12:00:00+08:00");
   assert.equal(offset, Date.parse("2026-01-15T12:00:00+08:00"));
+  assert.equal(
+    resolveFireTime("2026-03-08T02:30:00", "America/New_York"),
+    null,
+  );
+  assert.equal(
+    resolveFireTime("2026-02-30T12:00:00", "America/New_York"),
+    null,
+  );
+  assert.equal(
+    resolveFireTime("2026-11-01T01:30:00", "America/New_York"),
+    Date.parse("2026-11-01T05:30:00Z"),
+  );
+  assert.equal(resolveFireTime("2026-01-15T12:00:00", "Invalid/Zone"), null);
 });
 
 test("online scheduler respects missPolicy and cancels timers", async () => {
@@ -279,6 +292,39 @@ test("online scheduler keeps far future deadlines armed without timer overflow",
   await clock.advance(60_000);
   assert.deepEqual(fired, ["far"]);
   assert.equal(scheduler.armedCount(), 0);
+});
+
+test("replaced timer callback cannot fire and unchanged due fires only once", async () => {
+  let now = 1_000;
+  const callbacks: Array<() => void | Promise<void>> = [];
+  const scheduler = new OnlineScheduler({
+    now: () => now,
+    setTimeout(handler) {
+      callbacks.push(handler);
+      return { clear() {} }; // Simulate a callback already queued by the host.
+    },
+  });
+  const fired: string[] = [];
+  const job = (at: string) => ({
+    id: "due",
+    at,
+    dedupeKey: "due:task",
+    onFire: { type: "action" as const, commandId: "expire", taskId: "task" },
+    missPolicy: "skip" as const,
+  });
+  const fire = async (item: { at: string }) => {
+    fired.push(item.at);
+  };
+  scheduler.arm([job(new Date(2_000).toISOString())], { fire });
+  scheduler.arm([job(new Date(3_000).toISOString())], { fire });
+  now = 2_000;
+  await callbacks[0]();
+  assert.deepEqual(fired, []);
+  now = 3_000;
+  await callbacks[1]();
+  assert.deepEqual(fired, [new Date(3_000).toISOString()]);
+  scheduler.arm([job(new Date(3_000).toISOString())], { fire });
+  assert.equal(callbacks.length, 2);
 });
 
 test("builtin plugin without contribute stays compatible", async (t) => {

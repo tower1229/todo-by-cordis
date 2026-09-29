@@ -456,13 +456,20 @@ export class Workspace {
   }
   private expandScheduleJobs(): (ScheduleRegistration & {
     hostField?: string;
+    hostTaskRevision?: number;
+    hostCompositionRevision: number;
   })[] {
-    const jobs: (ScheduleRegistration & { hostField?: string })[] = [];
+    const jobs: (ScheduleRegistration & {
+      hostField?: string;
+      hostTaskRevision?: number;
+      hostCompositionRevision: number;
+    })[] = [];
+    const hostCompositionRevision = this.current().revision;
     for (const schedule of this.extensions.schedules()) {
       const kind = schedule.atKind ?? "absolute";
       if (kind === "absolute") {
         if (!schedule.onFire.taskId) continue;
-        jobs.push(schedule);
+        jobs.push({ ...schedule, hostCompositionRevision });
         continue;
       }
       const fieldKey = schedule.at;
@@ -478,6 +485,8 @@ export class Workspace {
           at: value,
           atKind: "absolute",
           hostField: fieldKey,
+          hostTaskRevision: task.revision,
+          hostCompositionRevision,
           dedupeKey: `${schedule.dedupeKey}:${task.id}`,
           onFire: {
             ...schedule.onFire,
@@ -499,6 +508,18 @@ export class Workspace {
           const hostField = (
             job as ScheduleRegistration & { hostField?: string }
           ).hostField;
+          const registered = job as ScheduleRegistration & {
+            hostTaskRevision?: number;
+            hostCompositionRevision: number;
+          };
+          if (this.current().revision !== registered.hostCompositionRevision)
+            return;
+          if (
+            registered.hostTaskRevision !== undefined &&
+            task.revision !== registered.hostTaskRevision
+          )
+            return;
+          if (task.deletedAt) return;
           if (hostField && task.fields[hostField] !== job.at) return;
           await this.scheduledCommand({
             type: "action",
@@ -507,7 +528,7 @@ export class Workspace {
             input: { ...job.onFire.input, scheduledAt: job.at },
             expectedRevision: task.revision,
             operationId: `schedule:${job.dedupeKey}:${job.at}`,
-            compositionRevision: this.current().revision,
+            compositionRevision: registered.hostCompositionRevision,
           });
         } catch {
           // Online fire is best-effort; failures do not take down the workspace.

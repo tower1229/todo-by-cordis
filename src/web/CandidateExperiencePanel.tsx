@@ -134,7 +134,7 @@ export function CandidateExperiencePanel({
           <ErrorMessage message={error} />
         </div>
       )}
-      {!actionPanel && (
+      {!actionPanel && !snapshot.task.deletedAt && (
         <div
           className="flex flex-wrap gap-2 border-b border-line px-5 py-3"
           aria-label="体验任务操作"
@@ -164,7 +164,9 @@ export function CandidateExperiencePanel({
             ))}
         </div>
       )}
-      {actionPanel ? (
+      {snapshot.task.deletedAt ? (
+        <p className="flex-1 p-5 text-sm text-muted">体验任务已删除</p>
+      ) : actionPanel ? (
         <InputForm
           key={`${actionPanel.task.id}:${actionPanel.actionId}`}
           form={actionPanel}
@@ -185,16 +187,19 @@ export function CandidateExperiencePanel({
           availableActionIds={
             new Set(
               (snapshot.composition.workflow.actions ?? [])
-                .filter((action) =>
-                  action.from.includes(snapshot.task.state),
-                )
+                .filter((action) => action.from.includes(snapshot.task.state))
                 .map((action) => action.id),
             )
           }
           saved={refreshAfterWrite}
           close={() => void closeExperience()}
           remove={async () => {
-            setContributionError("体验任务不支持删除");
+            await client.sendCommand({
+              type: "delete",
+              taskId: snapshot.task.id,
+              expectedRevision: snapshot.task.revision,
+            });
+            await refreshAfterWrite();
           }}
           contributionBusy={busy}
           contributionError={contributionError}

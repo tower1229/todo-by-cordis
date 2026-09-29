@@ -83,7 +83,13 @@ test("schedule/1 uses real timer dispatch and rejects missing or ineffective sch
   const good = await candidate(dueAutoExpireSource);
   assert.deepEqual(
     await verifyScheduleViaIsolatedWorkspace(formal, good, cases, signal),
-    ["schedule/1:due-expire:on-time", "schedule/1:due-expire:completed-safe"],
+    [
+      "schedule/1:due-expire:on-time",
+      "schedule/1:due-expire:completed-safe",
+      "schedule/1:due-expire:updated-once",
+      "schedule/1:due-expire:cleared",
+      "schedule/1:due-expire:deleted",
+    ],
   );
   await assert.rejects(
     verifyScheduleViaIsolatedWorkspace(
@@ -111,10 +117,20 @@ test("schedule/1 uses real timer dispatch and rejects missing or ineffective sch
     verifyScheduleViaIsolatedWorkspace(formal, noEffect, cases, signal),
     /到点未通过真实调度/,
   );
+  const noClear = await candidate(
+    dueAutoExpireSource.replace(
+      "if (dueAt) fields.dueAt = dueAt;\n      else delete fields.dueAt;",
+      "fields.dueAt = dueAt || task.fields.dueAt;",
+    ),
+  );
+  await assert.rejects(
+    verifyScheduleViaIsolatedWorkspace(formal, noClear, cases, signal),
+    /清除未撤销调度/,
+  );
   const premature = await candidate(
     dueAutoExpireSource.replace(
-      "fields: { ...task.fields, dueAt }",
-      'fields: { ...task.fields, dueAt, expired: "true" }',
+      'return { kind: "commit", state: task.state, fields };',
+      'return { kind: "commit", state: task.state, fields: { ...fields, expired: "true" } };',
     ),
   );
   await assert.rejects(

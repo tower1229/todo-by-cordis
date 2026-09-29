@@ -197,6 +197,37 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     expect(sessions.readSnapshot(session.id).task.fields.dueAt).toBe(
       browserDueAt,
     );
+    await page
+      .getByRole("button", { name: "设截止 候选体验任务", exact: true })
+      .click();
+    const movedExperienceAt = new Date(
+      experienceClock.now() + 120_000,
+    ).toISOString();
+    await page
+      .getByRole("textbox", { name: "截止时间", exact: true })
+      .fill(movedExperienceAt);
+    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await experienceClock.advance(60_000);
+    expect(
+      sessions.readSnapshot(session.id).task.fields.expired,
+    ).toBeUndefined();
+    await page
+      .getByRole("button", { name: "设截止 候选体验任务", exact: true })
+      .click();
+    await page.getByRole("textbox", { name: "截止时间", exact: true }).fill("");
+    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    expect(sessions.readSnapshot(session.id).task.fields.dueAt).toBeUndefined();
+    await experienceClock.advance(60_000);
+    expect(
+      sessions.readSnapshot(session.id).task.fields.expired,
+    ).toBeUndefined();
+    await page
+      .getByRole("button", { name: "设截止 候选体验任务", exact: true })
+      .click();
+    await page
+      .getByRole("textbox", { name: "截止时间", exact: true })
+      .fill(new Date(experienceClock.now() + 60_000).toISOString());
+    await page.getByRole("button", { name: "设截止", exact: true }).click();
     await experienceClock.advance(59_999);
     expect(
       sessions.readSnapshot(session.id).task.fields.expired,
@@ -205,6 +236,24 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     await expect
       .poll(() => sessions.readSnapshot(session.id).task.fields.expired)
       .toBe("true");
+    await experienceClock.advance(1);
+    const onceRevision = sessions.readSnapshot(session.id).task.revision;
+    expect(sessions.readSnapshot(session.id).task.revision).toBe(onceRevision);
+    await page
+      .getByRole("button", { name: "设截止 候选体验任务", exact: true })
+      .click();
+    await page
+      .getByRole("textbox", { name: "截止时间", exact: true })
+      .fill(new Date(experienceClock.now() + 60_000).toISOString());
+    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await page.getByRole("button", { name: "删除任务", exact: true }).click();
+    await expect(page.getByText("体验任务已删除")).toBeVisible();
+    const deletedExperience = sessions.readSnapshot(session.id).task;
+    await experienceClock.advance(60_000);
+    expect(sessions.readSnapshot(session.id).task.revision).toBe(
+      deletedExperience.revision,
+    );
+    expect(sessions.readSnapshot(session.id).task.deletedAt).toBeTruthy();
     expect(workspace.read(formalTask.task!.id).fields).toEqual({});
     await page.getByRole("button", { name: "结束体验", exact: true }).click();
     await page.getByRole("button", { name: "改进应用", exact: true }).click();
@@ -240,17 +289,25 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
       .getByRole("textbox", { name: "截止时间", exact: true })
       .fill(formalDueAt);
     await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await detail
+      .getByRole("button", { name: "设截止 正式到期任务", exact: true })
+      .click();
+    const movedFormalAt = new Date(formalClock.now() + 120_000).toISOString();
+    await page
+      .getByRole("textbox", { name: "截止时间", exact: true })
+      .fill(movedFormalAt);
+    await page.getByRole("button", { name: "设截止", exact: true }).click();
     const appliedTask = workspace
       .query()
       .tasks.find((task) => task.title === "正式到期任务");
-    expect(appliedTask?.fields.dueAt).toBe(formalDueAt);
+    expect(appliedTask?.fields.dueAt).toBe(movedFormalAt);
     await expect(page.getByRole("button", { name: /标为过期/ })).toHaveCount(0);
     const forged = await page.request.post(`${baseURL}/api/commands`, {
       data: {
         type: "action",
         taskId: appliedTask!.id,
         actionId: "expire",
-        input: { scheduledAt: formalDueAt },
+        input: { scheduledAt: movedFormalAt },
         expectedRevision: appliedTask!.revision,
         compositionRevision: workspace.composition().revision,
         operationId: randomUUID(),
@@ -259,14 +316,51 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     expect(forged.ok()).toBe(false);
     expect(workspace.read(appliedTask!.id).fields.expired).toBeUndefined();
     await formalClock.advance(60_000);
+    expect(workspace.read(appliedTask!.id).fields.expired).toBeUndefined();
+    await formalClock.advance(60_000);
     await page.reload();
     expect(workspace.read(appliedTask!.id).fields.expired).toBe("true");
+    const formalOnce = workspace.read(appliedTask!.id).revision;
+    await formalClock.advance(1);
+    expect(workspace.read(appliedTask!.id).revision).toBe(formalOnce);
     await page
       .getByRole("button", { name: "编辑 正式到期任务", exact: true })
       .click();
     await expect(
       page.getByRole("article", { name: "截止与过期" }),
     ).toContainText("true");
+    await detail
+      .getByRole("button", { name: "设截止 正式到期任务", exact: true })
+      .click();
+    await page
+      .getByRole("textbox", { name: "截止时间", exact: true })
+      .fill(new Date(formalClock.now() + 60_000).toISOString());
+    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await detail
+      .getByRole("button", { name: "设截止 正式到期任务", exact: true })
+      .click();
+    await page.getByRole("textbox", { name: "截止时间", exact: true }).fill("");
+    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    const clearedFormal = workspace.read(appliedTask!.id);
+    expect(clearedFormal.fields.dueAt).toBeUndefined();
+    await formalClock.advance(60_000);
+    expect(workspace.read(appliedTask!.id).revision).toBe(
+      clearedFormal.revision,
+    );
+    await detail
+      .getByRole("button", { name: "设截止 正式到期任务", exact: true })
+      .click();
+    await page
+      .getByRole("textbox", { name: "截止时间", exact: true })
+      .fill(new Date(formalClock.now() + 60_000).toISOString());
+    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await page.getByRole("button", { name: "删除任务", exact: true }).click();
+    const deletedFormal = workspace.read(appliedTask!.id);
+    expect(deletedFormal.deletedAt).toBeTruthy();
+    await formalClock.advance(60_000);
+    expect(workspace.read(appliedTask!.id).revision).toBe(
+      deletedFormal.revision,
+    );
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));

@@ -179,6 +179,112 @@ export async function verifyScheduleViaIsolatedWorkspace(
           `定时验收失败：${schedule.id} 误标已完成任务`,
         );
       checks.push(`schedule/1:${schedule.id}:completed-safe`);
+
+      const changeTask = await create();
+      const oldAt = new Date(clock.now() + 60_000).toISOString();
+      const newAt = new Date(clock.now() + 120_000).toISOString();
+      const setDue = async (id: string, taskRevision: number, value: string) =>
+        isolated.command({
+          type: "action",
+          taskId: id,
+          actionId: setter.action,
+          input: { ...setter.input, [schedule.at]: value },
+          expectedRevision: taskRevision,
+          operationId: randomUUID(),
+          compositionRevision: revision(),
+        });
+      const oldDated = await setDue(changeTask.id, changeTask.revision, oldAt);
+      if (!oldDated.task) throw new Error("无法设置原截止时间");
+      const newDated = await setDue(
+        changeTask.id,
+        oldDated.task.revision,
+        newAt,
+      );
+      if (newDated.task?.fields[schedule.at] !== newAt)
+        throw new BusinessAssertionError(
+          `定时验收失败：${schedule.id} 修改截止失败`,
+        );
+      await clock.advance(60_000);
+      const atOldTime = isolated.read(changeTask.id);
+      if (atOldTime.revision !== newDated.task.revision)
+        throw new BusinessAssertionError(
+          `定时验收失败：${schedule.id} 旧截止仍触发`,
+        );
+      await clock.advance(60_000);
+      const atNewTime = isolated.read(changeTask.id);
+      if (
+        atNewTime.revision !== atOldTime.revision + 1 ||
+        atNewTime.state !== fired.expected.state ||
+        (expectedField &&
+          atNewTime.fields[expectedField[0]] !== expectedField[1])
+      )
+        throw new BusinessAssertionError(
+          `定时验收失败：${schedule.id} 新截止未触发`,
+        );
+      await clock.advance(1);
+      if (isolated.read(changeTask.id).revision !== atNewTime.revision)
+        throw new BusinessAssertionError(
+          `定时验收失败：${schedule.id} 重复触发`,
+        );
+      checks.push(`schedule/1:${schedule.id}:updated-once`);
+
+      const clearedTask = await create();
+      const clearAt = new Date(clock.now() + 60_000).toISOString();
+      const setForClear = await setDue(
+        clearedTask.id,
+        clearedTask.revision,
+        clearAt,
+      );
+      if (!setForClear.task) throw new Error("无法设置待清除截止时间");
+      const cleared = await setDue(
+        clearedTask.id,
+        setForClear.task.revision,
+        "",
+      );
+      if (
+        !cleared.task ||
+        cleared.task.fields[schedule.at] ||
+        isolated.schedulerState().armed !== 0
+      )
+        throw new BusinessAssertionError(
+          `定时验收失败：${schedule.id} 清除未撤销调度`,
+        );
+      await clock.advance(60_000);
+      if (isolated.read(clearedTask.id).revision !== cleared.task.revision)
+        throw new BusinessAssertionError(
+          `定时验收失败：${schedule.id} 清除后仍触发`,
+        );
+      checks.push(`schedule/1:${schedule.id}:cleared`);
+
+      const deleteTask = await create();
+      const deleteAt = new Date(clock.now() + 60_000).toISOString();
+      const setForDelete = await setDue(
+        deleteTask.id,
+        deleteTask.revision,
+        deleteAt,
+      );
+      if (!setForDelete.task) throw new Error("无法设置待删除截止时间");
+      const deleted = await isolated.command({
+        type: "delete",
+        taskId: deleteTask.id,
+        expectedRevision: setForDelete.task.revision,
+        operationId: randomUUID(),
+        compositionRevision: revision(),
+      });
+      if (isolated.schedulerState().armed !== 0)
+        throw new BusinessAssertionError(
+          `定时验收失败：${schedule.id} 删除未撤销调度`,
+        );
+      await clock.advance(60_000);
+      const retainedDelete = isolated.read(deleteTask.id);
+      if (
+        !retainedDelete.deletedAt ||
+        retainedDelete.revision !== deleted.task?.revision
+      )
+        throw new BusinessAssertionError(
+          `定时验收失败：${schedule.id} 删除后仍触发或恢复`,
+        );
+      checks.push(`schedule/1:${schedule.id}:deleted`);
     }
     return checks;
   } finally {
