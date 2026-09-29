@@ -65,12 +65,7 @@ export function usageFromCalls(
   let completionTokens = 0;
   for (const { usage } of calls) {
     const prompt = usage!.promptTokens ?? usage!.promptTokenCount;
-    const completion =
-      usage!.completionTokens ??
-      usage!.candidatesTokenCount ??
-      (usage!.totalTokenCount === prompt + (usage!.thoughtsTokenCount ?? 0)
-        ? 0
-        : undefined);
+    const completion = usage!.completionTokens ?? usage!.candidatesTokenCount;
     if (prompt === undefined || completion === undefined) return null;
     promptTokens += prompt;
     completionTokens += completion + (usage!.thoughtsTokenCount ?? 0);

@@ -96,6 +96,14 @@ test("partial usage is unknown and thinking tokens are included", () => {
     ]),
     { promptTokens: 2, completionTokens: 7 },
   );
+  assert.deepEqual(
+    usageFromCalls([{ usage: { promptTokenCount: 5, totalTokenCount: 5 } }]),
+    { promptTokens: 5, completionTokens: 0 },
+  );
+  assert.equal(
+    usageFromCalls([{ usage: { promptTokenCount: 5, totalTokenCount: 6 } }]),
+    null,
+  );
 });
 
 test("first-plan metric counts rejected proposals rather than eventual confirmation", () => {

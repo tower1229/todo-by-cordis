@@ -1,0 +1,19 @@
+{
+  "scenarioId": "tags-add",
+  "evidenceKind": "real-model",
+  "evidenceComplete": true,
+  "expectedOutcomeClass": "full-path-success",
+  "observedOutcomeClass": "failed",
+  "capabilitySelectionCorrect": true,
+  "errorBlockingCorrect": null,
+  "firstPlanPassed": true,
+  "firstCandidatePassed": true,
+  "fullPathSucceeded": false,
+  "repairedInOriginalBudget": false,
+  "durationMs": 88414,
+  "usage": {
+    "promptTokens": 161824,
+    "completionTokens": 10005
+  },
+  "failureClass": "model-understanding-or-generation"
+}
