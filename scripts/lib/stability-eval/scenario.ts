@@ -350,6 +350,7 @@ async function runScenarioInEnvironment(
         workflowRules: snapshot.run.plan.workflowRules,
         summary: snapshot.run.plan.summary,
         unresolved: snapshot.run.plan.unresolved,
+        requiredCapabilities: snapshot.run.plan.requiredCapabilities,
         capabilityChanges: snapshot.run.plan.capabilityChanges?.map((c) => ({
           capability: c.capability,
           provider: c.provider,
@@ -371,6 +372,7 @@ async function runScenarioInEnvironment(
             workflowRules: stored.plan.workflowRules,
             summary: stored.plan.summary,
             unresolved: stored.plan.unresolved,
+            requiredCapabilities: stored.plan.requiredCapabilities,
             capabilityChanges: stored.plan.capabilityChanges?.map((c) => ({
               capability: c.capability,
               provider: c.provider,

@@ -50,7 +50,7 @@ export const dueAutoExpireSource = `export default {
       ],
       schedules: [{
         id: "due-expire", atKind: "field", at: "dueAt", dedupeKey: "due-expire",
-        onFire: { type: "action", commandId: "expire" }, missPolicy: "skip",
+        onFire: { type: "action", commandId: "expire" }, missPolicy: "run-once",
       }],
       uiSlots: [{ id: "due-detail", slot: "task.detail", title: "截止与过期", fields: [{ key: "dueAt", label: "截止时间" }, { key: "expired", label: "已过期" }], actions: [{ commandId: "setDue", label: "设截止" }] }],
     };

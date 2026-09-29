@@ -606,7 +606,12 @@ async function exerciseFormalDueLifecycle(input: {
         exact: true,
       })
       .click();
-    await expect(form).toHaveCount(0);
+    await expect(
+      page.getByRole("textbox", {
+        name: input.bindings.inputLabel,
+        exact: true,
+      }),
+    ).toHaveCount(0);
     await page.keyboard.press("Escape");
   };
   await setDue(new Date(Date.now() + 60_000).toISOString());

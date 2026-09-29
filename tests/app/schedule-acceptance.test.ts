@@ -89,16 +89,16 @@ test("schedule/1 uses real timer dispatch and rejects missing or ineffective sch
       "schedule/1:due-expire:updated-once",
       "schedule/1:due-expire:cleared",
       "schedule/1:due-expire:deleted",
-      "schedule/1:due-expire:recovery-skip",
+      "schedule/1:due-expire:recovery-run-once",
     ],
   );
-  const runOnce = await candidate(
-    dueAutoExpireSource.replace('missPolicy: "skip"', 'missPolicy: "run-once"'),
+  const skip = await candidate(
+    dueAutoExpireSource.replace('missPolicy: "run-once"', 'missPolicy: "skip"'),
   );
   assert.ok(
     (
-      await verifyScheduleViaIsolatedWorkspace(formal, runOnce, cases, signal)
-    ).includes("schedule/1:due-expire:recovery-run-once"),
+      await verifyScheduleViaIsolatedWorkspace(formal, skip, cases, signal)
+    ).includes("schedule/1:due-expire:recovery-skip"),
   );
   await assert.rejects(
     verifyScheduleViaIsolatedWorkspace(

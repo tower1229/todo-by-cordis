@@ -114,28 +114,31 @@ test("#46 截止时间计划须选择宿主调度和成员业务注册，且成�
     (item) => item.id === "due-auto-expire",
   );
   assert.ok(due);
-  const score = (providers: string[]) =>
+  const score = (providers: string[], hostRuntime = true) =>
     scoreCapabilityAndBlocking({
       scenario: due,
       observedOutcomeClass: "full-path-success",
       plan: {
+        requiredCapabilities: hostRuntime
+          ? [
+              {
+                interfaceId: "schedule.runtime",
+                providerId: "host:online-scheduler",
+              },
+            ]
+          : [],
         capabilityChanges: providers.map((provider) => ({
           provider,
-          capability: provider.startsWith("host:")
-            ? "schedule.runtime"
-            : "schedule.register",
+          capability: "schedule.register",
           change: "按截止执行",
         })),
       },
       reachedReadyOnFirstPlan: true,
       blockedWithoutReady: false,
     });
-  assert.equal(
-    score(["host:online-scheduler"]).capabilitySelectionCorrect,
-    false,
-  );
-  assert.equal(score(["member:due"]).capabilitySelectionCorrect, false);
-  const correct = score(["host:online-scheduler", "member:due"]);
+  assert.equal(score([]).capabilitySelectionCorrect, false);
+  assert.equal(score(["member:due"], false).capabilitySelectionCorrect, false);
+  const correct = score(["member:due"]);
   assert.equal(correct.capabilitySelectionCorrect, true);
   assert.equal(correct.errorBlockingCorrect, null);
   assert.equal(correct.firstPlanPassed, true);

@@ -187,7 +187,9 @@ if (!child) {
       : undefined,
   });
   const summaryHash = writeVerifiedJson(join(root, "summary.json"), {
-    schema: "cordis.stability-eval-baseline/2",
+    schema: postchange
+      ? "cordis.stability-eval-postchange/1"
+      : "cordis.stability-eval-baseline/2",
     evidenceKind,
     ...identity,
     contentHash: manifest.contentHash,

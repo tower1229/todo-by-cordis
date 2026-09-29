@@ -341,10 +341,7 @@ test("browser sees deadline recovery after member enable and rollback keeps task
     new URL("../fixtures/aux-workflow.mjs", import.meta.url),
     "utf8",
   );
-  const dueCode = dueAutoExpireSource.replace(
-    'missPolicy: "skip"',
-    'missPolicy: "run-once"',
-  );
+  const dueCode = dueAutoExpireSource;
   const due = workspace.release.record({
     pluginId: "due",
     name: "截止",

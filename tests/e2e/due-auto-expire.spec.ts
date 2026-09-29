@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -14,6 +14,9 @@ import { createControllableClock } from "../../src/server/host/clock.js";
 import { PlanningDriver, toolReply } from "../app/planning-fixture.js";
 import { dueAutoExpireSource } from "../../src/server/capability-guides.js";
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
+import { runStabilityScenario } from "../../scripts/lib/stability-eval/scenario.js";
+import { freezeManifest } from "../../scripts/lib/stability-eval/manifest.js";
+import { postchangeManifest } from "../../scripts/lib/stability-eval/postchange.js";
 
 const dueAt = new Date(Date.now() + 10 * 60_000).toISOString();
 const memberCases = [
@@ -59,28 +62,7 @@ const memberCases = [
   },
 ];
 
-test("模型桩浏览器生成、体验并独立应用到期自动过期", async ({ page }) => {
-  test.setTimeout(120_000);
-  const directory = await mkdtemp(join(tmpdir(), "cordis-due-browser-"));
-  const formalClock = createControllableClock(Date.now());
-  const experienceClock = createControllableClock(formalClock.now());
-  const browserDueAt = new Date(experienceClock.now() + 60_000).toISOString();
-  const workspace = await Workspace.open(join(directory, "workspace.db"), {
-    clock: formalClock,
-  });
-  const sessions = new ExperienceSessionHost(
-    workspace,
-    30 * 60 * 1000,
-    () => experienceClock,
-  );
-  const baseline = workspace.composition();
-  const formalTask = await workspace.command({
-    type: "create",
-    title: "正式数据",
-    operationId: randomUUID(),
-    compositionRevision: baseline.revision,
-  });
-  const source = workspace.release.get(baseline.versionId).source;
+function dueDriver(source: string): Driver {
   const planning = new PlanningDriver({
     summary: "为任务设置截止时间并自动过期",
     changes: ["可选截止时间", "到点未完成自动标记过期"],
@@ -148,6 +130,32 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
       return result;
     },
   };
+  return driver;
+}
+
+test("模型桩浏览器生成、体验并独立应用到期自动过期", async ({ page }) => {
+  test.setTimeout(120_000);
+  const directory = await mkdtemp(join(tmpdir(), "cordis-due-browser-"));
+  const formalClock = createControllableClock(Date.now());
+  const experienceClock = createControllableClock(formalClock.now());
+  const browserDueAt = new Date(experienceClock.now() + 60_000).toISOString();
+  const workspace = await Workspace.open(join(directory, "workspace.db"), {
+    clock: formalClock,
+  });
+  const sessions = new ExperienceSessionHost(
+    workspace,
+    30 * 60 * 1000,
+    () => experienceClock,
+  );
+  const baseline = workspace.composition();
+  const formalTask = await workspace.command({
+    type: "create",
+    title: "正式数据",
+    operationId: randomUUID(),
+    compositionRevision: baseline.revision,
+  });
+  const source = workspace.release.get(baseline.versionId).source;
+  const driver = dueDriver(source);
   const evolution = new Evolution(
     workspace.db,
     driver,
@@ -366,6 +374,55 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await evolution.close();
     await workspace.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("#46 模型桩经后测评估器完成截止、恢复及撤回浏览器路径", async () => {
+  test.setTimeout(120_000);
+  const directory = await mkdtemp(join(tmpdir(), "cordis-due-postchange-"));
+  try {
+    const seed = await Workspace.open(join(directory, "seed.db"));
+    const source = seed.release.get(seed.composition().versionId).source;
+    await seed.close();
+    const runDirectory = join(directory, "run");
+    await mkdir(runDirectory);
+    const scenario = postchangeManifest("a".repeat(40)).scenarios.find(
+      (item) => item.id === "due-auto-expire",
+    );
+    expect(scenario).toBeDefined();
+    const result = await runStabilityScenario({
+      directory: runDirectory,
+      scenario: scenario!,
+      manifest: freezeManifest(postchangeManifest("a".repeat(40))),
+      evidenceKind: "model-stub",
+      driver: dueDriver(source),
+    });
+    expect(result.record.evidenceComplete).toBe(true);
+    expect(result.record.capabilitySelectionCorrect).toBe(true);
+    const events = await readFile(result.eventsPath, "utf8");
+    const diagnostics = events
+      .trim()
+      .split("\n")
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            type: string;
+            message?: string;
+            browser?: { message?: string };
+          },
+      )
+      .filter(
+        (item) => item.type === "browser-error" || item.type === "settled",
+      )
+      .map((item) => item.message ?? item.browser?.message)
+      .filter(Boolean)
+      .join("; ");
+    expect(result.record.observedOutcomeClass, diagnostics).toBe(
+      "full-path-success",
+    );
+    expect(result.record.fullPathSucceeded).toBe(true);
+  } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });

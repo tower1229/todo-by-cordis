@@ -9,6 +9,7 @@ export type SettledPlanEvidence = {
     provider: string;
     change: string;
   }[];
+  requiredCapabilities?: InvestigatedPlan["requiredCapabilities"];
   unresolved?: string[];
   summary?: string;
 };
@@ -53,10 +54,10 @@ export function scoreCapabilityAndBlocking(input: SettledScoringInput): {
     case "due-auto-expire":
       if (scenario.expectedOutcomeClass === "full-path-success") {
         capabilitySelectionCorrect = Boolean(
-          plan?.capabilityChanges?.some(
-            (change) =>
-              change.capability === "schedule.runtime" &&
-              change.provider === "host:online-scheduler",
+          plan?.requiredCapabilities?.some(
+            (capability) =>
+              capability.interfaceId === "schedule.runtime" &&
+              capability.providerId === "host:online-scheduler",
           ) &&
             plan?.capabilityChanges?.some(
               (change) =>

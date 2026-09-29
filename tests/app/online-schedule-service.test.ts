@@ -306,10 +306,7 @@ test("disabled schedule resumes once when enabled and rollback keeps later tasks
     new URL("../fixtures/aux-workflow.mjs", import.meta.url),
     "utf8",
   );
-  const dueCode = dueAutoExpireSource.replace(
-    'missPolicy: "skip"',
-    'missPolicy: "run-once"',
-  );
+  const dueCode = dueAutoExpireSource;
   const due = w.release.record({
     pluginId: "due",
     name: "截止",
