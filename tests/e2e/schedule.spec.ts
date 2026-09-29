@@ -393,9 +393,16 @@ test("browser sees deadline recovery after member enable and rollback keeps task
       .getByRole("textbox", { name: "添加任务", exact: true })
       .fill(title);
     await page.getByRole("button", { name: "添加", exact: true }).click();
-    await page.getByRole("button", { name: `设截止 ${title}`, exact: true }).click();
-    await page.getByLabel("截止时间", { exact: true }).fill(new Date(clock.now() + 5_000).toISOString());
-    await page.getByRole("dialog").getByRole("button", { name: "设截止", exact: true }).click();
+    await page
+      .getByRole("button", { name: `设截止 ${title}`, exact: true })
+      .click();
+    await page
+      .getByLabel("截止时间", { exact: true })
+      .fill(new Date(clock.now() + 5_000).toISOString());
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "设截止", exact: true })
+      .click();
     const active = workspace.composition();
     const disabled = await app.request("/api/composition/members", {
       method: "POST",
@@ -454,6 +461,44 @@ test("browser sees deadline recovery after member enable and rollback keeps task
     expect(
       workspace.query("", "open").tasks.find((task) => task.title === title)
         ?.fields.expired,
+    ).toBe("true");
+
+    await workspace.activate(
+      {
+        versionId: version.id,
+        compositionRevision: workspace.composition().revision,
+        operationId: crypto.randomUUID(),
+      },
+      () => undefined,
+    );
+    await page.reload();
+    const restartTitle = "重启补执行截止";
+    await page
+      .getByRole("textbox", { name: "添加任务", exact: true })
+      .fill(restartTitle);
+    await page.getByRole("button", { name: "添加", exact: true }).click();
+    await page
+      .getByRole("button", { name: `设截止 ${restartTitle}`, exact: true })
+      .click();
+    await page
+      .getByLabel("截止时间", { exact: true })
+      .fill(new Date(clock.now() + 5_000).toISOString());
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "设截止", exact: true })
+      .click();
+    workspace.testHarness()!.scheduleService.stop();
+    await clock.advance(5_000);
+    await workspace.restart();
+    await workspace.whenSchedulesIdle();
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: `编辑 ${restartTitle}`, exact: true }),
+    ).toBeVisible();
+    expect(
+      workspace
+        .query("", "open")
+        .tasks.find((task) => task.title === restartTitle)?.fields.expired,
     ).toBe("true");
   } finally {
     await new Promise<void>((resolve) => {
