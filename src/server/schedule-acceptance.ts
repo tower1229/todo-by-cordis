@@ -285,6 +285,42 @@ export async function verifyScheduleViaIsolatedWorkspace(
           `定时验收失败：${schedule.id} 删除后仍触发或恢复`,
         );
       checks.push(`schedule/1:${schedule.id}:deleted`);
+
+      const missedTask = await create();
+      const missedAt = new Date(clock.now() + 60_000).toISOString();
+      const missedDated = await setDue(
+        missedTask.id,
+        missedTask.revision,
+        missedAt,
+      );
+      if (!missedDated.task) throw new Error("无法设置恢复检查截止时间");
+      isolated.testHarness()?.scheduleService.stop();
+      await clock.advance(60_000);
+      await isolated.restart();
+      await isolated.whenSchedulesIdle();
+      const afterRecovery = isolated.read(missedTask.id);
+      if (schedule.missPolicy === "run-once") {
+        if (
+          afterRecovery.revision !== missedDated.task.revision + 1 ||
+          afterRecovery.state !== fired.expected.state ||
+          (expectedField &&
+            afterRecovery.fields[expectedField[0]] !== expectedField[1])
+        )
+          throw new BusinessAssertionError(
+            `定时验收失败：${schedule.id} 恢复后未补执行有效截止`,
+          );
+        await isolated.restart();
+        await isolated.whenSchedulesIdle();
+        if (isolated.read(missedTask.id).revision !== afterRecovery.revision)
+          throw new BusinessAssertionError(
+            `定时验收失败：${schedule.id} 重复恢复触发`,
+          );
+      } else if (afterRecovery.revision !== missedDated.task.revision) {
+        throw new BusinessAssertionError(
+          `定时验收失败：${schedule.id} skip 策略误补执行`,
+        );
+      }
+      checks.push(`schedule/1:${schedule.id}:recovery-${schedule.missPolicy}`);
     }
     return checks;
   } finally {

@@ -116,6 +116,48 @@ test("browser observes schedule fire after host clock advance", async ({
   expect(done?.state).toBe("done");
 });
 
+test("browser reconnects to a scheduled result after closing and host restart", async ({
+  page,
+  request,
+  context,
+}) => {
+  await activateHooked(request);
+  await page.goto("/");
+  const title = "重连后可见到期结果";
+  await page
+    .getByRole("textbox", { name: "添加任务", exact: true })
+    .fill(title);
+  await page.getByRole("button", { name: "添加", exact: true }).click();
+  const now = await clockNow(request);
+  await setDueViaUi(page, title, new Date(now + 5_000).toISOString());
+  await page.close();
+  expect((await request.post("/api/runtime/retry")).ok()).toBeTruthy();
+  expect(
+    (
+      await request.post("/api/test/clock/advance", { data: { ms: 5_000 } })
+    ).ok(),
+  ).toBeTruthy();
+  const reconnected = await context.newPage();
+  await reconnected.goto("/");
+  await reconnected
+    .getByRole("button", { name: "已完成", exact: true })
+    .click();
+  await expect(
+    reconnected.getByRole("button", { name: `编辑 ${title}`, exact: true }),
+  ).toBeVisible();
+  const executions = await (
+    await request.get("/api/schedules/executions")
+  ).json();
+  expect(executions.executions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        scheduleId: "due-field",
+        outcome: "succeeded",
+      }),
+    ]),
+  );
+});
+
 test("cleared due does not fire after clock advance", async ({
   page,
   request,
@@ -264,6 +306,160 @@ test("real wall timer fires through schedule adapter in browser", async ({
       if ("closeAllConnections" in server) server.closeAllConnections();
     });
     await sessions.close();
+    await workspace.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("browser sees deadline recovery after member enable and rollback keeps tasks", async ({
+  page,
+}) => {
+  const { serve } = await import("@hono/node-server");
+  const { serveStatic } = await import("@hono/node-server/serve-static");
+  const { mkdtemp, rm, readFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { Workspace } = await import("../../src/server/workspace.js");
+  const { createApp } = await import("../../src/server/app.js");
+  const { createControllableClock } = await import(
+    "../../src/server/host/clock.js"
+  );
+  const { dueAutoExpireSource } = await import(
+    "../../src/server/capability-guides.js"
+  );
+  const { dualWorkflowDefinition } = await import(
+    "../app/dual-composition-fixture.js"
+  );
+  const directory = await mkdtemp(
+    join(tmpdir(), "cordis-sched-browser-recover-"),
+  );
+  const clock = createControllableClock(Date.parse("2030-01-01T00:00:00.000Z"));
+  const workspace = await Workspace.open(join(directory, "workspace.db"), {
+    clock,
+  });
+  const workflowCode = await readFile(
+    new URL("../fixtures/aux-workflow.mjs", import.meta.url),
+    "utf8",
+  );
+  const dueCode = dueAutoExpireSource.replace(
+    'missPolicy: "skip"',
+    'missPolicy: "run-once"',
+  );
+  const due = workspace.release.record({
+    pluginId: "due",
+    name: "截止",
+    service: "plugin:due",
+    contractVersion: "extensions/1",
+    source: dueCode,
+    code: dueCode,
+    definition: { id: "due" },
+    evidence: { passed: true, origin: "test" },
+  });
+  const version = workspace.release.record({
+    pluginId: "aux-workflow",
+    name: "工作流",
+    service: "workflow",
+    contractVersion: "workflow/1",
+    source: workflowCode,
+    code: workflowCode,
+    definition: dualWorkflowDefinition,
+    evidence: { passed: true, origin: "test" },
+    members: [
+      { pluginId: "aux-workflow", role: "workflow", enabled: true },
+      { pluginId: "due", versionId: due.id, role: "auxiliary", enabled: true },
+    ],
+  });
+  await workspace.activate(
+    {
+      versionId: version.id,
+      compositionRevision: workspace.composition().revision,
+      operationId: crypto.randomUUID(),
+    },
+    () => undefined,
+  );
+  const app = createApp(workspace, undefined, undefined, { testClock: clock });
+  app.use("/*", serveStatic({ root: "./dist/web" }));
+  app.get("*", serveStatic({ path: "./dist/web/index.html" }));
+  const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 });
+  try {
+    if (!server.listening)
+      await new Promise<void>((resolve) => server.once("listening", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string")
+      throw new Error("Missing server address");
+    await page.goto(`http://127.0.0.1:${address.port}`);
+    const title = "启停与撤回保留";
+    await page
+      .getByRole("textbox", { name: "添加任务", exact: true })
+      .fill(title);
+    await page.getByRole("button", { name: "添加", exact: true }).click();
+    await page.getByRole("button", { name: `设截止 ${title}`, exact: true }).click();
+    await page.getByLabel("截止时间", { exact: true }).fill(new Date(clock.now() + 5_000).toISOString());
+    await page.getByRole("dialog").getByRole("button", { name: "设截止", exact: true }).click();
+    const active = workspace.composition();
+    const disabled = await app.request("/api/composition/members", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pluginId: "due",
+        enabled: false,
+        versionId: active.versionId,
+        compositionRevision: active.revision,
+        operationId: crypto.randomUUID(),
+      }),
+    });
+    expect(disabled.ok).toBeTruthy();
+    const disabledVersionId = workspace.composition().versionId;
+    await clock.advance(5_000);
+    expect(
+      workspace.query("", "open").tasks.find((task) => task.title === title)
+        ?.fields.expired,
+    ).toBeUndefined();
+    const beforeEnable = workspace.composition();
+    const enabled = await app.request("/api/composition/members", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pluginId: "due",
+        enabled: true,
+        versionId: beforeEnable.versionId,
+        compositionRevision: beforeEnable.revision,
+        operationId: crypto.randomUUID(),
+      }),
+    });
+    expect(enabled.ok).toBeTruthy();
+    await workspace.whenSchedulesIdle();
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: `编辑 ${title}`, exact: true }),
+    ).toBeVisible();
+    expect(
+      workspace.query("", "open").tasks.find((task) => task.title === title)
+        ?.fields.expired,
+    ).toBe("true");
+    const restored = await app.request("/api/runtime/restore", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        versionId: disabledVersionId,
+        compositionRevision: workspace.composition().revision,
+        operationId: crypto.randomUUID(),
+      }),
+    });
+    expect(restored.ok).toBeTruthy();
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: `编辑 ${title}`, exact: true }),
+    ).toBeVisible();
+    expect(
+      workspace.query("", "open").tasks.find((task) => task.title === title)
+        ?.fields.expired,
+    ).toBe("true");
+  } finally {
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      if ("closeAllConnections" in server) server.closeAllConnections();
+    });
     await workspace.close();
     await rm(directory, { recursive: true, force: true });
   }

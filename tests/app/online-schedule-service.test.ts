@@ -13,6 +13,8 @@ import {
 } from "../../src/server/host/online-schedule-service.js";
 import type { WorkflowDefinition } from "../../src/shared/contracts.js";
 import { ExperienceSessionHost } from "../../src/server/experience-session.js";
+import { dueAutoExpireSource } from "../../src/server/capability-guides.js";
+import { dualWorkflowDefinition } from "./dual-composition-fixture.js";
 
 const fixtureDir = dirname(fileURLToPath(import.meta.url));
 const hookedFixturePath = join(fixtureDir, "../fixtures/hooked-plugin.mjs");
@@ -160,6 +162,245 @@ test("workspace injects clock and surfaces host base schedule service", async (t
       .baseServices?.find((s) => s.id === ONLINE_SCHEDULER_SERVICE_ID)?.status,
     "active",
   );
+});
+
+test("missed run-once deadline is recovered after restart and recorded once", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-sched-recover-"));
+  const clock = createControllableClock(Date.parse("2026-09-22T00:00:00.000Z"));
+  const path = join(directory, "tasks.db");
+  let w = await Workspace.open(path, { clock });
+  t.after(async () => {
+    await w.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const original = await readFile(hookedFixturePath, "utf8");
+  const code = original.replace('missPolicy: "skip"', 'missPolicy: "run-once"');
+  const hooked = w.release.record({
+    pluginId: "hooked",
+    name: "钩子夹具",
+    service: "workflow",
+    contractVersion: "workflow/1",
+    source: code,
+    code,
+    definition,
+    evidence: { passed: true, origin: "test" },
+  });
+  await w.activate(
+    {
+      versionId: hooked.id,
+      compositionRevision: w.composition().revision,
+      operationId: randomUUID(),
+    },
+    () => undefined,
+  );
+  const created = await w.command({
+    type: "create",
+    title: "错过的截止",
+    operationId: randomUUID(),
+    compositionRevision: w.composition().revision,
+  });
+  await w.command({
+    type: "action",
+    taskId: created.task!.id,
+    actionId: "setDue",
+    expectedRevision: created.task!.revision,
+    input: { dueAt: new Date(clock.now() + 5_000).toISOString() },
+    operationId: randomUUID(),
+    compositionRevision: w.composition().revision,
+  });
+  await w.close();
+  await clock.advance(5_000);
+  w = await Workspace.open(path, { clock });
+  await w.whenSchedulesIdle();
+  const recovered = w.read(created.task!.id);
+  assert.equal(recovered.state, "done");
+  assert.equal(w.scheduleExecutions().at(-1)?.outcome, "succeeded");
+  await w.restart();
+  await w.whenSchedulesIdle();
+  assert.equal(w.read(created.task!.id).revision, recovered.revision);
+});
+
+test("failed scheduled action keeps task data and exposes an attributable failure", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-sched-failed-"));
+  const clock = createControllableClock(Date.parse("2026-09-22T00:00:00.000Z"));
+  const w = await Workspace.open(join(directory, "tasks.db"), { clock });
+  t.after(async () => {
+    await w.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const original = await readFile(hookedFixturePath, "utf8");
+  const code = original.replace(
+    'if (action === "complete")',
+    'if (action === "complete") return { kind: "reject", message: "测试拒绝" };\n    if (action === "never")',
+  );
+  const hooked = w.release.record({
+    pluginId: "hooked",
+    name: "钩子夹具",
+    service: "workflow",
+    contractVersion: "workflow/1",
+    source: code,
+    code,
+    definition,
+    evidence: { passed: true, origin: "test" },
+  });
+  await w.activate(
+    {
+      versionId: hooked.id,
+      compositionRevision: w.composition().revision,
+      operationId: randomUUID(),
+    },
+    () => undefined,
+  );
+  const created = await w.command({
+    type: "create",
+    title: "失败截止",
+    operationId: randomUUID(),
+    compositionRevision: w.composition().revision,
+  });
+  const dueAt = new Date(clock.now() + 1_000).toISOString();
+  await w.command({
+    type: "action",
+    taskId: created.task!.id,
+    actionId: "setDue",
+    input: { dueAt },
+    expectedRevision: created.task!.revision,
+    operationId: randomUUID(),
+    compositionRevision: w.composition().revision,
+  });
+  await clock.advance(1_000);
+  assert.equal(w.read(created.task!.id).state, "open");
+  assert.equal(w.read(created.task!.id).fields.dueAt, dueAt);
+  assert.deepEqual(
+    w
+      .scheduleExecutions()
+      .map(({ taskId, scheduleId, versionId, at, outcome, detail }) => ({
+        taskId,
+        scheduleId,
+        versionId,
+        at,
+        outcome,
+        detail,
+      })),
+    [
+      {
+        taskId: created.task!.id,
+        scheduleId: "due-field",
+        versionId: hooked.id,
+        at: dueAt,
+        outcome: "failed",
+        detail: "测试拒绝",
+      },
+    ],
+  );
+});
+
+test("disabled schedule resumes once when enabled and rollback keeps later tasks", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-sched-enable-"));
+  const clock = createControllableClock(Date.parse("2026-09-22T00:00:00.000Z"));
+  const w = await Workspace.open(join(directory, "tasks.db"), { clock });
+  t.after(async () => {
+    await w.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const workflowCode = await readFile(
+    new URL("../fixtures/aux-workflow.mjs", import.meta.url),
+    "utf8",
+  );
+  const dueCode = dueAutoExpireSource.replace(
+    'missPolicy: "skip"',
+    'missPolicy: "run-once"',
+  );
+  const due = w.release.record({
+    pluginId: "due",
+    name: "截止",
+    service: "plugin:due",
+    contractVersion: "extensions/1",
+    source: dueCode,
+    code: dueCode,
+    definition: { id: "due" },
+    evidence: { passed: true, origin: "test" },
+  });
+  const composition = w.release.record({
+    pluginId: "aux-workflow",
+    name: "工作流",
+    service: "workflow",
+    contractVersion: "workflow/1",
+    source: workflowCode,
+    code: workflowCode,
+    definition: dualWorkflowDefinition,
+    evidence: { passed: true, origin: "test" },
+    members: [
+      { pluginId: "aux-workflow", role: "workflow", enabled: true },
+      { pluginId: "due", versionId: due.id, role: "auxiliary", enabled: true },
+    ],
+  });
+  await w.activate(
+    {
+      versionId: composition.id,
+      compositionRevision: w.composition().revision,
+      operationId: randomUUID(),
+    },
+    () => undefined,
+  );
+  const created = await w.command({
+    type: "create",
+    title: "启停截止",
+    operationId: randomUUID(),
+    compositionRevision: w.composition().revision,
+  });
+  const at = new Date(clock.now() + 5_000).toISOString();
+  await w.command({
+    type: "action",
+    taskId: created.task!.id,
+    actionId: "setDue",
+    input: { dueAt: at },
+    expectedRevision: created.task!.revision,
+    operationId: randomUUID(),
+    compositionRevision: w.composition().revision,
+  });
+  const beforeDisable = w.composition();
+  await w.setMemberEnabled({
+    pluginId: "due",
+    enabled: false,
+    versionId: beforeDisable.versionId,
+    compositionRevision: beforeDisable.revision,
+    operationId: randomUUID(),
+  });
+  const disabledVersionId = w.composition().versionId;
+  assert.equal(w.schedulerState().armed, 0);
+  await clock.advance(5_000);
+  assert.equal(w.read(created.task!.id).fields.expired, undefined);
+  const later = await w.command({
+    type: "create",
+    title: "停用期间新增",
+    operationId: randomUUID(),
+    compositionRevision: w.composition().revision,
+  });
+  const beforeEnable = w.composition();
+  await w.setMemberEnabled({
+    pluginId: "due",
+    enabled: true,
+    versionId: beforeEnable.versionId,
+    compositionRevision: beforeEnable.revision,
+    operationId: randomUUID(),
+  });
+  await w.whenSchedulesIdle();
+  assert.equal(w.read(created.task!.id).fields.expired, "true");
+  const afterEnable = w.read(created.task!.id).revision;
+  await w.restart();
+  await w.whenSchedulesIdle();
+  assert.equal(w.read(created.task!.id).revision, afterEnable);
+  await w.activate(
+    {
+      versionId: disabledVersionId,
+      compositionRevision: w.composition().revision,
+      operationId: randomUUID(),
+    },
+    () => undefined,
+  );
+  assert.equal(w.schedulerState().armed, 0);
+  assert.equal(w.read(later.task!.id).title, "停用期间新增");
+  assert.equal(w.read(created.task!.id).fields.expired, "true");
 });
 
 test("clearing due cancels schedule so clock advance does not fire", async (t) => {
@@ -394,5 +635,25 @@ test("formal and experience session schedules stay isolated through experience e
   assert.equal(w.schedulerState().armed, 1);
   assert.equal(w.read(formalTask.task!.id).state, "open");
   await formalClock.advance(60_000);
+  assert.equal(w.read(formalTask.task!.id).state, "done");
+
+  const later = await sessions.start({
+    runId: "sched-iso-later",
+    candidateId: "candidate",
+    versionId: hooked.id,
+    evidenceHash: "test",
+    compositionRevision: w.composition().revision,
+  });
+  await w.activate(
+    {
+      versionId: w.previousVersionId()!,
+      compositionRevision: w.composition().revision,
+      operationId: randomUUID(),
+    },
+    () => undefined,
+  );
+  assert.deepEqual(sessions.observe({ sessionId: later.id }), {
+    status: "none",
+  });
   assert.equal(w.read(formalTask.task!.id).state, "done");
 });

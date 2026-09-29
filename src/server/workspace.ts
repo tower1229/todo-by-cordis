@@ -85,6 +85,7 @@ type ScheduledJob = ScheduleRegistration & {
   hostField?: string;
   hostTaskRevision?: number;
   hostCompositionRevision: number;
+  hostVersionId: string;
 };
 
 export class Workspace {
@@ -103,6 +104,8 @@ export class Workspace {
   private readonly extensions = new ExtensionRegistry();
   private readonly clock: HostClock;
   private readonly scheduleService: OnlineScheduleService;
+  private readonly scheduleAttempts = new Set<Promise<void>>();
+  private readonly compositionReadyListeners = new Set<() => void>();
   private diagnosticsNotes: string[] = [];
   private constructor(
     filename: string,
@@ -117,6 +120,7 @@ export class Workspace {
       CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,title TEXT NOT NULL,description TEXT NOT NULL,state TEXT NOT NULL,revision INTEGER NOT NULL,createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL,deletedAt TEXT,fields TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS task_order ON tasks(deletedAt,createdAt DESC,id DESC);
       CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY,hash TEXT NOT NULL,result TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS schedule_executions(id INTEGER PRIMARY KEY,identity TEXT NOT NULL,taskId TEXT NOT NULL,scheduleId TEXT NOT NULL,versionId TEXT NOT NULL,at TEXT NOT NULL,outcome TEXT NOT NULL,detail TEXT NOT NULL,recordedAt TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS workspace(id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL,workflowId TEXT NOT NULL,buildHash TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS releases(id INTEGER PRIMARY KEY,workflowId TEXT NOT NULL,createdAt TEXT NOT NULL,pausedMs REAL NOT NULL,preparationMs REAL NOT NULL,buildHash TEXT NOT NULL);`);
     this.db
@@ -331,6 +335,8 @@ export class Workspace {
       this.bind(runtime);
       await this.setupExtensions(runtime, version);
       this.status = "ready";
+      this.armSchedules(runtime);
+      for (const listener of this.compositionReadyListeners) listener();
       return runtime;
     } catch (error) {
       await runtime.close();
@@ -435,7 +441,6 @@ export class Workspace {
           pluginId,
         ),
       );
-    this.armSchedules(runtime);
   }
   private async teardownExtensions(runtime: RuntimeLike) {
     this.scheduleService.stop();
@@ -463,11 +468,12 @@ export class Workspace {
   private expandScheduleJobs(): ScheduledJob[] {
     const jobs: ScheduledJob[] = [];
     const hostCompositionRevision = this.current().revision;
+    const hostVersionId = this.current().versionId;
     for (const schedule of this.extensions.schedules()) {
       const kind = schedule.atKind ?? "absolute";
       if (kind === "absolute") {
         if (!schedule.onFire.taskId) continue;
-        jobs.push({ ...schedule, hostCompositionRevision });
+        jobs.push({ ...schedule, hostCompositionRevision, hostVersionId });
         continue;
       }
       const fieldKey = schedule.at;
@@ -485,6 +491,7 @@ export class Workspace {
           hostField: fieldKey,
           hostTaskRevision: task.revision,
           hostCompositionRevision,
+          hostVersionId,
           dedupeKey: `${schedule.dedupeKey}:${task.id}`,
           onFire: {
             ...schedule.onFire,
@@ -497,37 +504,106 @@ export class Workspace {
   }
   private armSchedules(runtime: RuntimeLike) {
     this.scheduleService.bind(this.expandScheduleJobs(), {
-      fire: async (job) => {
-        if (this.runtime !== runtime || this.status !== "ready") return;
-        const taskId = job.onFire.taskId;
-        if (!taskId) return;
-        try {
-          const task = this.read(taskId);
-          const registered = job as ScheduledJob;
-          const hostField = registered.hostField;
-          if (this.current().revision !== registered.hostCompositionRevision)
-            return;
-          if (
-            registered.hostTaskRevision !== undefined &&
-            task.revision !== registered.hostTaskRevision
-          )
-            return;
-          if (task.deletedAt) return;
-          if (hostField && task.fields[hostField] !== job.at) return;
-          await this.scheduledCommand({
-            type: "action",
-            taskId: task.id,
-            actionId: job.onFire.commandId,
-            input: { ...job.onFire.input, scheduledAt: job.at },
-            expectedRevision: task.revision,
-            operationId: `schedule:${job.dedupeKey}:${job.at}`,
-            compositionRevision: registered.hostCompositionRevision,
-          });
-        } catch {
-          // Online fire is best-effort; failures do not take down the workspace.
-        }
+      fire: (job) => {
+        const attempt = this.fireSchedule(runtime, job);
+        this.scheduleAttempts.add(attempt);
+        void attempt.finally(() => this.scheduleAttempts.delete(attempt));
+        return attempt;
       },
     });
+  }
+  private async fireSchedule(runtime: RuntimeLike, job: ScheduleRegistration) {
+    const taskId = job.onFire.taskId;
+    if (!taskId) return;
+    const registered = job as ScheduledJob;
+    const identity = `schedule:${job.dedupeKey}:${job.at}`;
+    const record = (
+      outcome: "succeeded" | "skipped" | "failed",
+      detail: string,
+    ) => {
+      this.db
+        .prepare(
+          "INSERT INTO schedule_executions(identity,taskId,scheduleId,versionId,at,outcome,detail,recordedAt) VALUES(?,?,?,?,?,?,?,?)",
+        )
+        .run(
+          identity,
+          taskId,
+          job.id,
+          registered.hostVersionId,
+          job.at,
+          outcome,
+          detail.slice(0, 500),
+          new Date(this.clock.now()).toISOString(),
+        );
+    };
+    try {
+      if (this.runtime !== runtime || this.status !== "ready") return;
+      const task = this.read(taskId);
+      const hostField = registered.hostField;
+      if (this.current().revision !== registered.hostCompositionRevision)
+        return record("skipped", "组合已变化");
+      if (
+        registered.hostTaskRevision !== undefined &&
+        task.revision !== registered.hostTaskRevision
+      )
+        return record("skipped", "任务已变化");
+      if (task.deletedAt) return record("skipped", "任务已删除");
+      if (hostField && task.fields[hostField] !== job.at)
+        return record("skipped", "截止时间已变化");
+      if (this.operation(identity))
+        return record("skipped", "已执行过相同截止动作");
+      const allowed =
+        this.extensions
+          .commands()
+          .some(
+            (command) =>
+              command.id === job.onFire.commandId &&
+              (!command.from || command.from.includes(task.state)),
+          ) ||
+        this.composition().workflow.actions.some(
+          (action) =>
+            action.id === job.onFire.commandId &&
+            action.from.includes(task.state),
+        );
+      if (!allowed) return record("skipped", "当前状态不允许到期动作");
+      const result = await this.scheduledCommand({
+        type: "action",
+        taskId: task.id,
+        actionId: job.onFire.commandId,
+        input: { ...job.onFire.input, scheduledAt: job.at },
+        expectedRevision: task.revision,
+        operationId: identity,
+        compositionRevision: registered.hostCompositionRevision,
+      });
+      if (result.decision?.kind !== "commit") throw new Error("调度动作未提交");
+      record("succeeded", "已提交");
+    } catch (error) {
+      record("failed", error instanceof Error ? error.message : String(error));
+    }
+  }
+  async whenSchedulesIdle() {
+    while (this.scheduleAttempts.size)
+      await Promise.all([...this.scheduleAttempts]);
+  }
+  scheduleExecutions() {
+    return this.db
+      .prepare(
+        "SELECT identity,taskId,scheduleId,versionId,at,outcome,detail,recordedAt FROM schedule_executions ORDER BY id DESC LIMIT 100",
+      )
+      .all() as Array<{
+      identity: string;
+      taskId: string;
+      scheduleId: string;
+      versionId: string;
+      at: string;
+      outcome: string;
+      detail: string;
+      recordedAt: string;
+    }>;
+  }
+  onCompositionReady(listener: () => void) {
+    this.compositionReadyListeners.add(listener);
+    return () => this.compositionReadyListeners.delete(listener);
   }
   private recordAnnotations(value: unknown) {
     if (!this.extensions.hasDiagnostics()) return;
@@ -1304,6 +1380,8 @@ export class Workspace {
           openWrites: () => {
             this.options.checkpoint?.("ready-check");
             this.status = "ready";
+            if (this.runtime) this.armSchedules(this.runtime);
+            for (const listener of this.compositionReadyListeners) listener();
             this.setActivationPending(false);
             this.writeRecovery(undefined);
             if (priorRuntime && priorRuntime !== this.runtime) {
@@ -1347,6 +1425,8 @@ export class Workspace {
               this.bind(priorRuntime);
               await this.setupExtensions(priorRuntime, restored);
               this.status = "ready";
+              this.armSchedules(priorRuntime);
+              for (const listener of this.compositionReadyListeners) listener();
               return;
             }
             try {
@@ -1371,6 +1451,7 @@ export class Workspace {
       await this.runtime.close();
     }
     this.scheduleService.release();
+    await this.whenSchedulesIdle();
     await Promise.all(this.retiring);
     this.db.close();
   }

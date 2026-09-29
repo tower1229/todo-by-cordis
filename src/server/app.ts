@@ -7,14 +7,9 @@ import {
   type AssistantService,
 } from "./assistant.js";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import {
-  ExperienceSessionHost,
-} from "./experience-session.js";
+import { ExperienceSessionHost } from "./experience-session.js";
 import type { Command } from "../shared/contracts.js";
-import {
-  isControllableClock,
-  type ControllableClock,
-} from "./host/clock.js";
+import { isControllableClock, type ControllableClock } from "./host/clock.js";
 
 export type CreateAppOptions = {
   /**
@@ -58,6 +53,9 @@ export function createApp(
     c.json(workspace.operation(c.req.param("id"))),
   );
   app.get("/api/composition", (c) => c.json(workspace.composition()));
+  app.get("/api/schedules/executions", (c) =>
+    c.json({ executions: workspace.scheduleExecutions() }),
+  );
   app.post("/api/composition/members", async (c) => {
     const body = await c.req.json();
     return c.json(

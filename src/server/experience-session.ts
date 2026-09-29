@@ -40,12 +40,21 @@ type ActiveSession = {
 /** Host-owned isolated candidate experience; browser never supplies DB paths. */
 export class ExperienceSessionHost {
   private active?: ActiveSession;
+  private readonly unsubscribe: () => void;
 
   constructor(
     private formal: Workspace,
     private ttlMs = 30 * 60 * 1000,
     private clockFactory?: () => HostClock,
-  ) {}
+  ) {
+    this.unsubscribe = formal.onCompositionReady(() => {
+      if (
+        this.active &&
+        formal.composition().revision !== this.active.formalCompositionRevision
+      )
+        void this.closeActive();
+    });
+  }
 
   private snapshot(active: ActiveSession): ExperienceSessionSnapshot {
     const task = active.workspace.read(active.taskId);
@@ -145,6 +154,7 @@ export class ExperienceSessionHost {
       this.formal.composition().revision !==
       this.active.formalCompositionRevision
     ) {
+      void Promise.resolve().then(() => this.closeActive());
       return {
         id: this.active.id,
         status: "invalid",
@@ -225,6 +235,7 @@ export class ExperienceSessionHost {
   }
 
   async close() {
+    this.unsubscribe();
     await this.closeActive();
   }
 }
