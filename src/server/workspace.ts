@@ -81,6 +81,12 @@ export type WorkspaceOpenOptions = {
   clock?: HostClock;
 };
 
+type ScheduledJob = ScheduleRegistration & {
+  hostField?: string;
+  hostTaskRevision?: number;
+  hostCompositionRevision: number;
+};
+
 export class Workspace {
   readonly db: DatabaseSync;
   readonly release: Release;
@@ -454,16 +460,8 @@ export class Workspace {
     this.extensions.clear();
     this.diagnosticsNotes = [];
   }
-  private expandScheduleJobs(): (ScheduleRegistration & {
-    hostField?: string;
-    hostTaskRevision?: number;
-    hostCompositionRevision: number;
-  })[] {
-    const jobs: (ScheduleRegistration & {
-      hostField?: string;
-      hostTaskRevision?: number;
-      hostCompositionRevision: number;
-    })[] = [];
+  private expandScheduleJobs(): ScheduledJob[] {
+    const jobs: ScheduledJob[] = [];
     const hostCompositionRevision = this.current().revision;
     for (const schedule of this.extensions.schedules()) {
       const kind = schedule.atKind ?? "absolute";
@@ -505,13 +503,8 @@ export class Workspace {
         if (!taskId) return;
         try {
           const task = this.read(taskId);
-          const hostField = (
-            job as ScheduleRegistration & { hostField?: string }
-          ).hostField;
-          const registered = job as ScheduleRegistration & {
-            hostTaskRevision?: number;
-            hostCompositionRevision: number;
-          };
+          const registered = job as ScheduledJob;
+          const hostField = registered.hostField;
           if (this.current().revision !== registered.hostCompositionRevision)
             return;
           if (

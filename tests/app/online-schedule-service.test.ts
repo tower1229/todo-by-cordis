@@ -6,9 +6,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
-import {
-  createControllableClock,
-} from "../../src/server/host/clock.js";
+import { createControllableClock } from "../../src/server/host/clock.js";
 import {
   ONLINE_SCHEDULER_SERVICE_ID,
   OnlineScheduleService,
@@ -85,7 +83,10 @@ test("online schedule service lifecycle is host-owned and distinct from members"
 
   service.release();
   assert.equal(service.lifecycle(), "released");
-  assert.throws(() => service.bind([], { fire: async () => undefined }), /released/);
+  assert.throws(
+    () => service.bind([], { fire: async () => undefined }),
+    /released/,
+  );
 });
 
 test("workspace injects clock and surfaces host base schedule service", async (t) => {
@@ -108,7 +109,9 @@ test("workspace injects clock and surfaces host base schedule service", async (t
     ),
   );
   assert.ok(
-    !w.composition().members.some((m) => m.pluginId === ONLINE_SCHEDULER_SERVICE_ID),
+    !w
+      .composition()
+      .members.some((m) => m.pluginId === ONLINE_SCHEDULER_SERVICE_ID),
   );
 
   const code = await readFile(hookedFixturePath, "utf8");
@@ -152,8 +155,9 @@ test("workspace injects clock and surfaces host base schedule service", async (t
   await clock.advance(5_000);
   assert.equal(w.read(created.task!.id).state, "done");
   assert.equal(
-    w.composition().baseServices?.find((s) => s.id === ONLINE_SCHEDULER_SERVICE_ID)
-      ?.status,
+    w
+      .composition()
+      .baseServices?.find((s) => s.id === ONLINE_SCHEDULER_SERVICE_ID)?.status,
     "active",
   );
 });
@@ -213,6 +217,79 @@ test("clearing due cancels schedule so clock advance does not fire", async (t) =
   assert.equal(w.schedulerState().armed, 0);
   await clock.advance(20_000);
   assert.equal(w.read(created.task!.id).state, "open");
+});
+
+test("queued old timer cannot commit after deadline edit in Workspace", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-sched-race-"));
+  let now = Date.parse("2026-09-22T01:00:00.000Z");
+  const callbacks: Array<() => void | Promise<void>> = [];
+  const w = await Workspace.open(join(directory, "tasks.db"), {
+    clock: {
+      now: () => now,
+      setTimeout(handler) {
+        callbacks.push(handler);
+        return { clear() {} }; // A timer callback may already be queued.
+      },
+    },
+  });
+  t.after(async () => {
+    await w.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  const code = await readFile(hookedFixturePath, "utf8");
+  const hooked = w.release.record({
+    pluginId: "hooked",
+    name: "钩子夹具",
+    service: "workflow",
+    contractVersion: "workflow/1",
+    source: code,
+    code,
+    definition,
+    evidence: { passed: true, origin: "test" },
+  });
+  await w.activate(
+    {
+      versionId: hooked.id,
+      compositionRevision: w.composition().revision,
+      operationId: randomUUID(),
+    },
+    () => undefined,
+  );
+  const created = await w.command({
+    type: "create",
+    title: "并发编辑",
+    operationId: randomUUID(),
+    compositionRevision: w.composition().revision,
+  });
+  const oldAt = new Date(now + 5_000).toISOString();
+  const first = await w.command({
+    type: "action",
+    taskId: created.task!.id,
+    actionId: "setDue",
+    expectedRevision: created.task!.revision,
+    input: { dueAt: oldAt },
+    operationId: randomUUID(),
+    compositionRevision: w.composition().revision,
+  });
+  const staleCallback = callbacks.at(-1)!;
+  const newAt = new Date(now + 10_000).toISOString();
+  const updated = await w.command({
+    type: "action",
+    taskId: created.task!.id,
+    actionId: "setDue",
+    expectedRevision: first.task!.revision,
+    input: { dueAt: newAt },
+    operationId: randomUUID(),
+    compositionRevision: w.composition().revision,
+  });
+  const currentCallback = callbacks.at(-1)!;
+  now += 5_000;
+  await staleCallback();
+  assert.equal(w.read(created.task!.id).revision, updated.task!.revision);
+  assert.equal(w.read(created.task!.id).fields.dueAt, newAt);
+  now += 5_000;
+  await currentCallback();
+  assert.equal(w.read(created.task!.id).state, "done");
 });
 
 test("closing workspace releases schedule service; production default uses system clock", async (t) => {

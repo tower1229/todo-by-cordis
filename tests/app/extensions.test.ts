@@ -187,6 +187,8 @@ test("resolveFireTime handles offset ISO and timezone wall clock", () => {
   assert.equal(zoned, Date.parse("2026-01-15T12:00:00Z"));
   const offset = resolveFireTime("2026-01-15T12:00:00+08:00");
   assert.equal(offset, Date.parse("2026-01-15T12:00:00+08:00"));
+  assert.equal(resolveFireTime("2026-02-30T12:00:00Z"), null);
+  assert.equal(resolveFireTime("2026-02-30T12:00:00+08:00"), null);
   assert.equal(
     resolveFireTime("2026-03-08T02:30:00", "America/New_York"),
     null,

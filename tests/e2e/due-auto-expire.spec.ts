@@ -236,8 +236,8 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     await expect
       .poll(() => sessions.readSnapshot(session.id).task.fields.expired)
       .toBe("true");
-    await experienceClock.advance(1);
     const onceRevision = sessions.readSnapshot(session.id).task.revision;
+    await experienceClock.advance(1);
     expect(sessions.readSnapshot(session.id).task.revision).toBe(onceRevision);
     await page
       .getByRole("button", { name: "设截止 候选体验任务", exact: true })

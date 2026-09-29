@@ -4,10 +4,39 @@ import { systemClock } from "../host/clock.js";
 
 export type ScheduleFireHandler = (job: ScheduleRegistration) => Promise<void>;
 
+function scheduleIdentity(job: ScheduleRegistration): string {
+  return JSON.stringify([job.dedupeKey, job.at]);
+}
+
 /** Parse ISO with offset/Z, or wall-clock in an IANA timezone. */
 export function resolveFireTime(at: string, timezone?: string): number | null {
   const trimmed = at.trim();
   if (!trimmed) return null;
+  const calendar = trimmed.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/,
+  );
+  if (!calendar) return null;
+  const calendarDate = new Date(0);
+  calendarDate.setUTCFullYear(
+    Number(calendar[1]),
+    Number(calendar[2]) - 1,
+    Number(calendar[3]),
+  );
+  calendarDate.setUTCHours(
+    Number(calendar[4] ?? "0"),
+    Number(calendar[5] ?? "0"),
+    Number(calendar[6] ?? "0"),
+    0,
+  );
+  if (
+    calendarDate.getUTCFullYear() !== Number(calendar[1]) ||
+    calendarDate.getUTCMonth() + 1 !== Number(calendar[2]) ||
+    calendarDate.getUTCDate() !== Number(calendar[3]) ||
+    calendarDate.getUTCHours() !== Number(calendar[4] ?? "0") ||
+    calendarDate.getUTCMinutes() !== Number(calendar[5] ?? "0") ||
+    calendarDate.getUTCSeconds() !== Number(calendar[6] ?? "0")
+  )
+    return null;
   if (/([zZ]|[+-]\d{2}:?\d{2})$/.test(trimmed)) {
     const ms = Date.parse(trimmed);
     return Number.isNaN(ms) ? null : ms;
@@ -106,7 +135,7 @@ export class OnlineScheduler {
     const timer = this.clock.setTimeout(() => {
       if (generation !== this.generation) return;
       this.timers.delete(job.dedupeKey);
-      const identity = `${job.dedupeKey}:${job.at}`;
+      const identity = scheduleIdentity(job);
       if (this.fired.has(identity)) return;
       if (this.clock.now() < when) {
         this.armFuture(job, when, fire);
@@ -125,9 +154,7 @@ export class OnlineScheduler {
       now?: number;
     },
   ) {
-    const stillRegistered = new Set(
-      jobs.map((job) => `${job.dedupeKey}:${job.at}`),
-    );
+    const stillRegistered = new Set(jobs.map(scheduleIdentity));
     this.generation++;
     for (const timer of this.timers.values()) timer.clear();
     this.timers.clear();
@@ -140,14 +167,14 @@ export class OnlineScheduler {
       if (when === null) continue;
       const delay = when - now;
       if (delay <= 0) {
-        const identity = `${job.dedupeKey}:${job.at}`;
+        const identity = scheduleIdentity(job);
         if (job.missPolicy === "run-once" && !this.fired.has(identity)) {
           this.fired.add(identity);
           void options.fire(job);
         }
         continue;
       }
-      if (!this.fired.has(`${job.dedupeKey}:${job.at}`))
+      if (!this.fired.has(scheduleIdentity(job)))
         this.armFuture(job, when, options.fire);
     }
   }
