@@ -1,0 +1,16 @@
+{
+  "scenarioId": "due-auto-expire",
+  "evidenceKind": "model-stub",
+  "evidenceComplete": true,
+  "expectedOutcomeClass": "full-path-success",
+  "observedOutcomeClass": "failed",
+  "capabilitySelectionCorrect": false,
+  "errorBlockingCorrect": null,
+  "firstPlanPassed": null,
+  "firstCandidatePassed": null,
+  "fullPathSucceeded": false,
+  "repairedInOriginalBudget": false,
+  "durationMs": 7363,
+  "usage": null,
+  "failureClass": "model-understanding-or-generation"
+}
