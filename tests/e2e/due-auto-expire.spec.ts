@@ -277,7 +277,33 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     );
     expect(sessions.readSnapshot(session.id).task.deletedAt).toBeTruthy();
     expect(workspace.read(formalTask.task!.id).fields).toEqual({});
+    let releaseEndResponse!: () => void;
+    let endRequestHandled!: () => void;
+    const endResponseReady = new Promise<void>((resolve) => {
+      endRequestHandled = resolve;
+    });
+    const releaseEnd = new Promise<void>((resolve) => {
+      releaseEndResponse = resolve;
+    });
+    await page.route("**/api/experience/end", async (route) => {
+      const response = await route.fetch();
+      endRequestHandled();
+      await releaseEnd;
+      await route.fulfill({ response });
+    });
     await page.getByRole("button", { name: "结束体验", exact: true }).click();
+    await endResponseReady;
+    try {
+      await expect(
+        page.getByRole("status", { name: "候选体验提示" }),
+      ).toBeVisible();
+    } finally {
+      releaseEndResponse();
+    }
+    await expect(
+      page.getByRole("status", { name: "候选体验提示" }),
+    ).not.toBeVisible();
+    await page.unroute("**/api/experience/end");
     await page.getByRole("button", { name: "改进应用", exact: true }).click();
     await page.getByRole("button", { name: "应用", exact: true }).click();
     await expect

@@ -159,7 +159,31 @@
     },
     "retainedSeedTasksUnchanged": 7,
     "nonAppliedFormalFingerprintsUnchanged": 5,
-    "hashesAndScreenshotsVerified": true
+    "hashesAndScreenshotsVerified": true,
+    "deliveryRegression": {
+      "initialCi": {
+        "commit": "63774bbec5386d49391223b5623919bed7bd27cc",
+        "conclusion": "failure",
+        "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/36662839221",
+        "unitTestsPassed": 293,
+        "browserTestsPassed": 79,
+        "browserTestsFailed": 1
+      },
+      "diagnosis": "截止浏览器桩测试未等待异步结束体验响应，提前打开改进面板；晚到的结束回调关闭新面板，应用按钮等待超时。",
+      "repair": "两处浏览器测试及当前评估器等待候选体验提示消失；截止测试拦截并延迟结束响应，验证顺序。",
+      "localChecks": {
+        "typecheck": "passed",
+        "diffCheck": "passed",
+        "targetedBrowserTests": {
+          "passed": 6,
+          "failed": 0
+        }
+      },
+      "productSourcesChanged": false,
+      "paidArchiveChanged": false,
+      "additionalPaidCalls": 0,
+      "finalCiEvidence": "修复提交的GitHub检查与Issue #36完成评论记录最终交付CI；本收据不预先宣称该检查通过。"
+    }
   },
   "completionEvidence": [
     {
