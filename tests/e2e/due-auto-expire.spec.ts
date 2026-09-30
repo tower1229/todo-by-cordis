@@ -207,13 +207,18 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     await expect(
       page.getByRole("status", { name: "候选体验提示" }),
     ).toBeVisible();
+    const dueInput = page.getByRole("textbox", { name: "截止时间", exact: true });
+    const submitDue = async () => {
+      await page.getByRole("button", { name: "设截止", exact: true }).click();
+      await expect(dueInput).not.toBeVisible();
+    };
     await page
       .getByRole("button", { name: "设截止 候选体验任务", exact: true })
       .click();
     await page
       .getByRole("textbox", { name: "截止时间", exact: true })
       .fill(browserDueAt);
-    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await submitDue();
     const session = sessions.observe();
     if (session.status !== "active") throw new Error("Missing experience");
     expect(sessions.readSnapshot(session.id).task.fields.dueAt).toBe(
@@ -228,7 +233,7 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     await page
       .getByRole("textbox", { name: "截止时间", exact: true })
       .fill(movedExperienceAt);
-    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await submitDue();
     await experienceClock.advance(60_000);
     expect(
       sessions.readSnapshot(session.id).task.fields.expired,
@@ -237,7 +242,7 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
       .getByRole("button", { name: "设截止 候选体验任务", exact: true })
       .click();
     await page.getByRole("textbox", { name: "截止时间", exact: true }).fill("");
-    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await submitDue();
     expect(sessions.readSnapshot(session.id).task.fields.dueAt).toBeUndefined();
     await experienceClock.advance(60_000);
     expect(
@@ -249,7 +254,7 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     await page
       .getByRole("textbox", { name: "截止时间", exact: true })
       .fill(new Date(experienceClock.now() + 60_000).toISOString());
-    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await submitDue();
     await experienceClock.advance(59_999);
     expect(
       sessions.readSnapshot(session.id).task.fields.expired,
@@ -264,10 +269,23 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     await page
       .getByRole("button", { name: "设截止 候选体验任务", exact: true })
       .click();
+    await expect(page.getByRole("alert")).toContainText(
+      "任务已在别处修改，请刷新后重新应用草稿",
+    );
+    await page.reload();
+    await expect(
+      page.getByRole("status", { name: "候选体验提示" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("已过期", { exact: true }).locator(".."),
+    ).toContainText("true");
+    await page
+      .getByRole("button", { name: "设截止 候选体验任务", exact: true })
+      .click();
     await page
       .getByRole("textbox", { name: "截止时间", exact: true })
       .fill(new Date(experienceClock.now() + 60_000).toISOString());
-    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await submitDue();
     await page.getByRole("button", { name: "删除任务", exact: true }).click();
     await expect(page.getByText("体验任务已删除")).toBeVisible();
     const deletedExperience = sessions.readSnapshot(session.id).task;
@@ -336,7 +354,7 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     await page
       .getByRole("textbox", { name: "截止时间", exact: true })
       .fill(formalDueAt);
-    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await submitDue();
     await detail
       .getByRole("button", { name: "设截止 正式到期任务", exact: true })
       .click();
@@ -344,7 +362,7 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     await page
       .getByRole("textbox", { name: "截止时间", exact: true })
       .fill(movedFormalAt);
-    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await submitDue();
     const appliedTask = workspace
       .query()
       .tasks.find((task) => task.title === "正式到期任务");
@@ -383,12 +401,12 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     await page
       .getByRole("textbox", { name: "截止时间", exact: true })
       .fill(new Date(formalClock.now() + 60_000).toISOString());
-    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await submitDue();
     await detail
       .getByRole("button", { name: "设截止 正式到期任务", exact: true })
       .click();
     await page.getByRole("textbox", { name: "截止时间", exact: true }).fill("");
-    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await submitDue();
     const clearedFormal = workspace.read(appliedTask!.id);
     expect(clearedFormal.fields.dueAt).toBeUndefined();
     await formalClock.advance(60_000);
@@ -401,8 +419,11 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     await page
       .getByRole("textbox", { name: "截止时间", exact: true })
       .fill(new Date(formalClock.now() + 60_000).toISOString());
-    await page.getByRole("button", { name: "设截止", exact: true }).click();
+    await submitDue();
     await page.getByRole("button", { name: "删除任务", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "编辑 正式到期任务", exact: true }),
+    ).toHaveCount(0);
     const deletedFormal = workspace.read(appliedTask!.id);
     expect(deletedFormal.deletedAt).toBeTruthy();
     await formalClock.advance(60_000);

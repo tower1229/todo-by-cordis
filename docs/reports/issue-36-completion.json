@@ -182,7 +182,30 @@
       "productSourcesChanged": false,
       "paidArchiveChanged": false,
       "additionalPaidCalls": 0,
-      "finalCiEvidence": "修复提交的GitHub检查与Issue #36完成评论记录最终交付CI；本收据不预先宣称该检查通过。"
+      "finalCiEvidence": "修复提交的GitHub检查与Issue #36完成评论记录最终交付CI；本收据不预先宣称该检查通过。",
+      "secondCi": {
+        "commit": "2bb78312e6fa8cbed1c09885fbe30366503bcb39",
+        "conclusion": "failure",
+        "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/36664548248",
+        "unitTestsPassed": 293,
+        "browserTestsPassed": 79,
+        "browserTestsFailed": 1,
+        "diagnosis": "截止桩的调度已更新任务版本，但体验页面仍是旧快照，下一次设截止被版本冲突门禁拒绝；等待输入框超时。"
+      },
+      "additionalRepair": "等待每次截止表单提交完成后推进时钟或核对数据；到期后明确验证旧快照编辑的版本冲突提示，刷新真实体验页面并观察过期字段后继续。正式删除等待界面更新再核对数据库。产品、原付费档案和预算不变。",
+      "additionalLocalChecks": {
+        "typecheck": "passed",
+        "diffCheck": "passed",
+        "dueBrowserTests": {
+          "passed": 3,
+          "failed": 0
+        },
+        "note": "最终正式表单及删除等待的单项检查通过；最终CI见修复提交及父Issue完成评论。",
+        "finalSequencingBrowserTest": {
+          "passed": 1,
+          "failed": 0
+        }
+      }
     }
   },
   "completionEvidence": [
