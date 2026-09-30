@@ -124,3 +124,13 @@ test("无法唯一定位注册 UI 时归类评估器错误", () => {
     "evaluator",
   );
 });
+
+test("读取工具参数错误归类工具协议，不冒充业务生成失败", () => {
+  for (const message of [
+    "读取源码参数无效",
+    "读取契约参数无效",
+    "INVALID_CURRENT_SOURCE_READ",
+    "INVALID_CONTRACT_READ",
+  ])
+    assert.equal(classifyFailure({ message }), "tool-protocol");
+});

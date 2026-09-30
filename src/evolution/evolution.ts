@@ -1500,17 +1500,44 @@ export class Evolution {
             this.save(r);
             return;
           } else if (call.name === "read_contract") {
-            if (Object.keys(call.args).length)
-              throw new Error("读取契约参数无效");
             this.toolEvent(r, "read_contract", "started", attempt);
-            result = { contract: context.contract };
-            this.toolEvent(r, "read_contract", "succeeded", attempt);
+            if (Object.keys(call.args).length) {
+              const diagnostic = {
+                error: "INVALID_CONTRACT_READ",
+                message: "读取契约参数无效：read_contract 只接受空对象 {}",
+              };
+              result = diagnostic;
+              this.toolEvent(
+                r,
+                "read_contract",
+                "failed",
+                attempt,
+                diagnostic.message,
+              );
+            } else {
+              result = { contract: context.contract };
+              this.toolEvent(r, "read_contract", "succeeded", attempt);
+            }
           } else if (call.name === "read_current_source") {
-            if (Object.keys(call.args).length)
-              throw new Error("读取源码参数无效");
             this.toolEvent(r, "read_current_source", "started", attempt);
-            result = { source: context.source };
-            this.toolEvent(r, "read_current_source", "succeeded", attempt);
+            if (Object.keys(call.args).length) {
+              const diagnostic = {
+                error: "INVALID_CURRENT_SOURCE_READ",
+                message:
+                  "读取源码参数无效：read_current_source 只接受空对象 {}，返回完整源码，不支持按 path 读取",
+              };
+              result = diagnostic;
+              this.toolEvent(
+                r,
+                "read_current_source",
+                "failed",
+                attempt,
+                diagnostic.message,
+              );
+            } else {
+              result = { source: context.source };
+              this.toolEvent(r, "read_current_source", "succeeded", attempt);
+            }
           } else if (call.name === "read_member") {
             this.toolEvent(r, "read_member", "started", attempt);
             try {

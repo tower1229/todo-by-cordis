@@ -62,7 +62,7 @@ const memberCases = [
   },
 ];
 
-function dueDriver(source: string): Driver {
+function dueDriver(source: string, expiryCaseAt?: string): Driver {
   const planning = new PlanningDriver({
     summary: "为任务设置截止时间并自动过期",
     changes: ["可选截止时间", "到点未完成自动标记过期"],
@@ -70,7 +70,21 @@ function dueDriver(source: string): Driver {
     dataImpact: "新增截止与过期字段；正式数据在应用前不变",
     workflowRules: [],
     memberAdditions: [{ pluginId: "due", name: "截止时间" }],
-    memberCases,
+    memberCases: memberCases.map((testCase) =>
+      expiryCaseAt &&
+      testCase.action === "expire" &&
+      testCase.expected.kind === "commit"
+        ? {
+            ...testCase,
+            fields: { ...testCase.fields, dueAt: expiryCaseAt },
+            input: { scheduledAt: expiryCaseAt },
+            expected: {
+              ...testCase.expected,
+              fields: { ...testCase.expected.fields, dueAt: expiryCaseAt },
+            },
+          }
+        : testCase,
+    ),
     capabilityChanges: [
       {
         capability: "command.register",
@@ -378,51 +392,53 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
   }
 });
 
-test("#46 模型桩经后测评估器完成截止、恢复及撤回浏览器路径", async () => {
-  test.setTimeout(120_000);
-  const directory = await mkdtemp(join(tmpdir(), "cordis-due-postchange-"));
-  try {
-    const seed = await Workspace.open(join(directory, "seed.db"));
-    const source = seed.release.get(seed.composition().versionId).source;
-    await seed.close();
-    const runDirectory = join(directory, "run");
-    await mkdir(runDirectory);
-    const scenario = postchangeManifest("a".repeat(40)).scenarios.find(
-      (item) => item.id === "due-auto-expire",
-    );
-    expect(scenario).toBeDefined();
-    const result = await runStabilityScenario({
-      directory: runDirectory,
-      scenario: scenario!,
-      manifest: freezeManifest(postchangeManifest("a".repeat(40))),
-      evidenceKind: "model-stub",
-      driver: dueDriver(source),
-    });
-    expect(result.record.evidenceComplete).toBe(true);
-    expect(result.record.capabilitySelectionCorrect).toBe(true);
-    const events = await readFile(result.eventsPath, "utf8");
-    const diagnostics = events
-      .trim()
-      .split("\n")
-      .map(
-        (line) =>
-          JSON.parse(line) as {
-            type: string;
-            message?: string;
-            browser?: { message?: string };
-          },
-      )
-      .filter(
-        (item) => item.type === "browser-error" || item.type === "settled",
-      )
-      .map((item) => item.message ?? item.browser?.message)
-      .filter(Boolean)
-      .join("; ");
-    expect(result.record.observedOutcomeClass, diagnostics).toBe(
-      "full-path-success",
-    );
-    expect(result.record.fullPathSucceeded).toBe(true);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
+for (const expiryCaseAt of [undefined, "2025-01-01T12:00:00Z"]) {
+  test(`#46 模型桩经后测评估器完成截止、恢复及撤回浏览器路径 · ${expiryCaseAt ? "验收时间不同" : "验收时间相同"}`, async () => {
+    test.setTimeout(120_000);
+    const directory = await mkdtemp(join(tmpdir(), "cordis-due-postchange-"));
+    try {
+      const seed = await Workspace.open(join(directory, "seed.db"));
+      const source = seed.release.get(seed.composition().versionId).source;
+      await seed.close();
+      const runDirectory = join(directory, "run");
+      await mkdir(runDirectory);
+      const scenario = postchangeManifest("a".repeat(40)).scenarios.find(
+        (item) => item.id === "due-auto-expire",
+      );
+      expect(scenario).toBeDefined();
+      const result = await runStabilityScenario({
+        directory: runDirectory,
+        scenario: scenario!,
+        manifest: freezeManifest(postchangeManifest("a".repeat(40))),
+        evidenceKind: "model-stub",
+        driver: dueDriver(source, expiryCaseAt),
+      });
+      expect(result.record.evidenceComplete).toBe(true);
+      expect(result.record.capabilitySelectionCorrect).toBe(true);
+      const events = await readFile(result.eventsPath, "utf8");
+      const diagnostics = events
+        .trim()
+        .split("\n")
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              type: string;
+              message?: string;
+              browser?: { message?: string };
+            },
+        )
+        .filter(
+          (item) => item.type === "browser-error" || item.type === "settled",
+        )
+        .map((item) => item.message ?? item.browser?.message)
+        .filter(Boolean)
+        .join("; ");
+      expect(result.record.observedOutcomeClass, diagnostics).toBe(
+        "full-path-success",
+      );
+      expect(result.record.fullPathSucceeded).toBe(true);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}

@@ -1,11 +1,11 @@
 {
   "schema": "cordis.stability-eval-baseline-index/1",
   "issue": 37,
-  "prechange": "stub-prechange",
+  "prechange": "real-20260930-independent",
   "productCommit": "8200f8a2957045ed232d0254a9efc627672b6fb3",
   "sourceCommit": "8200f8a2957045ed232d0254a9efc627672b6fb3",
-  "evidenceKind": "model-stub",
-  "note": "历史桩基线与真实尝试均保留。v3 崩溃后在新归档恢复同一候选，未追加其模型调用；其余六场景各首次运行。七场景已完整归档，但两个评估器失败使真实基线仍不完整。最终修复后的评估器仅通过本地回归，未追加付费批次。",
+  "evidenceKind": "real-model",
+  "note": "2026-09-30 新建独立真实模型轮次，七场均完整归档，无恢复、外层重试或预算重置。两场完整路径成功、截止场景按旧标准阻塞、一场准确阻塞、三场失败。completeBaseline 表示固定七场独立运行证据完整，不表示全部业务成功。历史桩、中断与续跑原样保留且不拼接进新基线。",
   "realModelAttempts": [
     {
       "path": "real-v2-20260923",
@@ -22,7 +22,16 @@
       "review": "real-v3-continuation-20260923-review.json",
       "completeBaseline": false,
       "allSevenLogicalTrialsArchived": true
+    },
+    {
+      "path": "real-20260930-independent",
+      "completeBaseline": true,
+      "allSevenIndependentTrialsArchived": true,
+      "harnessCommit": "e278774acd9ef025bae3c2fe067d06444af07801",
+      "harnessContentHash": "7fbac1c8065eda9638a9c9fd55c0341b8c3645dd4176f5023a8ff4f64dc6fe51",
+      "comparison": "../issue-36-comparison.json"
     }
   ],
-  "realModelBaselineComplete": false
+  "realModelBaselineComplete": true,
+  "historicalStubPrechange": "stub-prechange"
 }

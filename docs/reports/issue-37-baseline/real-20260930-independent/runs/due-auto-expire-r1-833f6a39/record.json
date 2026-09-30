@@ -1,0 +1,19 @@
+{
+  "scenarioId": "due-auto-expire",
+  "evidenceKind": "real-model",
+  "evidenceComplete": true,
+  "expectedOutcomeClass": "current-blocker",
+  "observedOutcomeClass": "current-blocker",
+  "capabilitySelectionCorrect": true,
+  "errorBlockingCorrect": true,
+  "firstPlanPassed": true,
+  "firstCandidatePassed": null,
+  "fullPathSucceeded": false,
+  "repairedInOriginalBudget": false,
+  "durationMs": 51530,
+  "usage": {
+    "promptTokens": 118558,
+    "completionTokens": 5247
+  },
+  "failureClass": null
+}

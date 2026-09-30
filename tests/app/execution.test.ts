@@ -7,7 +7,7 @@ import { Workspace } from "../../src/server/workspace.js";
 import { Evolution } from "../../src/evolution/evolution.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { createApp } from "../../src/server/app.js";
-import { PlanningDriver } from "./planning-fixture.js";
+import { PlanningDriver, toolReply } from "./planning-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
 import { source, candidateScope, candidateSource } from "./evolution-fixture.js";
 
@@ -24,6 +24,100 @@ async function settle(e: Evolution, status?: string) {
     await new Promise((r) => setTimeout(r, 20));
   }
   throw new Error(`timeout: ${JSON.stringify((await e.observe()).run)}`);
+}
+
+for (const tool of ["read_current_source", "read_contract"] as const) {
+  for (const repeated of [false, true]) {
+    test(`读取参数错误保持原预算：${tool} · ${repeated ? "重复到上限" : "纠正后继续"}`, async (t) => {
+      const dir = mkdtempSync(join(tmpdir(), "cordis-read-correction-"));
+      const w = await Workspace.open(join(dir, "workspace.db"));
+      const before = w.composition();
+      const fixture = new ExecutionDriver(new PlanningDriver());
+      let generationCalls = 0;
+      const results: Record<string, unknown>[] = [];
+      const e = new Evolution(
+        w.db,
+        {
+          async generate(request, signal) {
+            if (
+              !request.tools?.some((entry) => entry.name === "submit_candidate")
+            )
+              return fixture.generate(request, signal);
+            const history = request.history as {
+              parts?: {
+                functionResponse?: {
+                  name: string;
+                  response: { result: Record<string, unknown> };
+                };
+              }[];
+            }[];
+            results.push(
+              ...history
+                .flatMap((message) => message.parts ?? [])
+                .flatMap((part) =>
+                  part.functionResponse?.name === tool
+                    ? [part.functionResponse.response.result]
+                    : [],
+                ),
+            );
+            generationCalls += 1;
+            if (generationCalls === 1 || repeated)
+              return {
+                ...toolReply(tool, { path: "business/view.ts" }),
+                history: request.history,
+              };
+            if (generationCalls === 2)
+              return { ...toolReply(tool, {}), history: request.history };
+            return fixture.generate(request, signal);
+          },
+        },
+        new EvolutionDomain(w),
+        { calls: 8, candidates: 3, milliseconds: 30_000 },
+      );
+      t.after(async () => {
+        await e.close();
+        await w.close();
+        rmSync(dir, { recursive: true, force: true });
+      });
+      await e.command({
+        type: "request",
+        text: "完成前填写复盘",
+        operationId: "plan",
+      });
+      const ready = await settle(e, "ready");
+      if (ready.status !== "ready") throw new Error("expected ready");
+      await e.command({
+        type: "start",
+        operationId: "start",
+        runId: ready.id,
+        planId: ready.plan.id,
+      });
+      const done = await settle(e);
+      assert.equal(
+        done.status,
+        repeated ? "failed" : "awaiting-apply",
+        "message" in done ? done.message : done.status,
+      );
+      const rejected = results.find((result) => result.error);
+      assert.ok(rejected);
+      assert.match(String(rejected.message), /只接受空对象/);
+      assert.equal(rejected.source, undefined);
+      assert.equal(rejected.contract, undefined);
+      assert.deepEqual(w.composition(), before);
+      assert.ok((done.budget?.callsUsed ?? 0) <= 8);
+      if (repeated) {
+        assert.equal(done.budget?.callsRemaining, 0);
+        assert.equal(done.budget?.candidatesRemaining, 3);
+      } else {
+        assert.ok(
+          results.some((result) =>
+            tool === "read_current_source" ? result.source : result.contract,
+          ),
+        );
+        assert.equal(done.budget?.candidatesRemaining, 2);
+      }
+    });
+  }
 }
 
 test("A04: start freezes the plan, is idempotent, and rejects revise during execution", async (t) => {

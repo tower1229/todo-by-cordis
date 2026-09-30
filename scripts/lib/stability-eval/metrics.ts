@@ -164,7 +164,11 @@ export function classifyFailure(input: {
     )
   )
     return "transport";
-  if (/INVALID_.*ARGUMENTS|未知工具|tool protocol|schema/i.test(text))
+  if (
+    /INVALID_.*ARGUMENTS|INVALID_(?:CURRENT_SOURCE|CONTRACT)_READ|读取(?:源码|契约)参数无效|未知工具|tool protocol|schema/i.test(
+      text,
+    )
+  )
     return "tool-protocol";
   if (/检查器|验收覆盖|资料|指南|提示词|定时|调度基础/i.test(text))
     return "documentation-gap";

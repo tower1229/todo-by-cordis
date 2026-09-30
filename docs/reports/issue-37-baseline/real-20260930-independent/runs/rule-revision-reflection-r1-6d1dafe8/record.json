@@ -1,0 +1,19 @@
+{
+  "scenarioId": "rule-revision-reflection",
+  "evidenceKind": "real-model",
+  "evidenceComplete": true,
+  "expectedOutcomeClass": "full-path-success",
+  "observedOutcomeClass": "full-path-success",
+  "capabilitySelectionCorrect": true,
+  "errorBlockingCorrect": null,
+  "firstPlanPassed": true,
+  "firstCandidatePassed": true,
+  "fullPathSucceeded": true,
+  "repairedInOriginalBudget": false,
+  "durationMs": 73230,
+  "usage": {
+    "promptTokens": 87983,
+    "completionTokens": 8076
+  },
+  "failureClass": null
+}

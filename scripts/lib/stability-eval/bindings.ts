@@ -54,8 +54,8 @@ export function resolveExperienceBindings(input: {
           candidate.member === testCase.member &&
           candidate.action !== testCase.action &&
           candidate.expected.kind === "commit" &&
-          candidate.fields[dueField[0]] === dueField[1] &&
-          candidate.input.scheduledAt === dueField[1],
+          !Number.isNaN(Date.parse(candidate.fields[dueField[0]] ?? "")) &&
+          candidate.input.scheduledAt === candidate.fields[dueField[0]],
       );
       if (expiryCases.length !== 1) return [];
       const expiryCase = expiryCases[0]!;

@@ -1,0 +1,19 @@
+{
+  "scenarioId": "due-auto-expire",
+  "evidenceKind": "real-model",
+  "evidenceComplete": true,
+  "expectedOutcomeClass": "full-path-success",
+  "observedOutcomeClass": "failed",
+  "capabilitySelectionCorrect": true,
+  "errorBlockingCorrect": null,
+  "firstPlanPassed": false,
+  "firstCandidatePassed": true,
+  "fullPathSucceeded": false,
+  "repairedInOriginalBudget": false,
+  "durationMs": 100133,
+  "usage": {
+    "promptTokens": 206549,
+    "completionTokens": 12702
+  },
+  "failureClass": "evaluator"
+}

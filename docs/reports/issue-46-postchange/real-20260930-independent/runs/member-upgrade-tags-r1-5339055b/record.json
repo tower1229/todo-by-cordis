@@ -1,0 +1,19 @@
+{
+  "scenarioId": "member-upgrade-tags",
+  "evidenceKind": "real-model",
+  "evidenceComplete": true,
+  "expectedOutcomeClass": "full-path-success",
+  "observedOutcomeClass": "failed",
+  "capabilitySelectionCorrect": true,
+  "errorBlockingCorrect": null,
+  "firstPlanPassed": false,
+  "firstCandidatePassed": null,
+  "fullPathSucceeded": false,
+  "repairedInOriginalBudget": false,
+  "durationMs": 159486,
+  "usage": {
+    "promptTokens": 199368,
+    "completionTokens": 20722
+  },
+  "failureClass": "model-understanding-or-generation"
+}

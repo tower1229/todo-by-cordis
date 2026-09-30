@@ -1,0 +1,19 @@
+{
+  "scenarioId": "missing-capability-push",
+  "evidenceKind": "real-model",
+  "evidenceComplete": true,
+  "expectedOutcomeClass": "accurate-block",
+  "observedOutcomeClass": "accurate-block",
+  "capabilitySelectionCorrect": true,
+  "errorBlockingCorrect": true,
+  "firstPlanPassed": true,
+  "firstCandidatePassed": null,
+  "fullPathSucceeded": false,
+  "repairedInOriginalBudget": false,
+  "durationMs": 50588,
+  "usage": {
+    "promptTokens": 175540,
+    "completionTokens": 5112
+  },
+  "failureClass": null
+}

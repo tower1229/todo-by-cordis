@@ -1,0 +1,908 @@
+{
+  "schema": "cordis.stability-eval-comparison/1",
+  "issue": 36,
+  "evaluatedAt": "2026-09-30",
+  "harnessCommit": "e278774acd9ef025bae3c2fe067d06444af07801",
+  "harnessContentHash": "7fbac1c8065eda9638a9c9fd55c0341b8c3645dd4176f5023a8ff4f64dc6fe51",
+  "model": {
+    "stubKind": "model-stub",
+    "realModelId": "gemini-3.1-pro-preview",
+    "realModelAuthorizationFlag": "--authorize-real-model"
+  },
+  "budget": {
+    "calls": 12,
+    "candidates": 3,
+    "milliseconds": 600000
+  },
+  "runs": {
+    "independentRunsPerScenario": 1,
+    "note": "每个场景独立合成工作区；全部预先安排的成功与失败均入报告，不得只保留成功轮次。"
+  },
+  "retry": {
+    "externalRetries": 0,
+    "resetBudgetOnFailure": false,
+    "handEditCandidates": false,
+    "supplyCorrectImplementationToModel": false
+  },
+  "pricing": {
+    "source": "https://ai.google.dev/gemini-api/docs/pricing",
+    "verifiedOn": "2026-09-30",
+    "currency": "USD",
+    "standardPerMillion": {
+      "upTo200k": {
+        "input": 2,
+        "cachedInput": 0.2,
+        "outputIncludingThoughts": 12
+      },
+      "above200k": {
+        "input": 4,
+        "cachedInput": 0.4,
+        "outputIncludingThoughts": 18
+      }
+    },
+    "note": "按逐次 API usage 估算，未核对账单、税费或供应商调整；无显式缓存存储和外部搜索。"
+  },
+  "prechange": {
+    "path": "issue-37-baseline/real-20260930-independent",
+    "productCommit": "8200f8a2957045ed232d0254a9efc627672b6fb3",
+    "productTreeHash": "5af32057dacc8b0a043d3c445fcc49f436422d817accb91871f594ca22a28601",
+    "summaryHash": "a5259af0b3090926fdd64a420aefde6a56ef69e64bfcab39f85617839faa4f56",
+    "metrics": {
+      "capabilitySelectionAccuracy": {
+        "numerator": 6,
+        "denominator": 7,
+        "rate": 0.8571428571428571
+      },
+      "errorBlockingAccuracy": {
+        "numerator": 2,
+        "denominator": 3,
+        "rate": 0.6666666666666666
+      },
+      "firstPlanPassRate": {
+        "numerator": 5,
+        "denominator": 6,
+        "rate": 0.8333333333333334
+      },
+      "firstCandidatePassRate": {
+        "numerator": 2,
+        "denominator": 4,
+        "rate": 0.5
+      },
+      "fullPathSuccessRate": {
+        "numerator": 2,
+        "denominator": 7,
+        "rate": 0.2857142857142857
+      },
+      "inBudgetRepairRate": {
+        "numerator": 0,
+        "denominator": 2,
+        "rate": 0
+      },
+      "durationMs": {
+        "total": 853042,
+        "samples": 7
+      },
+      "costUsage": {
+        "promptTokens": 837369,
+        "completionTokens": 106863,
+        "samplesWithUsage": 7
+      },
+      "failureClassCounts": {
+        "model-understanding-or-generation": 3,
+        "documentation-gap": 0,
+        "host-defect": 0,
+        "tool-protocol": 0,
+        "transport": 0,
+        "evaluator": 0
+      }
+    },
+    "usageAudit": {
+      "calls": 40,
+      "promptTokens": 837369,
+      "cachedTokens": 310987,
+      "outputTokens": 106863,
+      "estimatedUsd": 2.3973174,
+      "maxPromptTokens": 54886
+    }
+  },
+  "postchange": {
+    "path": "issue-46-postchange/real-20260930-independent",
+    "productCommit": "e278774acd9ef025bae3c2fe067d06444af07801",
+    "productTreeHash": "1f294a5acd44a1a58a448347249b674c103ba9740e48107a82fa5b67a71715e1",
+    "summaryHash": "d9267c347bb1f2ba69b26926dff1f102abad9bfca13c0d7e0420c4dcf0f91597",
+    "metrics": {
+      "capabilitySelectionAccuracy": {
+        "numerator": 7,
+        "denominator": 7,
+        "rate": 1
+      },
+      "errorBlockingAccuracy": {
+        "numerator": 2,
+        "denominator": 2,
+        "rate": 1
+      },
+      "firstPlanPassRate": {
+        "numerator": 4,
+        "denominator": 7,
+        "rate": 0.5714285714285714
+      },
+      "firstCandidatePassRate": {
+        "numerator": 3,
+        "denominator": 3,
+        "rate": 1
+      },
+      "fullPathSuccessRate": {
+        "numerator": 2,
+        "denominator": 7,
+        "rate": 0.2857142857142857
+      },
+      "inBudgetRepairRate": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null
+      },
+      "durationMs": {
+        "total": 713241,
+        "samples": 7
+      },
+      "costUsage": {
+        "promptTokens": 1280750,
+        "completionTokens": 84266,
+        "samplesWithUsage": 7
+      },
+      "failureClassCounts": {
+        "model-understanding-or-generation": 2,
+        "documentation-gap": 0,
+        "host-defect": 0,
+        "tool-protocol": 0,
+        "transport": 0,
+        "evaluator": 1
+      }
+    },
+    "usageAudit": {
+      "calls": 51,
+      "promptTokens": 1280750,
+      "cachedTokens": 758224,
+      "outputTokens": 84266,
+      "estimatedUsd": 2.2078888,
+      "maxPromptTokens": 60146
+    }
+  },
+  "unchangedSixScenarios": {
+    "metrics": {
+      "prechange": {
+        "capabilitySelectionAccuracy": {
+          "numerator": 5,
+          "denominator": 6,
+          "rate": 0.8333333333333334
+        },
+        "errorBlockingAccuracy": {
+          "numerator": 1,
+          "denominator": 2,
+          "rate": 0.5
+        },
+        "firstPlanPassRate": {
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8
+        },
+        "firstCandidatePassRate": {
+          "numerator": 2,
+          "denominator": 4,
+          "rate": 0.5
+        },
+        "fullPathSuccessRate": {
+          "numerator": 2,
+          "denominator": 6,
+          "rate": 0.3333333333333333
+        },
+        "inBudgetRepairRate": {
+          "numerator": 0,
+          "denominator": 2,
+          "rate": 0
+        },
+        "durationMs": {
+          "total": 801512,
+          "samples": 6
+        },
+        "costUsage": {
+          "promptTokens": 718811,
+          "completionTokens": 101616,
+          "samplesWithUsage": 6
+        },
+        "failureClassCounts": {
+          "model-understanding-or-generation": 3,
+          "documentation-gap": 0,
+          "host-defect": 0,
+          "tool-protocol": 0,
+          "transport": 0,
+          "evaluator": 0
+        }
+      },
+      "postchange": {
+        "capabilitySelectionAccuracy": {
+          "numerator": 6,
+          "denominator": 6,
+          "rate": 1
+        },
+        "errorBlockingAccuracy": {
+          "numerator": 2,
+          "denominator": 2,
+          "rate": 1
+        },
+        "firstPlanPassRate": {
+          "numerator": 4,
+          "denominator": 6,
+          "rate": 0.6666666666666666
+        },
+        "firstCandidatePassRate": {
+          "numerator": 2,
+          "denominator": 2,
+          "rate": 1
+        },
+        "fullPathSuccessRate": {
+          "numerator": 2,
+          "denominator": 6,
+          "rate": 0.3333333333333333
+        },
+        "inBudgetRepairRate": {
+          "numerator": 0,
+          "denominator": 0,
+          "rate": null
+        },
+        "durationMs": {
+          "total": 613108,
+          "samples": 6
+        },
+        "costUsage": {
+          "promptTokens": 1074201,
+          "completionTokens": 71564,
+          "samplesWithUsage": 6
+        },
+        "failureClassCounts": {
+          "model-understanding-or-generation": 2,
+          "documentation-gap": 0,
+          "host-defect": 0,
+          "tool-protocol": 0,
+          "transport": 0,
+          "evaluator": 0
+        }
+      }
+    },
+    "delta": {
+      "capabilitySelectionAccuracy": {
+        "prechange": {
+          "numerator": 5,
+          "denominator": 6,
+          "rate": 0.8333333333333334
+        },
+        "postchange": {
+          "numerator": 6,
+          "denominator": 6,
+          "rate": 1
+        },
+        "percentagePointDelta": 16.666666666666664
+      },
+      "errorBlockingAccuracy": {
+        "prechange": {
+          "numerator": 1,
+          "denominator": 2,
+          "rate": 0.5
+        },
+        "postchange": {
+          "numerator": 2,
+          "denominator": 2,
+          "rate": 1
+        },
+        "percentagePointDelta": 50
+      },
+      "firstPlanPassRate": {
+        "prechange": {
+          "numerator": 4,
+          "denominator": 5,
+          "rate": 0.8
+        },
+        "postchange": {
+          "numerator": 4,
+          "denominator": 6,
+          "rate": 0.6666666666666666
+        },
+        "percentagePointDelta": -13.333333333333341
+      },
+      "firstCandidatePassRate": {
+        "prechange": {
+          "numerator": 2,
+          "denominator": 4,
+          "rate": 0.5
+        },
+        "postchange": {
+          "numerator": 2,
+          "denominator": 2,
+          "rate": 1
+        },
+        "percentagePointDelta": 50
+      },
+      "fullPathSuccessRate": {
+        "prechange": {
+          "numerator": 2,
+          "denominator": 6,
+          "rate": 0.3333333333333333
+        },
+        "postchange": {
+          "numerator": 2,
+          "denominator": 6,
+          "rate": 0.3333333333333333
+        },
+        "percentagePointDelta": 0
+      },
+      "inBudgetRepairRate": {
+        "prechange": {
+          "numerator": 0,
+          "denominator": 2,
+          "rate": 0
+        },
+        "postchange": {
+          "numerator": 0,
+          "denominator": 0,
+          "rate": null
+        },
+        "percentagePointDelta": null
+      }
+    },
+    "successEligible": {
+      "prechange": {
+        "numerator": 2,
+        "denominator": 4
+      },
+      "postchange": {
+        "numerator": 2,
+        "denominator": 4
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "scenarioId": "tags-add",
+      "prechange": {
+        "scenarioId": "tags-add",
+        "record": {
+          "scenarioId": "tags-add",
+          "evidenceKind": "real-model",
+          "evidenceComplete": true,
+          "expectedOutcomeClass": "full-path-success",
+          "observedOutcomeClass": "full-path-success",
+          "capabilitySelectionCorrect": true,
+          "errorBlockingCorrect": null,
+          "firstPlanPassed": true,
+          "firstCandidatePassed": true,
+          "fullPathSucceeded": true,
+          "repairedInOriginalBudget": false,
+          "durationMs": 173410,
+          "usage": {
+            "promptTokens": 122043,
+            "completionTokens": 22572
+          },
+          "failureClass": null
+        },
+        "run": "tags-add-r1-cec68e00",
+        "calls": 6,
+        "promptTokens": 122043,
+        "cachedTokens": 32626,
+        "outputTokens": 22572,
+        "maxPromptTokens": 37510,
+        "estimatedUsd": 0.45622319999999994,
+        "modelVersions": ["gemini-3.1-pro-preview"],
+        "candidateDiagnostics": [
+          {
+            "passed": true
+          }
+        ],
+        "browserMessage": null
+      },
+      "postchange": {
+        "scenarioId": "tags-add",
+        "record": {
+          "scenarioId": "tags-add",
+          "evidenceKind": "real-model",
+          "evidenceComplete": true,
+          "expectedOutcomeClass": "full-path-success",
+          "observedOutcomeClass": "full-path-success",
+          "capabilitySelectionCorrect": true,
+          "errorBlockingCorrect": null,
+          "firstPlanPassed": false,
+          "firstCandidatePassed": true,
+          "fullPathSucceeded": true,
+          "repairedInOriginalBudget": false,
+          "durationMs": 131180,
+          "usage": {
+            "promptTokens": 218484,
+            "completionTokens": 14435
+          },
+          "failureClass": null
+        },
+        "run": "tags-add-r1-77627071",
+        "calls": 10,
+        "promptTokens": 218484,
+        "cachedTokens": 126321,
+        "outputTokens": 14435,
+        "maxPromptTokens": 47019,
+        "estimatedUsd": 0.38281020000000004,
+        "modelVersions": ["gemini-3.1-pro-preview"],
+        "candidateDiagnostics": [
+          {
+            "passed": true
+          }
+        ],
+        "browserMessage": null,
+        "auditedFailureClass": null
+      }
+    },
+    {
+      "scenarioId": "counter-add",
+      "prechange": {
+        "scenarioId": "counter-add",
+        "record": {
+          "scenarioId": "counter-add",
+          "evidenceKind": "real-model",
+          "evidenceComplete": true,
+          "expectedOutcomeClass": "full-path-success",
+          "observedOutcomeClass": "failed",
+          "capabilitySelectionCorrect": true,
+          "errorBlockingCorrect": null,
+          "firstPlanPassed": true,
+          "firstCandidatePassed": false,
+          "fullPathSucceeded": false,
+          "repairedInOriginalBudget": false,
+          "durationMs": 279139,
+          "usage": {
+            "promptTokens": 120048,
+            "completionTokens": 36830
+          },
+          "failureClass": "model-understanding-or-generation"
+        },
+        "run": "counter-add-r1-378a76df",
+        "calls": 7,
+        "promptTokens": 120048,
+        "cachedTokens": 44816,
+        "outputTokens": 36830,
+        "maxPromptTokens": 38905,
+        "estimatedUsd": 0.6013872,
+        "modelVersions": ["gemini-3.1-pro-preview"],
+        "candidateDiagnostics": [
+          {
+            "passed": false,
+            "diagnostic": "业务验收失败：workspace:complete-final-fields；预期 {\"kind\":\"commit\",\"state\":\"done\",\"fields\":{}}；查询 {\"state\":\"done\",\"fields\":{\"counter\":\"0\"}}"
+          },
+          {
+            "passed": false,
+            "diagnostic": "行为验收失败：complete-preserve-fields"
+          },
+          {
+            "passed": false,
+            "diagnostic": "行为验收失败：complete-preserve-fields"
+          }
+        ],
+        "browserMessage": "3 个候选均未通过验证，当前版本保持不变"
+      },
+      "postchange": {
+        "scenarioId": "counter-add",
+        "record": {
+          "scenarioId": "counter-add",
+          "evidenceKind": "real-model",
+          "evidenceComplete": true,
+          "expectedOutcomeClass": "full-path-success",
+          "observedOutcomeClass": "failed",
+          "capabilitySelectionCorrect": true,
+          "errorBlockingCorrect": null,
+          "firstPlanPassed": true,
+          "firstCandidatePassed": null,
+          "fullPathSucceeded": false,
+          "repairedInOriginalBudget": false,
+          "durationMs": 140793,
+          "usage": {
+            "promptTokens": 205678,
+            "completionTokens": 18237
+          },
+          "failureClass": "model-understanding-or-generation"
+        },
+        "run": "counter-add-r1-42cbc2da",
+        "calls": 9,
+        "promptTokens": 205678,
+        "cachedTokens": 122276,
+        "outputTokens": 18237,
+        "maxPromptTokens": 43407,
+        "estimatedUsd": 0.4101032,
+        "modelVersions": ["gemini-3.1-pro-preview"],
+        "candidateDiagnostics": [],
+        "browserMessage": "读取源码参数无效",
+        "auditedFailureClass": "tool-protocol"
+      }
+    },
+    {
+      "scenarioId": "due-auto-expire",
+      "prechange": {
+        "scenarioId": "due-auto-expire",
+        "record": {
+          "scenarioId": "due-auto-expire",
+          "evidenceKind": "real-model",
+          "evidenceComplete": true,
+          "expectedOutcomeClass": "current-blocker",
+          "observedOutcomeClass": "current-blocker",
+          "capabilitySelectionCorrect": true,
+          "errorBlockingCorrect": true,
+          "firstPlanPassed": true,
+          "firstCandidatePassed": null,
+          "fullPathSucceeded": false,
+          "repairedInOriginalBudget": false,
+          "durationMs": 51530,
+          "usage": {
+            "promptTokens": 118558,
+            "completionTokens": 5247
+          },
+          "failureClass": null
+        },
+        "run": "due-auto-expire-r1-833f6a39",
+        "calls": 5,
+        "promptTokens": 118558,
+        "cachedTokens": 32627,
+        "outputTokens": 5247,
+        "maxPromptTokens": 36872,
+        "estimatedUsd": 0.2413514,
+        "modelVersions": ["gemini-3.1-pro-preview"],
+        "candidateDiagnostics": [],
+        "browserMessage": null
+      },
+      "postchange": {
+        "scenarioId": "due-auto-expire",
+        "record": {
+          "scenarioId": "due-auto-expire",
+          "evidenceKind": "real-model",
+          "evidenceComplete": true,
+          "expectedOutcomeClass": "full-path-success",
+          "observedOutcomeClass": "failed",
+          "capabilitySelectionCorrect": true,
+          "errorBlockingCorrect": null,
+          "firstPlanPassed": false,
+          "firstCandidatePassed": true,
+          "fullPathSucceeded": false,
+          "repairedInOriginalBudget": false,
+          "durationMs": 100133,
+          "usage": {
+            "promptTokens": 206549,
+            "completionTokens": 12702
+          },
+          "failureClass": "evaluator"
+        },
+        "run": "due-auto-expire-r1-063a478e",
+        "calls": 8,
+        "promptTokens": 206549,
+        "cachedTokens": 126355,
+        "outputTokens": 12702,
+        "maxPromptTokens": 47163,
+        "estimatedUsd": 0.338083,
+        "modelVersions": ["gemini-3.1-pro-preview"],
+        "candidateDiagnostics": [
+          {
+            "passed": true
+          }
+        ],
+        "browserMessage": "Evaluator binding: cannot uniquely bind due schedule to verified UI",
+        "auditedFailureClass": "evaluator"
+      }
+    },
+    {
+      "scenarioId": "member-upgrade-tags",
+      "prechange": {
+        "scenarioId": "member-upgrade-tags",
+        "record": {
+          "scenarioId": "member-upgrade-tags",
+          "evidenceKind": "real-model",
+          "evidenceComplete": true,
+          "expectedOutcomeClass": "full-path-success",
+          "observedOutcomeClass": "failed",
+          "capabilitySelectionCorrect": true,
+          "errorBlockingCorrect": null,
+          "firstPlanPassed": false,
+          "firstCandidatePassed": false,
+          "fullPathSucceeded": false,
+          "repairedInOriginalBudget": false,
+          "durationMs": 190664,
+          "usage": {
+            "promptTokens": 193464,
+            "completionTokens": 26342
+          },
+          "failureClass": "model-understanding-or-generation"
+        },
+        "run": "member-upgrade-tags-r1-54fd147b",
+        "calls": 8,
+        "promptTokens": 193464,
+        "cachedTokens": 103046,
+        "outputTokens": 26342,
+        "maxPromptTokens": 54886,
+        "estimatedUsd": 0.5175492,
+        "modelVersions": ["gemini-3.1-pro-preview"],
+        "candidateDiagnostics": [
+          {
+            "passed": false,
+            "diagnostic": "../../../../../../tmp/cordis-issue36-prechange-real-authorized-20260930/runs/member-upgrade-tags-r1-54fd147b/artifacts/candidate-f402caeb-cd45-465c-ab0f-4e8ced39311c/business/entry.ts(22,10): error TS7006: Parameter 'data' implicitly has an 'any' type.\n"
+          },
+          {
+            "passed": false,
+            "diagnostic": "工作流定义不符合已确认契约"
+          },
+          {
+            "passed": false,
+            "diagnostic": "行为验收失败：invalid:done:complete"
+          }
+        ],
+        "browserMessage": "3 个候选均未通过验证，当前版本保持不变"
+      },
+      "postchange": {
+        "scenarioId": "member-upgrade-tags",
+        "record": {
+          "scenarioId": "member-upgrade-tags",
+          "evidenceKind": "real-model",
+          "evidenceComplete": true,
+          "expectedOutcomeClass": "full-path-success",
+          "observedOutcomeClass": "failed",
+          "capabilitySelectionCorrect": true,
+          "errorBlockingCorrect": null,
+          "firstPlanPassed": false,
+          "firstCandidatePassed": null,
+          "fullPathSucceeded": false,
+          "repairedInOriginalBudget": false,
+          "durationMs": 159486,
+          "usage": {
+            "promptTokens": 199368,
+            "completionTokens": 20722
+          },
+          "failureClass": "model-understanding-or-generation"
+        },
+        "run": "member-upgrade-tags-r1-5339055b",
+        "calls": 7,
+        "promptTokens": 199368,
+        "cachedTokens": 118128,
+        "outputTokens": 20722,
+        "maxPromptTokens": 60146,
+        "estimatedUsd": 0.4347696,
+        "modelVersions": ["gemini-3.1-pro-preview"],
+        "candidateDiagnostics": [],
+        "browserMessage": "读取源码参数无效",
+        "auditedFailureClass": "tool-protocol"
+      }
+    },
+    {
+      "scenarioId": "rule-revision-reflection",
+      "prechange": {
+        "scenarioId": "rule-revision-reflection",
+        "record": {
+          "scenarioId": "rule-revision-reflection",
+          "evidenceKind": "real-model",
+          "evidenceComplete": true,
+          "expectedOutcomeClass": "full-path-success",
+          "observedOutcomeClass": "full-path-success",
+          "capabilitySelectionCorrect": true,
+          "errorBlockingCorrect": null,
+          "firstPlanPassed": true,
+          "firstCandidatePassed": true,
+          "fullPathSucceeded": true,
+          "repairedInOriginalBudget": false,
+          "durationMs": 73230,
+          "usage": {
+            "promptTokens": 87983,
+            "completionTokens": 8076
+          },
+          "failureClass": null
+        },
+        "run": "rule-revision-reflection-r1-6d1dafe8",
+        "calls": 6,
+        "promptTokens": 87983,
+        "cachedTokens": 32626,
+        "outputTokens": 8076,
+        "maxPromptTokens": 36554,
+        "estimatedUsd": 0.2141512,
+        "modelVersions": ["gemini-3.1-pro-preview"],
+        "candidateDiagnostics": [
+          {
+            "passed": true
+          }
+        ],
+        "browserMessage": null
+      },
+      "postchange": {
+        "scenarioId": "rule-revision-reflection",
+        "record": {
+          "scenarioId": "rule-revision-reflection",
+          "evidenceKind": "real-model",
+          "evidenceComplete": true,
+          "expectedOutcomeClass": "full-path-success",
+          "observedOutcomeClass": "full-path-success",
+          "capabilitySelectionCorrect": true,
+          "errorBlockingCorrect": null,
+          "firstPlanPassed": true,
+          "firstCandidatePassed": true,
+          "fullPathSucceeded": true,
+          "repairedInOriginalBudget": false,
+          "durationMs": 83450,
+          "usage": {
+            "promptTokens": 111502,
+            "completionTokens": 9737
+          },
+          "failureClass": null
+        },
+        "run": "rule-revision-reflection-r1-e4826be8",
+        "calls": 7,
+        "promptTokens": 111502,
+        "cachedTokens": 36712,
+        "outputTokens": 9737,
+        "maxPromptTokens": 39590,
+        "estimatedUsd": 0.2737664,
+        "modelVersions": ["gemini-3.1-pro-preview"],
+        "candidateDiagnostics": [
+          {
+            "passed": true
+          }
+        ],
+        "browserMessage": null,
+        "auditedFailureClass": null
+      }
+    },
+    {
+      "scenarioId": "missing-capability-push",
+      "prechange": {
+        "scenarioId": "missing-capability-push",
+        "record": {
+          "scenarioId": "missing-capability-push",
+          "evidenceKind": "real-model",
+          "evidenceComplete": true,
+          "expectedOutcomeClass": "accurate-block",
+          "observedOutcomeClass": "failed",
+          "capabilitySelectionCorrect": false,
+          "errorBlockingCorrect": false,
+          "firstPlanPassed": null,
+          "firstCandidatePassed": null,
+          "fullPathSucceeded": false,
+          "repairedInOriginalBudget": false,
+          "durationMs": 28334,
+          "usage": {
+            "promptTokens": 80803,
+            "completionTokens": 973
+          },
+          "failureClass": "model-understanding-or-generation"
+        },
+        "run": "missing-capability-push-r1-9fa7e3dd",
+        "calls": 4,
+        "promptTokens": 80803,
+        "cachedTokens": 0,
+        "outputTokens": 973,
+        "maxPromptTokens": 36282,
+        "estimatedUsd": 0.173282,
+        "modelVersions": ["gemini-3.1-pro-preview"],
+        "candidateDiagnostics": [],
+        "browserMessage": "expect(locator).toBeVisible() failed\n\nLocator: getByRole('region', { name: '待确认方案' })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" getByRole('region', { name: '待确认方案' }) with timeout 5000ms\n  - waiting for getByRole('region', { name: '待确认方案' })\n"
+      },
+      "postchange": {
+        "scenarioId": "missing-capability-push",
+        "record": {
+          "scenarioId": "missing-capability-push",
+          "evidenceKind": "real-model",
+          "evidenceComplete": true,
+          "expectedOutcomeClass": "accurate-block",
+          "observedOutcomeClass": "accurate-block",
+          "capabilitySelectionCorrect": true,
+          "errorBlockingCorrect": true,
+          "firstPlanPassed": true,
+          "firstCandidatePassed": null,
+          "fullPathSucceeded": false,
+          "repairedInOriginalBudget": false,
+          "durationMs": 50588,
+          "usage": {
+            "promptTokens": 175540,
+            "completionTokens": 5112
+          },
+          "failureClass": null
+        },
+        "run": "missing-capability-push-r1-295fcb4d",
+        "calls": 5,
+        "promptTokens": 175540,
+        "cachedTokens": 118317,
+        "outputTokens": 5112,
+        "maxPromptTokens": 45902,
+        "estimatedUsd": 0.1994534,
+        "modelVersions": ["gemini-3.1-pro-preview"],
+        "candidateDiagnostics": [],
+        "browserMessage": null,
+        "auditedFailureClass": null
+      }
+    },
+    {
+      "scenarioId": "temporarily-unavailable-dependency",
+      "prechange": {
+        "scenarioId": "temporarily-unavailable-dependency",
+        "record": {
+          "scenarioId": "temporarily-unavailable-dependency",
+          "evidenceKind": "real-model",
+          "evidenceComplete": true,
+          "expectedOutcomeClass": "accurate-block",
+          "observedOutcomeClass": "accurate-block",
+          "capabilitySelectionCorrect": true,
+          "errorBlockingCorrect": true,
+          "firstPlanPassed": true,
+          "firstCandidatePassed": null,
+          "fullPathSucceeded": false,
+          "repairedInOriginalBudget": false,
+          "durationMs": 56735,
+          "usage": {
+            "promptTokens": 114470,
+            "completionTokens": 6823
+          },
+          "failureClass": null
+        },
+        "run": "temporarily-unavailable-dependency-r1-47bcef1b",
+        "calls": 4,
+        "promptTokens": 114470,
+        "cachedTokens": 65246,
+        "outputTokens": 6823,
+        "maxPromptTokens": 37285,
+        "estimatedUsd": 0.1933732,
+        "modelVersions": ["gemini-3.1-pro-preview"],
+        "candidateDiagnostics": [],
+        "browserMessage": null
+      },
+      "postchange": {
+        "scenarioId": "temporarily-unavailable-dependency",
+        "record": {
+          "scenarioId": "temporarily-unavailable-dependency",
+          "evidenceKind": "real-model",
+          "evidenceComplete": true,
+          "expectedOutcomeClass": "accurate-block",
+          "observedOutcomeClass": "accurate-block",
+          "capabilitySelectionCorrect": true,
+          "errorBlockingCorrect": true,
+          "firstPlanPassed": true,
+          "firstCandidatePassed": null,
+          "fullPathSucceeded": false,
+          "repairedInOriginalBudget": false,
+          "durationMs": 47611,
+          "usage": {
+            "promptTokens": 163629,
+            "completionTokens": 3321
+          },
+          "failureClass": null
+        },
+        "run": "temporarily-unavailable-dependency-r1-4786177d",
+        "calls": 5,
+        "promptTokens": 163629,
+        "cachedTokens": 110115,
+        "outputTokens": 3321,
+        "maxPromptTokens": 40384,
+        "estimatedUsd": 0.168903,
+        "modelVersions": ["gemini-3.1-pro-preview"],
+        "candidateDiagnostics": [],
+        "browserMessage": null,
+        "auditedFailureClass": null
+      }
+    }
+  ],
+  "limitations": [
+    "每侧每场景仅独立运行一次；观察差值不代表统计显著性或所有模型均改善。",
+    "截止时间预期从旧版 current-blocker 改为新版 full-path-success，单独报告，不混入六场相同标准的差值。",
+    "冻结评估只提供一次预设澄清回答；重复澄清未到达预期阻塞结果记为路径失败。",
+    "两轮共用当前安装的依赖与工具链；分别记录产品提交内锁文件哈希，不将归档锁文件当作实际重新安装证明。",
+    "历史中断、恢复及旧后测记录保留，未拼接进这对独立运行。",
+    "新版截止候选通过验证，但评估器日期绑定失败，未完成体验及正式应用；14/14 证据完整不等于14/14业务成功或父规格完成。",
+    "首个候选通过率新版2/2的分母缩小，是计数和成员升级在候选前失败；不能据此断言业务生成改善。",
+    "后续本地修复改变宿主及评估器源码，尚未取得该修复版本的真实模型加真实浏览器通过证据；不得将本轮结果移植到修复提交。"
+  ],
+  "allFourteenTrialsArchived": true,
+  "parentCompletionSatisfied": false,
+  "currentDueRealBrowserAccepted": false,
+  "audit": {
+    "rawArchivesModified": false,
+    "postchangeFailureClassCounts": {
+      "tool-protocol": 2,
+      "evaluator": 1
+    },
+    "note": "冻结新版摘要将两次读取参数失败归为模型理解或生成；事件审计认定为工具协议错误，宿主未返回可纠正诊断。此审计说明不重写原记录或摘要。"
+  }
+}
