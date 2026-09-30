@@ -78,10 +78,16 @@ if (!child) {
     throw new Error("GEMINI_API_KEY is not configured");
   const source = process.cwd();
   const directory = mkdtempSync(join(tmpdir(), "cordis-baseline-product-"));
-  const archive = execFileSync("git", ["archive", productCommit], {
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  execFileSync("tar", ["-x", "-C", directory], { input: archive });
+  const archiveDirectory = mkdtempSync(
+    join(tmpdir(), "cordis-product-archive-"),
+  );
+  const archivePath = join(archiveDirectory, "product.tar");
+  try {
+    execFileSync("git", ["archive", productCommit, "--output", archivePath]);
+    execFileSync("tar", ["-xf", archivePath, "-C", directory]);
+  } finally {
+    rmSync(archiveDirectory, { recursive: true, force: true });
+  }
   const productFiles = treeHashes(join(directory, "src"));
   const harnessFiles = [
     "scripts/accept-stability-baseline.ts",
