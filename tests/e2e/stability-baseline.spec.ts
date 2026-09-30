@@ -161,7 +161,11 @@ test("真实浏览器绑定不依赖 stub 的成员、动作和字段名称", as
   }
 });
 
-for (const defect of ["missing-form", "lost-field"] as const) {
+for (const defect of [
+  "missing-form",
+  "missing-form-blank-reject",
+  "lost-field",
+] as const) {
   test(`浏览器启动的标签候选拦截 ${defect}`, async () => {
     const { stabilityStubDriver } = await import(
       "../../scripts/lib/stability-eval/driver-fixture.js"
@@ -182,6 +186,26 @@ for (const defect of ["missing-form", "lost-field"] as const) {
             return {
               ...reply,
               calls: reply.calls.map((call) => {
+                if (
+                  defect === "missing-form-blank-reject" &&
+                  call.name === "propose_plan"
+                ) {
+                  const memberCases = call.args.memberCases as {
+                    name: string;
+                    input: Record<string, string>;
+                  }[];
+                  return {
+                    ...call,
+                    args: {
+                      ...call.args,
+                      memberCases: memberCases.filter(
+                        (testCase) =>
+                          testCase.name !== "缺失标签输入" ||
+                          Object.keys(testCase.input).length > 0,
+                      ),
+                    },
+                  };
+                }
                 if (call.name !== "submit_candidate") return call;
                 const members = call.args.members as {
                   pluginId: string;
@@ -193,13 +217,13 @@ for (const defect of ["missing-form", "lost-field"] as const) {
                     ...call.args,
                     members: members.map((member) => {
                       const source =
-                        defect === "missing-form"
+                        defect !== "lost-field"
                           ? member.source.replace(
-                              'return { kind: "input-required", fields: [{ key: "tags", label: "标签", type: "text", required: true }] };',
+                              /return\s*\{\s*kind:\s*["']input-required["'][^;]*;/,
                               'return { kind: "reject", message: "缺失输入" };',
                             )
                           : member.source.replace(
-                              "{ ...task.fields, tags }",
+                              /\{\s*\.\.\.task\.fields,\s*tags\s*\}/,
                               "{ tags }",
                             );
                       expect(source).not.toBe(member.source);
@@ -234,7 +258,7 @@ for (const defect of ["missing-form", "lost-field"] as const) {
         settled?.candidates?.every((candidate) => candidate.passed === false),
       ).toBe(true);
       expect(diagnostics).toMatch(
-        defect === "missing-form"
+        defect !== "lost-field"
           ? /缺失输入须返回 input-required 表单/
           : /preserve-unknown-fields|标签保留未知字段/,
       );

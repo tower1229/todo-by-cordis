@@ -222,10 +222,17 @@ export async function verifyViaIsolatedWorkspace(
           ],
     );
     const formCases: WorkspaceExecutionCase[] = cases.flatMap((c) => {
+      const blankInput = Object.values(c.input).every((value) => !value.trim());
+      const hasUiAction = isolated.composition().uiContributions.some(
+        (contribution) =>
+          contribution.providerId === c.member &&
+          contribution.actions.some((action) => action.commandId === c.action),
+      );
       if (
         !c.member ||
         c.expected.kind !== "reject" ||
-        Object.keys(c.input).length
+        !blankInput ||
+        (Object.keys(c.input).length > 0 && !hasUiAction)
       )
         return [];
       const positives = cases.filter(
@@ -243,6 +250,7 @@ export async function verifyViaIsolatedWorkspace(
           ...c,
           name: `system:input-form:${c.name}`,
           protectionOf: c.name,
+          input: {},
           expected: {
             kind: "input-required",
             examples: positives.flatMap((p) =>
