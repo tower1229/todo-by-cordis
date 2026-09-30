@@ -1,0 +1,656 @@
+{
+  "schema": "cordis.stability-eval-completion/1",
+  "issue": 36,
+  "evaluatedAt": "2026-09-30",
+  "parentCompletionConditionsSatisfied": true,
+  "currentDueRealBrowserAccepted": true,
+  "evidenceKind": "real-model",
+  "archivePath": "issue-46-postchange/real-20260930-postrepair",
+  "productCommit": "806405e6550d3499def85b7e5fa3ab49370e158d",
+  "productTreeHash": "50899edd89ecdffc3adf8ec1388063fbc18d7f522b18ccf3015b5ce4e1551121",
+  "lockHash": "0b005e8fd498d7d1cf057b84e8cbcf5f2927dd6500e032e623f1a88b263e371a",
+  "harnessCommit": "806405e6550d3499def85b7e5fa3ab49370e158d",
+  "harnessContentHash": "20e4b82286a938839c56533843f2aff09df62c584054ba8f67f2e0564db7ea06",
+  "harnessFileCount": 21,
+  "summaryHash": "4fd3f8d5e033c526818be91a5fb1f09b213c9288e0d5b069e70d9cf3570417f6",
+  "model": {
+    "stubKind": "model-stub",
+    "realModelId": "gemini-3.1-pro-preview",
+    "realModelAuthorizationFlag": "--authorize-real-model"
+  },
+  "budget": {
+    "calls": 12,
+    "candidates": 3,
+    "milliseconds": 600000
+  },
+  "runs": {
+    "independentRunsPerScenario": 1,
+    "note": "每个场景独立合成工作区；全部预先安排的成功与失败均入报告，不得只保留成功轮次。"
+  },
+  "retry": {
+    "externalRetries": 0,
+    "resetBudgetOnFailure": false,
+    "handEditCandidates": false,
+    "supplyCorrectImplementationToModel": false
+  },
+  "allSevenIndependentTrialsArchived": true,
+  "rawArchivesModified": false,
+  "productSourcesEqualToD2a2d77": true,
+  "metrics": {
+    "capabilitySelectionAccuracy": {
+      "numerator": 6,
+      "denominator": 7,
+      "rate": 0.8571428571428571
+    },
+    "errorBlockingAccuracy": {
+      "numerator": 2,
+      "denominator": 2,
+      "rate": 1
+    },
+    "firstPlanPassRate": {
+      "numerator": 5,
+      "denominator": 7,
+      "rate": 0.7142857142857143
+    },
+    "firstCandidatePassRate": {
+      "numerator": 3,
+      "denominator": 5,
+      "rate": 0.6
+    },
+    "fullPathSuccessRate": {
+      "numerator": 2,
+      "denominator": 7,
+      "rate": 0.2857142857142857
+    },
+    "inBudgetRepairRate": {
+      "numerator": 0,
+      "denominator": 2,
+      "rate": 0
+    },
+    "durationMs": {
+      "total": 808948,
+      "samples": 7
+    },
+    "costUsage": {
+      "promptTokens": 1305150,
+      "completionTokens": 93576,
+      "samplesWithUsage": 7
+    },
+    "failureClassCounts": {
+      "model-understanding-or-generation": 2,
+      "documentation-gap": 0,
+      "host-defect": 0,
+      "tool-protocol": 0,
+      "transport": 0,
+      "evaluator": 1
+    }
+  },
+  "usageAudit": {
+    "calls": 51,
+    "promptTokens": 1305150,
+    "cachedTokens": 685088,
+    "outputTokens": 93576,
+    "estimatedUsd": 2.5000536,
+    "maxPromptTokens": 58401
+  },
+  "pricing": {
+    "source": "https://ai.google.dev/gemini-api/docs/pricing",
+    "verifiedOn": "2026-09-30",
+    "currency": "USD",
+    "standardPerMillion": {
+      "upTo200k": {
+        "input": 2,
+        "cachedInput": 0.2,
+        "outputIncludingThoughts": 12
+      },
+      "above200k": {
+        "input": 4,
+        "cachedInput": 0.4,
+        "outputIncludingThoughts": 18
+      }
+    },
+    "note": "按逐次 API usage 估算，未核对账单、税费或供应商调整；无显式缓存存储和外部搜索。"
+  },
+  "authorizedComparisonAndSupplement": {
+    "trials": 21,
+    "estimatedUsd": 7.1052598,
+    "note": "本次独立新旧对照加本次追加新版一轮；不含历史归档的其他费用，账单未核对。"
+  },
+  "audit": {
+    "primaryFailureCounts": {
+      "model-understanding-or-generation": 3
+    },
+    "tags": "原摘要自动分类为evaluator，因为无法绑定成员动作UI；冻结计划和候选却把标签加入主流程的完成必填条件，并自行增加10字符上限，违背其他行为不变。主因审计记为模型业务偏离；原摘要与记录不改写。",
+    "memberUpgrade": "三个候选分别因隐式any、工作流契约不符、tags字段与流程定义冲突被拒绝。",
+    "ruleRevision": "候选携带禁止提交的验证报告或控制参数，被保护门禁阻塞；当前业务版本未变。",
+    "unchangedSixFullPath": {
+      "numerator": 1,
+      "denominator": 6
+    }
+  },
+  "verification": {
+    "codeCi": {
+      "commit": "806405e6550d3499def85b7e5fa3ab49370e158d",
+      "conclusion": "success",
+      "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/36660748905"
+    },
+    "localProductChecks": {
+      "sourceCommit": "d2a2d77a277968c79f1dbdd62493591bec6a29b6",
+      "typecheck": "passed",
+      "build": "passed",
+      "unitTests": {
+        "passed": 293,
+        "failed": 0
+      },
+      "browserStubTests": {
+        "passed": 80,
+        "failed": 0
+      }
+    },
+    "archiveEntry": {
+      "typecheck": "passed",
+      "stubPreflight": {
+        "scenarios": 7,
+        "evidenceComplete": 7,
+        "paidCalls": 0
+      },
+      "trackedProductBytesBeforeRepair": 75957672,
+      "method": "git archive --output临时文件，tar解包；不再受64MiB内存缓冲限制。"
+    },
+    "retainedSeedTasksUnchanged": 7,
+    "nonAppliedFormalFingerprintsUnchanged": 5,
+    "hashesAndScreenshotsVerified": true
+  },
+  "completionEvidence": [
+    {
+      "condition": "能力事实与渐进开发依据",
+      "evidence": [
+        "tests/app/planning.test.ts",
+        "tests/e2e/capability-planning.spec.ts",
+        "tests/app/shortened-tags-stub.test.ts"
+      ],
+      "verification": "精确代码CI通过，真实截止计划绑定host:online-scheduler与成员调度能力。"
+    },
+    {
+      "condition": "权限、依赖、版本、验收门禁",
+      "evidence": [
+        "tests/app/execution.test.ts",
+        "tests/app/workspace-acceptance.test.ts",
+        "tests/e2e/capability-planning.spec.ts"
+      ],
+      "verification": "精确代码CI通过；本轮规则候选的禁止控制参数、升级候选的契约错误均未应用。"
+    },
+    {
+      "condition": "截止真实用户路径与隔离",
+      "evidence": "issue-46-postchange/real-20260930-postrepair/runs/due-auto-expire-r1-60a10ae7/events.jsonl",
+      "verification": "真实模型11次调用生成候选，真实浏览器完成体验、编辑/清除/到点、应用、重连/重启、启停及撤回；原保留任务未变。"
+    },
+    {
+      "condition": "参考实现与契约同步",
+      "evidence": [
+        "tests/app/planning.test.ts",
+        "tests/app/shortened-tags-stub.test.ts",
+        "tests/app/schedule-acceptance.test.ts",
+        "tests/e2e/due-auto-expire.spec.ts"
+      ],
+      "verification": "293项单元与80项真实浏览器模型桩验证及代码CI通过。"
+    },
+    {
+      "condition": "固定评估与如实限制",
+      "evidence": ["issue-36-comparison.json", "issue-46-validation.md"],
+      "verification": "同评估器独立新旧对照原样保留，六场2/6→2/6未改善；新版本补充七场全部保留，2/7完整成功、2场准确阻塞、3场失败。"
+    }
+  ],
+  "scenarios": [
+    {
+      "scenarioId": "counter-add",
+      "record": {
+        "scenarioId": "counter-add",
+        "evidenceKind": "real-model",
+        "evidenceComplete": true,
+        "expectedOutcomeClass": "full-path-success",
+        "observedOutcomeClass": "full-path-success",
+        "capabilitySelectionCorrect": true,
+        "errorBlockingCorrect": null,
+        "firstPlanPassed": true,
+        "firstCandidatePassed": true,
+        "fullPathSucceeded": true,
+        "repairedInOriginalBudget": false,
+        "durationMs": 160858,
+        "usage": {
+          "promptTokens": 152376,
+          "completionTokens": 20327
+        },
+        "failureClass": null
+      },
+      "run": "counter-add-r1-c490d206",
+      "calls": 7,
+      "promptTokens": 152376,
+      "cachedTokens": 81502,
+      "outputTokens": 20327,
+      "maxPromptTokens": 41125,
+      "estimatedUsd": 0.4019724,
+      "modelVersions": ["gemini-3.1-pro-preview"],
+      "candidateDiagnostics": [
+        {
+          "passed": true
+        }
+      ],
+      "browserMessage": null,
+      "auditedPrimaryFailureClass": null,
+      "browser": {
+        "status": "passed",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "openedImprovePanel": true,
+        "recoveryEntryVisible": true,
+        "screenshot": "/private/tmp/cordis-issue36-postrepair-real-authorized-20260930/runs/counter-add-r1-c490d206/browser-counter-add.png",
+        "pageErrors": [],
+        "confirmedPlan": true,
+        "experienced": true,
+        "experienceActions": {
+          "counterValue": "1",
+          "completedAndReopened": true
+        },
+        "applied": true,
+        "observedRunStatus": "succeeded"
+      },
+      "formalBefore": {
+        "compositionRevision": 1,
+        "versionId": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0",
+        "taskTotal": 1
+      },
+      "formalAfter": {
+        "compositionRevision": 2,
+        "versionId": "4d3b083538da100f2b2bdb088f1cb97bc2f2bf078720106f31a8d6661c76ec0d",
+        "taskTotal": 1
+      },
+      "seedTaskUnchanged": true
+    },
+    {
+      "scenarioId": "due-auto-expire",
+      "record": {
+        "scenarioId": "due-auto-expire",
+        "evidenceKind": "real-model",
+        "evidenceComplete": true,
+        "expectedOutcomeClass": "full-path-success",
+        "observedOutcomeClass": "full-path-success",
+        "capabilitySelectionCorrect": true,
+        "errorBlockingCorrect": null,
+        "firstPlanPassed": false,
+        "firstCandidatePassed": true,
+        "fullPathSucceeded": true,
+        "repairedInOriginalBudget": false,
+        "durationMs": 185458,
+        "usage": {
+          "promptTokens": 248298,
+          "completionTokens": 20260
+        },
+        "failureClass": null
+      },
+      "run": "due-auto-expire-r1-60a10ae7",
+      "calls": 11,
+      "promptTokens": 248298,
+      "cachedTokens": 162789,
+      "outputTokens": 20260,
+      "maxPromptTokens": 48575,
+      "estimatedUsd": 0.4466958000000001,
+      "modelVersions": ["gemini-3.1-pro-preview"],
+      "candidateDiagnostics": [
+        {
+          "passed": true
+        }
+      ],
+      "browserMessage": null,
+      "auditedPrimaryFailureClass": null,
+      "browser": {
+        "status": "passed",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "openedImprovePanel": true,
+        "recoveryEntryVisible": true,
+        "screenshot": "/private/tmp/cordis-issue36-postrepair-real-authorized-20260930/runs/due-auto-expire-r1-60a10ae7/browser-due-auto-expire.png",
+        "pageErrors": [],
+        "confirmedPlan": true,
+        "experienced": true,
+        "experienceActions": {
+          "dueEditedAndCleared": true,
+          "dueFiredInExperience": true,
+          "completedAndReopened": true
+        },
+        "applied": true,
+        "observedRunStatus": "succeeded",
+        "formalDueLifecyclePassed": true
+      },
+      "formalBefore": {
+        "compositionRevision": 1,
+        "versionId": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0",
+        "taskTotal": 1
+      },
+      "formalAfter": {
+        "compositionRevision": 5,
+        "versionId": "1333ab3e315b1bea789ffa268fed5bfe3770c8a1f1471f3ca53882df58028c32",
+        "taskTotal": 2
+      },
+      "seedTaskUnchanged": true
+    },
+    {
+      "scenarioId": "member-upgrade-tags",
+      "record": {
+        "scenarioId": "member-upgrade-tags",
+        "evidenceKind": "real-model",
+        "evidenceComplete": true,
+        "expectedOutcomeClass": "full-path-success",
+        "observedOutcomeClass": "failed",
+        "capabilitySelectionCorrect": true,
+        "errorBlockingCorrect": null,
+        "firstPlanPassed": false,
+        "firstCandidatePassed": false,
+        "fullPathSucceeded": false,
+        "repairedInOriginalBudget": false,
+        "durationMs": 230123,
+        "usage": {
+          "promptTokens": 243036,
+          "completionTokens": 31244
+        },
+        "failureClass": "model-understanding-or-generation"
+      },
+      "run": "member-upgrade-tags-r1-372cfc99",
+      "calls": 8,
+      "promptTokens": 243036,
+      "cachedTokens": 138651,
+      "outputTokens": 31244,
+      "maxPromptTokens": 58401,
+      "estimatedUsd": 0.6114282,
+      "modelVersions": ["gemini-3.1-pro-preview"],
+      "candidateDiagnostics": [
+        {
+          "passed": false,
+          "diagnostic": "../../../../../../tmp/cordis-issue36-postrepair-real-authorized-20260930/runs/member-upgrade-tags-r1-372cfc99/artifacts/candidate-24054369-59e5-492d-b986-ad45b8184ced/business/entry.ts(22,10): error TS7006: Parameter 'data' implicitly has an 'any' type.\n"
+        },
+        {
+          "passed": false,
+          "diagnostic": "工作流定义不符合已确认契约"
+        },
+        {
+          "passed": false,
+          "diagnostic": "字段与流程定义冲突：tags"
+        }
+      ],
+      "browserMessage": "3 个候选均未通过验证，当前版本保持不变",
+      "auditedPrimaryFailureClass": "model-understanding-or-generation",
+      "browser": {
+        "status": "failed",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "openedImprovePanel": true,
+        "recoveryEntryVisible": false,
+        "screenshot": "/private/tmp/cordis-issue36-postrepair-real-authorized-20260930/runs/member-upgrade-tags-r1-372cfc99/browser-member-upgrade-tags.png",
+        "pageErrors": [],
+        "confirmedPlan": true,
+        "message": "3 个候选均未通过验证，当前版本保持不变"
+      },
+      "formalBefore": {
+        "compositionRevision": 2,
+        "versionId": "93f663c08faf9b4734c05288983c275ebfa117e5b89a6719e1906ec2e4eb1bb2",
+        "taskTotal": 1
+      },
+      "formalAfter": {
+        "compositionRevision": 2,
+        "versionId": "93f663c08faf9b4734c05288983c275ebfa117e5b89a6719e1906ec2e4eb1bb2",
+        "taskTotal": 1
+      },
+      "seedTaskUnchanged": true
+    },
+    {
+      "scenarioId": "missing-capability-push",
+      "record": {
+        "scenarioId": "missing-capability-push",
+        "evidenceKind": "real-model",
+        "evidenceComplete": true,
+        "expectedOutcomeClass": "accurate-block",
+        "observedOutcomeClass": "accurate-block",
+        "capabilitySelectionCorrect": true,
+        "errorBlockingCorrect": true,
+        "firstPlanPassed": true,
+        "firstCandidatePassed": null,
+        "fullPathSucceeded": false,
+        "repairedInOriginalBudget": false,
+        "durationMs": 43550,
+        "usage": {
+          "promptTokens": 212977,
+          "completionTokens": 4281
+        },
+        "failureClass": null
+      },
+      "run": "missing-capability-push-r1-0281903d",
+      "calls": 6,
+      "promptTokens": 212977,
+      "cachedTokens": 118300,
+      "outputTokens": 4281,
+      "maxPromptTokens": 44305,
+      "estimatedUsd": 0.264386,
+      "modelVersions": ["gemini-3.1-pro-preview"],
+      "candidateDiagnostics": [],
+      "browserMessage": null,
+      "auditedPrimaryFailureClass": null,
+      "browser": {
+        "status": "blocked-observed",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "openedImprovePanel": true,
+        "recoveryEntryVisible": true,
+        "screenshot": "/private/tmp/cordis-issue36-postrepair-real-authorized-20260930/runs/missing-capability-push-r1-0281903d/browser-missing-capability-push.png",
+        "pageErrors": [],
+        "observedRunStatus": "blocked"
+      },
+      "formalBefore": {
+        "compositionRevision": 1,
+        "versionId": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0",
+        "taskTotal": 1
+      },
+      "formalAfter": {
+        "compositionRevision": 1,
+        "versionId": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0",
+        "taskTotal": 1
+      },
+      "seedTaskUnchanged": true
+    },
+    {
+      "scenarioId": "rule-revision-reflection",
+      "record": {
+        "scenarioId": "rule-revision-reflection",
+        "evidenceKind": "real-model",
+        "evidenceComplete": true,
+        "expectedOutcomeClass": "full-path-success",
+        "observedOutcomeClass": "failed",
+        "capabilitySelectionCorrect": true,
+        "errorBlockingCorrect": null,
+        "firstPlanPassed": true,
+        "firstCandidatePassed": false,
+        "fullPathSucceeded": false,
+        "repairedInOriginalBudget": false,
+        "durationMs": 76965,
+        "usage": {
+          "promptTokens": 175650,
+          "completionTokens": 6913
+        },
+        "failureClass": "model-understanding-or-generation"
+      },
+      "run": "rule-revision-reflection-r1-f59ddcad",
+      "calls": 7,
+      "promptTokens": 175650,
+      "cachedTokens": 73417,
+      "outputTokens": 6913,
+      "maxPromptTokens": 39598,
+      "estimatedUsd": 0.3021054,
+      "modelVersions": ["gemini-3.1-pro-preview"],
+      "candidateDiagnostics": [
+        {
+          "passed": false,
+          "diagnostic": "候选不得提交验证报告或控制参数"
+        }
+      ],
+      "browserMessage": null,
+      "auditedPrimaryFailureClass": "model-understanding-or-generation",
+      "browser": {
+        "status": "blocked-observed",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "openedImprovePanel": true,
+        "recoveryEntryVisible": true,
+        "screenshot": "/private/tmp/cordis-issue36-postrepair-real-authorized-20260930/runs/rule-revision-reflection-r1-f59ddcad/browser-rule-revision-reflection.png",
+        "pageErrors": [],
+        "confirmedPlan": true,
+        "observedRunStatus": "blocked"
+      },
+      "formalBefore": {
+        "compositionRevision": 1,
+        "versionId": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0",
+        "taskTotal": 1
+      },
+      "formalAfter": {
+        "compositionRevision": 1,
+        "versionId": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0",
+        "taskTotal": 1
+      },
+      "seedTaskUnchanged": true
+    },
+    {
+      "scenarioId": "tags-add",
+      "record": {
+        "scenarioId": "tags-add",
+        "evidenceKind": "real-model",
+        "evidenceComplete": true,
+        "expectedOutcomeClass": "full-path-success",
+        "observedOutcomeClass": "failed",
+        "capabilitySelectionCorrect": false,
+        "errorBlockingCorrect": null,
+        "firstPlanPassed": true,
+        "firstCandidatePassed": true,
+        "fullPathSucceeded": false,
+        "repairedInOriginalBudget": false,
+        "durationMs": 83436,
+        "usage": {
+          "promptTokens": 189361,
+          "completionTokens": 8122
+        },
+        "failureClass": "evaluator"
+      },
+      "run": "tags-add-r1-5b3cac9f",
+      "calls": 9,
+      "promptTokens": 189361,
+      "cachedTokens": 73417,
+      "outputTokens": 8122,
+      "maxPromptTokens": 39597,
+      "estimatedUsd": 0.3440354,
+      "modelVersions": ["gemini-3.1-pro-preview"],
+      "candidateDiagnostics": [
+        {
+          "passed": true
+        }
+      ],
+      "browserMessage": "Evaluator binding: cannot uniquely bind frozen business case to verified UI",
+      "auditedPrimaryFailureClass": "model-understanding-or-generation",
+      "browser": {
+        "status": "failed",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "openedImprovePanel": true,
+        "recoveryEntryVisible": false,
+        "screenshot": "/private/tmp/cordis-issue36-postrepair-real-authorized-20260930/runs/tags-add-r1-5b3cac9f/browser-tags-add.png",
+        "pageErrors": [],
+        "confirmedPlan": true,
+        "experienced": true,
+        "message": "Evaluator binding: cannot uniquely bind frozen business case to verified UI"
+      },
+      "formalBefore": {
+        "compositionRevision": 1,
+        "versionId": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0",
+        "taskTotal": 1
+      },
+      "formalAfter": {
+        "compositionRevision": 1,
+        "versionId": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0",
+        "taskTotal": 1
+      },
+      "seedTaskUnchanged": true
+    },
+    {
+      "scenarioId": "temporarily-unavailable-dependency",
+      "record": {
+        "scenarioId": "temporarily-unavailable-dependency",
+        "evidenceKind": "real-model",
+        "evidenceComplete": true,
+        "expectedOutcomeClass": "accurate-block",
+        "observedOutcomeClass": "accurate-block",
+        "capabilitySelectionCorrect": true,
+        "errorBlockingCorrect": true,
+        "firstPlanPassed": true,
+        "firstCandidatePassed": null,
+        "fullPathSucceeded": false,
+        "repairedInOriginalBudget": false,
+        "durationMs": 28558,
+        "usage": {
+          "promptTokens": 83452,
+          "completionTokens": 2429
+        },
+        "failureClass": null
+      },
+      "run": "temporarily-unavailable-dependency-r1-b1ad7551",
+      "calls": 3,
+      "promptTokens": 83452,
+      "cachedTokens": 37012,
+      "outputTokens": 2429,
+      "maxPromptTokens": 39843,
+      "estimatedUsd": 0.1294304,
+      "modelVersions": ["gemini-3.1-pro-preview"],
+      "candidateDiagnostics": [],
+      "browserMessage": null,
+      "auditedPrimaryFailureClass": null,
+      "browser": {
+        "status": "blocked-observed",
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "openedImprovePanel": true,
+        "recoveryEntryVisible": true,
+        "screenshot": "/private/tmp/cordis-issue36-postrepair-real-authorized-20260930/runs/temporarily-unavailable-dependency-r1-b1ad7551/browser-temporarily-unavailable-dependency.png",
+        "pageErrors": [],
+        "observedRunStatus": "blocked"
+      },
+      "formalBefore": {
+        "compositionRevision": 1,
+        "versionId": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0",
+        "taskTotal": 1
+      },
+      "formalAfter": {
+        "compositionRevision": 1,
+        "versionId": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0",
+        "taskTotal": 1
+      },
+      "seedTaskUnchanged": true
+    }
+  ],
+  "limitations": [
+    "本轮是修复版本的单次补充验收，评估器哈希已变，不冒充原新旧配对或改写其差值。",
+    "原配对完整路径2/6→2/6没有改善。本轮相同六场仅1/6成功，仍未显示整体稳定性提升。",
+    "每场仅一次；模型仍会偏离目标或生成违反类型、契约和保护约束的产物。不承诺跨模型或重复运行稳定成功。",
+    "首个候选3/5包含按错误标签计划验证通过的候选，不能等同于满足业务需求。",
+    "全部场景在独立合成Workspace中执行，真实浏览器和真实模型证据不代表生产部署、生产数据迁移或服务离线期间准点执行。",
+    "统计归档完整不等于全部业务成功。最终账单、税费及供应商调整未核对。"
+  ]
+}
