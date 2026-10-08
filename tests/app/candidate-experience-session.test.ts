@@ -303,6 +303,38 @@ test("浏览器不能指定数据库路径；结束体验不自动应用候选",
   );
   const still = await e.observe();
   assert.equal(still.run?.status, "awaiting-apply");
+  if (still.run?.status !== "awaiting-apply")
+    throw new Error("expected awaiting-apply");
+  assert.equal(still.run.experienceSession?.id, sessionId);
+  assert.equal(still.run.experienceSession?.status, "ended");
+  const observed = await (
+    await app.request(`/api/assistant?runId=${done.id}`)
+  ).json();
+  assert.equal(observed.run.experienceSession.status, "ended");
+  const reopened = await e.command({
+    type: "experience",
+    operationId: "exp-reopen-after-end",
+    runId: done.id,
+    candidateId: candidate.id,
+  });
+  if (reopened.run?.status !== "awaiting-apply")
+    throw new Error("expected awaiting-apply");
+  assert.equal(reopened.run.experienceSession?.status, "active");
+  assert.notEqual(reopened.run.experienceSession?.id, sessionId);
+  assert.deepEqual(
+    await (await app.request(`/api/experience?sessionId=${sessionId}`)).json(),
+    { status: "none" },
+  );
+  await e.close();
+  const restarted = evolutionWithExperience(
+    w,
+    new ExecutionDriver(new PlanningDriver(), "aux-workflow", "双贡献组合"),
+  );
+  t.after(() => restarted.evolution.close());
+  const afterRestart = await restarted.evolution.observe(done.id);
+  if (afterRestart.run?.status !== "awaiting-apply")
+    throw new Error("expected awaiting-apply");
+  assert.equal(afterRestart.run.experienceSession?.status, "ended");
   assert.equal(w.composition().versionId, before.versionId);
 });
 

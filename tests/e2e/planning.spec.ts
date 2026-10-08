@@ -116,7 +116,7 @@ test("real backend restores clarification and investigated plan without changing
 test("failed candidate diagnostics survive correction and refresh in the real progress UI", async ({
   page,
   request,
-}) => {
+}, info) => {
   const send = async (data: Record<string, unknown>) =>
     (
       await request.post("/api/assistant/commands", {
@@ -124,6 +124,7 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
       })
     ).json();
   const before = await (await request.get("/api/composition")).json();
+  expect(before.history).toEqual([]);
   await send({ type: "request", text: "完成前填写复盘" });
   await expect
     .poll(
@@ -243,7 +244,25 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   expect(await (await request.get("/api/composition")).json()).toEqual(before);
   await page.unroute("**/api/experience/commands");
 
+  await page.getByRole("button", { name: "结束体验", exact: true }).click();
+  await expect(
+    page.getByRole("status", { name: "候选体验提示" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  await expect(
+    page.getByText("当前已有活跃的体验会话", { exact: false }),
+  ).toHaveCount(0);
+  await page.reload();
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "体验", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("当前已有活跃的体验会话", { exact: false }),
+  ).toHaveCount(0);
+
   const afterExperience = await (await request.get("/api/assistant")).json();
+  expect(afterExperience.run.experienceSession.status).toBe("ended");
   const candidate = afterExperience.candidates.find(
     (c: { passed: boolean }) => c.passed,
   );
@@ -299,12 +318,33 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   const composition = await (await request.get("/api/composition")).json();
   expect(composition.versionId).toBe(afterExperience.run.versionId);
   expect(composition.revision).toBeGreaterThan(before.revision);
+  expect(composition.previousVersionId).toBe(before.versionId);
   const finalReplay = await (
     await request.post("/api/assistant/commands", { data: applyBody })
   ).json();
   expect(finalReplay.run.status).toBe("succeeded");
 
   await page.reload();
+  await page.getByRole("button", { name: "更多选项", exact: true }).click();
+  await page.getByRole("menuitem", { name: "工作区设置", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "撤回上个版本", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({ path: info.outputPath("first-upgrade-rollback.png") });
+  await page.getByRole("button", { name: "撤回上个版本", exact: true }).click();
+  await expect
+    .poll(
+      async () => (await (await request.get("/api/composition")).json()).versionId,
+    )
+    .toBe(before.versionId);
+  await page.getByText("版本记录", { exact: true }).click();
+  await page.getByRole("button", { name: "恢复此版本", exact: true }).click();
+  await expect
+    .poll(
+      async () => (await (await request.get("/api/composition")).json()).versionId,
+    )
+    .toBe(composition.versionId);
+  await page.getByRole("button", { name: "关闭工作区设置", exact: true }).click();
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await page.getByRole("button", { name: "继续修改", exact: true }).click();
   await page

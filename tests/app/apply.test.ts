@@ -178,6 +178,52 @@ test("A07: apply binds candidate evidence and base composition; mismatch and rep
   assert.equal(parsed.type, "apply");
 });
 
+test("首次升级默认流程后可撤回内置版本并保留任务字段", async (t) => {
+  const { w, e, before, done, candidate, app } = await awaitingApply(t);
+  assert.equal(before.history.length, 0);
+  assert.equal(before.previousVersionId, undefined);
+  await e.command({
+    type: "apply",
+    operationId: "first-apply",
+    runId: done.id,
+    candidateId: candidate.id,
+    evidenceHash: candidate.evidenceHash!,
+    compositionRevision: before.revision,
+  });
+  await settle(e, "succeeded");
+  const applied = w.composition();
+  assert.equal(applied.workflow.id, "default");
+  assert.notEqual(applied.versionId, before.versionId);
+  const created = await w.command({
+    type: "create",
+    title: "首次升级后创建的任务",
+    operationId: "first-apply-task",
+    compositionRevision: applied.revision,
+  });
+  const completed = await w.command({
+    type: "action",
+    actionId: "complete",
+    taskId: created.task!.id,
+    expectedRevision: created.task!.revision,
+    input: { reflection: "撤回后仍需保留的复盘" },
+    operationId: "first-apply-complete",
+    compositionRevision: applied.revision,
+  });
+  await w.restart();
+  assert.equal(w.composition().previousVersionId, before.versionId);
+  const restored = await app.request("/api/runtime/restore", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      operationId: "first-apply-restore",
+      compositionRevision: applied.revision,
+    }),
+  });
+  assert.equal(restored.status, 200);
+  assert.equal(w.composition().versionId, before.versionId);
+  assert.deepEqual(w.read(created.task!.id), completed.task);
+});
+
 test("apply failure before commit keeps the old composition and returns to awaiting-apply", async (t) => {
   const { w, before, done, candidate } = await awaitingApply(t);
   const domain = new EvolutionDomain(w);

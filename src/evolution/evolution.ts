@@ -343,6 +343,23 @@ export class Evolution {
     run = this.normalizeRun(run);
     if (!run)
       return { availability: "ready", run: null, events: [], eventCursor: 0 };
+    if (run.status === "awaiting-apply" && run.experienceSession) {
+      const session = this.sessions?.observe({
+        sessionId: run.experienceSession.id,
+        runId: run.id,
+      });
+      run = {
+        ...run,
+        experienceSession:
+          session && session.status !== "none"
+            ? session
+            : {
+                ...run.experienceSession,
+                status: "ended",
+                note: "体验会话已结束，请重新打开体验。",
+              },
+      };
+    }
     const events = this.events(run.id, afterSequence);
     const cursor = events.at(-1)?.sequence ?? afterSequence;
     const candidates = this.db

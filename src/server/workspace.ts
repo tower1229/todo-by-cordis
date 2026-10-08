@@ -1077,16 +1077,15 @@ export class Workspace {
     return this.release.get(this.current().versionId);
   }
   previousVersionId() {
+    const currentVersionId = this.current().versionId;
     const history = this.db
       .prepare(
         "SELECT versionId FROM releases WHERE versionId != ? ORDER BY id DESC LIMIT 1",
       )
-      .get(this.current().versionId);
-    return history
-      ? String(history.versionId)
-      : this.current().workflowId !== "default"
-        ? this.builtins.get("default")?.id
-        : undefined;
+      .get(currentVersionId);
+    if (history) return String(history.versionId);
+    const defaultVersionId = this.builtins.get("default")?.id;
+    return defaultVersionId !== currentVersionId ? defaultVersionId : undefined;
   }
   private async prepareForPublish(version: Version) {
     return this.release.prepare(version, async (runtime) => {
