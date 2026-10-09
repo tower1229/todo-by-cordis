@@ -8,9 +8,31 @@ export const toolReply = (name: string, args: Record<string, unknown>) => ({
 });
 export class PlanningDriver implements Driver {
   requests: ModelRequest[] = [];
+  private sources: { id: string; text: string }[] = [];
   constructor(public finish: Record<string, unknown> = {}) {}
   async generate(request: ModelRequest) {
     this.requests.push(request);
+    if (request.schema) {
+      const input = JSON.parse(request.message ?? "{}") as {
+        requirements: { id: string }[];
+      };
+      return {
+        text: JSON.stringify({
+          reviewedIds: input.requirements.map((r) => r.id),
+          issues: [],
+        }),
+        history: [],
+        calls: [],
+        usage: { fixture: true },
+        raw: { fixture: "independent-review" },
+      };
+    }
+    if (request.message) {
+      const input = JSON.parse(request.message) as {
+        sources?: { id: string; text: string }[];
+      };
+      if (input.sources) this.sources = input.sources;
+    }
     const toolReply = (name: string, args: Record<string, unknown>) => ({
       text: "",
       history: request.history,
@@ -76,6 +98,24 @@ export class PlanningDriver implements Driver {
           : [],
       );
     return toolReply("propose_plan", {
+      requirements: this.sources
+        .slice(-1)
+        .map((s) => ({
+          id: `request-${s.id}`,
+          description: s.text,
+          sourceRevision: s.id,
+          sourceQuote: s.text,
+          type: "behavior",
+          checks: this.finish.memberEnabled
+            ? [
+                {
+                  checker: "host-member-enabled/1",
+                  caseId: "host-member-enabled/1:1",
+                },
+              ]
+            : [{ checker: "workflow/1", caseId: "workflow/1:1" }],
+        })),
+      browserCases: [],
       summary: "完成任务前填写复盘",
       changes: ["完成前要求填写复盘"],
       outcome: "未填写复盘不能完成任务",

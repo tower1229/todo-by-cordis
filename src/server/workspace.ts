@@ -1189,7 +1189,11 @@ export class Workspace {
     if (!target) throw new AppError("UNKNOWN_PLUGIN", "组合中不存在该插件");
     return { active, members, target };
   }
-  recordMemberEnabledVersion(pluginId: string, enabled: boolean): Version {
+  recordMemberEnabledVersion(
+    pluginId: string,
+    enabled: boolean,
+    options?: { pendingAcceptance: boolean },
+  ): Version {
     assertMemberEnabledArgs(pluginId, enabled);
     const { active, target } = this.requireCompositionMember(pluginId);
     if (target.enabled === enabled)
@@ -1225,7 +1229,9 @@ export class Workspace {
       source: active.source,
       code: active.code,
       definition: active.definition,
-      evidence: active.evidence,
+      evidence: options?.pendingAcceptance
+        ? { ...(active.evidence as Record<string, unknown>), passed: false }
+        : active.evidence,
       ...(hostScheduleRegistration ? { hostScheduleRegistration } : {}),
       ...(active.bundle ? { bundle: active.bundle } : {}),
       members: recordedMembers,

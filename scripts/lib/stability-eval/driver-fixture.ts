@@ -69,6 +69,7 @@ export function stabilityStubDriver(scenarioId: string): Driver {
   let planning: PlanningDriver | undefined;
   return {
     async generate(request: ModelRequest) {
+      if (request.schema && planning) return planning.generate(request);
       if (!request.tools?.some((t) => t.name === "submit_candidate")) {
         if (!JSON.stringify(request.history).includes("inspect_application")) {
           planning = new PlanningDriver(planFinish(scenarioId));
@@ -275,6 +276,7 @@ export function dueBaselineStubDriver(): Driver {
   });
   return {
     async generate(request) {
+      if (request.schema && planning) return planning.generate(request);
       if (request.tools?.some((t) => t.name === "submit_candidate"))
         throw new Error("截止时间基线场景不得生成候选实现");
       const history = JSON.stringify(request.history);

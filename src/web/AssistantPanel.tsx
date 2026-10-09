@@ -88,6 +88,32 @@ function CompositionIntentBlock({
 }
 
 function PlanSummary({ plan }: { plan: InvestigatedPlan }) {
+  const verification = (check: { checker: string; caseId: string }) => {
+    if (check.checker === "browser/1") {
+      const example = plan.browserCases?.find((c) => c.id === check.caseId);
+      if (example) {
+        const assertions = example.steps.flatMap((step) => {
+          if (step.kind === "field")
+            return [`字段 ${step.field} 显示“${step.value}”`];
+          if (step.kind === "action-visible")
+            return [`动作 ${step.action} ${step.visible ? "可见" : "不可见"}`];
+          if (step.kind === "error") return [`显示错误“${step.text}”`];
+          if (step.kind === "task")
+            return [`任务名称“${step.title}”、备注“${step.description}”`];
+          return [];
+        });
+        return `${example.task === "existing" ? "基础版本已有任务" : "候选应用后新任务"}：${assertions.join("；")}（手机与桌面浏览器）`;
+      }
+    }
+    const index =
+      Number(check.caseId.slice(check.caseId.lastIndexOf(":") + 1)) - 1;
+    const example = plan.cases.filter((c) => c.checker === check.checker)[
+      index
+    ];
+    return example
+      ? `${example.given} → ${example.then}`
+      : `${check.checker} · ${check.caseId}`;
+  };
   return (
     <dl className="space-y-4 text-sm leading-6">
       {[
@@ -105,6 +131,37 @@ function PlanSummary({ plan }: { plan: InvestigatedPlan }) {
       ))}
       {!!plan.compositionIntent && (
         <CompositionIntentBlock intent={plan.compositionIntent} />
+      )}
+      {!!plan.requirements?.length && (
+        <div>
+          <dt className="plan-label">要求与验证方式</dt>
+          <dd className="space-y-3">
+            {plan.requirements.map((r) => {
+              const coverage = plan.requirementCoverage?.find(
+                (c) => c.requirementId === r.id,
+              );
+              return (
+                <div key={r.id}>
+                  <p>{r.description}</p>
+                  <p className="text-xs text-muted">
+                    将如何验证：
+                    {r.checks.map(verification).join("；") || "尚未映射"}
+                  </p>
+                  {coverage?.reasons.map((reason) => (
+                    <p className="text-xs text-danger" key={reason}>
+                      未覆盖：{reason}
+                    </p>
+                  ))}
+                </div>
+              );
+            })}
+            {plan.requirementGate?.review.issues.map((issue, i) => (
+              <p key={i} className="text-xs text-danger">
+                复核：{issue.detail}
+              </p>
+            ))}
+          </dd>
+        </div>
       )}
       {!!plan.excluded.length && (
         <div>
@@ -214,10 +271,7 @@ export function AssistantPanel({
 }: {
   controller: AssistantController;
   compositionRevision: number;
-  onExperienceStarted?: (session: {
-    id: string;
-    runId: string;
-  }) => void;
+  onExperienceStarted?: (session: { id: string; runId: string }) => void;
 }) {
   const { snapshot, error, busy, draft, setDraft, command, working } =
     controller;
@@ -301,7 +355,9 @@ export function AssistantPanel({
             )}
             <details className="text-xs leading-6 text-muted break-words">
               <summary className="cursor-pointer">技术原因</summary>
-              <p className="mt-2 whitespace-pre-wrap">{blockedFacing.message}</p>
+              <p className="mt-2 whitespace-pre-wrap">
+                {blockedFacing.message}
+              </p>
             </details>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -503,6 +559,17 @@ export function AssistantPanel({
                     : candidate.diagnostic
                       ? "未通过"
                       : "验证中"}
+                </p>
+                <p className="text-xs text-muted">
+                  需求验证：
+                  {candidate.requirementSeal ? "冻结定义已绑定" : "待验证"} ·
+                  浏览器：
+                  {candidate.browser
+                    ? `${candidate.browser.results.filter((r) => r.status === "passed").length}/${candidate.browser.results.length} 项通过`
+                    : "待验证"}
+                </p>
+                <p className="text-xs text-muted">
+                  系统保护：宿主检查构建、权限与隔离；模型自测不作为通过依据。
                 </p>
                 {candidate.diagnostic && (
                   <p className="mt-2 whitespace-pre-wrap break-words text-xs text-muted">
@@ -768,9 +835,12 @@ export function AssistantPanel({
               AI 尚未连接。可以先记下需求。
             </p>
           )}
-          {!["ready", "awaiting-acceptance", "awaiting-input", "blocked"].includes(
-            run?.status ?? "",
-          ) && (
+          {![
+            "ready",
+            "awaiting-acceptance",
+            "awaiting-input",
+            "blocked",
+          ].includes(run?.status ?? "") && (
             <label className="mb-2 flex items-center gap-2 text-xs text-muted">
               <input
                 type="checkbox"

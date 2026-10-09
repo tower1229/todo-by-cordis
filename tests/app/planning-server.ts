@@ -20,6 +20,7 @@ const evolution = new Evolution(
   workspace.db,
   {
     async generate(request) {
+      if (request.schema) return planning.generate(request);
       if (request.tools?.some((t) => t.name === "submit_candidate")) {
         const result = await new ExecutionDriver(
           planning,

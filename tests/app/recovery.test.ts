@@ -585,7 +585,7 @@ test("A12: applying run becomes succeeded when reopen finds the version ready", 
   assert.equal(w.composition().versionId, versionId);
 });
 
-test("A12: applying run becomes awaiting-apply when reopen compensates pending activation", async (t) => {
+test("A12: legacy applying run requires replanning after reopen compensates pending activation", async (t) => {
   const { Runtime } = await import("../../src/runtime/runtime.js");
   const dir = mkdtempSync(join(tmpdir(), "cordis-recovery-"));
   const file = join(dir, "workspace.db");
@@ -683,6 +683,10 @@ test("A12: applying run becomes awaiting-apply when reopen compensates pending a
   assert.ok(w.composition().recovery);
   assert.equal(
     (await e.observe("apply-compensated")).run?.status,
-    "awaiting-apply",
+    "interrupted",
+  );
+  assert.equal(
+    (await e.observe("apply-compensated")).run?.historicalPlan?.id,
+    "p2",
   );
 });

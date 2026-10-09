@@ -526,6 +526,13 @@ for (const endBeforeFire of [true, false]) {
       "../../src/server/evolution-domain.js"
     );
     const { bindPlan, capture } = await import("../../src/server/planning.js");
+    const { freezeRequirements, candidateEvidenceHash } = await import(
+      "../../src/server/requirement-coverage.js"
+    );
+    const { verifyBrowser } = await import(
+      "../../src/server/browser-acceptance.js"
+    );
+    const { hash } = await import("../../src/release/storage.js");
     const { createControllableClock } = await import(
       "../../src/server/host/clock.js"
     );
@@ -631,10 +638,77 @@ for (const endBeforeFire of [true, false]) {
       steps: [],
       unresolved: [],
     };
-    const plan = {
+    const requirement = {
+      id: "schedule-lifecycle-fixture",
+      description: "体验调度候选",
+      sourceRevision: "fixture:1",
+      sourceQuote: "体验调度候选",
+      type: "behavior" as const,
+      checks: [{ checker: "schedule/1", caseId: "schedule/1:1" }],
+    };
+    const planDefinition = {
       ...planDraft,
+      requirements: [requirement],
+      browserCases: [],
+      cases: [
+        {
+          given: "体验任务含未来截止",
+          when: "退出体验或等待到期",
+          then: "定时器按体验生命周期释放或触发",
+          checker: "schedule/1",
+        },
+      ],
       binding: bindPlan(planDraft, capture(workspace), []),
     };
+    // This is an authored lifecycle fixture, not real-model semantic review.
+    // It receives actual Chromium receipts instead of bypassing the new gate.
+    const plan = {
+      ...planDefinition,
+      requirementGate: freezeRequirements(
+        planDefinition,
+        [{ id: "fixture:1", text: requirement.sourceQuote }],
+        hash(undefined),
+        { reviewedIds: [requirement.id], issues: [] },
+        ["schedule/1", "browser/1"],
+      ),
+    };
+    workspace.db
+      .prepare("INSERT INTO evolution_requirement_freezes VALUES(?,?)")
+      .run(plan.id, JSON.stringify(plan.requirementGate));
+    const browser = await verifyBrowser(
+      workspace,
+      hooked,
+      formalVersion,
+      [],
+      plan.requirements,
+      plan.requirementGate.definitionHash,
+      new AbortController().signal,
+    );
+    const { id: _id, entry: _entry, createdAt: _time, ...artifact } = hooked;
+    const verified = workspace.release.record({
+      ...artifact,
+      evidence: {
+        ...(hooked.evidence as Record<string, unknown>),
+        checks,
+        requirements: plan.requirements,
+        browserCases: [],
+        requirementGate: plan.requirementGate,
+        browser,
+        passed: true,
+      },
+    });
+    const candidate = {
+      id: "schedule-candidate",
+      planId: plan.id,
+      baseVersion: formalVersion.id,
+      attempt: 1,
+      passed: true,
+      requirementSeal: plan.requirementGate.seal,
+      browser,
+      versionId: verified.id,
+      sourceHash: "fixture",
+    };
+    const domain = new EvolutionDomain(workspace);
     const run = {
       id: "schedule-run",
       request: "体验调度候选",
@@ -643,15 +717,15 @@ for (const endBeforeFire of [true, false]) {
       plan,
       steps: [],
       summary: "候选已验证",
-      versionId: hooked.id,
+      versionId: verified.id,
     };
     workspace.db.prepare("INSERT INTO evolution_runs(id,body) VALUES(?,?)").run(
       run.id,
       JSON.stringify({
         run,
         plan,
-        target: { kind: "plugin", baseVersion: formalVersion.id, payload: {} },
-        versionId: hooked.id,
+        target: domain.target(plan),
+        versionId: verified.id,
         history: [],
         calls: 0,
         candidates: 1,
@@ -663,14 +737,12 @@ for (const endBeforeFire of [true, false]) {
       .run(
         run.id,
         JSON.stringify({
-          id: "schedule-candidate",
-          planId: plan.id,
-          baseVersion: formalVersion.id,
-          attempt: 1,
-          passed: true,
-          evidenceHash: "schedule-fixture-evidence",
-          versionId: hooked.id,
-          sourceHash: "fixture",
+          ...candidate,
+          evidenceHash: candidateEvidenceHash(
+            candidate,
+            plan,
+            domain.acceptanceEvidence(verified.id),
+          ),
         }),
       );
     const app = createApp(workspace, evolution, sessions);

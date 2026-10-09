@@ -1,3 +1,9 @@
+import {
+  candidateEvidenceHash,
+  freezeRequirements,
+} from "../../src/server/requirement-coverage.js";
+import { verifyBrowser } from "../../src/server/browser-acceptance.js";
+import type { Version } from "../../src/release/types.js";
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -89,6 +95,60 @@ function bindFixturePlan(plan: InvestigatedPlan, workspace: Workspace) {
   ]);
 }
 
+/** Explicit model-stub ledger; browser evidence is produced by real Chromium. */
+async function certifyFixture(
+  plan: InvestigatedPlan,
+  w: Workspace,
+  candidate: Version,
+): Promise<Version> {
+  plan.requirements = [
+    {
+      id: "fixture-enabled",
+      description: plan.summary,
+      sourceRevision: "fixture:1",
+      sourceQuote: plan.summary,
+      type: "behavior",
+      checks: [
+        { checker: "host-member-enabled/1", caseId: "host-member-enabled/1:1" },
+      ],
+    },
+  ];
+  plan.browserCases = [];
+  plan.requirementGate = freezeRequirements(
+    plan,
+    [{ id: "fixture:1", text: plan.summary }],
+    hash(undefined),
+    { reviewedIds: ["fixture-enabled"], issues: [] },
+    ["host-member-enabled/1", "browser/1"],
+  );
+  w.db.exec(
+    "CREATE TABLE IF NOT EXISTS evolution_requirement_freezes(id TEXT PRIMARY KEY,body TEXT NOT NULL)",
+  );
+  w.db
+    .prepare("INSERT OR REPLACE INTO evolution_requirement_freezes VALUES(?,?)")
+    .run(plan.id, JSON.stringify(plan.requirementGate));
+  const browser = await verifyBrowser(
+    w,
+    candidate,
+    w.release.get(plan.baseVersion!),
+    [],
+    plan.requirements,
+    plan.requirementGate.definitionHash,
+    new AbortController().signal,
+  );
+  const { id: _id, entry: _entry, createdAt: _time, ...artifact } = candidate;
+  return w.release.record({
+    ...artifact,
+    evidence: {
+      ...(candidate.evidence as Record<string, unknown>),
+      browser,
+      requirements: plan.requirements,
+      browserCases: [],
+      requirementGate: plan.requirementGate,
+    },
+  });
+}
+
 /** Fixture: dual composition + enable-status candidate already in awaiting-apply. */
 async function awaitingMemberEnabledApply(
   t: TestContext,
@@ -103,16 +163,20 @@ async function awaitingMemberEnabledApply(
   });
   await activateDual(w);
   const before = w.composition();
-  const candidateVersion = w.recordMemberEnabledVersion(pluginId, enabled);
+  let candidateVersion = w.recordMemberEnabledVersion(pluginId, enabled);
   const plan = memberEnabledPlan(before.versionId, before.revision);
   bindFixturePlan(plan, w);
+  candidateVersion = await certifyFixture(plan, w, candidateVersion);
   const candidateId = "cand-member-enabled";
-  const evidenceHash = hash({
-    candidateId,
-    versionId: candidateVersion.id,
-    cases: plan.cases,
-    rules: plan.workflowRules,
-  });
+  const evidenceHash = candidateEvidenceHash(
+    {
+      id: candidateId,
+      versionId: candidateVersion.id,
+      sourceHash: hash({ pluginId, enabled }),
+    },
+    plan,
+    new EvolutionDomain(w).acceptanceEvidence(candidateVersion.id),
+  );
   const runId = "run-member-enabled";
   // Bootstrap evolution tables, then seed awaiting-apply (fixtures OK; no Gemini).
   const bootstrap = new Evolution(
@@ -141,7 +205,15 @@ async function awaitingMemberEnabledApply(
         target: {
           kind: "plugin",
           baseVersion: before.versionId,
-          payload: { kind: "member-enabled", pluginId, enabled, binding: plan.binding },
+          payload: {
+            kind: "member-enabled",
+            pluginId,
+            enabled,
+            binding: plan.binding,
+            requirements: plan.requirements,
+            browserCases: plan.browserCases,
+            requirementGate: plan.requirementGate,
+          },
         },
         plan,
         versionId: candidateVersion.id,
@@ -152,21 +224,20 @@ async function awaitingMemberEnabledApply(
         eventSequence: 0,
       }),
     );
-  w.db
-    .prepare("INSERT INTO evolution_candidates(runId,body) VALUES(?,?)")
-    .run(
-      runId,
-      JSON.stringify({
-        id: candidateId,
-        planId: plan.id,
-        baseVersion: before.versionId,
-        attempt: 1,
-        passed: true,
-        evidenceHash,
-        versionId: candidateVersion.id,
-        sourceHash: hash({ pluginId, enabled }),
-      }),
-    );
+  w.db.prepare("INSERT INTO evolution_candidates(runId,body) VALUES(?,?)").run(
+    runId,
+    JSON.stringify({
+      id: candidateId,
+      planId: plan.id,
+      baseVersion: before.versionId,
+      attempt: 1,
+      passed: true,
+      requirementSeal: plan.requirementGate!.seal,
+      evidenceHash,
+      versionId: candidateVersion.id,
+      sourceHash: hash({ pluginId, enabled }),
+    }),
+  );
   const { evolution: e, sessions } = evolutionWithExperience(
     w,
     new ExecutionDriver(new PlanningDriver()),
@@ -230,7 +301,8 @@ test("enable-status change enters awaiting-apply; experience summarizes and mark
 });
 
 test("apply binds candidate evidence and compositionRevision; mismatch leaves formal composition unchanged", async (t) => {
-  const { w, e, before, runId, candidate } = await awaitingMemberEnabledApply(t);
+  const { w, e, before, runId, candidate } =
+    await awaitingMemberEnabledApply(t);
 
   await assert.rejects(
     e.command({
@@ -274,7 +346,8 @@ test("apply binds candidate evidence and compositionRevision; mismatch leaves fo
 });
 
 test("self-iteration apply disable exits contributions and retains fields like Workspace path", async (t) => {
-  const { w, e, before, runId, candidate } = await awaitingMemberEnabledApply(t);
+  const { w, e, before, runId, candidate } =
+    await awaitingMemberEnabledApply(t);
   const created = await w.command({
     type: "create",
     title: "自迭代停用保留",
@@ -395,19 +468,23 @@ test("self-iteration apply re-enable restores contributions with retained field 
   assert.equal(w.read(created.task!.id).fields.tags, "survive-disable");
 
   const before = w.composition();
-  const candidateVersion = w.recordMemberEnabledVersion("tags", true);
+  let candidateVersion = w.recordMemberEnabledVersion("tags", true);
   const plan = memberEnabledPlan(before.versionId, before.revision);
   bindFixturePlan(plan, w);
   plan.summary = "再启用标签插件";
   plan.outcome = "启用 tags";
   plan.changes = ["将 tags 成员 enabled 设为 true"];
+  candidateVersion = await certifyFixture(plan, w, candidateVersion);
   const candidateId = "cand-member-reenable";
-  const evidenceHash = hash({
-    candidateId,
-    versionId: candidateVersion.id,
-    cases: plan.cases,
-    rules: plan.workflowRules,
-  });
+  const evidenceHash = candidateEvidenceHash(
+    {
+      id: candidateId,
+      versionId: candidateVersion.id,
+      sourceHash: hash({ pluginId: "tags", enabled: true }),
+    },
+    plan,
+    new EvolutionDomain(w).acceptanceEvidence(candidateVersion.id),
+  );
   const runId = "run-member-reenable";
   const bootstrap = new Evolution(
     w.db,
@@ -435,7 +512,15 @@ test("self-iteration apply re-enable restores contributions with retained field 
         target: {
           kind: "plugin",
           baseVersion: before.versionId,
-          payload: { kind: "member-enabled", pluginId: "tags", enabled: true, binding: plan.binding },
+          payload: {
+            kind: "member-enabled",
+            pluginId: "tags",
+            enabled: true,
+            binding: plan.binding,
+            requirements: plan.requirements,
+            browserCases: plan.browserCases,
+            requirementGate: plan.requirementGate,
+          },
         },
         plan,
         versionId: candidateVersion.id,
@@ -446,21 +531,20 @@ test("self-iteration apply re-enable restores contributions with retained field 
         eventSequence: 0,
       }),
     );
-  w.db
-    .prepare("INSERT INTO evolution_candidates(runId,body) VALUES(?,?)")
-    .run(
-      runId,
-      JSON.stringify({
-        id: candidateId,
-        planId: plan.id,
-        baseVersion: before.versionId,
-        attempt: 1,
-        passed: true,
-        evidenceHash,
-        versionId: candidateVersion.id,
-        sourceHash: hash({ pluginId: "tags", enabled: true }),
-      }),
-    );
+  w.db.prepare("INSERT INTO evolution_candidates(runId,body) VALUES(?,?)").run(
+    runId,
+    JSON.stringify({
+      id: candidateId,
+      planId: plan.id,
+      baseVersion: before.versionId,
+      attempt: 1,
+      passed: true,
+      requirementSeal: plan.requirementGate!.seal,
+      evidenceHash,
+      versionId: candidateVersion.id,
+      sourceHash: hash({ pluginId: "tags", enabled: true }),
+    }),
+  );
   const { evolution: e, sessions } = evolutionWithExperience(
     w,
     new ExecutionDriver(new PlanningDriver()),
@@ -516,7 +600,15 @@ test("ordinary self-iteration enable-status path does not alter system protectio
   assert.ok(plan.excluded.some((item) => /发布|验证|恢复|执行策略/.test(item)));
   assert.deepEqual(plan.writableScope, []);
   const base = w.release.get(before.versionId);
-  assert.equal(hash(candidateVersion.evidence), hash(base.evidence));
+  const {
+    browser,
+    requirements: _requirements,
+    browserCases: _browserCases,
+    requirementGate,
+    ...retained
+  } = candidateVersion.evidence as Record<string, unknown>;
+  assert.equal(hash(retained), hash(base.evidence));
+  assert.ok(browser && requirementGate);
   assert.equal(candidateVersion.source, base.source);
   assert.equal(candidateVersion.code, base.code);
 
@@ -550,7 +642,8 @@ test("ordinary self-iteration enable-status path does not alter system protectio
 });
 
 test("experience rejects when formal composition drifted from candidate parent", async (t) => {
-  const { w, e, before, runId, candidate } = await awaitingMemberEnabledApply(t);
+  const { w, e, before, runId, candidate } =
+    await awaitingMemberEnabledApply(t);
   await w.setMemberEnabled({
     operationId: randomUUID(),
     compositionRevision: before.revision,
@@ -593,7 +686,7 @@ test("impure enable-status candidate does not take member-enabled experience sho
   const before = w.composition();
   const pure = w.recordMemberEnabledVersion("tags", false);
   const base = w.release.get(before.versionId);
-  const impure = w.release.record({
+  let impure = w.release.record({
     pluginId: base.pluginId,
     name: `${base.name}（杂质候选）`,
     parentId: base.id,
@@ -602,19 +695,27 @@ test("impure enable-status candidate does not take member-enabled experience sho
     source: `${base.source}\n// impure-marker`,
     code: base.code,
     definition: base.definition,
-    evidence: { ...(base.evidence as object), forgedReport: true, passed: true },
+    evidence: {
+      ...(base.evidence as object),
+      forgedReport: true,
+      passed: true,
+    },
     ...(base.bundle ? { bundle: base.bundle } : {}),
     members: pure.members!,
   });
   const plan = memberEnabledPlan(before.versionId, before.revision);
   bindFixturePlan(plan, w);
+  impure = await certifyFixture(plan, w, impure);
   const candidateId = "cand-member-impure";
-  const evidenceHash = hash({
-    candidateId,
-    versionId: impure.id,
-    cases: plan.cases,
-    rules: plan.workflowRules,
-  });
+  const evidenceHash = candidateEvidenceHash(
+    {
+      id: candidateId,
+      versionId: impure.id,
+      sourceHash: hash({ impure: true }),
+    },
+    plan,
+    new EvolutionDomain(w).acceptanceEvidence(impure.id),
+  );
   const runId = "run-member-impure";
   const bootstrap = new Evolution(
     w.db,
@@ -642,7 +743,15 @@ test("impure enable-status candidate does not take member-enabled experience sho
         target: {
           kind: "plugin",
           baseVersion: before.versionId,
-          payload: { kind: "member-enabled", pluginId: "tags", enabled: false, binding: plan.binding },
+          payload: {
+            kind: "member-enabled",
+            pluginId: "tags",
+            enabled: false,
+            binding: plan.binding,
+            requirements: plan.requirements,
+            browserCases: plan.browserCases,
+            requirementGate: plan.requirementGate,
+          },
         },
         plan,
         versionId: impure.id,
@@ -653,21 +762,20 @@ test("impure enable-status candidate does not take member-enabled experience sho
         eventSequence: 0,
       }),
     );
-  w.db
-    .prepare("INSERT INTO evolution_candidates(runId,body) VALUES(?,?)")
-    .run(
-      runId,
-      JSON.stringify({
-        id: candidateId,
-        planId: plan.id,
-        baseVersion: before.versionId,
-        attempt: 1,
-        passed: true,
-        evidenceHash,
-        versionId: impure.id,
-        sourceHash: hash({ impure: true }),
-      }),
-    );
+  w.db.prepare("INSERT INTO evolution_candidates(runId,body) VALUES(?,?)").run(
+    runId,
+    JSON.stringify({
+      id: candidateId,
+      planId: plan.id,
+      baseVersion: before.versionId,
+      attempt: 1,
+      passed: true,
+      requirementSeal: plan.requirementGate!.seal,
+      evidenceHash,
+      versionId: impure.id,
+      sourceHash: hash({ impure: true }),
+    }),
+  );
   const { evolution: e, sessions } = evolutionWithExperience(
     w,
     new ExecutionDriver(new PlanningDriver()),

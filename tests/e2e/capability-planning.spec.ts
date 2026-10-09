@@ -339,12 +339,15 @@ test("browser rejects stale guide before execution and after experience, then ac
     async generate(request: ModelRequest, signal) {
       const reply = await execution.generate(request, signal);
       if (
-        reply.calls[0]?.name === "propose_plan" &&
+        reply.calls.some((call) => call.name === "describe_verification") &&
         !JSON.stringify(request.history).includes('"name":"read_guides"')
       )
         return {
           ...reply,
-          calls: [{ name: "read_guides", args: { refs: [guideRef] } }],
+          calls: [
+            ...reply.calls,
+            { name: "read_guides", args: { refs: [guideRef] } },
+          ],
         };
       if (
         reply.calls[0]?.name === "submit_candidate" &&
@@ -611,7 +614,9 @@ test("browser planning corrects bad guide arguments and rejects an unsent catalo
       )
       .toBe("ready");
     expect(phase).toBe(3);
-    const history = JSON.stringify(base.requests.at(-1)?.history);
+    const history = JSON.stringify(
+      base.requests.filter((r) => !r.schema).at(-1)?.history,
+    );
     expect(history).toContain("REF_UNAVAILABLE");
     expect(history).toContain("调查证据不存在或未读取");
     await expect(
@@ -672,7 +677,9 @@ test("browser planning can read the bounded task event upgrade guide", async ({
     await expect
       .poll(async () => (await evolution.observe()).run?.status)
       .toBe("ready");
-    const history = JSON.stringify(base.requests.at(-1)?.history);
+    const history = JSON.stringify(
+      base.requests.filter((r) => !r.schema).at(-1)?.history,
+    );
     expect(history).toContain("guide/task.events");
     expect(history).toContain("task.created");
     expect(history).toContain("不得借事件回调直接写库");

@@ -138,13 +138,30 @@ test("真实浏览器绑定不依赖 stub 的成员、动作和字段名称", as
       driver: {
         async generate(request, signal) {
           const reply = await original.generate(request, signal);
-          return JSON.parse(
+          const renamed = JSON.parse(
             JSON.stringify(reply)
               .replace(/\btags\b/g, "categorylabel")
               .replaceAll("setTags", "saveCategory")
               .replaceAll("设标签", "设置分类(+)")
               .replaceAll("标签", "分类"),
           ) as typeof reply;
+          // Rename implementation identifiers while preserving exact user quotes.
+          for (const call of renamed.calls) {
+            if (call.name !== "propose_plan") continue;
+            const originalRequirements = reply.calls.find(
+              (c) => c.name === "propose_plan",
+            )?.args
+              .requirements as import("../../src/shared/assistant.js").Requirement[];
+            for (const requirement of call.args
+              .requirements as import("../../src/shared/assistant.js").Requirement[]) {
+              const prior = originalRequirements.find(
+                (r) => r.id === requirement.id,
+              )!;
+              requirement.sourceQuote = prior.sourceQuote;
+              requirement.sourceRevision = prior.sourceRevision;
+            }
+          }
+          return renamed;
         },
       },
     });

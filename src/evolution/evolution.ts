@@ -1,3 +1,13 @@
+import { BrowserEnvironmentError } from "../server/browser-acceptance.js";
+import {
+  candidateEvidenceHash,
+  caseCatalog,
+  coverage,
+  freezeRequirements,
+  gateFailure,
+  parseReview,
+  reviewSchema,
+} from "../server/requirement-coverage.js";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { Driver, ModelReply, ModelRequest } from "./driver.js";
@@ -13,6 +23,7 @@ import type {
   InvestigatedPlan,
   PlanBinding,
   PlanEvidence,
+  RequirementGate,
 } from "../shared/assistant.js";
 import { describeBlockers } from "../shared/assistant.js";
 import { AppError } from "../shared/contracts.js";
@@ -61,9 +72,11 @@ export interface Domain {
   check(target: Target, revision: number, plan?: InvestigatedPlan): void;
   isActiveVersion(versionId: string): boolean;
   isReadyVersion(versionId: string): boolean;
+  verifyAcceptance?(versionId: string, plan: InvestigatedPlan): void;
   acceptanceEvidence(versionId: string): {
     members?: unknown;
     workspaceChecks: string[];
+    browser?: import("../shared/browser-cases.js").BrowserEvidence;
   };
   generation(target: Target): {
     instruction: string;
@@ -163,6 +176,7 @@ export class Evolution {
     db.exec(`CREATE TABLE IF NOT EXISTS evolution_runs(id TEXT PRIMARY KEY,body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS evolution_operations(id TEXT PRIMARY KEY,hash TEXT NOT NULL,runId TEXT NOT NULL,receipt TEXT);
       CREATE TABLE IF NOT EXISTS evolution_acceptance_revisions(id TEXT PRIMARY KEY,runId TEXT NOT NULL,body TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS evolution_requirement_freezes(id TEXT PRIMARY KEY,body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS evolution_calls(id INTEGER PRIMARY KEY,runId TEXT NOT NULL,body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS evolution_candidates(id INTEGER PRIMARY KEY,runId TEXT NOT NULL,body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS evolution_events(id INTEGER PRIMARY KEY,runId TEXT NOT NULL,sequence INTEGER NOT NULL,body TEXT NOT NULL);
@@ -177,6 +191,23 @@ export class Evolution {
     for (const row of db.prepare("SELECT body FROM evolution_runs").all()) {
       const record = JSON.parse(String(row.body)) as RecordRun;
       if (
+        (record.run.status === "ready" ||
+          record.run.status === "awaiting-apply" ||
+          record.run.status === "awaiting-acceptance" ||
+          (record.run.status === "applying" &&
+            !this.domain.isActiveVersion(
+              record.versionId ?? record.run.versionId ?? "",
+            ))) &&
+        !("plan" in record.run && record.run.plan.requirementGate)
+      ) {
+        record.run = {
+          ...this.base(record),
+          historicalPlan: "plan" in record.run ? record.run.plan : undefined,
+          status: "interrupted",
+          message: "旧待执行或待应用计划缺少需求及浏览器门禁证据，请重新规划",
+        };
+        this.save(record);
+      } else if (
         ["planning", "executing", "awaiting-confirmation"].includes(
           record.run.status,
         )
@@ -268,6 +299,19 @@ export class Evolution {
     plan: InvestigatedPlan,
   ) {
     try {
+      if (
+        r.run.requestRevision !== undefined &&
+        plan.requestRevision !== r.run.requestRevision
+      )
+        throw new AppError("PLAN_STALE", "需求修订已变化，请重新规划", 409);
+      const row = this.db
+        .prepare("SELECT body FROM evolution_requirement_freezes WHERE id=?")
+        .get(plan.id);
+      const trusted = row
+        ? (JSON.parse(String(row.body)) as RequirementGate)
+        : undefined;
+      const failure = gateFailure(plan, trusted, hash(r.run.revisions));
+      if (failure) throw new AppError("PLAN_STALE", failure, 409);
       this.domain.check(target, revision, plan);
     } catch (error) {
       if (error instanceof AppError && error.code === "PLAN_STALE") {
@@ -376,6 +420,10 @@ export class Evolution {
           attempt: stored.attempt,
           passed: stored.passed,
           sourceHash: stored.sourceHash,
+          ...(stored.requirementSeal
+            ? { requirementSeal: stored.requirementSeal }
+            : {}),
+          ...(stored.browser ? { browser: stored.browser } : {}),
           ...(stored.diagnostic ? { diagnostic: stored.diagnostic } : {}),
           ...(stored.evidenceHash ? { evidenceHash: stored.evidenceHash } : {}),
           ...(stored.versionId ? { versionId: stored.versionId } : {}),
@@ -659,6 +707,7 @@ export class Evolution {
       const plan = record.run.plan as InvestigatedPlan;
       const target = record.target ?? this.domain.target(plan);
       this.checkPlan(record, target, plan.compositionRevision, plan);
+      this.domain.verifyAcceptance?.(candidate.versionId, plan);
       const snapshot = await this.sessions.start({
         runId: record.run.id,
         candidateId: candidate.id,
@@ -700,6 +749,18 @@ export class Evolution {
         );
       const target = record.target ?? this.domain.target(plan);
       this.checkPlan(record, target, command.compositionRevision, plan);
+      if (
+        candidate.evidenceHash !==
+        candidateEvidenceHash(
+          candidate,
+          plan,
+          this.domain.acceptanceEvidence(candidate.versionId),
+        )
+      )
+        throw new AppError("CANDIDATE_MISMATCH", "候选最终证据摘要已变化", 409);
+      if (candidate.requirementSeal !== plan.requirementGate?.seal)
+        throw new AppError("CANDIDATE_MISMATCH", "候选需求摘要已变化", 409);
+      this.domain.verifyAcceptance?.(candidate.versionId, plan);
       this.sessions?.endForRun(record.run.id);
       record.target = target;
       record.versionId = candidate.versionId;
@@ -1079,6 +1140,10 @@ export class Evolution {
       request: r.run.request,
       revisions: r.run.revisions,
       previousPlans: r.run.plans,
+      sources: (r.run.revisions ?? []).map((v) => ({
+        id: `${r.run.id}:${v.revision}`,
+        text: v.text,
+      })),
     });
     r.history = [];
     const rejections = new Set<string>();
@@ -1219,6 +1284,137 @@ export class Evolution {
               id: randomUUID(),
               requestRevision: r.run.requestRevision ?? 1,
             };
+            const sources = (r.run.revisions ?? []).map((v) => ({
+              id: `${r.run.id}:${v.revision}`,
+              text: v.text,
+            }));
+            const inherited = JSON.parse(
+              context.files["active-acceptance"].content,
+            ) as {
+              requirementGate?: RequirementGate;
+              requirements?: InvestigatedPlan["requirements"];
+              browserCases?: InvestigatedPlan["browserCases"];
+            };
+            if (inherited.requirementGate) {
+              sources.unshift(...inherited.requirementGate.sources);
+              for (const old of inherited.requirements ?? []) {
+                const replacement = plan.requirements?.find(
+                  (item) => item.id === old.id,
+                );
+                if (!replacement) (plan.requirements ??= []).push(old);
+                else if (hash(replacement) !== hash(old)) {
+                  if (
+                    typeof call.args.acceptanceReason !== "string" ||
+                    !call.args.acceptanceReason.trim()
+                  )
+                    parsed.blockers.push(
+                      `既有需求 ${old.id} 改变，须说明验收修订原因`,
+                    );
+                  else
+                    (plan.acceptanceChanges ??= []).push({
+                      rule: `需求 ${old.id}`,
+                      before: JSON.stringify(old),
+                      after: JSON.stringify(replacement),
+                      reason: call.args.acceptanceReason,
+                    });
+                }
+              }
+              for (const old of inherited.browserCases ?? []) {
+                const replacement = plan.browserCases?.find(
+                  (item) => item.id === old.id,
+                );
+                if (!replacement) (plan.browserCases ??= []).push(old);
+                else if (hash(replacement) !== hash(old)) {
+                  if (
+                    typeof call.args.acceptanceReason !== "string" ||
+                    !call.args.acceptanceReason.trim()
+                  )
+                    parsed.blockers.push(
+                      `既有浏览器案例 ${old.id} 改变，须说明验收修订原因`,
+                    );
+                  else
+                    (plan.acceptanceChanges ??= []).push({
+                      rule: `浏览器案例 ${old.id}`,
+                      before: JSON.stringify(old),
+                      after: JSON.stringify(replacement),
+                      reason: call.args.acceptanceReason,
+                    });
+                }
+              }
+            }
+            const supported = Object.keys(context.checkerVersions);
+            const covered = coverage(plan, sources, supported);
+            plan.requirementCoverage = covered;
+            if (!plan.requirements?.length)
+              parsed.blockers.push("缺少需求清单及验收映射");
+            parsed.blockers.push(
+              ...covered.flatMap((item) =>
+                item.reasons.map(
+                  (reason) => `需求 ${item.requirementId}：${reason}`,
+                ),
+              ),
+            );
+            if (!parsed.blockers.length) {
+              const plannerHistory = r.history;
+              try {
+                const review = await this.call(
+                  r,
+                  {
+                    instruction:
+                      "你是独立需求复核员。只返回 JSON，不使用工具。逐条对照全部原始需求和澄清，复核 requirements 与验收定义是否遗漏任何默认值、状态、界面、兼容与不变约束；是否增加用户未要求的限制；是否冲突或不可验证。不要相信计划自报完整，不执行源码。reviewedIds 必须逐项列出需求 ID；issues 逐项提供 kind(omission/extra-constraint/conflict/unverifiable)、sourceRevision、原文连续 sourceQuote、detail。没有问题才返回空 issues。自然语言复核不构成数学完整性证明。",
+                    history: [],
+                    schema: reviewSchema,
+                    message: JSON.stringify({
+                      request: r.run.request,
+                      revisions: r.run.revisions,
+                      sources,
+                      requirements: plan.requirements,
+                      acceptance: caseCatalog(plan),
+                      workflowRules: plan.workflowRules,
+                      summary: plan.summary,
+                      changes: plan.changes,
+                      outcome: plan.outcome,
+                      dataImpact: plan.dataImpact,
+                      excluded: plan.excluded,
+                      compatibility: plan.compatibility,
+                    }),
+                  },
+                  signal,
+                );
+                if (review.calls.length)
+                  throw new Error("独立复核禁止工具调用");
+                const result = parseReview(review.text, plan, sources);
+                plan.requirementGate = freezeRequirements(
+                  plan,
+                  sources,
+                  hash(r.run.revisions),
+                  result,
+                  supported,
+                );
+                parsed.blockers.push(
+                  ...result.issues.map(
+                    (issue) => `需求独立复核 ${issue.kind}：${issue.detail}`,
+                  ),
+                );
+                if (!parsed.blockers.length)
+                  this.db
+                    .prepare(
+                      "INSERT INTO evolution_requirement_freezes VALUES(?,?)",
+                    )
+                    .run(plan.id, JSON.stringify(plan.requirementGate));
+              } catch (error) {
+                signal.throwIfAborted();
+                parsed.blockers.push(
+                  `需求独立复核未通过：${error instanceof Error ? error.message : "无效返回"}`,
+                );
+              } finally {
+                r.history = plannerHistory;
+              }
+            }
+            if (!parsed.blockers.length && r.calls >= this.limits.calls)
+              parsed.blockers.push(
+                "需求复核已耗尽原模型调用预算，不能进入执行",
+              );
             if (!parsed.blockers.length && plan.intent === "repair") {
               parsed.retryable = false;
               if (plan.acceptanceChanges?.length)
@@ -1685,6 +1881,7 @@ export class Evolution {
                   ? JSON.stringify({ files: call.args.files })
                   : String(call.args.source ?? "");
             const candidate: CandidateAttempt = {
+              requirementSeal: plan.requirementGate?.seal,
               id: hash({
                 source,
                 planId: plan.id,
@@ -1710,6 +1907,7 @@ export class Evolution {
                 );
             let buildId: string | null = null;
             let validateId: string | null = null;
+            let browserId: string | null = null;
             try {
               if (
                 Object.keys(call.args).some(
@@ -1721,6 +1919,7 @@ export class Evolution {
                 throw new ProtectedCandidateError(
                   "候选不得提交验证报告或控制参数",
                 );
+              this.checkPlan(r, target, plan.compositionRevision, plan);
               r.versionId = await this.domain.candidate(
                 source,
                 target,
@@ -1749,6 +1948,16 @@ export class Evolution {
                       attempt,
                       "validate_candidate",
                     );
+                  } else if (label === "浏览器验收") {
+                    if (validateId)
+                      this.endStep(
+                        r,
+                        validateId,
+                        "succeeded",
+                        undefined,
+                        "validate_candidate",
+                      );
+                    browserId = this.beginStep(r, label, attempt, "browser/1");
                   } else this.beginStep(r, label, attempt);
                 },
               );
@@ -1772,24 +1981,41 @@ export class Evolution {
                   undefined,
                   "validate_candidate",
                 );
+              if (browserId)
+                this.endStep(r, browserId, "succeeded", undefined, "browser/1");
               this.toolEvent(r, "submit_candidate", "succeeded", attempt);
               this.save(r);
+              this.domain.verifyAcceptance?.(r.versionId!, plan);
+              candidate.requirementSeal = plan.requirementGate?.seal;
               candidate.passed = true;
               candidate.versionId = r.versionId;
               const acceptance = this.domain.acceptanceEvidence(r.versionId!);
-              candidate.evidenceHash = hash({
-                candidateId: candidate.id,
-                versionId: r.versionId,
-                cases: plan.cases,
-                rules: plan.workflowRules,
-                members: acceptance.members,
-                workspaceChecks: acceptance.workspaceChecks,
-              });
+              candidate.browser = acceptance.browser;
+              candidate.evidenceHash = candidateEvidenceHash(
+                candidate,
+                plan,
+                acceptance,
+              );
               saveAttempt();
             } catch (error) {
-              if (!this.alive(r.run.id)) {
+              if (!this.alive(r.run.id) || signal.aborted) {
+                // Preserve the receipt even when cancellation already changed
+                // the run state; the candidate remains ineligible for apply.
+                candidate.diagnostic =
+                  error instanceof Error ? error.message : "候选已停止";
+                if (
+                  error instanceof CandidateValidationError ||
+                  (error instanceof BrowserEnvironmentError && error.versionId)
+                ) {
+                  candidate.versionId = error.versionId;
+                  candidate.browser = this.domain.acceptanceEvidence(
+                    error.versionId!,
+                  ).browser;
+                }
+                saveAttempt();
                 r.versionId = undefined;
-                return;
+                if (!this.alive(r.run.id)) return;
+                signal.throwIfAborted();
               }
               signal.throwIfAborted();
               const diagnostic =
@@ -1819,9 +2045,19 @@ export class Evolution {
                 attempt,
                 diagnostic,
               );
+              if (browserId)
+                this.endStep(r, browserId, "failed", diagnostic, "browser/1");
               candidate.diagnostic = diagnostic;
-              if (error instanceof CandidateValidationError)
+              if (
+                error instanceof CandidateValidationError ||
+                (error instanceof BrowserEnvironmentError && error.versionId)
+              ) {
                 candidate.versionId = error.versionId;
+                candidate.browser = this.domain.acceptanceEvidence(
+                  error.versionId!,
+                ).browser;
+                result = { error: diagnostic, browser: candidate.browser };
+              }
               saveAttempt();
               const failure = hash({
                 diagnostic: diagnostic.replace(
@@ -1830,7 +2066,11 @@ export class Evolution {
                 ),
                 source,
               });
-              if (error instanceof ProtectedCandidateError) {
+              if (
+                error instanceof ProtectedCandidateError ||
+                error instanceof BrowserEnvironmentError ||
+                (error instanceof AppError && error.code === "PLAN_STALE")
+              ) {
                 r.run = {
                   ...this.base(r),
                   status: "blocked",

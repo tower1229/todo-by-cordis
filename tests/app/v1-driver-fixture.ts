@@ -54,6 +54,7 @@ export function v1FixtureDriver(
   let planning: PlanningDriver;
   return {
     async generate(request) {
+      if (request.schema) return planning.generate(request);
       if (!request.tools?.some((t) => t.name === "submit_candidate")) {
         if (!JSON.stringify(request.history).includes("inspect_application")) {
           phase++;

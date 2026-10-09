@@ -38,6 +38,8 @@ export function TaskDetailContributions({
           <article
             key={`${contribution.providerId}:${contribution.id}`}
             className="space-y-3 border-t border-line pt-4"
+            data-provider={contribution.providerId}
+            data-contribution={contribution.id}
             aria-label={contribution.title}
           >
             <div className="space-y-1">
@@ -51,7 +53,7 @@ export function TaskDetailContributions({
             {contribution.fields.map((field) => (
               <div key={field.key} className="space-y-1">
                 <p className="field-label">{field.label}</p>
-                <p className="whitespace-pre-wrap break-words text-sm leading-6">
+                <p data-field={field.key} className="whitespace-pre-wrap break-words text-sm leading-6">
                   {task.fields[field.key] || "（空）"}
                 </p>
               </div>
@@ -61,6 +63,7 @@ export function TaskDetailContributions({
                 {actions.map((action) => (
                   <Button
                     key={action.commandId}
+                    data-action-id={action.commandId}
                     variant="ghost"
                     disabled={busy}
                     aria-label={`${action.label} ${task.title}`}

@@ -44,6 +44,7 @@ export type WorkflowRule = {
 };
 export type PlanEvidence = { ref: string; hash: string };
 export type PlanBinding = {
+  browser?: { frontendHash: string; checkerHash: string; executable: string };
   guideCatalog: Record<string, string>;
   materials: PlanEvidence[];
   capabilities: {
@@ -71,6 +72,11 @@ export type RepairEvidence = {
   diagnostic: string;
 };
 export type InvestigatedPlan = AssistantPlan & {
+  /** Optional only for reading historical plans; all new starts require a frozen receipt. */
+  requirements?: Requirement[];
+  requirementCoverage?: RequirementGate["coverage"];
+  browserCases?: import("./browser-cases.js").BrowserCase[];
+  requirementGate?: RequirementGate;
   intent?: "improve" | "repair";
   repairEvidence?: RepairEvidence;
   acceptanceChanges?: AcceptanceRevision["changes"];
@@ -132,6 +138,32 @@ export type RequestRevision = {
   type: "request" | "answer" | "revise";
   text: string;
   createdAt: string;
+};
+export type Requirement = {
+  id: string;
+  description: string;
+  sourceRevision: string;
+  sourceQuote: string;
+  type: "behavior" | "interface" | "compatibility" | "constraint";
+  checks: { checker: string; caseId: string }[];
+};
+export type RequirementReview = {
+  reviewedIds: string[];
+  issues: {
+    kind: "omission" | "extra-constraint" | "conflict" | "unverifiable";
+    sourceRevision: string;
+    sourceQuote: string;
+    detail: string;
+  }[];
+};
+export type RequirementGate = {
+  gateVersion: string;
+  sources: { id: string; text: string }[];
+  requestHash: string;
+  definitionHash: string;
+  review: RequirementReview;
+  coverage: { requirementId: string; reasons: string[] }[];
+  seal: string;
 };
 type Run = {
   staleReason?: string;
@@ -297,6 +329,8 @@ export type ExperienceSessionView = {
   invalidReason?: string;
 };
 export type CandidateAttempt = {
+  requirementSeal?: string;
+  browser?: import("./browser-cases.js").BrowserEvidence;
   id: string;
   planId: string;
   baseVersion: string;

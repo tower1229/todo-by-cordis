@@ -36,6 +36,7 @@ export function InputForm({
   }, [input, key]);
   return (
     <form
+      data-action-form={form.actionId}
       className="flex min-h-0 flex-1 flex-col"
       onCompositionStart={() => {
         composing.current = true;
@@ -91,6 +92,7 @@ export function InputForm({
             <textarea
               data-panel-input={index === 0 ? "" : undefined}
               id={`field-${field.key}`}
+              data-input-field={field.key}
               className="input min-h-32"
               required={field.required}
               maxLength={10000}

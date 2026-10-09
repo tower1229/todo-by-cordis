@@ -713,7 +713,7 @@ test(`生成阶段 read_member 有界纠正且只返回精确成员：${lookup}`
   if (lookup === "infrastructure") {
     assert.equal(done.status, "failed");
     assert.match(done.message ?? "", /member storage unavailable/);
-    assert.equal(done.budget?.callsUsed, 6);
+    assert.equal(done.budget?.callsUsed, 7);
     assert.equal(readPayload, undefined);
     return;
   }
@@ -726,7 +726,7 @@ test(`生成阶段 read_member 有界纠正且只返回精确成员：${lookup}`
   }
   assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
   assert.equal(errors.length, lookup === "exact" ? 0 : 1);
-  assert.equal(done.budget?.callsUsed, lookup === "exact" ? 7 : 8);
+  assert.equal(done.budget?.callsUsed, lookup === "exact" ? 8 : 9);
   assert.ok(readPayload);
   assert.equal(readPayload!.pluginId, "tags");
   assert.equal(readPayload!.versionId, tags.id);

@@ -493,7 +493,7 @@ test("clarification and revision keep one run, retained plans and remaining budg
   assert.equal(ready.status, "ready");
   assert.equal(ready.id, first.id);
   assert.equal(ready.requestRevision, 2);
-  assert.equal(ready.budget.callsUsed, 5);
+  assert.equal(ready.budget.callsUsed, 6);
   const calls = fixture.requests.length;
   const exact = await (
     await app.request(`/api/assistant?runId=${first.id}`)
@@ -510,7 +510,7 @@ test("clarification and revision keep one run, retained plans and remaining budg
   assert.equal(revised.status, "ready");
   assert.equal(revised.plans.length, 2);
   assert.equal(revised.revisions.length, 3);
-  assert.equal(revised.budget.callsUsed, 8);
+  assert.equal(revised.budget.callsUsed, 10);
   const rejected = await app.request("/api/assistant/commands", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -666,7 +666,7 @@ for (const name of ["active-contract", "active-acceptance"])
       async generate(request) {
         const result = await fixture.generate(request);
         const call = result.calls[0];
-        if (call.name === "propose_plan")
+        if (call?.name === "propose_plan")
           call.args.evidence = (call.args.evidence as { ref: string }[]).filter(
             (e) => e.ref !== name,
           );
@@ -863,7 +863,7 @@ test("rejected proposal returns diagnostics so the same bounded investigation ca
     async generate(request) {
       const result = await fixture.generate(request);
       const call = result.calls[0];
-      if (call.name === "propose_plan" && proposed++ === 0) {
+      if (call?.name === "propose_plan" && proposed++ === 0) {
         call.args.evidence = (call.args.evidence as { ref: string }[]).filter(
           (e) => e.ref === "active-source",
         );
@@ -895,7 +895,7 @@ test("rejected proposal returns diagnostics so the same bounded investigation ca
     await new Promise((r) => setTimeout(r, 10));
   const run = (await e.observe()).run!;
   assert.equal(run.status, "ready");
-  assert.equal(run.budget?.callsUsed, 4);
+  assert.equal(run.budget?.callsUsed, 5);
   assert.equal(run.plans?.length, 2);
   assert.equal(w.composition().revision, 1);
   assert.equal(w.release.all().length, 2);
@@ -910,7 +910,7 @@ test("mixed conclusion tools are retried internally instead of failing the run",
   const driver: Driver = {
     async generate(request) {
       const result = await fixture.generate(request);
-      if (result.calls[0].name === "propose_plan" && !mixed) {
+      if (result.calls[0]?.name === "propose_plan" && !mixed) {
         mixed = true;
         return {
           ...result,
@@ -954,7 +954,7 @@ test("unavailable catalog source is a diagnostic, never read evidence or a crash
   const driver: Driver = {
     async generate(request) {
       const result = await fixture.generate(request);
-      if (result.calls[0].name === "propose_plan" && !attempted) {
+      if (result.calls[0]?.name === "propose_plan" && !attempted) {
         attempted = true;
         return {
           ...result,
@@ -1063,7 +1063,7 @@ test("malformed plan lists return bounded diagnostics without losing the investi
         await new Promise((resolve) => setTimeout(resolve, 10));
       const run = (await e.observe()).run!;
       assert.equal(run.status, repeated ? "blocked" : "ready");
-      assert.equal(run.budget?.callsUsed, 4);
+      assert.equal(run.budget?.callsUsed, repeated ? 4 : 5);
       assert.ok(JSON.stringify(fixture.requests).includes("计划列表不能为空"));
       assert.equal(w.composition().revision, 1);
     });
@@ -1123,7 +1123,7 @@ test("invalid plan step dependencies return bounded diagnostics before ready", a
           repeated ? "blocked" : "ready",
           JSON.stringify(run),
         );
-        assert.equal(run.budget?.callsUsed, 4);
+        assert.equal(run.budget?.callsUsed, repeated ? 4 : 5);
         assert.equal(run.plans?.length, 2);
         assert.equal(run.plans?.[0].steps[0].dependsOn[0], "active-source");
         assert.ok(
@@ -1244,7 +1244,7 @@ test("misplaced supported action cases can be corrected with consumer investigat
       );
       assert.equal(
         run.budget?.callsUsed,
-        mode === "correct" ? 5 : mode === "repeat" ? 4 : 3,
+        mode === "correct" ? 6 : mode === "repeat" ? 4 : 3,
       );
       assert.equal(run.plans?.length, mode === "unknown" ? 1 : 2);
       if (mode === "correct") {
@@ -1275,8 +1275,11 @@ test("inspection supplies exact baseline documents within the existing budget an
         title: "private-owner-task-never-send",
       });
       const fixture = new PlanningDriver();
+      let initialMessage: string | undefined;
       const planning: Driver = {
         async generate(request) {
+          if (request.schema) return fixture.generate(request);
+          if (request.message) initialMessage = request.message;
           const messages = request.history as {
             parts?: {
               functionResponse?: {
@@ -1350,6 +1353,7 @@ test("inspection supplies exact baseline documents within the existing budget an
           // Adapt the delivered material to the existing model fixture's input format.
           const response = await fixture.generate({
             ...request,
+            message: initialMessage,
             history: [
               ...request.history,
               {
@@ -1404,7 +1408,7 @@ test("inspection supplies exact baseline documents within the existing budget an
       const ready = (await e.observe()).run!;
       assert.equal(ready.status, forgeUnread ? "blocked" : "ready");
       if (ready.status !== "ready") return;
-      assert.equal(ready.budget?.callsUsed, 3);
+      assert.equal(ready.budget?.callsUsed, 4);
       await e.command({
         type: "start",
         operationId: "generate",
@@ -1413,13 +1417,13 @@ test("inspection supplies exact baseline documents within the existing budget an
       });
       for (
         let i = 0;
-        i < 200 && (await e.observe()).run?.status === "executing";
+        i < 1500 && (await e.observe()).run?.status === "executing";
         i++
       )
         await new Promise((resolve) => setTimeout(resolve, 10));
       const done = (await e.observe()).run!;
       assert.equal(done.status, "awaiting-apply");
-      assert.equal(done.budget?.callsUsed, 6);
+      assert.equal(done.budget?.callsUsed, 7);
     });
 });
 
@@ -1507,7 +1511,7 @@ test("first business bundle requires its four paths before ready and can correct
       );
       assert.deepEqual(w.composition(), before);
       if (ready.status !== "ready") return;
-      assert.equal(ready.budget?.callsUsed, 4);
+      assert.equal(ready.budget?.callsUsed, 5);
       await e.command({
         type: "start",
         operationId: "start-first-bundle",
@@ -1516,13 +1520,13 @@ test("first business bundle requires its four paths before ready and can correct
       });
       for (
         let i = 0;
-        i < 200 && (await e.observe()).run?.status === "executing";
+        i < 1500 && (await e.observe()).run?.status === "executing";
         i++
       )
         await new Promise((resolve) => setTimeout(resolve, 10));
       const done = (await e.observe()).run!;
       assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
-      assert.equal(done.budget?.callsUsed, 7);
+      assert.equal(done.budget?.callsUsed, 8);
       assert.deepEqual(w.composition(), before);
     });
 });
@@ -1654,7 +1658,7 @@ for (const invalid of [{}, { rules: "invalid" }, { rules: [], extra: true }]) {
     const run = (await e.observe()).run!;
     assert.equal(run.status, "ready");
     assert.ok(sawDiagnostic);
-    assert.equal(run.budget?.callsUsed, 4);
+    assert.equal(run.budget?.callsUsed, 5);
     assert.equal(w.composition().revision, 1);
   });
 }

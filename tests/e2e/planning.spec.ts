@@ -31,6 +31,10 @@ test("real backend restores clarification and investigated plan without changing
   await page.getByRole("textbox", { name: "告诉 AI 你的需求" }).fill("必填");
   await page.getByRole("button", { name: "发送需求" }).click();
   await expect(page.getByRole("region", { name: "待确认方案" })).toBeVisible();
+  await expect(page.getByText("要求与验证方式", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "待确认方案" })).toContainText(
+    "将如何验证：",
+  );
   await expect(
     page.getByRole("button", { name: "开始执行", exact: true }),
   ).toBeVisible();
@@ -159,6 +163,9 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
     attempts.getByText("第 2 次候选 · 独立验收通过", { exact: true }),
   ).toBeVisible();
   await expect(attempts).toContainText("number");
+  await expect(attempts).toContainText("冻结定义已绑定");
+  await expect(attempts).toContainText("系统保护：宿主检查构建、权限与隔离");
+  await expect(attempts).toContainText("模型自测不作为通过依据");
   await page.reload();
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await expect(page.getByRole("region", { name: "候选尝试" })).toContainText(
@@ -206,9 +213,9 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
     page.getByRole("button", { name: "应用", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "停止", exact: true }).or(
-      page.getByRole("button", { name: "放弃候选", exact: true }),
-    ),
+    page
+      .getByRole("button", { name: "停止", exact: true })
+      .or(page.getByRole("button", { name: "放弃候选", exact: true })),
   ).toBeVisible();
 
   await page.getByRole("button", { name: "体验", exact: true }).click();
@@ -245,9 +252,9 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   await page.unroute("**/api/experience/commands");
 
   await page.getByRole("button", { name: "结束体验", exact: true }).click();
-  await expect(
-    page.getByRole("status", { name: "候选体验提示" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("status", { name: "候选体验提示" })).toHaveCount(
+    0,
+  );
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await expect(
     page.getByText("当前已有活跃的体验会话", { exact: false }),
@@ -330,21 +337,27 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   await expect(
     page.getByRole("button", { name: "撤回上个版本", exact: true }),
   ).toBeVisible();
-  await page.screenshot({ path: info.outputPath("first-upgrade-rollback.png") });
+  await page.screenshot({
+    path: info.outputPath("first-upgrade-rollback.png"),
+  });
   await page.getByRole("button", { name: "撤回上个版本", exact: true }).click();
   await expect
     .poll(
-      async () => (await (await request.get("/api/composition")).json()).versionId,
+      async () =>
+        (await (await request.get("/api/composition")).json()).versionId,
     )
     .toBe(before.versionId);
   await page.getByText("版本记录", { exact: true }).click();
   await page.getByRole("button", { name: "恢复此版本", exact: true }).click();
   await expect
     .poll(
-      async () => (await (await request.get("/api/composition")).json()).versionId,
+      async () =>
+        (await (await request.get("/api/composition")).json()).versionId,
     )
     .toBe(composition.versionId);
-  await page.getByRole("button", { name: "关闭工作区设置", exact: true }).click();
+  await page
+    .getByRole("button", { name: "关闭工作区设置", exact: true })
+    .click();
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await page.getByRole("button", { name: "继续修改", exact: true }).click();
   await page

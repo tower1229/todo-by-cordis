@@ -90,6 +90,7 @@ export function Editor({
   }
   return (
     <form
+      data-task-editor={task.id}
       className="flex min-h-0 flex-1 flex-col"
       onSubmit={submit}
       onCompositionStart={() => {

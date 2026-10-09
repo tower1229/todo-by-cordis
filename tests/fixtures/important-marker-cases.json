@@ -1,0 +1,108 @@
+{
+  "origin": "real-api-archive",
+  "runId": "c53e5f3b-aa30-495e-ba4c-bf537df42f4f",
+  "candidateId": "ff27d055e6128d84ada371495b69e101be2299d068ffbd27c7c26f8d3ad2a9f2",
+  "cases": [
+    {
+      "expected": {
+        "state": "open",
+        "fields": {
+          "isImportant": "重要"
+        },
+        "kind": "commit"
+      },
+      "name": "mark-open",
+      "state": "open",
+      "fields": {},
+      "input": {},
+      "action": "markImportant",
+      "member": "important-marker"
+    },
+    {
+      "name": "mark-done",
+      "state": "done",
+      "input": {},
+      "fields": {},
+      "action": "markImportant",
+      "expected": {
+        "kind": "commit",
+        "fields": {
+          "isImportant": "重要"
+        },
+        "state": "done"
+      },
+      "member": "important-marker"
+    },
+    {
+      "input": {},
+      "action": "markImportant",
+      "name": "mark-already",
+      "expected": {
+        "kind": "reject"
+      },
+      "member": "important-marker",
+      "fields": {
+        "isImportant": "重要"
+      },
+      "state": "open"
+    },
+    {
+      "fields": {
+        "isImportant": "重要"
+      },
+      "state": "open",
+      "action": "unmarkImportant",
+      "member": "important-marker",
+      "name": "unmark-open",
+      "expected": {
+        "kind": "commit",
+        "fields": {
+          "isImportant": "普通"
+        },
+        "state": "open"
+      },
+      "input": {}
+    },
+    {
+      "name": "unmark-done",
+      "input": {},
+      "expected": {
+        "state": "done",
+        "kind": "commit",
+        "fields": {
+          "isImportant": "普通"
+        }
+      },
+      "state": "done",
+      "fields": {
+        "isImportant": "重要"
+      },
+      "member": "important-marker",
+      "action": "unmarkImportant"
+    },
+    {
+      "state": "open",
+      "fields": {
+        "isImportant": "普通"
+      },
+      "member": "important-marker",
+      "action": "unmarkImportant",
+      "name": "unmark-already",
+      "input": {},
+      "expected": {
+        "kind": "reject"
+      }
+    },
+    {
+      "input": {},
+      "expected": {
+        "kind": "reject"
+      },
+      "name": "unmark-empty",
+      "fields": {},
+      "action": "unmarkImportant",
+      "state": "open",
+      "member": "important-marker"
+    }
+  ]
+}

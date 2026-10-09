@@ -1,4 +1,13 @@
 import {
+  verifyBrowser,
+  BrowserAssertionError,
+  BrowserCancelledError,
+  BrowserEnvironmentError,
+  browserEnvironment,
+  candidateProgramHash,
+  browserViewports,
+} from "./browser-acceptance.js";
+import {
   BusinessAssertionError,
   verifyExtensions,
   type BusinessExtensions,
@@ -70,6 +79,9 @@ type Rule = {
 type MemberAddition = { pluginId: string; name: string };
 type MemberUpgrade = { pluginId: string };
 type Goal = {
+  requirements?: InvestigatedPlan["requirements"];
+  browserCases?: InvestigatedPlan["browserCases"];
+  requirementGate?: InvestigatedPlan["requirementGate"];
   binding?: PlanBinding;
   memberEnabled?: InvestigatedPlan["memberEnabled"];
   pluginId: string;
@@ -337,6 +349,23 @@ export class EvolutionDomain implements Domain {
         if (!(error instanceof BusinessAssertionError)) throw error;
         return reproduced(error.message);
       }
+      if (goal.browserCases?.length) {
+        try {
+          await verifyBrowser(
+            this.workspace,
+            base,
+            base,
+            goal.browserCases,
+            goal.requirements ?? [],
+            goal.requirementGate?.definitionHash ?? "",
+            signal,
+          );
+        } catch (error) {
+          if (error instanceof BrowserAssertionError)
+            return reproduced(error.message);
+          throw error;
+        }
+      }
       return undefined;
     } finally {
       signal.removeEventListener("abort", abort);
@@ -376,6 +405,9 @@ export class EvolutionDomain implements Domain {
       kind: "plugin",
       baseVersion: plan.baseVersion!,
       payload: {
+        requirements: plan.requirements,
+        browserCases: plan.browserCases,
+        requirementGate: plan.requirementGate,
         pluginId: base.pluginId,
         name: base.name,
         ...(plan.memberEnabled ? { memberEnabled: plan.memberEnabled } : {}),
@@ -405,6 +437,15 @@ export class EvolutionDomain implements Domain {
       this.workspace.activeVersion().id !== target.baseVersion
     )
       throw new AppError("PLAN_STALE", "基础版本已变化，请重新规划并确认", 409);
+    if (
+      plan &&
+      (hash((target.payload as Goal).requirementGate) !==
+        hash(plan.requirementGate) ||
+        hash((target.payload as Goal).requirements) !==
+          hash(plan.requirements) ||
+        hash((target.payload as Goal).browserCases) !== hash(plan.browserCases))
+    )
+      throw new AppError("PLAN_STALE", "执行目标与冻结需求不一致", 409);
     const binding = plan?.binding ?? (target.payload as Goal).binding;
     const failure = planBindingFailure(binding, capture(this.workspace));
     if (failure) throw new AppError("PLAN_STALE", failure, 409);
@@ -418,14 +459,61 @@ export class EvolutionDomain implements Domain {
       this.workspace.composition().status === "ready"
     );
   }
+  verifyAcceptance(versionId: string, plan: InvestigatedPlan) {
+    const version = this.workspace.release.get(versionId);
+    const evidence = version.evidence as {
+      passed?: boolean;
+      requirementGate?: InvestigatedPlan["requirementGate"];
+      browser?: import("../shared/browser-cases.js").BrowserEvidence;
+    };
+    const browser = evidence.browser;
+    const env = browserEnvironment();
+    const expectedCases = [
+      "host:basic-existing",
+      "host:basic-new",
+      ...(plan.browserCases ?? []).map((c) => c.id),
+    ]
+      .flatMap((id) =>
+        browserViewports.map(
+          (viewport) => `${id}:${viewport.width}x${viewport.height}`,
+        ),
+      )
+      .sort();
+    const actualCases = browser?.results
+      .map((r) => `${r.caseId}:${r.viewport.width}x${r.viewport.height}`)
+      .sort();
+    if (
+      hash(expectedCases) !== hash(actualCases) ||
+      !evidence.passed ||
+      !browser ||
+      !browser.results.length ||
+      browser.results.some((r) => r.status !== "passed") ||
+      !plan.requirementGate ||
+      hash(evidence.requirementGate) !== hash(plan.requirementGate) ||
+      browser.definitionHash !== plan.requirementGate.definitionHash ||
+      browser.baseVersion !== plan.baseVersion ||
+      browser.checkerHash !== env.checkerHash ||
+      browser.frontendHash !== env.frontendHash ||
+      env.missing.length ||
+      browser.candidateProgramHash !==
+        candidateProgramHash(this.workspace, version)
+    )
+      throw new AppError(
+        "CANDIDATE_MISMATCH",
+        "候选需求、实际前端产物或浏览器验收证据不一致，请重新规划",
+        409,
+      );
+  }
   acceptanceEvidence(versionId: string) {
     const version = this.workspace.release.get(versionId);
     const evidence = version.evidence as {
       checks?: string[];
       members?: unknown;
+      browser?: import("../shared/browser-cases.js").BrowserEvidence;
     };
     return {
       members: version.members ?? evidence.members,
+      browser: evidence.browser,
       workspaceChecks: (evidence.checks ?? []).filter((check) =>
         check.startsWith("workspace:"),
       ),
@@ -520,11 +608,64 @@ export class EvolutionDomain implements Domain {
       const version = this.workspace.recordMemberEnabledVersion(
         goal.memberEnabled.pluginId,
         goal.memberEnabled.enabled,
+        { pendingAcceptance: true },
       );
       // Existing host checks validate the exact before/after member lock and unchanged implementation.
       if (!this.memberEnabledExperience(version, "enable-status-check"))
         throw new ProtectedCandidateError("启停候选不是纯状态变更");
-      return version.id;
+      stage("浏览器验收");
+      let browser:
+        | import("../shared/browser-cases.js").BrowserEvidence
+        | undefined;
+      const { id: _id, entry: _entry, createdAt: _time, ...artifact } = version;
+      try {
+        browser = await verifyBrowser(
+          this.workspace,
+          version,
+          base,
+          goal.browserCases ?? [],
+          goal.requirements ?? [],
+          goal.requirementGate?.definitionHash ?? "",
+          signal,
+        );
+      } catch (error) {
+        browser =
+          error instanceof BrowserAssertionError ||
+          error instanceof BrowserEnvironmentError ||
+          error instanceof BrowserCancelledError
+            ? error.evidence
+            : undefined;
+        const failed = this.workspace.release.record({
+          ...artifact,
+          evidence: {
+            ...(version.evidence as Record<string, unknown>),
+            requirements: goal.requirements,
+            browserCases: goal.browserCases,
+            requirementGate: goal.requirementGate,
+            browser,
+            passed: false,
+          },
+        });
+        if (error instanceof BrowserEnvironmentError) {
+          error.versionId = failed.id;
+          throw error;
+        }
+        throw new CandidateValidationError(
+          error instanceof Error ? error.message : "浏览器验收失败",
+          failed.id,
+        );
+      }
+      return this.workspace.release.record({
+        ...artifact,
+        evidence: {
+          ...(version.evidence as Record<string, unknown>),
+          requirements: goal.requirements,
+          browserCases: goal.browserCases,
+          requirementGate: goal.requirementGate,
+          browser,
+          passed: true,
+        },
+      }).id;
     }
     if (
       goal.repairEvidence &&
@@ -1015,6 +1156,9 @@ export class EvolutionDomain implements Domain {
       });
     await prepared.runtime.close();
     const workspaceCasesEvidence: WorkspaceCaseEvidence[] = [];
+    let browser:
+      | import("../shared/browser-cases.js").BrowserEvidence
+      | undefined;
     // Decide-level checks are a fast pre-layer; trusted completion requires
     // isolated Workspace command → beforeCommit → query final facts.
     try {
@@ -1046,7 +1190,24 @@ export class EvolutionDomain implements Domain {
             signal,
           )),
         );
+      stage("浏览器验收");
+      browser = await verifyBrowser(
+        this.workspace,
+        candidate,
+        base,
+        goal.browserCases ?? [],
+        goal.requirements ?? [],
+        goal.requirementGate?.definitionHash ?? "",
+        signal,
+      );
+      checks.push("browser/1:基础页面、任务详情及冻结需求案例通过（两种视口）");
     } catch (error: unknown) {
+      if (
+        error instanceof BrowserAssertionError ||
+        error instanceof BrowserEnvironmentError ||
+        error instanceof BrowserCancelledError
+      )
+        browser = error.evidence;
       const {
         id: _id,
         entry: _entry,
@@ -1059,8 +1220,16 @@ export class EvolutionDomain implements Domain {
           passed: false,
           rules: goal.fields,
           workspaceCases: workspaceCasesEvidence,
+          requirements: goal.requirements,
+          browserCases: goal.browserCases,
+          requirementGate: goal.requirementGate,
+          browser,
         },
       });
+      if (error instanceof BrowserEnvironmentError) {
+        error.versionId = failed.id;
+        throw error;
+      }
       throw new CandidateValidationError(
         error instanceof Error ? error.message : "候选验证失败",
         failed.id,
@@ -1152,6 +1321,10 @@ export class EvolutionDomain implements Domain {
       definition: actual,
       evidence: {
         passed: true,
+        requirements: goal.requirements,
+        browserCases: goal.browserCases,
+        requirementGate: goal.requirementGate,
+        browser,
         acceptanceRevision: goal.acceptanceRevision,
         repairEvidence: goal.repairEvidence,
         rules: goal.fields,
@@ -1411,6 +1584,19 @@ export class EvolutionDomain implements Domain {
     }
     if (this.workspace.activeVersion().id !== base.id)
       throw new AppError("PLAN_STALE", "基础版本已变化，请重新规划并确认", 409);
+    // Acceptance receipts change after this status candidate is checked. They do
+    // not change the inherited business implementation or backend acceptance.
+    const inheritedEvidence = (evidence: unknown) => {
+      const {
+        passed: _passed,
+        requirements: _requirements,
+        browserCases: _browserCases,
+        requirementGate: _requirementGate,
+        browser: _browser,
+        ...inherited
+      } = evidence as Record<string, unknown>;
+      return inherited;
+    };
     if (
       version.pluginId !== base.pluginId ||
       version.source !== base.source ||
@@ -1418,7 +1604,10 @@ export class EvolutionDomain implements Domain {
       version.service !== base.service ||
       version.contractVersion !== base.contractVersion ||
       !equal(version.definition, base.definition) ||
-      !equal(version.evidence, base.evidence) ||
+      !equal(
+        inheritedEvidence(version.evidence),
+        inheritedEvidence(base.evidence),
+      ) ||
       !equal(version.bundle, base.bundle)
     )
       return undefined;

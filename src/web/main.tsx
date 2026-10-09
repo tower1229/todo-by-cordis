@@ -294,6 +294,7 @@ function App() {
           key={id}
           variant="ghost"
           aria-label={label}
+          data-filter={id}
           aria-pressed={category === id}
           className={`${mobile ? "flex-1 px-2 text-xs" : "w-full justify-start gap-3 px-3"} ${category === id ? "bg-accent-soft text-accent hover:bg-accent-soft" : "text-muted"}`}
           onClick={() => {
@@ -476,10 +477,12 @@ function App() {
                   return (
                     <article
                       key={task.id}
+                      data-task-id={task.id}
                       className="group flex min-h-16 items-center border-b border-line px-2 last:border-0 hover:bg-canvas/60"
                     >
                       <button
                         className="flex size-11 shrink-0 items-center justify-center rounded-md text-muted hover:text-accent disabled:opacity-40"
+                        data-action-id={actions[0]?.id}
                         aria-label={`${actions[0]?.label ?? "操作"} ${task.title}`}
                         disabled={
                           busy ||
@@ -498,6 +501,7 @@ function App() {
                       </button>
                       <button
                         className="min-w-0 flex-1 py-4 pl-1 pr-3 text-left"
+                        data-task-open
                         aria-label={`编辑 ${task.title}`}
                         onClick={(e) =>
                           openPanel({ kind: "task", task }, e.currentTarget)
@@ -519,6 +523,7 @@ function App() {
                           {actions.slice(1).map((action) => (
                             <Button
                               key={action.id}
+                              data-action-id={action.id}
                               variant="ghost"
                               className="max-w-full break-words whitespace-normal"
                               aria-label={`${action.label} ${task.title}`}
