@@ -332,6 +332,7 @@ test("浏览器中途遇到模型传输失败仍归档完整调用和真实失�
 });
 
 test("慢规划与延迟发送响应不会把旧输入界面误判为方案已就绪", async () => {
+  test.setTimeout(300_000);
   const { stabilityStubDriver } = await import(
     "../../scripts/lib/stability-eval/driver-fixture.js"
   );

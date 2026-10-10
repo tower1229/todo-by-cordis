@@ -27,7 +27,11 @@ import type {
 } from "../shared/assistant.js";
 import { describeBlockers } from "../shared/assistant.js";
 import { AppError } from "../shared/contracts.js";
-import type { Investigation, InvestigationRead } from "../server/planning.js";
+import type {
+  Investigation,
+  InvestigationRead,
+  InvestigationDocument,
+} from "../server/planning.js";
 import { compositionIntentLabel } from "../server/planning.js";
 import {
   ProtectedCandidateError,
@@ -1044,6 +1048,10 @@ export class Evolution {
     return reply;
   }
 
+  private budgetInstruction(r: RecordRun, instruction: string) {
+    return `${instruction}\n宿主预算（本轮开始前，callsRemaining 包含本轮）：${JSON.stringify(this.base(r).budget)}。规划与生成共享此预算；规划应尽量为候选生成和失败修正保留至少3次调用，不得为节省调用省略复核、降低要求或重置上限。已知且独立的补充读取应在同一回复中合批请求，避免逐项往返。`;
+  }
+
   private resultText(value: unknown) {
     if (typeof value !== "string" || !value.trim() || value.length > 5000)
       throw new Error("调查结论文本无效");
@@ -1196,7 +1204,10 @@ export class Evolution {
       const response = await this.call(
         r,
         {
-          instruction: this.domain.planningInstruction,
+          instruction: this.budgetInstruction(
+            r,
+            this.domain.planningInstruction,
+          ),
           history: r.history,
           message,
           tools: this.domain.planningTools,
@@ -1549,12 +1560,65 @@ export class Evolution {
     this.domain.check(target, revision, plan);
     const context = this.domain.generation(target);
     const deliveredGuides = new Set<CapabilityGuideRef>();
+    const documents: InvestigationDocument[] = [];
+    const deliver = (ref: string, content: unknown) => {
+      const digest = hash(content);
+      const bound = plan.binding?.materials.find((item) => item.ref === ref);
+      if (bound && bound.hash !== digest)
+        throw new AppError("PLAN_STALE", `执行资料已变化：${ref}`, 409);
+      documents.push({ ref, hash: digest, content });
+    };
+    deliver("active-source", context.source);
+    deliver("business/contract.ts", context.contract);
+    if (context.scaffold)
+      deliver(
+        "candidate-scaffold",
+        JSON.parse(JSON.stringify(context.scaffold)) as unknown,
+      );
+    for (const item of plan.binding?.materials ?? []) {
+      if (!Object.hasOwn(capabilityGuides, item.ref)) continue;
+      if (
+        plan.binding?.guideCatalog[item.ref] !==
+        hash(capabilityGuides[item.ref])
+      )
+        throw new AppError("PLAN_STALE", `指南已变化：${item.ref}`, 409);
+      deliver(item.ref, capabilityGuides[item.ref]);
+      deliveredGuides.add(item.ref);
+    }
+    for (const upgrade of plan.memberUpgrades ?? []) {
+      const prefix = `member-source/${upgrade.pluginId}@`;
+      const ref = plan.binding?.materials.find((item) =>
+        item.ref.startsWith(prefix),
+      )?.ref;
+      if (!ref)
+        throw new AppError("PLAN_STALE", "升级成员缺少精确资料绑定", 409);
+      const member = this.domain.readMember(
+        upgrade.pluginId,
+        ref.slice(prefix.length),
+      );
+      deliver(ref, member.source);
+      deliver(
+        `member-contract/${member.pluginId}@${member.versionId}`,
+        member.contract,
+      );
+      deliver(
+        `member-acceptance/${member.pluginId}@${member.versionId}`,
+        member.acceptance,
+      );
+    }
     let history: unknown[] = [];
     let message: string | undefined = JSON.stringify({
       plan,
       target,
       frozenAcceptance: plan.cases,
       frozenRules: plan.workflowRules,
+      budget: this.base(r).budget,
+      materials: {
+        baseVersion: target.baseVersion,
+        compositionRevision: revision,
+        documents,
+        guideCatalog: plan.binding?.guideCatalog,
+      },
     });
     const failures = new Set<string>();
     while (r.candidates < this.limits.candidates) {
@@ -1577,7 +1641,7 @@ export class Evolution {
         const response = await this.call(
           r,
           {
-            instruction: context.instruction,
+            instruction: this.budgetInstruction(r, context.instruction),
             history,
             message,
             tools: [
@@ -1620,7 +1684,12 @@ export class Evolution {
                   "Read one host-owned capability guide by exact ref",
                 parameters: {
                   type: "object",
-                  properties: { ref: { type: "string" } },
+                  properties: {
+                    ref: {
+                      type: "string",
+                      enum: Object.keys(capabilityGuides),
+                    },
+                  },
                   required: ["ref"],
                 },
               },

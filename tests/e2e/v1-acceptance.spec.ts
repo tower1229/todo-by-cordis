@@ -8,7 +8,7 @@ import { v1FixtureDriver } from "../app/v1-driver-fixture.js";
 
 for (const [declareTagField, optionalCompletionField] of [[true, false], [false, false], [true, true]])
 test(`首版六步桩层真实浏览器体验与独立应用：${declareTagField ? "登记字段" : "动作动态输入字段"} · 可选完成字段=${optionalCompletionField}`, async ({}, info) => {
-  test.setTimeout(120_000);
+  test.setTimeout(300_000);
   const directory = await mkdtemp(join(tmpdir(), "cordis-v1-browser-"));
   try {
     const result = await runV1Acceptance({

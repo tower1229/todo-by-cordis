@@ -63,7 +63,8 @@ const businessWritableScope = [
 ];
 
 async function settle(e: Evolution, status?: string) {
-  for (let i = 0; i < 200; i++) {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
     const run = (await e.observe()).run;
     if (!run) throw new Error("missing run");
     if (

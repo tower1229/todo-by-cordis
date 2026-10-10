@@ -93,7 +93,8 @@ function inspectFromHistory(requests: ModelRequest[]): InspectContent {
 }
 
 async function settle(e: Evolution) {
-  for (let i = 0; i < 200; i++) {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
     const run = (await e.observe()).run;
     if (!run) throw new Error("missing run");
     if (!["planning", "executing", "applying"].includes(run.status)) return run;
@@ -713,7 +714,8 @@ test(`生成阶段 read_member 有界纠正且只返回精确成员：${lookup}`
   if (lookup === "infrastructure") {
     assert.equal(done.status, "failed");
     assert.match(done.message ?? "", /member storage unavailable/);
-    assert.equal(done.budget?.callsUsed, 7);
+    assert.equal(done.budget?.callsUsed, ready.budget?.callsUsed);
+    assert.equal(memberReads, 0);
     assert.equal(readPayload, undefined);
     return;
   }

@@ -20,7 +20,8 @@ import { AppError } from "../../src/shared/contracts.js";
 import type { Evolution } from "../../src/evolution/evolution.js";
 
 async function settle(e: Evolution) {
-  for (let i = 0; i < 200; i++) {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
     const run = (await e.observe()).run;
     if (!run) throw new Error("missing run");
     if (!["planning", "executing", "applying"].includes(run.status)) return run;

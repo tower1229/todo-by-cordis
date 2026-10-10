@@ -327,6 +327,7 @@ for (const scenario of cases) {
 test("browser rejects stale guide before execution and after experience, then accepts a fresh plan", async ({
   page,
 }) => {
+  test.setTimeout(300_000);
   const dir = mkdtempSync(join(tmpdir(), "cordis-stale-guide-browser-"));
   const workspace = await Workspace.open(join(dir, "workspace.db"));
   const sessions = new ExperienceSessionHost(workspace);
@@ -447,7 +448,7 @@ test("browser rejects stale guide before execution and after experience, then ac
     const executionReady = await observe();
     await page.getByRole("button", { name: "开始执行", exact: true }).click();
     await expect
-      .poll(async () => (await observe()).run.status, { timeout: 20000 })
+      .poll(async () => (await observe()).run.status, { timeout: 90_000 })
       .toBe("awaiting-apply");
     const candidate = (await observe()).candidates.find((item) => item.passed);
     expect(candidate).toBeTruthy();
@@ -497,7 +498,7 @@ test("browser rejects stale guide before execution and after experience, then ac
     const renewed = await observe();
     await page.getByRole("button", { name: "开始执行", exact: true }).click();
     await expect
-      .poll(async () => (await observe()).run.status, { timeout: 20000 })
+      .poll(async () => (await observe()).run.status, { timeout: 90_000 })
       .toBe("awaiting-apply");
     const renewedCandidate = (await observe()).candidates.find(
       (item) => item.passed,

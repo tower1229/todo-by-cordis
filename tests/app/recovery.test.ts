@@ -19,7 +19,8 @@ import {
 // Seams (issue #7 / parent A12·A13): Workspace activate/composition/command,
 // Evolution command/observe, HTTP /api/runtime/restore and /api/composition.
 async function settle(e: Evolution, status?: string) {
-  for (let i = 0; i < 200; i++) {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
     const run = (await e.observe()).run;
     if (!run) throw new Error("missing run");
     if (

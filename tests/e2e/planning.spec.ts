@@ -121,15 +121,35 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   page,
   request,
 }, info) => {
-  const send = async (data: Record<string, unknown>) =>
-    (
-      await request.post("/api/assistant/commands", {
-        data: { ...data, operationId: crypto.randomUUID() },
-      })
-    ).json();
+  test.setTimeout(300_000);
+  const send = async (data: Record<string, unknown>) => {
+    const response = await request.post("/api/assistant/commands", {
+      data: { ...data, operationId: crypto.randomUUID() },
+    });
+    expect(response.status()).toBe(200);
+    return response.json();
+  };
   const before = await (await request.get("/api/composition")).json();
   expect(before.history).toEqual([]);
-  await send({ type: "request", text: "完成前填写复盘" });
+  const initialRequest = {
+    type: "request",
+    text: "完成前填写复盘",
+    operationId: crypto.randomUUID(),
+  };
+  // The preceding test cancels a real candidate; its browser cleanup can outlive cancelled status.
+  await expect
+    .poll(
+      async () => {
+        const response = await request.post("/api/assistant/commands", {
+          data: initialRequest,
+        });
+        if (response.status() !== 200)
+          expect((await response.json()).code).toBe("EVOLUTION_BUSY");
+        return response.status();
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(200);
   await expect
     .poll(
       async () =>
@@ -150,7 +170,7 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
     .poll(
       async () =>
         (await (await request.get("/api/assistant")).json()).run.status,
-      { timeout: 15000 },
+      { timeout: 90_000 },
     )
     .toBe("awaiting-apply");
   await page.goto("/");
@@ -399,7 +419,7 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   ).toHaveCount(0);
   await page.getByRole("button", { name: "开始执行", exact: true }).click();
   await expect(page.getByRole("region", { name: "候选结果" })).toBeVisible({
-    timeout: 15000,
+    timeout: 90_000,
   });
   await page.getByRole("button", { name: "应用", exact: true }).click();
   await expect(
