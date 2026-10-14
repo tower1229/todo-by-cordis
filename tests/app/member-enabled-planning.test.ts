@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Workspace } from "../../src/server/workspace.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import { activateDual } from "./dual-composition-fixture.js";

@@ -1,5 +1,5 @@
 import { ExperienceSessionHost } from "../../src/server/experience-session.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import type { Workspace } from "../../src/server/workspace.js";
 import type { Driver } from "../../src/evolution/driver.js";

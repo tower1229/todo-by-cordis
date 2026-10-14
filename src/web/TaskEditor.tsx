@@ -138,11 +138,11 @@ export function Editor({
               ),
           )
           .map(([key, value]) => (
-          <div key={key} className="space-y-2">
+          <div key={key} className="space-y-2" data-provider="workflow" data-contribution="workflow">
             <p className="field-label">
               {fields.find((field) => field.key === key)?.label ?? key}
             </p>
-            <p className="whitespace-pre-wrap break-words text-sm leading-6">
+            <p data-field={key} className="whitespace-pre-wrap break-words text-sm leading-6">
               {value}
             </p>
           </div>

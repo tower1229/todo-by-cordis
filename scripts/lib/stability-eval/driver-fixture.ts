@@ -1,4 +1,5 @@
 import type { Driver, ModelRequest } from "../../../src/evolution/driver.js";
+import { DeltaFixture } from "../../../tests/app/evolution-adapter.js";
 import {
   PlanningDriver,
   toolReply,
@@ -50,7 +51,7 @@ function memberPlan(
         change: upgrades ? "升级成员" : "新增成员",
       },
     ],
-    writableScope: ["active-source"],
+    writableScope: [],
     ...(upgrades
       ? {
           memberUpgrades: [{ pluginId }],
@@ -67,7 +68,7 @@ function memberPlan(
 /** CI model stubs only — never imported by the authorized real-model entry path for generation. */
 export function stabilityStubDriver(scenarioId: string): Driver {
   let planning: PlanningDriver | undefined;
-  return {
+  return new DeltaFixture({
     async generate(request: ModelRequest) {
       if (request.schema && planning) return planning.generate(request);
       if (!request.tools?.some((t) => t.name === "submit_candidate")) {
@@ -78,7 +79,7 @@ export function stabilityStubDriver(scenarioId: string): Driver {
       }
       return submitCandidate(scenarioId, request);
     },
-  };
+  });
 }
 
 function planFinish(
@@ -238,16 +239,9 @@ function submitCandidate(scenarioId: string, request: ModelRequest) {
     });
   }
 
-  // tags-add: keep a stable default workflow source plus the new member.
+  // Auxiliary additions inherit the exact baseline under the delta protocol.
   return reply("submit_candidate", {
-    source: `import type { Plugin } from './contract.js';
-const plugin: Plugin = {
- describe: () => ({id:'default',name:'轻快完成',version:'1',initialState:'open',states:{open:{label:'未完成',category:'open'},done:{label:'已完成',category:'done'}},actions:[{id:'complete',label:'完成',from:['open']},{id:'reopen',label:'重新打开',from:['done']}],fields:[]}),
- decide({task,action}) {
- if ((action==='complete' && task.state==='open') || (action==='reopen' && task.state==='done')) return {kind:'commit',state:action==='complete'?'done':'open',fields:task.fields};
- return {kind:'reject',message:'不可用'};
- }
-}; export default plugin;`,
+    source: current,
     members: [{ pluginId: "tags", source: tagsSource(false) }],
   });
 }

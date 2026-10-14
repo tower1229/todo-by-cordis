@@ -14,7 +14,7 @@ export async function activateWorkflowOnly(w: Workspace) {
   const workflowCode = await readFile(join(fixtureDir, "aux-workflow.mjs"), "utf8");
   const composition = w.release.record({
     pluginId: "aux-workflow",
-    name: "双贡献组合",
+    name: dualWorkflowDefinition.name,
     service: "workflow",
     contractVersion: "workflow/1",
     source: workflowCode,
@@ -62,7 +62,7 @@ export async function activateDual(w: Workspace) {
   });
   const composition = w.release.record({
     pluginId: "aux-workflow",
-    name: "双贡献组合",
+    name: dualWorkflowDefinition.name,
     service: "workflow",
     contractVersion: "workflow/1",
     source: workflowCode,

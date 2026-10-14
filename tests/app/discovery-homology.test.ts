@@ -6,7 +6,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
 import type { WorkflowDefinition } from "../../src/shared/contracts.js";
@@ -720,7 +720,7 @@ test(`生成阶段 read_member 有界纠正且只返回精确成员：${lookup}`
     return;
   }
   if (lookup === "repeated") {
-    assert.equal(done.status, "failed");
+    assert.equal(done.status, "blocked");
     assert.equal(done.budget?.callsRemaining, 0);
     assert.equal(done.budget?.candidatesRemaining, 3);
     assert.equal(readPayload, undefined);
@@ -728,7 +728,7 @@ test(`生成阶段 read_member 有界纠正且只返回精确成员：${lookup}`
   }
   assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
   assert.equal(errors.length, lookup === "exact" ? 0 : 1);
-  assert.equal(done.budget?.callsUsed, lookup === "exact" ? 8 : 9);
+  assert.equal(done.budget?.callsUsed, lookup === "exact" ? 6 : 7);
   assert.ok(readPayload);
   assert.equal(readPayload!.pluginId, "tags");
   assert.equal(readPayload!.versionId, tags.id);

@@ -11,7 +11,7 @@ import {
   browserEnvironment,
   verifyBrowser,
 } from "../../src/server/browser-acceptance.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import type { BrowserCase } from "../../src/shared/browser-cases.js";
 import type { Requirement, AssistantRun } from "../../src/shared/assistant.js";
@@ -160,6 +160,7 @@ for (const candidateLimit of [3, 1])
           id: "panel-display",
           task: "existing",
           steps: [
+            {kind: "task"},
             {
               kind: "action-visible",
               member: "panel",
@@ -167,7 +168,7 @@ for (const candidateLimit of [3, 1])
               action: "markNote",
               visible: true,
             },
-            { kind: "action", member: "panel", action: "markNote" },
+            { kind: "action", member: "panel", action: "markNote", input: {} },
             {
               kind: "field",
               member: "panel",
@@ -469,6 +470,15 @@ test("浏览器数据案例通过真实动作表单验证错误、提交、刷�
           kind: "action",
           member: "panel",
           action: "markNote",
+          input: { noteMark: "bad" },
+        },
+        // No product copy requirement: the same checker asserts a visible error.
+        { kind: "error", text: "" },
+        { kind: "open" },
+        {
+          kind: "action",
+          member: "panel",
+          action: "markNote",
           input: { noteMark: "  saved  " },
         },
         {
@@ -627,9 +637,9 @@ test("公开取消浏览器验收后候选仍可定位部分检查和清理证�
         steps: [
           {
             kind: "field",
-            member: "missing",
-            contribution: "missing",
-            field: "missing",
+            member: "workflow",
+            contribution: "workflow",
+            field: "reflection",
             value: "waiting",
           },
         ],

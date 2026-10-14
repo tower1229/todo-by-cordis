@@ -1,3 +1,4 @@
+import { compileSpec } from "../../src/evolution/specification.js";
 import {
   candidateEvidenceHash,
   freezeRequirements,
@@ -11,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { bindPlan, capture } from "../../src/server/planning.js";
 import { PlanningDriver } from "./planning-fixture.js";
@@ -101,6 +102,7 @@ async function certifyFixture(
   plan: InvestigatedPlan,
   w: Workspace,
   candidate: Version,
+  runId = "run-member-enabled",
 ): Promise<Version> {
   plan.requirements = [
     {
@@ -115,6 +117,7 @@ async function certifyFixture(
     },
   ];
   plan.browserCases = [];
+  plan.changeSpec = compileSpec(plan, runId, hash(w.release.get(plan.baseVersion!).source));
   plan.requirementGate = freezeRequirements(
     plan,
     [{ id: "fixture:1", text: plan.summary }],
@@ -475,7 +478,7 @@ test("self-iteration apply re-enable restores contributions with retained field 
   plan.summary = "再启用标签插件";
   plan.outcome = "启用 tags";
   plan.changes = ["将 tags 成员 enabled 设为 true"];
-  candidateVersion = await certifyFixture(plan, w, candidateVersion);
+  candidateVersion = await certifyFixture(plan, w, candidateVersion, "run-member-reenable");
   const candidateId = "cand-member-reenable";
   const evidenceHash = candidateEvidenceHash(
     {
@@ -706,7 +709,7 @@ test("impure enable-status candidate does not take member-enabled experience sho
   });
   const plan = memberEnabledPlan(before.versionId, before.revision);
   bindFixturePlan(plan, w);
-  impure = await certifyFixture(plan, w, impure);
+  impure = await certifyFixture(plan, w, impure, "run-member-impure");
   const candidateId = "cand-member-impure";
   const evidenceHash = candidateEvidenceHash(
     {

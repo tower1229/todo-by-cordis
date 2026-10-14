@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { PlanningDriver, toolReply } from "./planning-fixture.js";
 import { activateWorkflowOnly } from "./dual-composition-fixture.js";
@@ -196,12 +196,11 @@ test("缩短试跑两阶段桩：新增 tags 去空格 → 确认修订后升级
     });
     const awaiting = await settle(e, "awaiting-apply");
     assert.equal(awaiting.status, "awaiting-apply");
-    if (operation === "phase2")
-      assert.ok(
-        awaiting.plan.binding?.materials.some(
-          (item) => item.ref === "guide/command.register",
-        ),
-      );
+    if (operation === "phase2") {
+      const stored = JSON.parse(String(ctx.w.db.prepare("SELECT body FROM evolution_runs WHERE id=?").get(ready.id)!.body));
+      assert.ok(stored.investigation.deliveries.some((receipt: {phase: string; materials: {ref: string}[]}) => receipt.phase === "generation" && receipt.materials.some(item => item.ref === "guide/command.register")));
+      assert.deepEqual(awaiting.plan.changeSpec, ready.plan.changeSpec, "补读指南不得修改冻结规格");
+    }
     assertFormalFingerprintUnchanged(
       `${operation}-before-apply`,
       formalBefore,

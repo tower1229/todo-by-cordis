@@ -9,7 +9,7 @@ const fixtureDir = dirname(fileURLToPath(import.meta.url));
 
 export const memberUiWorkflowDefinition: WorkflowDefinition = {
   id: "aux-workflow",
-  name: "组合主流程",
+  name: "双贡献组合",
   version: "1.0.0",
   initialState: "open",
   states: {

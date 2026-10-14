@@ -1,3 +1,4 @@
+import { DeltaFixture } from "./evolution-adapter.js";
 import type { Driver } from "../../src/evolution/driver.js";
 import { PlanningDriver, toolReply } from "./planning-fixture.js";
 import {
@@ -52,7 +53,7 @@ export function v1FixtureDriver(
   let phase = -1;
   let faultInjected = false;
   let planning: PlanningDriver;
-  return {
+  return new DeltaFixture({
     async generate(request) {
       if (request.schema) return planning.generate(request);
       if (!request.tools?.some((t) => t.name === "submit_candidate")) {
@@ -321,5 +322,5 @@ const plugin: Plugin = {
         ],
       });
     },
-  };
+  });
 }

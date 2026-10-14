@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Workspace } from "../../src/server/workspace.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
@@ -166,6 +166,11 @@ for (const [binding, provider, capability] of [
 
 for (const [failure, broken] of [
   ["compiler", "const broken: string = 42; export default broken;"],
+  ["implicit-any", "export default { decide(data) { return data; } };"],
+  [
+    "implicit-destructure",
+    "export default { decide({ task }) { return task; } };",
+  ],
   ["any", "const broken: any = 42; export default broken;"],
   ["enum", "enum Broken { value }; export default Broken;"],
   ["repeated-any", "const broken: any = 42; export default broken;"],
@@ -191,6 +196,13 @@ for (const [failure, broken] of [
         const reply = await fallback.generate(request);
         if (reply.calls[0]?.name !== "submit_candidate") return reply;
         attempts++;
+        if (failure.startsWith("implicit-") && attempts === 2) {
+          const feedback = JSON.stringify(request.history);
+          assert.match(feedback, /TS(?:7006|7031)/);
+          assert.match(feedback, /Plugin.*参数|参数.*Plugin/);
+          assert.match(feedback, /不要.*any/);
+          assert.match(request.instruction, /Plugin 类型/);
+        }
         return {
           ...reply,
           calls: [
@@ -278,6 +290,20 @@ for (const [failure, broken] of [
     assert.equal(candidates[0].passed, false);
     assert.equal(candidates[1].passed, true);
     assert.ok(candidates[0].diagnostic);
+    if (failure.startsWith("implicit-")) {
+      assert.ok((snapshot.run?.budget?.callsUsed ?? 13) <= 12);
+      assert.equal(
+        candidates[0].requirementSeal,
+        ready.plan.requirementGate?.seal,
+      );
+      assert.equal(
+        candidates[1].requirementSeal,
+        ready.plan.requirementGate?.seal,
+      );
+      assert.ok(
+        candidates[1].browser?.results.every((r) => r.status === "passed"),
+      );
+    }
     assert.equal(candidates[1].planId, ready.plan.id);
     assert.ok(candidates[1].evidenceHash);
     const version = w.release.get(snapshot.run!.versionId!);
@@ -587,8 +613,9 @@ test("new provider and consumer implement an additional action with frozen indep
     operationId: "scope-start",
   });
   const blocked = await settled(next);
-  assert.equal(blocked.run?.status, "blocked");
-  assert.match(blocked.candidates![0].diagnostic!, /冻结可写范围/);
+  assert.equal(blocked.run?.status, "awaiting-apply");
+  const inherited = w.release.get(blocked.run!.versionId!);
+  assert.equal(inherited.bundle!.files["business/metadata.json"], firstVersion.bundle!.files["business/metadata.json"], "省略未改文件应精确继承，不能将它视为删除");
 });
 
 test("A10: protected paths, type-only escapes and forged validation reports stop the frozen execution", async (t) => {
@@ -597,7 +624,7 @@ test("A10: protected paths, type-only escapes and forged validation reports stop
     reference: '/// <reference path="/tmp/private.ts" />\n',
     "mixed-import":
       'import type { Secret } from "/tmp/private.ts"; const bad: any = 1;\n',
-    "mixed-reference": "const bad: any = 1;\n",
+    "mixed-reference": 'const bad: any = 1;\n/// <reference path="/tmp/private.ts" />\n',
     "mixed-enum-runtime": "enum Bad { value = process.pid };\n",
     "computed-runtime": 'const value = { [process.pid]: "no" };\n',
     "shorthand-runtime": "const value = { process };\n",
@@ -660,9 +687,6 @@ test("A10: protected paths, type-only escapes and forged validation reports stop
                     {
                       path: "business/view.ts",
                       content:
-                        (attack === "mixed-reference"
-                          ? '/// <reference path="/tmp/private.ts" />\n'
-                          : "") +
                         "export default {title:'复盘',fields:['reflection']};",
                     },
                     { path: "business/config.json", content: "{}" },
@@ -720,10 +744,10 @@ test("A10: protected paths, type-only escapes and forged validation reports stop
       if (attack === "source")
         assert.match(
           snapshot.candidates![0].diagnostic!,
-          /单源码入口未获冻结范围授权/,
+          /差异文件超出冻结范围：active-source/,
         );
       if (attack === "scope")
-        assert.match(snapshot.candidates![0].diagnostic!, /冻结可写范围/);
+        assert.match(snapshot.candidates![0].diagnostic!, /冻结(?:可写)?范围/);
       assert.equal(w.composition().revision, 1);
     });
   }

@@ -1,7 +1,7 @@
 /** Minimal main workflow provider for multi-plugin composition fixtures. */
 const definition = {
   id: "aux-workflow",
-  name: "组合主流程",
+  name: "双贡献组合",
   version: "1.0.0",
   initialState: "open",
   states: {
@@ -21,6 +21,11 @@ export default {
   },
   decide(data) {
     const { task, action } = data;
+    if (
+      (action === "complete" && task.state !== "open") ||
+      (action === "reopen" && task.state !== "done")
+    )
+      return { kind: "reject", message: "当前状态不可执行该动作" };
     if (action === "complete")
       return { kind: "commit", state: "done", fields: task.fields };
     if (action === "reopen")

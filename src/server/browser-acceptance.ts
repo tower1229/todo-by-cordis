@@ -1,5 +1,5 @@
 import { resolveVersionMembers } from "../release/composition.js";
-import type { Browser, BrowserContext } from "playwright";
+import type { Browser, BrowserContext, Page, Response as BrowserResponse } from "playwright";
 import { createRequire } from "node:module";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -115,6 +115,7 @@ export function browserEnvironment(
       version: "browser/1",
       source: readFileSync(resolve("src/server/browser-acceptance.ts"), "utf8"),
       contract: readFileSync(resolve("src/shared/browser-cases.ts"), "utf8"),
+      caseSchema: readFileSync(resolve("src/shared/browser-contract.ts"), "utf8"),
       playwright: "1.63.0",
       viewports: browserViewports,
     }),
@@ -122,6 +123,68 @@ export function browserEnvironment(
 }
 const attr = (name: string, value: string) =>
   `[data-${name}=${JSON.stringify(value)}]`;
+
+/** One action transaction, including an already-open form after a rejection. */
+async function browserAction(
+  page: Page,
+  step: Extract<BrowserStep, {kind: "action"}>,
+  owner: string,
+  taskId: string,
+  open: () => Promise<void>,
+  command: (action: () => Promise<unknown>) => Promise<BrowserResponse>,
+) {
+  const form = page.locator("[data-action-form]");
+  let awaitingInput = await form.isVisible();
+  if (awaitingInput && (await form.getAttribute("data-action-form")) !== step.action) {
+    await form.getByRole("button", {name: "取消", exact: true}).click();
+    await open();
+    awaitingInput = false;
+  }
+  if (!awaitingInput) {
+    const editor = page.locator("[data-task-editor]");
+    if (!(await editor.isVisible())) await open();
+    const contributionAction = editor
+      .locator(attr("provider", owner))
+      .locator(attr("action-id", step.action));
+    let response: BrowserResponse;
+    if (await contributionAction.count())
+      response = await command(() => contributionAction.click());
+    else {
+      await page.getByRole("button", {name: "关闭任务详情", exact: true}).click();
+      response = await command(() => page
+        .locator(attr("task-id", taskId))
+        .locator(attr("action-id", step.action)).click());
+    }
+    const body = (await response.json()) as {decision?: {kind?: string}};
+    if (response.ok() && body.decision?.kind === "commit") {
+      if (Object.keys(step.input ?? {}).length)
+        throw new Error("动作直接提交而未请求表单，冻结的非空输入未被使用");
+      await open();
+      return;
+    }
+    if (!response.ok() || body.decision?.kind !== "input-required") return;
+    await form.waitFor({state: "visible"});
+  }
+  if (step.input === undefined) return;
+  // Each data step describes the entire input. Failed drafts must not leak into
+  // a subsequent retry or silently supply fields omitted by the frozen case.
+  const fields = await form.locator("[data-input-field]").all();
+  const keys = await Promise.all(fields.map(field => field.getAttribute("data-input-field")));
+  if (keys.some(key => !key))
+    throw new BrowserEnvironmentError("browser/1 输入字段缺少宿主 DOM 标识");
+  if (Object.keys(step.input).some(key => !keys.includes(key)))
+    throw new Error("冻结输入字段在实际动作表单中不存在");
+  for (const [index, field] of fields.entries())
+    await field.fill(step.input[keys[index]!] ?? "");
+  if (await form.locator(":invalid").count())
+    throw new Error("动作表单被宿主原生输入校验阻止，未发送提交请求");
+  const response = await command(() => form.locator('button[type="submit"]').click());
+  const body = (await response.json()) as {decision?: {kind?: string}};
+  if (response.ok() && body.decision?.kind === "commit") {
+    await form.waitFor({state: "hidden"});
+    await open();
+  }
+}
 
 /** Uses only host-owned selectors and exact semantic IDs validated during planning. */
 export async function verifyBrowser(
@@ -166,6 +229,7 @@ export async function verifyBrowser(
     viewport: { width: number; height: number };
     caseId: string;
     task: Task;
+    initial: {title: string; description: string};
   }[] = [];
   await writeFile(
     join(directory, "fixtures.json"),
@@ -296,10 +360,12 @@ export async function verifyBrowser(
         const title = `${fixtures.new} ${index}`;
         const taskId =
           c.task === "existing" ? existing.get(c.id)! : await create(title);
+        const initial = {title: c.task === "existing" ? `${fixtures.existing} ${index}` : title, description: ""};
         fixtureTasks.push({
           viewport,
           caseId: c.id,
           task: isolated!.read(taskId),
+          initial,
         });
         evidence.fixtureHash = hash({
           definition: fixtures,
@@ -386,6 +452,9 @@ export async function verifyBrowser(
               if (!response.ok()) throw new Error("编辑任务被拒绝");
               await open();
             } else if (step.kind === "task") {
+              const expectedTitle = step.title ?? initial.title;
+              const expectedDescription = step.description ?? initial.description;
+              expected = {kind: "task", title: expectedTitle, description: expectedDescription};
               const title = await page
                 .getByLabel("任务名称", { exact: true })
                 .inputValue();
@@ -393,7 +462,7 @@ export async function verifyBrowser(
                 .getByLabel("备注", { exact: true })
                 .inputValue();
               actual = JSON.stringify({ title, description });
-              if (title !== step.title || description !== step.description)
+              if (title !== expectedTitle || description !== expectedDescription)
                 throw new Error("标题或备注不符合预期");
             } else if (step.kind === "action") {
               const workflowId = isolated!
@@ -409,71 +478,30 @@ export async function verifyBrowser(
                 !(step.member === "workflow" && owner === workflowId)
               )
                 throw new Error("动作不属于冻结的目标成员");
-              const contributionAction = editor
-                .locator(attr("provider", owner))
-                .locator(attr("action-id", step.action));
-              let response;
-              if (await contributionAction.count())
-                response = await command(() => contributionAction.click());
-              else {
-                await page
-                  .getByRole("button", { name: "关闭任务详情", exact: true })
-                  .click();
-                response = await command(() =>
-                  page
-                    .locator(attr("task-id", taskId))
-                    .locator(attr("action-id", step.action))
-                    .click(),
-                );
-              }
-              const body = (await response.json()) as {
-                decision?: { kind?: string };
-              };
-              if (step.input) {
-                const form = page.locator("[data-action-form]");
-                await form.waitFor({ state: "visible" });
-                for (const [key, value] of Object.entries(step.input))
-                  await form.locator(attr("input-field", key)).fill(value);
-                const submitted = await command(() =>
-                  form.locator('button[type="submit"]').click(),
-                );
-                const result = (await submitted.json()) as {
-                  decision?: { kind?: string };
-                };
-                if (submitted.ok() && result.decision?.kind === "commit") {
-                  await form.waitFor({ state: "hidden" });
-                  await open();
+              await browserAction(page, step, owner, taskId, open, command);
+            } else if (step.kind === "field" || step.kind === "action-visible") {
+              const composition = isolated!.composition();
+              let contribution = step.contribution;
+              if (!contribution) {
+                if (step.member === "workflow") contribution = "workflow";
+                else {
+                  const matches = (composition.uiContributions ?? []).filter(c => c.providerId === step.member && (step.kind === "field" ? c.fields.some(f => f.key === step.field) : c.actions.some(a => a.commandId === step.action)));
+                  if (matches.length !== 1) throw new Error("浏览器贡献身份不存在或不唯一");
+                  contribution = matches[0].id;
                 }
-              } else if (response.ok() && body.decision?.kind === "commit")
-                await open();
-              else if (
-                response.ok() &&
-                body.decision?.kind === "input-required"
-              )
-                await page
-                  .locator("[data-action-form]")
-                  .waitFor({ state: "visible" });
-            } else if (step.kind === "field") {
-              const field = editor
-                .locator(
-                  attr("provider", step.member) +
-                    attr("contribution", step.contribution),
-                )
-                .locator(attr("field", step.field));
-              await field.waitFor({ state: "visible" });
-              actual = (await field.innerText()).trim();
-              if (actual !== step.value)
-                throw new Error("可见字段值不符合预期");
-            } else if (step.kind === "action-visible") {
-              const button = editor
-                .locator(
-                  attr("provider", step.member) +
-                    attr("contribution", step.contribution),
-                )
-                .locator(attr("action-id", step.action));
-              actual = String(await button.isVisible());
-              if ((actual === "true") !== step.visible)
-                throw new Error("可见动作不符合预期");
+              }
+              if (step.kind === "field") {
+                const field = editor.locator(attr("provider", step.member) + attr("contribution", contribution)).locator(attr("field", step.field));
+                await field.waitFor({state: "visible"});
+                actual = (await field.innerText()).trim();
+                if (actual !== step.value) throw new Error("可见字段值不符合预期");
+              } else {
+                const button = step.member === "workflow"
+                  ? page.locator(attr("task-id", taskId)).locator(attr("action-id", step.action))
+                  : editor.locator(attr("provider", step.member) + attr("contribution", contribution)).locator(attr("action-id", step.action));
+                actual = String(await button.isVisible());
+                if ((actual === "true") !== step.visible) throw new Error("可见动作不符合预期");
+              }
             } else if (step.kind === "error") {
               const alert = page
                 .getByRole("alert")

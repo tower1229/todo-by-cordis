@@ -24,7 +24,7 @@ export class Gemini implements Driver {
               }
             : {}),
           ...(request.tools
-            ? { tools: [{ functionDeclarations: request.tools }] }
+            ? { tools: [{ functionDeclarations: request.tools.map(({name, description, parameters}) => ({name, description, parametersJsonSchema: parameters})) }] }
             : {}),
         },
       })

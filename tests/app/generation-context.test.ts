@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Workspace } from "../../src/server/workspace.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "./evolution-adapter.js";
 import {
   EvolutionDomain,
   contract,
@@ -52,7 +52,7 @@ test("规划已用九次调用时，首轮精确资料支持合批补读和修�
       requests.push(request);
       if (!request.tools?.some((tool) => tool.name === "submit_candidate")) {
         const reply = await planning.generate(request);
-        if (reply.calls[0]?.name === "propose_plan" && padding++ < 5)
+        if (reply.calls[0]?.name === "propose_plan" && padding++ < 7)
           return {
             ...toolReply("read_source", { ref: "active-source" }),
             history: request.history,
@@ -83,10 +83,8 @@ test("规划已用九次调用时，首轮精确资料支持合批补读和修�
           documents.find((d) => d.ref === "active-source")?.content,
           base.source,
         );
-        assert.equal(
-          documents.find((d) => d.ref === "business/contract.ts")?.content,
-          contract,
-        );
+        assert.ok(String(documents.find(d => d.ref === "candidate-contract")?.content).startsWith(contract));
+        assert.match(String(documents.find(d => d.ref === "candidate-contract")?.content), /export const frozenWorkflow/);
         assert.ok(documents.find((d) => d.ref === "candidate-scaffold"));
         assert.ok(documents.every((d) => d.hash === hash(d.content)));
         assert.equal(input.budget.callsRemaining, 3);

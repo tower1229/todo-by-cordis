@@ -521,7 +521,7 @@ for (const endBeforeFire of [true, false]) {
     const { ExperienceSessionHost } = await import(
       "../../src/server/experience-session.js"
     );
-    const { Evolution } = await import("../../src/evolution/evolution.js");
+    const { Evolution } = await import("../app/evolution-adapter.js");
     const { EvolutionDomain } = await import(
       "../../src/server/evolution-domain.js"
     );
@@ -533,6 +533,9 @@ for (const endBeforeFire of [true, false]) {
       "../../src/server/browser-acceptance.js"
     );
     const { hash } = await import("../../src/release/storage.js");
+    const { compileSpec } = await import(
+      "../../src/evolution/specification.js"
+    );
     const { createControllableClock } = await import(
       "../../src/server/host/clock.js"
     );
@@ -630,6 +633,8 @@ for (const endBeforeFire of [true, false]) {
       dataImpact: "仅体验数据",
       requestRevision: 1,
       excluded: [],
+      writableScope: [],
+      dependencies: [],
       evidence: [],
       capabilityChanges: [],
       acceptance: [],
@@ -662,10 +667,18 @@ for (const endBeforeFire of [true, false]) {
     };
     // This is an authored lifecycle fixture, not real-model semantic review.
     // It receives actual Chromium receipts instead of bypassing the new gate.
-    const plan = {
+    const specification = {
       ...planDefinition,
+      changeSpec: compileSpec(
+        planDefinition as import("../../src/shared/assistant.js").InvestigatedPlan,
+        "schedule-run",
+        hash(formalVersion.source),
+      ),
+    };
+    const plan = {
+      ...specification,
       requirementGate: freezeRequirements(
-        planDefinition,
+        specification,
         [{ id: "fixture:1", text: requirement.sourceQuote }],
         hash(undefined),
         { reviewedIds: [requirement.id], issues: [] },
@@ -691,6 +704,7 @@ for (const endBeforeFire of [true, false]) {
         ...(hooked.evidence as Record<string, unknown>),
         checks,
         requirements: plan.requirements,
+        changeSpec: plan.changeSpec,
         browserCases: [],
         requirementGate: plan.requirementGate,
         browser,

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "../app/evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { ExperienceSessionHost } from "../../src/server/experience-session.js";
 import { createApp } from "../../src/server/app.js";
@@ -315,9 +315,17 @@ test("模型桩浏览器完成标签升级、事件候选体验、应用、启�
       .toBe("ready");
     await page.getByRole("button", { name: "开始执行", exact: true }).click();
     await expect
-      .poll(async () => (await evolution.observe()).run?.status, {
-        timeout: 30_000,
-      })
+      .poll(
+        async () => {
+          const run = (await evolution.observe()).run;
+          return run?.status === "blocked" || run?.status === "failed"
+            ? `${run.status}: ${run.message}`
+            : run?.status;
+        },
+        {
+          timeout: 30_000,
+        },
+      )
       .toBe("awaiting-apply");
     expect(reads).toHaveLength(1);
     expect(reads[0]).toContain(baseline.tags.id);

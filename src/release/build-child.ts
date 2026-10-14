@@ -54,9 +54,13 @@ try {
   process.send?.({ ok: true });
 } catch (error) {
   const failure = error as Error & { stdout?: Buffer };
+  const diagnostic = failure.stdout?.toString() || failure.message;
+  const guidance = /\bTS(?:7006|7031)\b/.test(diagnostic)
+    ? "\n参数缺少类型：主工作流从 ./contract.js 导入 Plugin，用 const plugin: Plugin = {...} 让方法参数从契约推导；单独声明的定义使用 WorkflowDefinition。不要改成 any、忽略类型检查或修改编译选项。辅助成员仍使用自包含 JavaScript，不导入主工作流契约。"
+    : "";
   process.send?.({
     ok: false,
-    error: (failure.stdout?.toString() || failure.message).slice(0, 12000),
+    error: diagnostic.slice(0, 12000 - guidance.length) + guidance,
   });
 }
 process.disconnect?.();

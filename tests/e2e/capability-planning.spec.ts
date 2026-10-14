@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "../app/evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { createApp } from "../../src/server/app.js";
 import { PlanningDriver } from "../app/planning-fixture.js";
@@ -340,15 +340,12 @@ test("browser rejects stale guide before execution and after experience, then ac
     async generate(request: ModelRequest, signal) {
       const reply = await execution.generate(request, signal);
       if (
-        reply.calls.some((call) => call.name === "describe_verification") &&
+        reply.calls.some((call) => call.name === "propose_plan") &&
         !JSON.stringify(request.history).includes('"name":"read_guides"')
       )
         return {
           ...reply,
-          calls: [
-            ...reply.calls,
-            { name: "read_guides", args: { refs: [guideRef] } },
-          ],
+          calls: [{ name: "read_guides", args: { refs: [guideRef] } }],
         };
       if (
         reply.calls[0]?.name === "submit_candidate" &&
@@ -569,10 +566,6 @@ test("browser planning corrects bad guide arguments and rejects an unsent catalo
               args: {
                 ...reply.calls[0].args,
                 evidence: [
-                  ...(reply.calls[0].args.evidence as {
-                    ref: string;
-                    hash: string;
-                  }[]),
                   {
                     ref: "guide/command.register",
                     hash: hash(capabilityGuides["guide/command.register"]),
@@ -619,7 +612,15 @@ test("browser planning corrects bad guide arguments and rejects an unsent catalo
       base.requests.filter((r) => !r.schema).at(-1)?.history,
     );
     expect(history).toContain("REF_UNAVAILABLE");
-    expect(history).toContain("调查证据不存在或未读取");
+    expect(history).toContain("统一规格不得提交宿主派生字段");
+    const snapshot = await (
+      await page.request.get(`${baseURL}/api/assistant`)
+    ).json();
+    expect(
+      snapshot.run.plan.binding.materials.some(
+        (item: { ref: string }) => item.ref === "guide/command.register",
+      ),
+    ).toBe(false);
     await expect(
       page.getByRole("region", { name: "待确认方案" }),
     ).toBeVisible();

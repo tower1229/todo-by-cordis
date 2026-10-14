@@ -8,6 +8,7 @@ export const toolReply = (name: string, args: Record<string, unknown>) => ({
 });
 export class PlanningDriver implements Driver {
   requests: ModelRequest[] = [];
+  private delivered = "";
   private sources: { id: string; text: string }[] = [];
   constructor(public finish: Record<string, unknown> = {}) {}
   async generate(request: ModelRequest) {
@@ -15,11 +16,13 @@ export class PlanningDriver implements Driver {
     if (request.schema) {
       const input = JSON.parse(request.message ?? "{}") as {
         requirements: { id: string }[];
+        reviewLedger?: {findings: {id: string; issue: {sourceRevision: string; sourceQuote: string}}[]};
       };
       return {
         text: JSON.stringify({
           reviewedIds: input.requirements.map((r) => r.id),
           issues: [],
+          resolutions: (input.reviewLedger?.findings ?? []).map(f => ({issueId: f.id, sourceRevision: f.issue.sourceRevision, sourceQuote: f.issue.sourceQuote, reason: "模型桩确认本次规格已修正历史问题"})),
         }),
         history: [],
         calls: [],
@@ -31,7 +34,7 @@ export class PlanningDriver implements Driver {
       const input = JSON.parse(request.message) as {
         sources?: { id: string; text: string }[];
       };
-      if (input.sources) this.sources = input.sources;
+      if (input.sources) { this.sources = input.sources; this.delivered = request.message; }
     }
     const toolReply = (name: string, args: Record<string, unknown>) => ({
       text: "",
@@ -49,10 +52,10 @@ export class PlanningDriver implements Driver {
         maxLength: 5000,
       },
     ];
-    const content = JSON.stringify(request.history);
+    const content = JSON.stringify(request.history) + this.delivered;
     if (!content.includes("inspect_application"))
       return toolReply("inspect_application", {});
-    if (!content.includes("read_source"))
+    if (!content.includes("active-source"))
       return {
         ...toolReply("read_source", { ref: "active-source" }),
         calls: [
@@ -97,7 +100,7 @@ export class PlanningDriver implements Driver {
             ]
           : [],
       );
-    return toolReply("propose_plan", {
+    const args: Record<string, unknown> = {
       requirements: this.sources
         .slice(-1)
         .map((s) => ({
@@ -155,7 +158,28 @@ export class PlanningDriver implements Driver {
       dependencies: [],
       unresolved: [],
       evidence,
-      ...this.finish,
-    });
+    };
+    for (const key of ["evidence", "acceptance", "steps", "rollback", "preview", "application", "restartImpact"]) delete args[key];
+    if (Array.isArray(this.finish.unresolved) && this.finish.unresolved.length) return toolReply("report_blocker", {reason: this.finish.unresolved.join("；")});
+    return toolReply("propose_plan", referenceFixture({...args, ...this.finish}, this.sources));
   }
+}
+
+/** Test-only migration of archived full-reference fixtures to the host-bound wire contract. */
+export function referenceFixture(draft: Record<string, unknown>, sources: {id: string; text: string}[]) {
+  const copy = structuredClone(draft);
+  if (Array.isArray(copy.unresolved) && !copy.unresolved.length) delete copy.unresolved;
+  if (Array.isArray(copy.requirements)) copy.requirements = copy.requirements.map((r: Record<string, unknown>) => {
+    const {sourceRevision, ...rest} = r;
+    return {...rest, source: sourceRevision === undefined ? r.source : sources.findIndex(s => s.id === sourceRevision) + 1,
+      checks: (r.checks as {checker: string; caseId: string; kind?: string; index?: number}[]).map(c => {
+        if (c.kind !== undefined && c.checker === undefined && c.caseId === undefined) return c;
+        if (c.checker === "workflow/1" || c.checker === "host-member-enabled/1") return {kind: c.checker === "workflow/1" ? "workflow" : "enabled", index: Number(c.caseId.split(":").at(-1))};
+        if (c.checker === "browser/1") return {kind: "browser", index: (copy.browserCases as {id: string}[] ?? []).findIndex(b => b.id === c.caseId) + 1};
+        if (c.checker === "workspace/1") return {kind: "member", index: (copy.memberCases as {member: string; name: string}[] ?? []).findIndex(b => `member:${b.member}:${b.name}` === c.caseId) + 1};
+        return {kind: "invalid", index: 0};
+      })};
+  });
+  if (Array.isArray(copy.browserCases)) copy.browserCases = copy.browserCases.map((c: Record<string, unknown>) => ({...c, steps: (c.steps as Record<string, unknown>[]).map(({member: _member, contribution: _contribution, ...s}) => s.kind === "task" ? {kind: "task"} : s)}));
+  return copy;
 }

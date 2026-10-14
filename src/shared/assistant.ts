@@ -1,6 +1,8 @@
 // The host owns routing, plan identity and execution state. The UI never infers
 // plugin intent from keywords or advances execution using elapsed time.
 // Historical plans are retained as records, not executable routing commands.
+import type { ChangeSpec, ReviewLedger } from './change-spec.js';
+
 export type AssistantRoute =
   | { kind: "application" }
   | { kind: "task" }
@@ -72,6 +74,7 @@ export type RepairEvidence = {
   diagnostic: string;
 };
 export type InvestigatedPlan = AssistantPlan & {
+  changeSpec?: ChangeSpec;
   /** Optional only for reading historical plans; all new starts require a frozen receipt. */
   requirements?: Requirement[];
   requirementCoverage?: RequirementGate["coverage"];
@@ -154,7 +157,11 @@ export type RequirementReview = {
     sourceRevision: string;
     sourceQuote: string;
     detail: string;
+    target?: { subject: string; aspect: 'availability' | 'input' | 'visibility' | 'persistence' | 'compatibility' | 'meaning' | 'coverage' };
+    stance?: 'required' | 'forbidden' | 'undetermined';
+    clarification?: string;
   }[];
+  resolutions?: { issueId: string; sourceRevision: string; sourceQuote: string; reason: string }[];
 };
 export type RequirementGate = {
   gateVersion: string;
@@ -162,10 +169,12 @@ export type RequirementGate = {
   requestHash: string;
   definitionHash: string;
   review: RequirementReview;
+  reviewLedger?: ReviewLedger;
   coverage: { requirementId: string; reasons: string[] }[];
   seal: string;
 };
 type Run = {
+  reviewLedger?: ReviewLedger;
   staleReason?: string;
   historicalPlan?: AssistantPlan;
   diagnostics?: string[];
@@ -329,6 +338,7 @@ export type ExperienceSessionView = {
   invalidReason?: string;
 };
 export type CandidateAttempt = {
+  delta?: {baseVersion: string; baseHash: string; requirementSeal: string; parentCandidateId?: string; files: {key: string; before: string | null; after: string | null}[]; members: {key: string; before: string | null; after: string | null}[]};
   requirementSeal?: string;
   browser?: import("./browser-cases.js").BrowserEvidence;
   id: string;

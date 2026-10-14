@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution, DeltaFixture } from "../app/evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { ExperienceSessionHost } from "../../src/server/experience-session.js";
 import { createApp } from "../../src/server/app.js";
@@ -144,7 +144,7 @@ function dueDriver(source: string, expiryCaseAt?: string): Driver {
       return result;
     },
   };
-  return driver;
+  return new DeltaFixture(driver);
 }
 
 test("模型桩浏览器生成、体验并独立应用到期自动过期", async ({ page }) => {

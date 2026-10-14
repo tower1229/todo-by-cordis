@@ -1,0 +1,71 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { planningTools } from "../../src/server/planning.js";
+import { parseBrowserCases } from "../../src/server/requirement-coverage.js";
+import type { BrowserStep } from "../../src/shared/browser-cases.js";
+
+test("规划工具逐类声明浏览器必填字段，与真实解析器一致", () => {
+  const tool = planningTools.find((tool) => tool.name === "propose_plan")!;
+  const parameters = tool.parameters as {
+    properties: {
+      browserCases: {
+        items: {
+          properties: {
+            steps: {
+              items: {
+                anyOf: {
+                  properties: { kind: { enum: string[] } };
+                  required: string[];
+                }[];
+              };
+            };
+          };
+        };
+      };
+    };
+  };
+  const variants =
+    parameters.properties.browserCases.items.properties.steps.items.anyOf;
+  const steps: BrowserStep[] = [
+    { kind: "open" },
+    { kind: "refresh" },
+    { kind: "restart" },
+    { kind: "edit" },
+    { kind: "action", member: "panel", action: "save" },
+    {
+      kind: "field",
+      member: "panel",
+      contribution: "detail",
+      field: "note",
+      value: "",
+    },
+    {
+      kind: "action-visible",
+      member: "panel",
+      contribution: "detail",
+      action: "save",
+      visible: false,
+    },
+    { kind: "error", text: "" },
+    { kind: "task" },
+  ];
+  assert.equal(variants.length, steps.length);
+  for (const step of steps) {
+    const schema = variants.find((variant) =>
+      variant.properties.kind.enum.includes(step.kind),
+    )!;
+    assert.deepEqual([...schema.required].sort(), Object.keys(step).filter(key => !["member", "contribution"].includes(key)).sort());
+    assert.doesNotThrow(() =>
+      parseBrowserCases([{ id: "valid", task: "new", steps: [step] }]),
+    );
+    for (const key of schema.required) {
+      const incomplete: Record<string, unknown> = { ...step };
+      delete incomplete[key];
+      assert.throws(() =>
+        parseBrowserCases([
+          { id: "invalid", task: "new", steps: [incomplete] },
+        ]),
+      );
+    }
+  }
+});

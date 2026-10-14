@@ -158,7 +158,7 @@ test("真实浏览器绑定不依赖 stub 的成员、动作和字段名称", as
                 (r) => r.id === requirement.id,
               )!;
               requirement.sourceQuote = prior.sourceQuote;
-              requirement.sourceRevision = prior.sourceRevision;
+              // Source identity is host-bound from the structured source index.
             }
           }
           return renamed;

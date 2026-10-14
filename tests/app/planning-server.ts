@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Workspace } from "../../src/server/workspace.js";
 import { createApp } from "../../src/server/app.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { PlanningDriver, toolReply } from "./planning-fixture.js";
 import { candidateSource, candidateScope } from "./evolution-fixture.js";
@@ -76,7 +76,7 @@ const evolution = new Evolution(
             }
           : {};
       }
-      if (clarify && request.history.length)
+      if (clarify)
         return toolReply("request_clarification", {
           question: "复盘是必填还是选填？",
         });

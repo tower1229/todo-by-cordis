@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Workspace } from "../../src/server/workspace.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { createApp } from "../../src/server/app.js";
 import { PlanningDriver, toolReply } from "./planning-fixture.js";
@@ -96,7 +96,7 @@ for (const tool of ["read_current_source", "read_contract"] as const) {
       const done = await settle(e);
       assert.equal(
         done.status,
-        repeated ? "failed" : "awaiting-apply",
+        repeated ? "blocked" : "awaiting-apply",
         "message" in done ? done.message : done.status,
       );
       const rejected = results.find((result) => result.error);
@@ -719,7 +719,7 @@ test("generation tool requires the frozen bundle format instead of advertising l
         const members = schema.properties.members as { items: { properties: { source: { description?: string } } } };
         assert.match(members.items.properties.source.description ?? "", /self-contained/);
         assert.match(members.items.properties.source.description ?? "", /including type imports/);
-        assert.match(request.instruction, /Only the workflow files/);
+        for (const key of ["baseVersion", "baseHash", "requirementSeal", "parentCandidateId"]) assert.equal(key in schema.properties, false);
         checked = true;
       }
       const response = await fixture.generate(request, signal);

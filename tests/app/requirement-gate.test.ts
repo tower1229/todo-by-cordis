@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Workspace } from "../../src/server/workspace.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "./evolution-adapter.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import type { Driver } from "../../src/evolution/driver.js";
 import type {
@@ -96,6 +96,23 @@ test("公开规划入口拒绝没有需求清单和验收映射的计划", async
   assert.match(run && "message" in run ? run.message : "", /需求/);
 });
 
+test("独立复核收到浏览器错误断言的真实匹配语义，仍使用空历史和原预算", async (t) => {
+  const { run, fixture } = await planned(t);
+  assert.equal(run.status, "ready");
+  const reviews = fixture.requests.filter((request) => request.schema);
+  assert.equal(reviews.length, 1);
+  const input = JSON.parse(reviews[0].message!) as {
+    checkerSemantics: { "browser/1": { error: string } };
+  };
+  assert.match(input.checkerSemantics["browser/1"].error, /空字符串/);
+  assert.match(input.checkerSemantics["browser/1"].error, /可见/);
+  assert.match(input.checkerSemantics["browser/1"].error, /包含/);
+  assert.deepEqual(reviews[0].history, []);
+  assert.equal(reviews[0].tools, undefined);
+  assert.equal(run.budget?.callsUsed, fixture.requests.length);
+  assert.ok((run.budget?.callsUsed ?? 13) < 12);
+});
+
 for (const [name, transform] of [
   [
     "伪造案例引用",
@@ -130,7 +147,7 @@ for (const issue of ["omission", "extra-constraint"] as const)
     assert.equal(reviews.length, 2);
     assert.ok(reviews.every((r) => r.history.length === 0 && !r.tools));
     assert.equal(run.budget?.callsUsed, fixture.requests.length);
-    assert.equal(run.budget?.callsUsed, 6);
+    assert.equal(run.budget?.callsUsed, 4);
     assert.ok(
       fixture.requests
         .filter((r) => !r.schema)

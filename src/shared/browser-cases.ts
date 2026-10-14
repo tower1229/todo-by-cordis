@@ -11,19 +11,19 @@ export type BrowserStep =
   | {
       kind: "field";
       member: string;
-      contribution: string;
+      contribution?: string;
       field: string;
       value: string;
     }
   | {
       kind: "action-visible";
       member: string;
-      contribution: string;
+      contribution?: string;
       action: string;
       visible: boolean;
     }
   | { kind: "error"; text: string }
-  | { kind: "task"; title: string; description: string };
+  | { kind: "task"; title?: string; description?: string };
 export type BrowserCase = {
   id: string;
   task: "existing" | "new";

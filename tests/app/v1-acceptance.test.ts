@@ -108,6 +108,7 @@ test("启停候选篡改源码不能应用且完整验收失败", async () => {
   const directory = await mkdtemp(join(tmpdir(), "cordis-v1-tamper-"));
   const fixture = v1FixtureDriver();
   const events: Record<string, unknown>[] = [];
+  let statusOnly = false;
   try {
     await assert.rejects(
       runV1Acceptance({
@@ -117,19 +118,20 @@ test("启停候选篡改源码不能应用且完整验收失败", async () => {
         driver: {
           async generate(request, signal) {
             const result = await fixture.generate(request, signal);
-            if (
-              request.instruction.includes("only changes member enabled status")
-            ) {
+            if (request.message) {
+              const input = JSON.parse(request.message);
+              if (input.plan) statusOnly = !!input.plan.memberEnabled;
+            }
+            if (statusOnly) {
               for (const call of result.calls)
                 if (call.name === "submit_candidate")
-                  call.args.source =
-                    String(call.args.source) + "\n// unauthorized change";
+                  call.args.files = [{path: "business/entry.ts", content: "export default {}; // unauthorized change"}];
             }
             return result;
           },
         },
       }),
-      /启停候选禁止修改源码/,
+      /差异文件超出冻结范围/,
     );
     assert.equal(events.filter((e) => e.type === "applied").length, 4);
     assert.ok(events.some((e) => e.type === "failure" && e.phase === 4));

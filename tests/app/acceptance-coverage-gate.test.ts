@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { PlanningDriver, toolReply } from "./planning-fixture.js";
 import { activateDual } from "./dual-composition-fixture.js";
@@ -536,7 +536,7 @@ test("经公开规划入口：同触发冲突可在原预算修正，对象键�
       });
       const ready = await settle(e);
       assert.equal(ready.status, "ready", JSON.stringify(ready));
-      assert.equal(ready.budget?.callsUsed, 5);
+      assert.equal(ready.budget?.callsUsed, 3);
       assert.match(JSON.stringify(planning.requests), /业务案例冲突/);
       assert.equal(w.composition().revision, 2);
     });

@@ -17,7 +17,7 @@ import {
 } from "../../src/web/experience-api.js";
 import { experienceSessionBanner } from "../../src/shared/assistant.js";
 import { AppError } from "../../src/shared/contracts.js";
-import type { Evolution } from "../../src/evolution/evolution.js";
+import type { Evolution } from "./evolution-adapter.js";
 
 async function settle(e: Evolution) {
   const deadline = Date.now() + 60_000;

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Workspace } from "../../src/server/workspace.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { createApp } from "../../src/server/app.js";
 import type { Driver } from "../../src/evolution/driver.js";
@@ -18,6 +18,93 @@ import {
 import { capabilityGuides } from "../../src/server/capability-guides.js";
 import { hash } from "../../src/release/storage.js";
 import { createControllableClock } from "../../src/server/host/clock.js";
+import type {
+  InvestigatedPlan,
+  WorkflowRule,
+} from "../../src/shared/assistant.js";
+
+for (const rules of [
+  [],
+  [
+    {
+      key: "reflection",
+      label: "复盘",
+      required: true,
+      minLength: 2,
+      maxLength: 20,
+    },
+    {
+      key: "summary",
+      label: "总结",
+      required: false,
+      minLength: 0,
+      maxLength: 30,
+    },
+  ],
+] satisfies WorkflowRule[][]) {
+  test(`完成验收说明仅描述实际检查的字段：${rules.length ? "已配置完成字段" : "无完成字段"}`, async (t) => {
+    const dir = mkdtempSync(join(tmpdir(), "cordis-verification-description-"));
+    const w = await Workspace.open(join(dir, "workspace.db"));
+    t.after(async () => {
+      await w.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const result = readInvestigation(
+      "describe_verification",
+      { rules },
+      capture(w),
+    );
+    assert.ok("content" in result);
+    const definition = result.content as {
+      rules: WorkflowRule[];
+      cases: InvestigatedPlan["cases"];
+    };
+    assert.deepEqual(definition.rules, rules);
+    assert.equal(result.hash, hash(definition));
+    // The final three cases are the unchanged completion, reopen and invalid-action probes.
+    assert.deepEqual(definition.cases.slice(-3), [
+      {
+        given: "未完成任务且已有历史字段",
+        when: rules.length
+          ? "提交冻结完成字段 reflection、summary 的有效值并带首尾空白"
+          : "提交完成动作，不提供完成字段",
+        then: rules.length
+          ? "完成任务，保存这些完成字段去除首尾空白后的值，并原样保留其他历史字段"
+          : "完成任务，原样保留全部历史字段",
+        checker: "workflow/1",
+      },
+      {
+        given: "已完成任务且已有字段",
+        when: "重新打开",
+        then: "变为未完成并保留所有字段",
+        checker: "workflow/1",
+      },
+      {
+        given: "任务状态与动作不匹配或动作未知",
+        when: "提交动作",
+        then: "拒绝执行",
+        checker: "workflow/1",
+      },
+    ]);
+    if (!rules.length)
+      assert.doesNotMatch(
+        JSON.stringify(definition.cases),
+        /首尾空白|去除|输入该字段/,
+      );
+    else
+      assert.deepEqual(
+        definition.cases.slice(0, -3).map((c) => c.when),
+        [
+          "reflection 缺失、空字符串或空白，其他字段有效",
+          "reflection 输入 1 个字，其他字段有效",
+          "reflection 输入 21 个字，其他字段有效",
+          "reflection 输入 20 个 Unicode 码点，其他字段有效",
+          "summary 输入 31 个字，其他字段有效",
+          "summary 输入 30 个 Unicode 码点，其他字段有效",
+        ],
+      );
+  });
+}
 
 test("investigation separates online scheduler health, registration, use and checker coverage", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "cordis-capability-catalog-"));
@@ -392,7 +479,7 @@ for (const [label, finish, message] of [
         {
           capability: "workflow",
           provider: "active-source",
-          consumers: ["src/server/workspace.ts"],
+          consumers: ["src/server/catalog.ts"],
           change: "增加业务接口",
         },
       ],
@@ -445,7 +532,7 @@ test("clarification and revision keep one run, retained plans and remaining budg
     async generate(request) {
       if (
         clarify &&
-        JSON.stringify(request.history).includes("inspect_application")
+        (JSON.stringify(request.history) + (request.message ?? "")).includes("inspect_application")
       )
         return reply("request_clarification", {
           question: "复盘是必填还是选填？",
@@ -493,7 +580,7 @@ test("clarification and revision keep one run, retained plans and remaining budg
   assert.equal(ready.status, "ready");
   assert.equal(ready.id, first.id);
   assert.equal(ready.requestRevision, 2);
-  assert.equal(ready.budget.callsUsed, 6);
+  assert.equal(ready.budget.callsUsed, 3);
   const calls = fixture.requests.length;
   const exact = await (
     await app.request(`/api/assistant?runId=${first.id}`)
@@ -510,7 +597,7 @@ test("clarification and revision keep one run, retained plans and remaining budg
   assert.equal(revised.status, "ready");
   assert.equal(revised.plans.length, 2);
   assert.equal(revised.revisions.length, 3);
-  assert.equal(revised.budget.callsUsed, 10);
+  assert.equal(revised.budget.callsUsed, 5);
   const rejected = await app.request("/api/assistant/commands", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -561,8 +648,8 @@ test("bounded planning, cancellation and model errors never publish or silently 
     i++
   )
     await new Promise((r) => setTimeout(r, 10));
-  assert.equal((await e.observe()).run?.status, "failed");
-  assert.equal((await e.observe()).run?.budget?.callsUsed, 2);
+  assert.equal((await e.observe()).run?.status, "blocked");
+  assert.equal((await e.observe()).run?.budget?.callsUsed, 0);
   await e.close();
   let entered!: () => void;
   const entering = new Promise<void>((r) => {
@@ -662,18 +749,15 @@ for (const name of ["active-contract", "active-acceptance"])
     const dir = mkdtempSync(join(tmpdir(), "cordis-plan-"));
     const w = await Workspace.open(join(dir, "workspace.db"));
     const fixture = new PlanningDriver();
-    const driver: Driver = {
-      async generate(request) {
-        const result = await fixture.generate(request);
-        const call = result.calls[0];
-        if (call?.name === "propose_plan")
-          call.args.evidence = (call.args.evidence as { ref: string }[]).filter(
-            (e) => e.ref !== name,
-          );
-        return result;
-      },
+    const domain = new EvolutionDomain(w);
+    const read = domain.read.bind(domain);
+    domain.read = (...args) => {
+      const result = read(...args);
+      if (args[0] === "inspect_application" && "documents" in result)
+        result.documents = result.documents?.filter(d => d.ref !== name);
+      return result;
     };
-    const e = new Evolution(w.db, driver, new EvolutionDomain(w));
+    const e = new Evolution(w.db, fixture, domain);
     t.after(async () => {
       await e.close();
       await w.close();
@@ -864,9 +948,7 @@ test("rejected proposal returns diagnostics so the same bounded investigation ca
       const result = await fixture.generate(request);
       const call = result.calls[0];
       if (call?.name === "propose_plan" && proposed++ === 0) {
-        call.args.evidence = (call.args.evidence as { ref: string }[]).filter(
-          (e) => e.ref === "active-source",
-        );
+        call.args.evidence = [{ref: "active-source", hash: "untrusted-model-attestation"}];
         call.args.writableScope = [
           "active-source",
           "active-contract",
@@ -895,11 +977,11 @@ test("rejected proposal returns diagnostics so the same bounded investigation ca
     await new Promise((r) => setTimeout(r, 10));
   const run = (await e.observe()).run!;
   assert.equal(run.status, "ready");
-  assert.equal(run.budget?.callsUsed, 5);
-  assert.equal(run.plans?.length, 2);
+  assert.equal(run.budget?.callsUsed, 3);
+  assert.equal(run.plans?.length, 1);
   assert.equal(w.composition().revision, 1);
   assert.equal(w.release.all().length, 2);
-  assert.ok(JSON.stringify(fixture.requests).includes("缺少调查证据"));
+  assert.ok(JSON.stringify(fixture.requests).includes("宿主派生字段"));
 });
 
 test("mixed conclusion tools are retried internally instead of failing the run", async (t) => {
@@ -1063,7 +1145,7 @@ test("malformed plan lists return bounded diagnostics without losing the investi
         await new Promise((resolve) => setTimeout(resolve, 10));
       const run = (await e.observe()).run!;
       assert.equal(run.status, repeated ? "blocked" : "ready");
-      assert.equal(run.budget?.callsUsed, repeated ? 4 : 5);
+      assert.equal(run.budget?.callsUsed, repeated ? 2 : 3);
       assert.ok(JSON.stringify(fixture.requests).includes("计划列表不能为空"));
       assert.equal(w.composition().revision, 1);
     });
@@ -1123,11 +1205,11 @@ test("invalid plan step dependencies return bounded diagnostics before ready", a
           repeated ? "blocked" : "ready",
           JSON.stringify(run),
         );
-        assert.equal(run.budget?.callsUsed, repeated ? 4 : 5);
-        assert.equal(run.plans?.length, 2);
-        assert.equal(run.plans?.[0].steps[0].dependsOn[0], "active-source");
+        assert.equal(run.budget?.callsUsed, repeated ? 2 : 3);
+        assert.equal(run.plans?.length, repeated ? 0 : 1);
+        if (!repeated) assert.deepEqual(run.plans?.[0].steps.map(step => step.id), ["build", "verify", "experience"]);
         assert.ok(
-          JSON.stringify(planning.requests).includes("计划步骤依赖无效"),
+          JSON.stringify(planning.requests).includes("宿主派生字段"),
         );
         assert.equal(w.composition().revision, 1);
       },
@@ -1202,7 +1284,7 @@ test("misplaced supported action cases can be corrected with consumer investigat
             );
             if (proposal && (++proposals === 1 || mode !== "correct")) {
               proposal.args.acceptance = [
-                ...(proposal.args.acceptance as unknown[]),
+                ...((proposal.args.acceptance ?? []) as unknown[]),
                 {
                   given: "open, count=7",
                   when: "increment",
@@ -1244,16 +1326,16 @@ test("misplaced supported action cases can be corrected with consumer investigat
       );
       assert.equal(
         run.budget?.callsUsed,
-        mode === "correct" ? 6 : mode === "repeat" ? 4 : 3,
+        mode === "correct" ? 4 : 2,
       );
-      assert.equal(run.plans?.length, mode === "unknown" ? 1 : 2);
+      assert.equal(run.plans?.length, mode === "correct" ? 1 : 0);
       if (mode === "correct") {
         assert.equal(run.status, "ready");
         if (run.status !== "ready") throw new Error("expected ready");
         assert.ok(run.evidence.some((e) => e.ref === "src/web/TaskEditor.tsx"));
         assert.equal(run.plan.extensions?.cases.length, 2);
         const history = JSON.stringify(planning.requests);
-        assert.match(history, /extensions.cases/);
+        assert.match(history, /宿主派生字段/);
         assert.match(history, /src\/web\/TaskEditor.tsx/);
       }
       assert.equal(snapshot.candidates.length, 0);
@@ -1374,11 +1456,7 @@ test("inspection supplies exact baseline documents within the existing budget an
             assert.ok(
               !inspection.documents.some((doc) => doc.ref === unread.ref),
             );
-            const evidence = response.calls[0].args.evidence as {
-              ref: string;
-              hash: string;
-            }[];
-            evidence.push(unread);
+            response.calls[0].args.evidence = [unread];
           }
           return { ...response, history: request.history };
         },
@@ -1511,7 +1589,7 @@ test("first business bundle requires its four paths before ready and can correct
       );
       assert.deepEqual(w.composition(), before);
       if (ready.status !== "ready") return;
-      assert.equal(ready.budget?.callsUsed, 5);
+      assert.equal(ready.budget?.callsUsed, 3);
       await e.command({
         type: "start",
         operationId: "start-first-bundle",
@@ -1526,7 +1604,7 @@ test("first business bundle requires its four paths before ready and can correct
         await new Promise((resolve) => setTimeout(resolve, 10));
       const done = (await e.observe()).run!;
       assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
-      assert.equal(done.budget?.callsUsed, 8);
+      assert.equal(done.budget?.callsUsed, 6);
       assert.deepEqual(w.composition(), before);
     });
 });
@@ -1623,7 +1701,7 @@ for (const invalid of [{}, { rules: "invalid" }, { rules: [], extra: true }]) {
         const result = await fixture.generate(request);
         if (
           !injected &&
-          result.calls.some((c) => c.name === "describe_verification")
+          !request.schema
         ) {
           injected = true;
           return {
@@ -1658,7 +1736,7 @@ for (const invalid of [{}, { rules: "invalid" }, { rules: [], extra: true }]) {
     const run = (await e.observe()).run!;
     assert.equal(run.status, "ready");
     assert.ok(sawDiagnostic);
-    assert.equal(run.budget?.callsUsed, 5);
+    assert.equal(run.budget?.callsUsed, 3);
     assert.equal(w.composition().revision, 1);
   });
 }
@@ -1670,9 +1748,7 @@ test("repeated invalid verification arguments exhaust original budget without ev
   const driver: Driver = {
     async generate(request) {
       const result = await fixture.generate(request);
-      return JSON.stringify(request.history).includes("inspect_application")
-        ? { ...result, calls: [{ name: "describe_verification", args: {} }] }
-        : result;
+      return { ...result, calls: [{ name: "describe_verification", args: {} }] };
     },
   };
   const e = new Evolution(w.db, driver, new EvolutionDomain(w));
@@ -1693,8 +1769,8 @@ test("repeated invalid verification arguments exhaust original budget without ev
   )
     await new Promise((r) => setTimeout(r, 10));
   const run = (await e.observe()).run!;
-  assert.equal(run.status, "failed");
-  assert.equal(run.budget?.callsUsed, 12);
+  assert.equal(run.status, "blocked");
+  assert.equal(run.budget?.callsUsed, 8);
   assert.equal(
     run.evidence?.some((x) => x.ref === "verification-definition"),
     false,
