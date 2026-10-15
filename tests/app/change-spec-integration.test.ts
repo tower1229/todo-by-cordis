@@ -194,8 +194,8 @@ test("合成任务属性不得手填：冻结前退回同一规划循环，宿�
       const reply = await fixture.generate(request, signal);
       if (!corrupted && reply.calls[0]?.name === "propose_plan") {
         corrupted = true;
-        const cases = reply.calls[0].args.browserCases as {steps: Record<string, unknown>[]}[];
-        cases[0].steps[0] = {kind: "task", title: "模型猜测的名称", description: ""};
+        const requirements=reply.calls[0].args.requirements as {obligations:{kind:string;expected?:Record<string,unknown>}[]}[];
+        requirements[0].obligations.find(o=>o.kind==="assertion")!.expected = {kind: "task", title: "模型猜测的名称", description: ""};
       }
       return reply;
     },
@@ -426,7 +426,7 @@ test("独立复核可直接提出业务澄清；同一运行回答后复核必�
           const input = JSON.parse(request.message!);
           reply.text = JSON.stringify({
             reviewedIds: input.requirements.map((r: { id: string }) => r.id),
-            fieldDecisions: [],
+            fieldDecisions: JSON.parse(reply.text).fieldDecisions,
             issues: [
               {
                 kind: "unverifiable",
@@ -639,8 +639,9 @@ const plugin: Plugin = {
   );
   assert.equal(
     passed.browser?.results.filter((r) => r.requirementIds.length).length,
-    12,
+    ready.plan.browserCases!.length*2,
   );
+  for(const c of ready.plan.browserCases!)assert.equal(passed.browser?.results.filter(r=>r.caseId===c.id).length,2,"每项冻结案例必须在两个视口实际执行");
   assert.ok(passed.browser?.results.every((r) => r.status === "passed"));
   assert.deepEqual({ composition: w.composition(), tasks: w.query() }, before);
   const row = w.db

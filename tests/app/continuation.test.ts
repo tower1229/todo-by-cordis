@@ -16,13 +16,16 @@ import {
 import { ExecutionDriver } from "./execution-fixture.js";
 
 async function settled(e: Evolution) {
-  for (let i = 0; i < 1000; i++) {
+  const deadline = Date.now() + 60000;
+  while (Date.now() < deadline) {
     const s = await e.observe();
     if (s.run && !["planning", "executing", "applying"].includes(s.run.status))
       return s;
     await new Promise((r) => setTimeout(r, 20));
   }
-  throw new Error("run did not settle");
+  throw new Error(
+    `run did not settle: ${JSON.stringify((await e.observe()).run)}`,
+  );
 }
 async function setup(
   t: test.TestContext,
@@ -180,6 +183,21 @@ test("A14: changed business rules require a separate exact confirmation and reta
   if (pending.status !== "awaiting-acceptance") return;
   assert.match(pending.plan.acceptanceChanges![0].before, /1/);
   assert.match(pending.plan.acceptanceChanges![0].after, /3/);
+  const generated = ready.plan.browserCases!.find((c) =>
+    c.id.includes("after-"),
+  )!;
+  assert.ok(generated);
+  const refreshed = pending.plan.browserCases!.find(
+    (c) => c.id === generated.id,
+  )!;
+  assert.ok(refreshed, "宿主派生样本修订必须保留案例身份");
+  assert.notDeepEqual(refreshed.steps, generated.steps);
+  assert.ok(
+    pending.plan.acceptanceChanges!.some(
+      (c) => c.rule === `浏览器案例 ${generated.id}`,
+    ),
+    "派生样本变化仍须通过原验收修订确认",
+  );
   assert.equal(
     (
       await command({

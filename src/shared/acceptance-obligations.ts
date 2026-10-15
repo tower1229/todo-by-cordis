@@ -1,5 +1,6 @@
 import type { BrowserCase, BrowserStep } from "./browser-cases.js";
 import { modelBrowserCasesSchema } from "./browser-contract.js";
+import { workflowBrowserCases } from "./workflow-browser.js";
 
 export type FieldExpectation =
   | { kind: "visible"; value: string }
@@ -13,6 +14,16 @@ export type BaselinePreparation = {
 type Identity = { version: 1; id: string };
 export type AcceptanceObligation = Identity &
   (
+    | {kind:"workflow-input";rules:import("./assistant.js").WorkflowRule[]}
+    | {
+        kind: "ui-identity";
+        contributions: {
+          member: string;
+          contribution: string;
+          fields: string[];
+          actions: string[];
+        }[];
+      }
     | {
         kind: "backend";
         scope: "checker-suite";
@@ -32,6 +43,7 @@ export type AcceptanceObligation = Identity &
         field: string;
         initial: FieldExpectation;
         initialOrigin: "host" | "requirement";
+        derivation?: { checker: "workflow/1" | "workspace/1" };
         history?: BaselinePreparation;
         scenarios: { id: string; steps: BrowserStep[]; value: string }[];
       }
@@ -51,17 +63,6 @@ const object = (
   required = Object.keys(properties),
 ) => ({ type: "object", additionalProperties: false, properties, required });
 const steps = modelBrowserCasesSchema.items.properties.steps;
-export const historySchema = object({
-  actions: {
-    type: "array",
-    minItems: 1,
-    maxItems: 8,
-    items: object({
-      action: text,
-      input: { type: "object", additionalProperties: text },
-    }),
-  },
-});
 export const obligationsSchema = {
   type: "array",
   minItems: 1,
@@ -69,6 +70,11 @@ export const obligationsSchema = {
   items: {
     anyOf: [
       object({ kind: { type: "string", enum: ["backend"] } }),
+      {
+        ...object({ kind: { type: "string", enum: ["preserve-ui"] } }),
+        description:
+          "保留基础界面贡献、字段与动作ID；身份快照和浏览器映射均由宿主生成，不声明按钮在特定状态可见。",
+      },
       object(
         {
           kind: { type: "string", enum: ["field"] },
@@ -85,7 +91,6 @@ export const obligationsSchema = {
               object({ kind: { type: "string", enum: ["absent"] } }),
             ],
           },
-          history: historySchema,
           scenarios: {
             type: "array",
             minItems: 1,
@@ -109,18 +114,18 @@ export const obligationsSchema = {
       object({
         kind: { type: "string", enum: ["history"] },
         field: text,
-        history: historySchema,
       }),
     ],
   },
   description:
-    "可执行验收义务。backend 绑定宿主完整检查器，案例关联不增加动作限制。field.initial 必须选择 baseline（沿用宿主当前展示，属于系统保护，不添加业务期望）、visible/value 或 absent（用户明确要求的初始呈现）；scenarios 描述操作后业务值。宿主复用相同字段检查并强制新旧任务、刷新和重启。独立 history 义务只验证历史值：通过原基础版本冻结成功动作准备，不把历史值当成新任务初始值。assertion 仅验动作可见性、错误和任务属性。",
+    "可执行验收义务。backend 绑定宿主完整检查器，案例关联不增加动作限制。field.initial 必须选择 baseline（沿用宿主当前展示，属于系统保护，不添加业务期望）、visible/value 或 absent（用户明确要求的初始呈现）；scenarios 描述操作后业务值。宿主复用相同字段检查并强制新旧任务、刷新和重启。history 只声明待保留的字段，由宿主判定生命周期：新字段绑定动作后矩阵；已有字段的准备动作、旧值、来源摘要和基础版本从冻结成功案例推导，无法唯一推导则阻塞。preserve-ui 保留基础界面贡献、字段及动作 ID，宿主生成精确快照，不增加动作可见性要求。历史值不作为新任务初始值。assertion 仅验动作可见性、错误和任务属性。",
 };
 
 export function obligationCases(
   obligation: AcceptanceObligation,
 ): BrowserCase[] {
   if (obligation.kind === "backend") return [];
+  if (obligation.kind === "workflow-input") return workflowBrowserCases(obligation.id,obligation.rules);
   const cases: BrowserCase[] = [];
   const add = (
     key: string,
@@ -144,6 +149,18 @@ export function obligationCases(
     { kind: "restart" },
     assertion,
   ];
+  if (obligation.kind === "ui-identity") {
+    for (const task of ["existing", "new"] as const)
+      add(
+        task,
+        task,
+        persist({
+          kind: "ui-identity",
+          contributions: obligation.contributions,
+        }),
+      );
+    return cases;
+  }
   if (obligation.kind === "assertion") {
     for (const task of ["existing", "new"] as const)
       add(task, task, [...obligation.steps, obligation.expected]);

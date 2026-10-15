@@ -92,7 +92,7 @@ export const STABILITY_EVAL_MANIFEST: StabilityEvalManifest = {
   sourceCommit: BASELINE_PRODUCT_COMMIT,
   model: {
     stubKind: "model-stub",
-    realModelId: "gemini-3.1-pro-preview",
+    realModelId: "deepseek-flash",
     realModelAuthorizationFlag: "--authorize-real-model",
   },
   budget: {

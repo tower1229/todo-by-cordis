@@ -13,8 +13,15 @@ import type { BrowserCase } from "../shared/browser-cases.js";
 import { browserSteps } from "../shared/browser-contract.js";
 import { specificationFailure } from "../evolution/specification.js";
 import { obligationFailure } from "../evolution/acceptance-obligations.js";
-import { businessChoices, technicalFacts } from "../evolution/technical-facts.js";
-import { fieldReviewSchema, parseFieldDecisions } from "../evolution/field-review.js";
+import { fieldCaseObligation } from "../evolution/historical-preparation.js";
+import {
+  businessChoices,
+  technicalFacts,
+} from "../evolution/technical-facts.js";
+import {
+  fieldReviewSchema,
+  parseFieldDecisions,
+} from "../evolution/field-review.js";
 
 export function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -69,22 +76,67 @@ export function parseBrowserCases(value: unknown): BrowserCase[] {
     if (
       Object.keys(c).some(
         (key) =>
-          !["id", "task", "steps", "prepare", "obligationId", "classification"].includes(key),
+          ![
+            "id",
+            "task",
+            "steps",
+            "prepare",
+            "obligationId",
+            "classification",
+          ].includes(key),
       ) ||
       !["existing", "new"].includes(String(c.task)) ||
-      (c.classification !== undefined && !["frozen-business", "system-protection"].includes(String(c.classification)))
+      (c.classification !== undefined &&
+        !["frozen-business", "system-protection"].includes(
+          String(c.classification),
+        ))
     )
       throw new Error("browser/1 案例结构无效");
     const steps = array(c.steps, 40).map((item) => {
       const s = record(item);
       const kind = boundedText(s.kind);
-      const definition = browserSteps.find(d => d.properties.kind.enum[0] === kind);
-      const fields = definition ? Object.keys(definition.properties).filter(k => k !== 'kind') : [];
+      if (kind === "form-invalid") {
+        if (Object.keys(s).some(k=>!["kind","member","action","field","input"].includes(k)) || s.member!=="workflow" || s.action!=="complete" || !/^[\w.-]{1,100}$/.test(String(s.field)))
+          throw new Error("宿主原生表单断言结构无效");
+        const input=record(s.input);
+        if (input[String(s.field)]!=="" || Object.entries(input).some(([key,value])=>!/^[\w.-]{1,100}$/.test(key)||typeof value!=="string"||value.length>10000))
+          throw new Error("宿主原生表单断言输入无效");
+        return structuredClone(s) as unknown as BrowserCase["steps"][number];
+      }
+      if (kind === "ui-identity") {
+        if (Object.keys(s).some((k) => !["kind", "contributions"].includes(k)))
+          throw new Error("界面身份快照结构无效");
+        const contributions = array(s.contributions, 30);
+        if (!contributions.length) throw new Error("界面身份快照为空");
+        for (const value of contributions) {
+          const c = record(value);
+          if (
+            Object.keys(c).some(
+              (k) =>
+                !["member", "contribution", "fields", "actions"].includes(k),
+            ) ||
+            ![
+              c.member,
+              c.contribution,
+              ...array(c.fields, 100),
+              ...array(c.actions, 100),
+            ].every(
+              (id) => typeof id === "string" && /^[\w.-]{1,100}$/.test(id),
+            )
+          )
+            throw new Error("界面身份必须引用精确稳定 ID");
+        }
+        return structuredClone(s) as unknown as BrowserCase["steps"][number];
+      }
+      const definition = browserSteps.find(
+        (d) => d.properties.kind.enum[0] === kind,
+      );
+      const fields = definition
+        ? Object.keys(definition.properties).filter((k) => k !== "kind")
+        : [];
       if (
         !definition ||
-        Object.keys(s).some(
-          (key) => key !== "kind" && !fields.includes(key),
-        )
+        Object.keys(s).some((key) => key !== "kind" && !fields.includes(key))
       )
         throw new Error("browser/1 不支持脚本、选择器、网址或未知步骤");
       for (const key of fields) {
@@ -128,7 +180,8 @@ export function parseBrowserCases(value: unknown): BrowserCase[] {
         c.task !== "existing" ||
         !actions.length ||
         Object.keys(p).some(
-          (k) => !["actions", "expected", "sourceHash", "baseVersion"].includes(k),
+          (k) =>
+            !["actions", "expected", "sourceHash", "baseVersion"].includes(k),
         ) ||
         !/^[a-f0-9]{64}$/.test(String(p.sourceHash)) ||
         !/^[a-f0-9]{64}$/.test(String(p.baseVersion)) ||
@@ -158,7 +211,11 @@ export function parseBrowserCases(value: unknown): BrowserCase[] {
       ...(c.obligationId === undefined
         ? {}
         : { obligationId: boundedText(c.obligationId) }),
-      ...(c.classification === undefined ? {} : {classification: c.classification as BrowserCase["classification"]}),
+      ...(c.classification === undefined
+        ? {}
+        : {
+            classification: c.classification as BrowserCase["classification"],
+          }),
     };
   });
   if (new Set(cases.map((c) => c.id)).size !== cases.length)
@@ -228,7 +285,9 @@ export function coverage(
   const ids = (plan.requirements ?? []).map((r) => r.id);
   return (plan.requirements ?? []).map((r) => {
     const reasons: string[] = [];
-    const fieldObligations = (plan.requirements ?? []).flatMap(r => r.obligations ?? []).filter(o => o.kind === "field" || o.kind === "history");
+    const fieldObligations = (plan.requirements ?? []).flatMap(
+      (r) => r.obligations ?? [],
+    );
     reasons.push(...obligationFailure(r, plan.browserCases ?? []));
     if (ids.filter((id) => id === r.id).length !== 1)
       reasons.push("需求 ID 重复");
@@ -268,13 +327,23 @@ export function coverage(
             `可见字段 ${s.member}:${s.field} 缺少初始、动作后及持久化义务，单个字段断言不能覆盖`,
           );
         if (s.kind === "field" && !operated) {
-          const obligation = fieldObligations.find(
-            (o) =>
-              (o.kind === "field" || o.kind === "history") &&
-              o.member === s.member &&
-              o.field === s.field,
-          );
-          if (obligation?.kind === "history" && !c?.prepare) reasons.push(`字段 ${s.field} 历史状态未准备，existing 不是历史数据`);
+          const obligation = c && fieldCaseObligation(c, s, fieldObligations);
+          if (!obligation)
+            reasons.push(`字段 ${s.field} 初始状态未准备或未绑定精确验收义务`);
+          if (
+            obligation?.kind === "history" &&
+            (c?.task !== "existing" ||
+              hash(c.prepare) !== hash(obligation.history))
+          )
+            reasons.push(
+              `字段 ${s.field} 历史状态未准备，existing 不是历史数据`,
+            );
+          if (
+            obligation?.kind === "history" &&
+            (s.visible === false ||
+              s.value !== obligation.history.expected.fields[s.field])
+          )
+            reasons.push(`字段 ${s.field} 历史期望与冻结准备不一致`);
           if (obligation?.kind === "field") {
             const expected = c?.prepare
               ? { kind: "visible", value: c.prepare.expected.fields[s.field] }
@@ -296,7 +365,13 @@ export function coverage(
             !plan.browserCases
               ?.find((c) => c.id === ref.caseId)
               ?.steps.some((s) =>
-                ["field", "action-visible", "error", "task"].includes(s.kind),
+                [
+                  "field",
+                  "action-visible",
+                  "error",
+                  "task",
+                  "ui-identity",
+                ].includes(s.kind),
               ),
         ))
     )
@@ -311,17 +386,34 @@ export const reviewSchema = {
   additionalProperties: false,
   required: ["reviewedIds", "issues"],
   properties: {
-    resolutions: {type: "array", items: {type: "object", additionalProperties: false,
-      required: ["issueId", "sourceRevision", "sourceQuote", "reason"], properties: {
-        issueId: {type: "string"}, sourceRevision: {type: "string"}, sourceQuote: {type: "string"}, reason: {type: "string"}
-      }}},
+    resolutions: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["issueId", "sourceRevision", "sourceQuote", "reason"],
+        properties: {
+          issueId: { type: "string" },
+          sourceRevision: { type: "string" },
+          sourceQuote: { type: "string" },
+          reason: { type: "string" },
+        },
+      },
+    },
     reviewedIds: { type: "array", items: { type: "string" } },
     issues: {
       type: "array",
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["kind", "sourceRevision", "sourceQuote", "detail", "target", "stance"],
+        required: [
+          "kind",
+          "sourceRevision",
+          "sourceQuote",
+          "detail",
+          "target",
+          "stance",
+        ],
         properties: {
           kind: {
             type: "string",
@@ -355,7 +447,11 @@ export const reviewSchema = {
             enum: ["required", "forbidden", "undetermined"],
           },
           clarification: { type: "string" },
-          clarificationChoice: {type: "string", description: "仅从 businessChoices 选择必要业务问题；实际问题由宿主生成，clarification 仅作复核原文留证。技术问题使用 technicalFacts。"},
+          clarificationChoice: {
+            type: "string",
+            description:
+              "仅从 businessChoices 选择必要业务问题；实际问题由宿主生成，clarification 仅作复核原文留证。技术问题使用 technicalFacts。",
+          },
           technical: {
             type: "object",
             additionalProperties: false,
@@ -372,7 +468,11 @@ export const reviewSchema = {
   },
 };
 /** Closed catalogs remove free-form identity construction from the independent reviewer. */
-export function boundReviewSchema(plan: InvestigatedPlan, sources: RequirementGate["sources"], ledger?: ReviewLedger): Record<string, unknown> {
+export function boundReviewSchema(
+  plan: InvestigatedPlan,
+  sources: RequirementGate["sources"],
+  ledger?: ReviewLedger,
+): Record<string, unknown> {
   const schema = structuredClone(reviewSchema);
   const ids = (plan.requirements ?? []).map((r) => r.id);
   const sourceIds = [...new Set(sources.map((s) => s.id))];
@@ -387,7 +487,9 @@ export function boundReviewSchema(plan: InvestigatedPlan, sources: RequirementGa
   });
   const facts = technicalFacts(plan);
   const choices = businessChoices(plan);
-  Object.assign(schema.properties.issues.items.properties.clarificationChoice, {enum: choices.length ? choices.map(c => c.id) : ["unavailable"]});
+  Object.assign(schema.properties.issues.items.properties.clarificationChoice, {
+    enum: choices.length ? choices.map((c) => c.id) : ["unavailable"],
+  });
   Object.assign(
     schema.properties.issues.items.properties.target.properties.subject,
     { enum: [...ids, ...sourceIds] },
@@ -410,11 +512,51 @@ export function boundReviewSchema(plan: InvestigatedPlan, sources: RequirementGa
     });
   else Object.assign(schema.properties.resolutions, { maxItems: 0 });
   const properties = schema.properties.issues.items.properties;
-  return {...schema, required: [...schema.required, "fieldDecisions"], properties: {...schema.properties, fieldDecisions: fieldReviewSchema(plan), issues: {...schema.properties.issues, items: {anyOf: [
-    {...schema.properties.issues.items, properties: Object.fromEntries(Object.entries(properties).filter(([key]) => !["technical", "clarification"].includes(key)))},
-    {type: "object", additionalProperties: false, required: ["kind", "sourceRevision", "sourceQuote", "detail", "technical"],
-      properties: Object.fromEntries(Object.entries(properties).filter(([key]) => ["kind", "sourceRevision", "sourceQuote", "detail", "technical"].includes(key)))},
-  ]}}}};
+  return {
+    ...schema,
+    required: [...schema.required, "fieldDecisions"],
+    properties: {
+      ...schema.properties,
+      fieldDecisions: fieldReviewSchema(plan),
+      issues: {
+        ...schema.properties.issues,
+        items: {
+          anyOf: [
+            {
+              ...schema.properties.issues.items,
+              properties: Object.fromEntries(
+                Object.entries(properties).filter(
+                  ([key]) => !["technical", "clarification"].includes(key),
+                ),
+              ),
+            },
+            {
+              type: "object",
+              additionalProperties: false,
+              required: [
+                "kind",
+                "sourceRevision",
+                "sourceQuote",
+                "detail",
+                "technical",
+              ],
+              properties: Object.fromEntries(
+                Object.entries(properties).filter(([key]) =>
+                  [
+                    "kind",
+                    "sourceRevision",
+                    "sourceQuote",
+                    "detail",
+                    "technical",
+                  ].includes(key),
+                ),
+              ),
+            },
+          ],
+        },
+      },
+    },
+  };
 }
 
 export function parseReview(
@@ -433,10 +575,27 @@ export function parseReview(
     const wire = record(item);
     let i = wire;
     if (wire.technical !== undefined) {
-      if (Object.keys(wire).some(k => !["kind", "sourceRevision", "sourceQuote", "detail", "technical"].includes(k))) throw new Error("技术复核的目标和立场由宿主绑定，不得手工维护");
+      if (
+        Object.keys(wire).some(
+          (k) =>
+            ![
+              "kind",
+              "sourceRevision",
+              "sourceQuote",
+              "detail",
+              "technical",
+            ].includes(k),
+        )
+      )
+        throw new Error("技术复核的目标和立场由宿主绑定，不得手工维护");
       const claim = record(wire.technical);
-      i = {...wire, target: {subject: boundedText(claim.factId), aspect: "meaning"}, stance: "required"};
-    } else if (wire.clarification !== undefined) throw new Error("自由文本及技术问题不能直接提问，请绑定宿主业务选项");
+      i = {
+        ...wire,
+        target: { subject: boundedText(claim.factId), aspect: "meaning" },
+        stance: "required",
+      };
+    } else if (wire.clarification !== undefined)
+      throw new Error("自由文本及技术问题不能直接提问，请绑定宿主业务选项");
     if (
       !["omission", "extra-constraint", "conflict", "unverifiable"].includes(
         String(i.kind),
@@ -449,10 +608,21 @@ export function parseReview(
       sourceQuote: boundedText(i.sourceQuote),
       detail: boundedText(i.detail),
     };
-    if (i.target === undefined || i.stance === undefined) throw new Error("独立复核缺少结构化目标或立场");
+    if (i.target === undefined || i.stance === undefined)
+      throw new Error("独立复核缺少结构化目标或立场");
     if (i.target !== undefined) {
       const t = record(i.target);
-      if (!["availability", "input", "visibility", "persistence", "compatibility", "meaning", "coverage"].includes(String(t.aspect)))
+      if (
+        ![
+          "availability",
+          "input",
+          "visibility",
+          "persistence",
+          "compatibility",
+          "meaning",
+          "coverage",
+        ].includes(String(t.aspect))
+      )
         throw new Error("独立复核目标无效");
       const subject = boundedText(t.subject);
       if (
@@ -461,15 +631,20 @@ export function parseReview(
         !technicalFacts(plan).some((f) => f.id === subject)
       )
         throw new Error("独立复核目标不属于宿主需求或来源目录");
-      issue.target = {subject, aspect: t.aspect as NonNullable<typeof issue.target>["aspect"]};
+      issue.target = {
+        subject,
+        aspect: t.aspect as NonNullable<typeof issue.target>["aspect"],
+      };
     }
     if (i.stance !== undefined) {
-      if (!["required", "forbidden", "undetermined"].includes(String(i.stance))) throw new Error("独立复核立场无效");
+      if (!["required", "forbidden", "undetermined"].includes(String(i.stance)))
+        throw new Error("独立复核立场无效");
       issue.stance = i.stance as NonNullable<typeof issue.stance>;
     }
     if (i.clarification !== undefined)
       issue.clarification = boundedText(i.clarification);
-    if (i.clarificationChoice !== undefined) issue.clarificationChoice = boundedText(i.clarificationChoice);
+    if (i.clarificationChoice !== undefined)
+      issue.clarificationChoice = boundedText(i.clarificationChoice);
     if (i.technical !== undefined) {
       const t = record(i.technical);
       issue.technical = {
@@ -487,15 +662,34 @@ export function parseReview(
       throw new Error("独立复核来源引用无效");
     return issue;
   });
-  const resolutions = v.resolutions === undefined ? [] : array(v.resolutions).map(item => {
-    const r = record(item);
-    const resolution = {issueId: boundedText(r.issueId), sourceRevision: boundedText(r.sourceRevision), sourceQuote: boundedText(r.sourceQuote), reason: boundedText(r.reason)};
-    if (!sources.some(s => s.id === resolution.sourceRevision && s.text.includes(resolution.sourceQuote)))
-      throw new Error("复核问题消解缺少有效来源引用");
-    return resolution;
-  });
+  const resolutions =
+    v.resolutions === undefined
+      ? []
+      : array(v.resolutions).map((item) => {
+          const r = record(item);
+          const resolution = {
+            issueId: boundedText(r.issueId),
+            sourceRevision: boundedText(r.sourceRevision),
+            sourceQuote: boundedText(r.sourceQuote),
+            reason: boundedText(r.reason),
+          };
+          if (
+            !sources.some(
+              (s) =>
+                s.id === resolution.sourceRevision &&
+                s.text.includes(resolution.sourceQuote),
+            )
+          )
+            throw new Error("复核问题消解缺少有效来源引用");
+          return resolution;
+        });
   const fields = parseFieldDecisions(v.fieldDecisions, plan, sources);
-  return { reviewedIds, issues: [...issues, ...fields.issues], resolutions, fieldDecisions: fields.decisions };
+  return {
+    reviewedIds,
+    issues: [...issues, ...fields.issues],
+    resolutions,
+    fieldDecisions: fields.decisions,
+  };
 }
 function gateVersion() {
   return hash(
@@ -507,6 +701,10 @@ function gateVersion() {
       "src/evolution/review.ts",
       "src/shared/browser-contract.ts",
       "src/evolution/acceptance-obligations.ts",
+      "src/evolution/historical-preparation.ts",
+      "src/evolution/obligation-derivation.ts",
+      "src/shared/workflow-browser.ts",
+      "src/evolution/tool-contract.ts",
       "src/shared/acceptance-obligations.ts",
       "src/evolution/technical-facts.ts",
       "src/shared/checker-semantics.ts",
@@ -532,7 +730,9 @@ export function freezeRequirements(
     requestHash,
     definitionHash: hash(requirementDefinition(plan)),
     review,
-    reviewLedger: structuredClone(reviewLedger ?? {version: 2 as const, findings: [], attempts: []}),
+    reviewLedger: structuredClone(
+      reviewLedger ?? { version: 2 as const, findings: [], attempts: [] },
+    ),
     coverage: coverage(plan, sources, supported),
   };
   return { ...body, seal: hash(body) };
@@ -558,21 +758,28 @@ export function gateFailure(
     return "可执行验收义务或需求覆盖不一致，请重新规划";
   const { seal, ...body } = g;
   if (
-    g.gateVersion !==
-      gateVersion() ||
+    g.gateVersion !== gateVersion() ||
     hash(g) !== hash(trusted) ||
     seal !== hash(body) ||
     g.definitionHash !== hash(requirementDefinition(plan)) ||
     (requestHash && requestHash !== g.requestHash) ||
-    hash(g.reviewLedger) !== hash(reviewLedger ?? {version: 2 as const, findings: [], attempts: []})
+    hash(g.reviewLedger) !==
+      hash(reviewLedger ?? { version: 2 as const, findings: [], attempts: [] })
   )
     return "冻结需求、验收映射、修订或复核摘要已变化，请重新规划";
-  if (g.review.issues.length || g.coverage.some((c) => c.reasons.length) || g.reviewLedger?.findings.some(f => f.status !== "resolved"))
+  if (
+    g.review.issues.length ||
+    g.coverage.some((c) => c.reasons.length) ||
+    g.reviewLedger?.findings.some((f) => f.status !== "resolved")
+  )
     return "需求完整性复核或覆盖未通过";
 }
 
 export function candidateEvidenceHash(
-  candidate: Pick<CandidateAttempt, "id" | "versionId" | "sourceHash" | "delta">,
+  candidate: Pick<
+    CandidateAttempt,
+    "id" | "versionId" | "sourceHash" | "delta"
+  >,
   plan: InvestigatedPlan,
   acceptance: {
     members?: unknown;

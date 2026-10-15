@@ -48,7 +48,7 @@ for (const scenario of STABILITY_EVAL_MANIFEST.scenarios) {
       const events = await readFile(result.eventsPath, "utf8");
       expect(events).toContain('"evidenceKind":"model-stub"');
       expect(events).not.toMatch(/AIza[0-9A-Za-z_-]{20,}/);
-      expect(events).not.toMatch(/GEMINI_API_KEY/);
+      expect(events).not.toMatch(/(?:GEMINI|DEEPSEEK)_API_KEY/);
 
       const settled = events
         .split("\n")

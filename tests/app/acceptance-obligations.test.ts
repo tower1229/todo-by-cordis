@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { compileReferences } from "../../src/evolution/references.js";
-import { compileHistory } from "../../src/evolution/acceptance-obligations.js";
+import { historicalPreparation } from "../../src/evolution/historical-preparation.js";
 import {
   adjudicateTechnicalReview,
   businessChoices,
@@ -237,8 +237,8 @@ test("已接受要求修订沿用宿主义务及案例身份，期望改变仍�
 });
 
 test("历史准备从基线冻结案例推导，不能使用候选新值、任意字段注入或不存在的历史", () => {
-  const h = compileHistory(
-    { actions: [{ action: "markNote", input: {} }] },
+  const h = historicalPreparation(
+    { member: "panel", field: "noteMark" },
     panelMemberCases,
     "a".repeat(64),
   );
@@ -249,20 +249,8 @@ test("历史准备从基线冻结案例推导，不能使用候选新值、任�
   assert.equal(h.sourceHash, hash([panelMemberCases[0]]));
   assert.throws(
     () =>
-      compileHistory(
-        {
-          actions: [{ action: "markNote", input: {} }],
-          fields: { noteMark: "ok" },
-        },
-        panelMemberCases,
-        "a".repeat(64),
-      ),
-    /派生字段/,
-  );
-  assert.throws(
-    () =>
-      compileHistory(
-        { actions: [{ action: "nonexistent", input: {} }] },
+      historicalPreparation(
+        { member: "panel", field: "nonexistent" },
         panelMemberCases,
         "a".repeat(64),
       ),
@@ -270,17 +258,15 @@ test("历史准备从基线冻结案例推导，不能使用候选新值、任�
   );
   assert.throws(
     () =>
-      compileHistory(
-        { actions: [{ action: "markNote", input: { noteMark: "reviewed" } }] },
-        panelMemberCases,
+      historicalPreparation(
+        { member: "panel", field: "noteMark" },
+        [],
         "a".repeat(64),
       ),
     /基础版本/,
   );
   const d = draft();
-  Object.assign(d.requirements[0].obligations[0], {
-    history: { actions: [{ action: "markNote", input: {} }] },
-  });
+  d.requirements[0].obligations.push({kind:"history",field:"noteMark"} as typeof d.requirements[0].obligations[number]);
   const compiled = compileReferences(d, sources, [], workflow, {
     memberCases: panelMemberCases,
     baseVersion: "a".repeat(64),

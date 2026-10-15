@@ -22,7 +22,6 @@
   "dependencies": {
     "@babel/parser": "7.29.9",
     "@base-ui/react": "1.8.0",
-    "@google/genai": "2.21.0",
     "@hono/node-server": "2.1.1",
     "cordis": "4.0.0-rc.9",
     "hono": "4.13.7",

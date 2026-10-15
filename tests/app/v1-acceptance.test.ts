@@ -6,6 +6,72 @@ import { join } from "node:path";
 import { runV1Acceptance } from "../../scripts/lib/v1-scenario.js";
 import { v1FixtureDriver } from "./v1-driver-fixture.js";
 
+test("六步模型桩按运行来源推进阶段；同运行的规划纠正不跳阶段、不丢需求", async () => {
+  const driver = v1FixtureDriver(false, true, true);
+  const signal = new AbortController().signal;
+  const tools = [
+    {
+      name: "propose_plan",
+      description: "模型桩",
+      parameters: { type: "object" },
+    },
+  ];
+  const input = (id: string) => ({
+    sources: [{ id: `${id}:1`, text: "合成需求" }],
+    materials: { delivered: ["inspect_application", "active-source"] },
+  });
+  const exchange = (id: string) =>
+    driver.generate(
+      {
+        instruction: "模型桩",
+        history: [],
+        tools,
+        message: JSON.stringify(input(id)),
+      },
+      signal,
+    );
+  const a = await exchange("run-a");
+  const again = await exchange("run-a");
+  const correction = await driver.generate(
+    {
+      instruction: "模型桩",
+      history: [
+        {
+          role: "user",
+          parts: [
+            {
+              functionResponse: {
+                name: "propose_plan",
+                response: { result: { error: "需修正规格" } },
+              },
+            },
+          ],
+        },
+      ],
+      tools,
+    },
+    signal,
+  );
+  for (const r of [a, again, correction]) {
+    assert.equal(
+      (r.calls[0].args.memberAdditions as { pluginId: string }[])[0].pluginId,
+      "tags",
+    );
+    assert.equal((r.calls[0].args.requirements as unknown[]).length, 1);
+  }
+  const b = await exchange("run-b");
+  assert.equal(
+    (b.calls[0].args.memberAdditions as { pluginId: string }[])[0].pluginId,
+    "counter",
+  );
+  await exchange("run-c");
+  const d = await exchange("run-d");
+  assert.match(
+    String(d.calls[0].args.acceptanceReason),
+    /原可选字段.*完整完成输入规则/,
+  );
+});
+
 test("首版桩层经公开控制面完成四次变更、隔离体验和独立应用，再验证启停、重启撤回子集", async () => {
   const directory = await mkdtemp(join(tmpdir(), "cordis-v1-stub-"));
   try {
@@ -125,7 +191,12 @@ test("启停候选篡改源码不能应用且完整验收失败", async () => {
             if (statusOnly) {
               for (const call of result.calls)
                 if (call.name === "submit_candidate")
-                  call.args.files = [{path: "business/entry.ts", content: "export default {}; // unauthorized change"}];
+                  call.args.files = [
+                    {
+                      path: "business/entry.ts",
+                      content: "export default {}; // unauthorized change",
+                    },
+                  ];
             }
             return result;
           },

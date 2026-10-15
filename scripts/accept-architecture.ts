@@ -16,7 +16,7 @@ import {
   EvolutionDomain,
   verifyWorkflow,
 } from "../src/server/evolution-domain.js";
-import { Gemini } from "../src/evolution/gemini.js";
+import { DeepSeek } from "../src/evolution/deepseek.js";
 import { createApp } from "../src/server/app.js";
 import {
   browserEnvironment,
@@ -29,10 +29,10 @@ import { panelMemberCases } from "../tests/app/member-case-fixtures.js";
 import { redactSensitive } from "./lib/shortened-real-model.js";
 
 if (!process.argv.includes("--authorize-real-model"))
-  throw new Error("需要明确授权真实 Gemini 外发与调用成本");
+  throw new Error("需要明确授权真实 DeepSeek 外发与调用成本");
 if (existsSync(".env")) process.loadEnvFile(".env");
-const key = process.env.GEMINI_API_KEY?.trim();
-if (!key) throw new Error("GEMINI_API_KEY 未配置");
+const key = process.env.DEEPSEEK_API_KEY?.trim();
+if (!key) throw new Error("DEEPSEEK_API_KEY 未配置");
 assert.deepEqual(
   browserEnvironment().missing,
   [],
@@ -80,8 +80,8 @@ const manifest = () =>
   );
 const frozenSource = manifest();
 const header = {
-  kind: "architecture-real/7",
-  model: "gemini-3.1-pro-preview",
+  kind: "architecture-real/8",
+  model: "deepseek-flash",
   cases,
   limits: {
     callsPerRun: 12,
@@ -134,7 +134,7 @@ for (const scenario of cases) {
     save(join(directory, scenario.id + "-events.json"), events);
   };
   const w = await Workspace.open(join(directory, scenario.id + ".db"));
-  const gemini = new Gemini(key);
+  const model = new DeepSeek(key);
   const domain = new EvolutionDomain(w);
   let calls = 0;
   let answered = false;
@@ -142,7 +142,7 @@ for (const scenario of cases) {
   const e = new Evolution(
     w.db,
     {
-      async generate(request, signal) {
+      async generate(request, signal, onTransport) {
         calls++;
         totalCalls++;
         assert.ok(calls <= 12 && totalCalls <= 48);
@@ -154,11 +154,12 @@ for (const scenario of cases) {
           }),
         );
         log({ type: "call-start", call: calls, review: !!request.schema });
-        const result = await gemini.generate(request, signal);
+        const result = await model.generate(request, signal, onTransport);
         log({
           type: "call-end",
           call: calls,
           usage: result.usage,
+          model: {requested:result.transport?.requestedModel,actual:result.transport?.actualModel},
           tools: result.calls.map((c) => c.name),
         });
         return result;

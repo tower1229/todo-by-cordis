@@ -5,63 +5,13 @@ const record = (v: unknown): v is Schema =>
   !!v && typeof v === "object" && !Array.isArray(v);
 const schemas = (v: unknown): Schema[] =>
   Array.isArray(v) ? v.filter(record) : [];
-// A structural decoding profile, deliberately smaller than the SDK's schema vocabulary.
-// Nonempty/empty collections and branch constraints remain in the wire; other bounds are host obligations.
-const providerKeywords = new Set([
-  "type",
-  "format",
-  "title",
-  "description",
-  "enum",
-  "items",
-  "anyOf",
-  "properties",
-  "additionalProperties",
-  "required",
-]);
-
-/** Gemini receives a structural projection; the original contract remains the host validator. */
-export function providerSchema(schema: Schema): Schema {
-  const alternatives = schemas(schema.anyOf);
-  return Object.fromEntries(
-    Object.entries(schema)
-      .filter(
-        ([k, v]) =>
-          v !== undefined &&
-          (providerKeywords.has(k) ||
-            (k === "minItems" && v === 1) ||
-            (k === "maxItems" && v === 0)) &&
-          !(
-            k === "type" &&
-            alternatives.length &&
-            alternatives.every((s) => s.type === v)
-          ),
-      )
-      .map(([k, v]) => [
-        k,
-        k === "anyOf"
-          ? schemas(v).map(providerSchema)
-          : k === "properties" && record(v)
-            ? Object.fromEntries(
-                Object.entries(v).map(([name, s]) => [
-                  name,
-                  providerSchema(s as Schema),
-                ]),
-              )
-            : ["items", "additionalProperties"].includes(k) && record(v)
-              ? providerSchema(v)
-              : v,
-      ]),
-  );
-}
-
 /** A mandatory envelope prevents an object union at the JSON document root. */
 export function responseSchema(schema: Schema): Schema {
   return {
     type: "object",
     additionalProperties: false,
     required: ["result"],
-    properties: { result: providerSchema(schema) },
+    properties: { result: schema },
   };
 }
 export function responsePayload(text: string): {
@@ -173,6 +123,7 @@ export function replyProblems(
   request: ModelRequest,
   reply: ModelReply,
 ): string[] {
+  if (reply.protocolErrors?.length) return reply.protocolErrors;
   if (request.schema) {
     if (reply.transport?.envelopeValid === false)
       return ["结构化输出缺少有效的宿主 result 信封"];

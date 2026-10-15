@@ -159,7 +159,7 @@ export function classifyFailure(input: {
   )
     return "evaluator";
   if (
-    /fetch failed|ECONNRESET|ECONNREFUSED|socket hang up|429|UNAVAILABLE|Gemini fetch/i.test(
+    /fetch failed|ECONNRESET|ECONNREFUSED|socket hang up|429|UNAVAILABLE|DeepSeek fetch/i.test(
       text,
     )
   )

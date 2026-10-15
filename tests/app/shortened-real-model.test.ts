@@ -12,16 +12,16 @@ import {
 } from "../../scripts/lib/shortened-real-model.js";
 
 test("requireRealModelAuthorization blocks without explicit ACCEPT_REAL_MODEL", () => {
-  const key = process.env.GEMINI_API_KEY;
+  const key = process.env.DEEPSEEK_API_KEY;
   process.env.ACCEPT_REAL_MODEL = "";
-  process.env.GEMINI_API_KEY = "test-key";
+  process.env.DEEPSEEK_API_KEY = "test-key";
   assert.throws(() => requireRealModelAuthorization(), /ACCEPT_REAL_MODEL=1/);
   process.env.ACCEPT_REAL_MODEL = "1";
   assert.throws(() => {
-    delete process.env.GEMINI_API_KEY;
+    delete process.env.DEEPSEEK_API_KEY;
     requireRealModelAuthorization();
-  }, /GEMINI_API_KEY/);
-  process.env.GEMINI_API_KEY = key;
+  }, /DEEPSEEK_API_KEY/);
+  process.env.DEEPSEEK_API_KEY = key;
   delete process.env.ACCEPT_REAL_MODEL;
 });
 
@@ -40,15 +40,22 @@ test("buildShortenedTrialHeader uses shortened kind and real hostname", () => {
   assert.equal(header.runner.host, hostname());
 });
 
-test("redactSensitive masks Gemini keys and secret fields", () => {
+test("redactSensitive masks DeepSeek and historical Gemini keys and secret fields", () => {
   const redacted = redactSensitive({
     gemini_api_key: "secret",
+    DEEPSEEK_API_KEY: "secret",
     nested: {
       authorization: "Bearer x",
       text: "AIzaSy0123456789012345678901234567890ab",
+      deepseek: "Bearer sk-01234567890123456789012345678901",
     },
   }) as Record<string, unknown>;
   assert.equal(redacted.gemini_api_key, "[REDACTED]");
+  assert.equal(redacted.DEEPSEEK_API_KEY, "[REDACTED]");
+  assert.equal(
+    (redacted.nested as Record<string, unknown>).deepseek,
+    "Bearer [REDACTED_MODEL_KEY]",
+  );
   assert.equal(
     (redacted.nested as Record<string, unknown>).authorization,
     "[REDACTED]",

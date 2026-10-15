@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { compileReferences } from "../../src/evolution/references.js";
 import { coverage } from "../../src/server/requirement-coverage.js";
 import type { InvestigatedPlan } from "../../src/shared/assistant.js";
+import { fieldLifecycle } from "../../src/evolution/obligation-derivation.js";
 
 const sources = [{ id: "host-run:1", text: "显示复盘，其他行为不变" }];
 const cases = [
@@ -53,6 +54,75 @@ const draft = () => ({
       ],
     },
   ],
+});
+
+test("成员案例保留的外部字段不能覆盖宿主定义或冒充该成员历史字段；输入参数不是字段定义", () => {
+  const memberCases = [
+    {
+      member: "tags",
+      name: "保留其他字段",
+      state: "open",
+      action: "setTags",
+      fields: { retained: "old" },
+      input: { tags: "new", parameterOnly: "input" },
+      expected: {
+        kind: "commit" as const,
+        state: "open",
+        fields: { retained: "old", tags: "new" },
+      },
+    },
+  ];
+  const c = compileReferences(
+    {
+      workflowRules: [{ key: "retained", minLength: 0 }],
+      memberCases,
+      browserCases: [
+        {
+          id: "retained",
+          task: "existing",
+          steps: [{ kind: "field", field: "retained", value: "old" }],
+        },
+      ],
+      requirements: [],
+    },
+    sources,
+    [],
+    { ...workflow, fields: [{ key: "retained" }] },
+  );
+  assert.equal(c.browserCases[0].steps[0].member, "workflow");
+  const lifecycle = fieldLifecycle({ memberCases }, [{ key: "retained" }]);
+  assert.equal(
+    lifecycle.existing({ member: "tags", field: "retained" }),
+    false,
+  );
+  assert.equal(
+    lifecycle.existing({ member: "workflow", field: "retained" }),
+    true,
+  );
+  assert.equal(lifecycle.existing({ member: "tags", field: "tags" }), true);
+  assert.throws(
+    () =>
+      compileReferences(
+        {
+          workflowRules: [],
+          memberCases,
+          browserCases: [
+            {
+              id: "fake",
+              task: "new",
+              steps: [
+                { kind: "field", field: "parameterOnly", value: "input" },
+              ],
+            },
+          ],
+          requirements: [],
+        },
+        sources,
+        [],
+        workflow,
+      ),
+    /不存在/,
+  );
 });
 
 test("来源、检查器案例与浏览器所有者由宿主从结构化引用绑定", () => {
@@ -106,6 +176,13 @@ test("伪造引用、来源、身份歧义仍阻塞，后端引用仍不能覆�
   const compiled = compileReferences(backend, sources, cases, workflow);
   const plan = { ...compiled, cases } as unknown as InvestigatedPlan;
   assert.ok(
+    plan.requirements![0].checks.some((c) => c.checker === "browser/1"),
+  );
+  plan.requirements![0].checks = plan.requirements![0].checks.filter(
+    (c) => c.checker !== "browser/1",
+  );
+  plan.browserCases = [];
+  assert.ok(
     coverage(plan, sources, ["workflow/1", "browser/1"])[0].reasons.some((r) =>
       r.includes("界面"),
     ),
@@ -126,7 +203,12 @@ test("宿主可绑定完整 workflow 检查器，既有浏览器案例修订保�
     ],
   };
   assert.deepEqual(
-    compileReferences(all, sources, cases, workflow).requirements[0].checks,
+    compileReferences(
+      all,
+      sources,
+      cases,
+      workflow,
+    ).requirements[0].checks.filter((c) => c.checker !== "browser/1"),
     [{ checker: "workflow/1", caseId: "workflow/1:1" }],
   );
   const first = compileReferences(d, sources, cases, workflow);
@@ -188,11 +270,15 @@ test("已有 UI 贡献身份从宿主基线冻结，不能靠候选改名后重�
 });
 
 test("宿主编译提前拒绝原生必填校验无法提交的浏览器输入，保留可触发后端错误的空白输入", () => {
-  const step: Record<string, unknown> = {kind: "action", action: "complete", input: {}};
+  const step: Record<string, unknown> = {
+    kind: "action",
+    action: "complete",
+    input: {},
+  };
   const input = {
     ...draft(),
     workflowRules: [{ key: "review", required: true }],
-    browserCases: [{id: "required", task: "new", steps: [step]}],
+    browserCases: [{ id: "required", task: "new", steps: [step] }],
   };
   assert.throws(
     () => compileReferences(input, sources, cases, workflow),
@@ -211,15 +297,47 @@ test("宿主编译提前拒绝原生必填校验无法提交的浏览器输入�
 });
 
 test("任务属性断言绑定宿主合成基线及前面编辑，不接受模型猜测初始名称", () => {
-  const input = {...draft(), browserCases: [{id: "task", task: "new", steps: [
-    {kind: "task"},
-    {kind: "edit", title: " 新标题 ", description: " 原样备注 "},
-    {kind: "task"},
-  ]}]};
-  const steps = compileReferences(input, sources, cases, workflow).browserCases[0].steps;
-  assert.deepEqual(steps[0], {kind: "task"});
-  assert.deepEqual(steps[2], {kind: "task", title: "新标题", description: " 原样备注 "});
-  assert.throws(() => compileReferences({...input, browserCases: [{id: "bad", task: "new", steps: [
-    {kind: "task", title: "模型猜测的任务名", description: ""},
-  ]}]}, sources, cases, workflow), /不得提交手工期望/);
+  const input = {
+    ...draft(),
+    browserCases: [
+      {
+        id: "task",
+        task: "new",
+        steps: [
+          { kind: "task" },
+          { kind: "edit", title: " 新标题 ", description: " 原样备注 " },
+          { kind: "task" },
+        ],
+      },
+    ],
+  };
+  const steps = compileReferences(input, sources, cases, workflow)
+    .browserCases[0].steps;
+  assert.deepEqual(steps[0], { kind: "task" });
+  assert.deepEqual(steps[2], {
+    kind: "task",
+    title: "新标题",
+    description: " 原样备注 ",
+  });
+  assert.throws(
+    () =>
+      compileReferences(
+        {
+          ...input,
+          browserCases: [
+            {
+              id: "bad",
+              task: "new",
+              steps: [
+                { kind: "task", title: "模型猜测的任务名", description: "" },
+              ],
+            },
+          ],
+        },
+        sources,
+        cases,
+        workflow,
+      ),
+    /不得提交手工期望/,
+  );
 });

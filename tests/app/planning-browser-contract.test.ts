@@ -4,28 +4,11 @@ import { planningTools } from "../../src/server/planning.js";
 import { parseBrowserCases } from "../../src/server/requirement-coverage.js";
 import type { BrowserStep } from "../../src/shared/browser-cases.js";
 
-test("规划工具逐类声明浏览器必填字段，与真实解析器一致", () => {
+test("业务义务逐类声明浏览器必填字段，与真实解析器一致；整套案例由宿主生成", () => {
   const tool = planningTools.find((tool) => tool.name === "propose_plan")!;
-  const parameters = tool.parameters as {
-    properties: {
-      browserCases: {
-        items: {
-          properties: {
-            steps: {
-              items: {
-                anyOf: {
-                  properties: { kind: { enum: string[] } };
-                  required: string[];
-                }[];
-              };
-            };
-          };
-        };
-      };
-    };
-  };
-  const variants =
-    parameters.properties.browserCases.items.properties.steps.items.anyOf;
+  const parameters=tool.parameters;
+  assert.ok(!Object.hasOwn(parameters.properties,"browserCases"));
+  const variants=parameters.properties.requirements.items.properties.obligations.items.anyOf.find(s=>s.properties.kind.enum.includes("assertion"))!.properties.steps.items.anyOf;
   const steps: BrowserStep[] = [
     { kind: "open" },
     { kind: "refresh" },

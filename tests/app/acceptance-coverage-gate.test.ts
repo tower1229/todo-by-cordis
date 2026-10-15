@@ -83,8 +83,8 @@ const panelWithExtraCommand = `export default {
   },
 };`;
 
-async function settle(e: Evolution, status?: string) {
-  const deadline = Date.now() + 60_000;
+async function settle(e: Evolution, status?: string, timeout = 60_000) {
+  const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     const run = (await e.observe()).run;
     if (!run) throw new Error("missing run");
@@ -621,7 +621,9 @@ test("合法 panel 源码仍可通过候选授权核对", async (t) => {
     runId: ready.id,
     planId: ready.plan.id,
   });
-  const done = await settle(e, "awaiting-apply");
+  // The frozen form matrix adds two-viewpoint boundary checks; this is only
+  // the test observer deadline. Evolution retains its original active budget.
+  const done = await settle(e, "awaiting-apply", 180_000);
   assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
 });
 

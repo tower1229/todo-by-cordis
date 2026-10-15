@@ -1,23 +1,23 @@
-// Run only after explicit authorization to send project sources to Gemini.
+// Run only after explicit authorization to send project sources to DeepSeek.
 // Synthetic workspace; observes planning only and never generates candidates.
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../src/server/workspace.js";
 import { Evolution } from "../src/evolution/evolution.js";
-import { Gemini } from "../src/evolution/gemini.js";
+import { DeepSeek } from "../src/evolution/deepseek.js";
 import { EvolutionDomain } from "../src/server/evolution-domain.js";
 import { createApp } from "../src/server/app.js";
 import assert from "node:assert/strict";
 if (existsSync(".env")) process.loadEnvFile(".env");
-if (!process.env.GEMINI_API_KEY)
-  throw Error("GEMINI_API_KEY is not configured");
+if (!process.env.DEEPSEEK_API_KEY)
+  throw Error("DEEPSEEK_API_KEY is not configured");
 const directory =
   process.env.ACCEPTANCE_PATH ?? `.runtime/planning-${Date.now()}`;
 mkdirSync(directory, { recursive: true });
 const w = await Workspace.open(`${directory}/workspace.db`);
 const e = new Evolution(
   w.db,
-  new Gemini(process.env.GEMINI_API_KEY),
+  new DeepSeek(process.env.DEEPSEEK_API_KEY),
   new EvolutionDomain(w),
 );
 const app = createApp(w, e);

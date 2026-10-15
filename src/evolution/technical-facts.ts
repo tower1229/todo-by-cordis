@@ -92,6 +92,15 @@ export function technicalFacts(
 ): TechnicalFact[] {
   const facts: Omit<TechnicalFact, "evidenceHash">[] = [
     {
+      id: "host-fact:obligation-derivation",
+      properties: {
+        newField: "post-action-matrix-without-baseline-history",
+        existingField: "exact-baseline-replay",
+        uiIdentity: "baseline-identifiers-not-action-visibility",
+        coverage: "generated-executable-cases-not-model-self-report",
+      },
+    },
+    {
       id: "host-fact:workflow-text",
       properties: {
         normalization: workflowTextSemantics.normalization,
@@ -123,6 +132,23 @@ export function technicalFacts(
       properties: {
         mapping: "whole-checker-suite",
         association: "evidence-reference-not-action-restriction",
+      },
+    },
+    {
+      id: "host-fact:browser-generation",
+      properties: {
+        definition:"host-compiled-rules-and-obligations",
+        requiredEmpty:"native-valueMissing-without-command-or-alert",
+        whitespace:"business-feedback-after-submit",
+        manualCases:"not-authorized-in-planning-tool",
+      },
+    },
+    {
+      id: "host-fact:write-scope",
+      properties: {
+        activation:"no-business-data-write",
+        action:"explicit-command-only",
+        historicalPreparation:"baseline-replay-not-candidate-action",
       },
     },
     ...plan.workflowRules.map((rule) => ({

@@ -264,5 +264,25 @@ export function referenceFixture(draft: Record<string, unknown>, sources: {id: s
           s.kind === "task" ? { kind: "task" } : s,
       ),
     }));
+  if (Array.isArray(copy.browserCases)) {
+    // Preserve every old fixture assertion as a business obligation. Production
+    // never accepts this legacy wire field; archived expectations remain intact.
+    const cases=copy.browserCases as {id:string;task:string;steps:Record<string,unknown>[]}[];
+    const requirements=(copy.requirements??[]) as {checks:{kind:string;index?:number}[];obligations:Record<string,unknown>[]}[];
+    const referenced=new Set(requirements.flatMap(r=>r.checks.filter(c=>c.kind==="browser").map(c=>c.index)));
+    for(const [rIndex,r]of requirements.entries()){
+      const selected=new Set(r.checks.filter(c=>c.kind==="browser").map(c=>c.index));
+      if(rIndex===0)cases.forEach((_,i)=>{if(!referenced.has(i+1))selected.add(i+1);});
+      for(const index of selected){
+        const c=cases[(index??0)-1];if(!c)continue;
+        if(Object.keys(c).some(k=>!["id","task","steps"].includes(k)))throw new Error("旧夹具浏览器案例包含不能迁移的字段");
+        const steps=structuredClone(c.steps);const last=steps.at(-1);
+        const expected=last&&["task","error","action-visible"].includes(String(last.kind))?steps.pop()!:{kind:"task"};
+        r.obligations.push({kind:"assertion",steps,expected});
+      }
+      r.checks=r.checks.filter(c=>c.kind!=="browser"||!cases[(c.index??0)-1]);
+    }
+    delete copy.browserCases;
+  }
   return copy;
 }

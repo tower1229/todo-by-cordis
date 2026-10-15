@@ -5,7 +5,7 @@ import { compileSpec } from "./specification.js";
 import { recordReview } from "./review.js";
 import { fieldReviewTargets } from "./field-review.js";
 import { clarificationSchema, parseClarificationDecision } from "./clarification-review.js";
-import { admissionInstruction, admissionKey, admissionSchema, parseAdmission } from "./request-admission.js";
+import { admissionInstruction, admissionKey, admissionSchema, parseAdmission, admissionQuestionState, questionReviewKey } from "./request-admission.js";
 import { ModelProtocolError, replyProblems } from "./model-protocol.js";
 import {
   adjudicateTechnicalReview,
@@ -29,6 +29,8 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { Driver, ModelReply, ModelRequest } from "./driver.js";
 import { ModelTransportError } from "./driver.js";
+import { transportFailure } from "./transport-failure.js";
+import { HistoricalPreparationBlocked } from "./historical-preparation.js";
 import type {
   CandidateAttempt,
   AssistantCommand,
@@ -354,7 +356,8 @@ export class Evolution {
       if (this.domain.admission) {
         const context=this.domain.context(), inputs=this.domain.admission(context);
         const receipt=plan.requestAdmission;
-        if (inputs.missing.length || !receipt || receipt.key !== admissionKey(context.versionId,trusted?.sources ?? [],inputs.facts) || receipt.blockers.length || receipt.questions.length || !r.run.requestAdmissions?.some(a=>hash(a) === hash(receipt)))
+        const state=receipt ? admissionQuestionState(receipt,trusted?.sources??[],inputs.facts,r.run.clarificationReviews??[]) : undefined;
+        if (inputs.missing.length || !receipt || receipt.key !== admissionKey(context.versionId,trusted?.sources ?? [],inputs.facts) || receipt.blockers.length || !state || state.pending.length || state.questions.length || state.blockers.length || !r.run.requestAdmissions?.some(a=>hash(a) === hash(receipt)))
           throw new AppError("PLAN_STALE","需求预检事实或来源已变化，请重新规划",409);
       }
       const failure = gateFailure(plan, trusted, hash(r.run.revisions), r.run.reviewLedger);
@@ -907,7 +910,7 @@ export class Evolution {
     const controller = new AbortController();
     const started = performance.now();
     const timer = setTimeout(
-      () => controller.abort(new Error("已达到 10 分钟执行上限")),
+      () => controller.abort(new DOMException("已达到 10 分钟执行上限", "TimeoutError")),
       Math.max(1, this.limits.milliseconds - record.elapsed),
     );
     const promise = Promise.resolve().then(async () => {
@@ -1084,6 +1087,8 @@ export class Evolution {
         JSON.stringify({ startedAt, request, phase, status: "calling", usage: null }),
       );
     let reply: ModelReply;
+    let transport: ModelReply["transport"];
+    const transportStarted = performance.now();
     try {
       let abort!: () => void;
       const cancelled = new Promise<never>((_resolve, reject) => {
@@ -1093,7 +1098,7 @@ export class Evolution {
       });
       try {
         reply = await Promise.race([
-          this.driver.generate(request, signal),
+          this.driver.generate(request, signal, (progress) => { transport = progress; }),
           cancelled,
         ]);
       } finally {
@@ -1109,7 +1114,9 @@ export class Evolution {
           endedAt: new Date().toISOString(),
           error: error instanceof Error ? error.message : "Model call failed",
           usage: null,
-          ...(error instanceof ModelTransportError ? {transport:error.transport,httpStatus:error.httpStatus} : {}),
+          ...(error instanceof ModelTransportError ? {transport:error.transport,httpStatus:error.httpStatus} : transport ? {
+            transport: {...transport, failure: transportFailure(error, "", performance.now() - transportStarted, signal)},
+          } : {}),
         }),
         entry.lastInsertRowid,
       );
@@ -1217,7 +1224,7 @@ export class Evolution {
   }
   private async auditQuestion(r: RecordRun, question: string, sources: RequirementGate["sources"], facts: ReturnType<typeof technicalFacts>, signal: AbortSignal) {
     if (!this.scheduler.canAuditQuestion(r.calls)) throw new BudgetExhaustedError("剩余预算不足以审查问题并完成修正后的规划复核与候选执行");
-    const key=hash({question,sources,facts});
+    const key=questionReviewKey(question,sources,facts);
     if(r.run.clarificationReviews?.some(a=>a.key===key)) throw new ModelProtocolError("相同澄清已审查且没有新证据，保留原预算并停止");
     const history=r.history;
     let decision: ReturnType<typeof parseClarificationDecision>;
@@ -1229,6 +1236,22 @@ export class Evolution {
     } finally {r.history=history;}
     this.save(r);
     return decision;
+  }
+  private async auditAdmissionQuestions(r:RecordRun,questions:string[],sources:RequirementGate["sources"],facts:ReturnType<typeof technicalFacts>,signal:AbortSignal) {
+    if(!this.scheduler.canAuditQuestion(r.calls))throw new BudgetExhaustedError("剩余预算不足以审查需求预检问题并保留候选执行");
+    const schema={type:"object",additionalProperties:false,required:["decisions"],properties:{decisions:{type:"array",minItems:questions.length,maxItems:questions.length,items:{type:"object",additionalProperties:false,required:["index","decision"],properties:{index:{type:"integer",enum:questions.map((_,i)=>i+1)},decision:clarificationSchema()}}}}};
+    const parse=(text:string)=>{
+      const value=JSON.parse(text) as {decisions:{index:number;decision:unknown}[]};
+      if(new Set(value.decisions.map(d=>d.index)).size!==questions.length)throw new Error("需求预检澄清裁决必须逐项完整且不可重复");
+      return value.decisions.map(d=>({question:questions[d.index-1],decision:parseClarificationDecision(JSON.stringify(d.decision),sources,facts)}));
+    };
+    const history=r.history;
+    try {
+      const reply=await this.call(r,{history:[],schema,instruction:"独立逐项审查 questions 的必要性。business-ambiguity 仅用于 sources 尚未决定的业务选择；unnecessary 用于已明确或未要求的细节；scope-reduction 表示请求接受降级；technical 必须引用宿主 facts。只返回逐项决策 JSON，禁止工具。index 为 questions 一基序号，来源和事实为一基序号。",message:JSON.stringify({kind:"admission-clarification-review/1",questions,sources,facts})},signal,"review",reply=>parse(reply.text));
+      signal.throwIfAborted();
+      for(const {question,decision}of parse(reply.text))(r.run.clarificationReviews??=[]).push({key:questionReviewKey(question,sources,facts),question,call:r.calls,decision});
+    } finally {r.history=history;}
+    this.save(r);
   }
   private async plan(r: RecordRun, signal: AbortSignal) {
     const context = this.domain.context();
@@ -1278,9 +1301,17 @@ export class Evolution {
         this.save(r);return;
       }
       if (admitted.questions.length) {
+        const pending=admissionQuestionState(admitted,sourceCatalog,admissionContext.facts,r.run.clarificationReviews??[]).pending;
+        if(pending.length===1) await this.auditQuestion(r,pending[0],sourceCatalog,admissionContext.facts,signal);
+        else if(pending.length>1) await this.auditAdmissionQuestions(r,pending,sourceCatalog,admissionContext.facts,signal);
+        const state=admissionQuestionState(admitted,sourceCatalog,admissionContext.facts,r.run.clarificationReviews??[]);
+        if(state.pending.length)throw new ModelProtocolError("需求预检澄清缺少完整裁决");
+        if(state.blockers.length){r.run={...this.base(r),status:"blocked",...describeBlockers(state.blockers)};this.save(r);return;}
+        if(state.questions.length){
         if (!this.scheduler.canClarify(r.calls,true)) throw new BudgetExhaustedError("剩余预算不足以容纳回答后的需求预检、规划复核和候选执行，保留原运行");
-        r.run={...this.base(r),status:"awaiting-input",question:admitted.questions.map(q=>q.question).join("\n")};
+        r.run={...this.base(r),status:"awaiting-input",question:state.questions.join("\n")};
         this.save(r);return;
+        }
       }
     }
     let message: string | undefined = JSON.stringify({
@@ -1294,6 +1325,7 @@ export class Evolution {
       revisions: r.run.revisions,
       previousPlans: r.run.plans,
       sources: sourceCatalog,
+      questionAdjudications:r.run.clarificationReviews,
     });
     r.history = [];
     const rejections = new Set<string>();
@@ -1422,7 +1454,7 @@ export class Evolution {
               const diagnostic =
                 error instanceof Error ? error.message : "计划结构无效";
               const rejection = hash({ diagnostic, evidence: r.run.evidence });
-              if (rejections.has(rejection) || r.calls >= this.limits.calls) {
+              if (error instanceof HistoricalPreparationBlocked || rejections.has(rejection) || r.calls >= this.limits.calls) {
                 r.run = {
                   ...this.base(r),
                   status: "blocked",

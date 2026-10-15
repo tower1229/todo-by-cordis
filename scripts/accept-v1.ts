@@ -9,7 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
-import { Gemini } from "../src/evolution/gemini.js";
+import { DeepSeek } from "../src/evolution/deepseek.js";
 import { redactSensitive } from "./lib/shortened-real-model.js";
 import { runV1Acceptance, v1Requests } from "./lib/v1-scenario.js";
 import { v1Browser } from "./lib/v1-browser.js";
@@ -20,8 +20,8 @@ if (!process.argv.includes("--authorize-real-model"))
     "需要显式授权付费模型调用：pnpm accept:v1 --authorize-real-model",
   );
 if (existsSync(".env")) process.loadEnvFile(".env");
-if (!process.env.GEMINI_API_KEY?.trim())
-  throw new Error("GEMINI_API_KEY is not configured");
+if (!process.env.DEEPSEEK_API_KEY?.trim())
+  throw new Error("DEEPSEEK_API_KEY is not configured");
 const git = (...args: string[]) =>
   execFileSync("git", args, { encoding: "utf8" }).trim();
 const commit = git("rev-parse", "HEAD");
@@ -70,7 +70,7 @@ try {
       clean: true,
       node: process.version,
       requests: v1Requests,
-      model: "gemini-3.1-pro-preview",
+      model: "deepseek-flash",
       faultBaseline: "none",
       faultOrigin: "natural-flow",
       limitsPerChange: { calls: 12, candidates: 3, milliseconds: 600_000 },
@@ -82,7 +82,7 @@ try {
     try {
       const result = await runV1Acceptance({
         directory,
-        driver: new Gemini(process.env.GEMINI_API_KEY!),
+        driver: new DeepSeek(process.env.DEEPSEEK_API_KEY!),
         mode: "real-model-full-six-step",
         record,
         browser: v1Browser(directory),

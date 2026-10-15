@@ -50,6 +50,18 @@ async function settle(e: Evolution): Promise<AssistantRun> {
   throw new Error(`timeout: ${JSON.stringify((await e.observe()).run)}`);
 }
 
+test("宿主编译的表单矩阵通过真实 Chromium：原生必填、空白、Unicode长度及重新打开（模型桩）",async(t)=>{
+ const w=await workspace(t);const before={tasks:w.query(),composition:w.composition()};
+ const planning=new PlanningDriver({workflowRules:[{key:"reflection",label:"复盘",required:true,minLength:2,maxLength:5000}]});
+ const e=new Evolution(w.db,new ExecutionDriver(planning,"aux-workflow","双贡献组合",2),new EvolutionDomain(w));t.after(()=>e.close());
+ await e.command({type:"request",text:"完成前复盘必填，去空白后2至5000个Unicode码点，重新打开保留",operationId:"request"});
+ const ready=await settle(e);assert.equal(ready.status,"ready");if(ready.status!=="ready")throw new Error("未就绪");
+ assert.ok(ready.plan.browserCases?.some(c=>c.steps.some(s=>s.kind==="form-invalid")));
+ await e.command({type:"start",runId:ready.id,planId:ready.plan.id,operationId:"start"});const done=await settle(e);assert.equal(done.status,"awaiting-apply");
+ const candidate=(await e.observe()).candidates!.find(c=>c.passed)!;assert.ok(candidate.browser?.results.every(r=>r.status==="passed"));assert.ok(candidate.browser?.results.some(r=>r.caseId.includes("workflow-input")));
+ assert.deepEqual({tasks:w.query(),composition:w.composition()},before);
+});
+
 test("归档真实重要标记候选：后端通过，默认普通的真实页面断言失败并保留截图", async (t) => {
   const w = await workspace(t);
   const base = w.activeVersion();
@@ -217,7 +229,7 @@ for (const candidateLimit of [3, 1])
           id: "panel-display",
           task: "existing",
           steps: [
-            {kind: "task"},
+            { kind: "task" },
             {
               kind: "action-visible",
               member: "panel",
@@ -298,8 +310,8 @@ for (const candidateLimit of [3, 1])
           if (reply.calls[0]?.name === "propose_plan") {
             const r = (reply.calls[0].args.requirements as Requirement[])[0];
             r.type = "interface";
-            r.checks = [{ checker: "browser/1", caseId: "panel-display" }];
             r.obligations = [
+              ...(r.obligations??[]),
               {
                 kind: "field",
                 field: "noteMark",
@@ -447,7 +459,10 @@ test("缺少浏览器或构建时只阻塞自迭代；浏览器契约禁止任�
   });
   const run = await settle(e);
   assert.equal(run.status, "blocked");
-  assert.match("message" in run ? run.message : "", /browser\/1|环境|预检缺少依赖或检查器/);
+  assert.match(
+    "message" in run ? run.message : "",
+    /browser\/1|环境|预检缺少依赖或检查器/,
+  );
   assert.equal(run.budget?.callsUsed, 0);
   const result = await w.command({
     type: "create",
@@ -777,6 +792,15 @@ for (const faultyBase of [false, true])
           browserCases: [],
           requirements: [
             {
+              id: "identity",
+              source: 1,
+              sourceQuote: sources[0].text,
+              description: "界面身份沿用基线",
+              type: "interface",
+              checks: [],
+              obligations: [{ kind: "preserve-ui" }],
+            },
+            {
               id: "history",
               source: 1,
               sourceQuote: sources[0].text,
@@ -788,7 +812,6 @@ for (const faultyBase of [false, true])
                   kind: "field",
                   field: "noteMark",
                   initial: { kind: "visible", value: "（空）" },
-                  history: { actions: [{ action: "markNote", input: {} }] },
                   scenarios: [
                     {
                       steps: [
@@ -798,6 +821,7 @@ for (const faultyBase of [false, true])
                     },
                   ],
                 },
+                { kind: "history", field: "noteMark" },
               ],
             },
           ],
@@ -845,24 +869,61 @@ for (const faultyBase of [false, true])
         });
       } else {
         const evidence = await checking;
-        assert.equal(evidence.preparations!.length, 4);
+        assert.equal(evidence.preparations!.length, 6);
         assert.ok(
           evidence.preparations!.every(
             (p) => p.status === "passed" && p.actual.fields.noteMark === "ok",
           ),
         );
         assert.ok(evidence.results.every((r) => r.status === "passed"));
+        const renamed = recordPanel(
+          oldSource
+            .replace('id: "note-panel"', 'id: "renamed-panel"')
+            .replace('noteMark: "ok"', 'noteMark: "reviewed"'),
+        );
+        const wrong = compose(renamed.id, base.id);
+        await verifyViaIsolatedWorkspace(
+          w,
+          wrong,
+          updatedCases,
+          new AbortController().signal,
+        );
+        await assert.rejects(
+          verifyBrowser(
+            w,
+            wrong,
+            base,
+            cases.filter((c) => c.steps.some((s) => s.kind === "ui-identity")),
+            parseRequirements(compiled.requirements),
+            "identity-counterexample",
+            new AbortController().signal,
+          ),
+          (error: unknown) => {
+            assert.ok(error instanceof BrowserAssertionError);
+            assert.ok(
+              error.evidence.results.some(
+                (r) =>
+                  r.status === "failed" &&
+                  r.requirementIds.includes("identity") &&
+                  r.screenshot,
+              ),
+            );
+            return true;
+          },
+        );
         assert.equal(
           evidence.results.filter((r) => r.caseId.includes("-historical-"))
             .length,
-          2,
+          4,
         );
         const fixtures = JSON.parse(
           await readFile(join(evidence.directory, "fixtures.json"), "utf8"),
         );
         assert.ok(
           fixtures.tasks
-            .filter((r: { caseId: string }) => r.caseId.includes("-historical-"))
+            .filter((r: { caseId: string }) =>
+              r.caseId.includes("-historical-"),
+            )
             .every(
               (r: { task: { fields: Record<string, string> } }) =>
                 r.task.fields.noteMark === "ok",
@@ -873,9 +934,22 @@ for (const faultyBase of [false, true])
         assert.notEqual(hash(broken), hash(evidence));
         const advancedBase = compose(updated.id, base.id);
         const next = compose(updated.id, advancedBase.id);
-        const inherited = await verifyBrowser(w, next, advancedBase, cases, parseRequirements(compiled.requirements), "inherited-history-definition", new AbortController().signal);
-        assert.ok(inherited.results.every(r => r.status === "passed"));
-        assert.ok(inherited.preparations!.every(p => p.baseVersion === base.id && p.actual.fields.noteMark === "ok"));
+        const inherited = await verifyBrowser(
+          w,
+          next,
+          advancedBase,
+          cases,
+          parseRequirements(compiled.requirements),
+          "inherited-history-definition",
+          new AbortController().signal,
+        );
+        assert.ok(inherited.results.every((r) => r.status === "passed"));
+        assert.ok(
+          inherited.preparations!.every(
+            (p) =>
+              p.baseVersion === base.id && p.actual.fields.noteMark === "ok",
+          ),
+        );
       }
       assert.deepEqual(
         { tasks: w.query(), composition: w.composition() },
@@ -888,21 +962,7 @@ test("公开取消浏览器验收后候选仍可定位部分检查和清理证�
   const w = await workspace(t);
   const before = { tasks: w.query(), composition: w.composition() };
   const planning = new PlanningDriver({
-    browserCases: [
-      {
-        id: "wait-for-cancel",
-        task: "new",
-        steps: [
-          {
-            kind: "field",
-            member: "workflow",
-            contribution: "workflow",
-            field: "reflection",
-            value: "waiting",
-          },
-        ],
-      },
-    ],
+    requirements:[{id:"cancel-field",source:1,sourceQuote:"完成前填写复盘",description:"完成前填写复盘",type:"interface",checks:[{kind:"workflow"}],obligations:[{kind:"field",field:"reflection",initial:{kind:"baseline"},scenarios:[{steps:[{kind:"action",action:"complete",input:{reflection:"waiting"}}],value:"waiting"}]}]}],
   });
   const e = new Evolution(
     w.db,

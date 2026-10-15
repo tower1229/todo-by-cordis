@@ -53,11 +53,18 @@ export function v1FixtureDriver(
   let phase = -1;
   let faultInjected = false;
   let planning: PlanningDriver;
+  let planningRun: string | undefined;
   return new DeltaFixture({
     async generate(request) {
       if (request.schema) return planning.generate(request);
       if (!request.tools?.some((t) => t.name === "submit_candidate")) {
-        if (!JSON.stringify(request.history).includes("inspect_application")) {
+        const input = request.message
+          ? (JSON.parse(request.message) as { sources?: { id: string }[] })
+          : undefined;
+        const source = input?.sources?.at(-1)?.id;
+        const run = source?.slice(0, source.lastIndexOf(":"));
+        if (run && run !== planningRun) {
+          planningRun = run;
           phase++;
           const memberCases =
             phase === 0
@@ -181,6 +188,12 @@ export function v1FixtureDriver(
               ? {
                   memberUpgrades: [{ pluginId: "tags" }],
                   acceptanceReason: "用户要求标签统一小写",
+                }
+              : {}),
+            ...(phase === 3 && optionalCompletionField
+              ? {
+                  acceptanceReason:
+                    "用户新增必填复盘，原可选字段的宿主样本按完整完成输入规则更新",
                 }
               : {}),
             ...(memberCases ? { memberCases } : {}),

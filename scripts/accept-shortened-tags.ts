@@ -1,4 +1,4 @@
-// External Gemini calls require ACCEPT_REAL_MODEL=1 and GEMINI_API_KEY.
+// External DeepSeek calls require ACCEPT_REAL_MODEL=1 and DEEPSEEK_API_KEY.
 // Fresh synthetic workflow-only workspace; add tags then upgrade lowercase; no experience.
 import assert from "node:assert/strict";
 import {
@@ -14,7 +14,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { Workspace } from "../src/server/workspace.js";
 import { Evolution } from "../src/evolution/evolution.js";
 import { EvolutionDomain } from "../src/server/evolution-domain.js";
-import { Gemini } from "../src/evolution/gemini.js";
+import { DeepSeek } from "../src/evolution/deepseek.js";
 import { activateWorkflowOnly } from "../tests/app/dual-composition-fixture.js";
 import type {
   AssistantCommand,
@@ -95,7 +95,7 @@ let formalBefore = formalWorkspaceFingerprint({
 
 const evolution = new Evolution(
   workspace.db,
-  new Gemini(process.env.GEMINI_API_KEY!),
+  new DeepSeek(process.env.DEEPSEEK_API_KEY!),
   new EvolutionDomain(workspace),
   SHORTENED_LIMITS,
 );

@@ -1,5 +1,10 @@
 import { resolveVersionMembers } from "../release/composition.js";
-import type { Browser, BrowserContext, Page, Response as BrowserResponse } from "playwright";
+import type {
+  Browser,
+  BrowserContext,
+  Page,
+  Response as BrowserResponse,
+} from "playwright";
 import { createRequire } from "node:module";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -124,7 +129,10 @@ export function browserEnvironment(
         "utf8",
       ),
       playwright: "1.63.0",
-      presentation: readFileSync(resolve("src/shared/field-presentation.ts"), "utf8"),
+      presentation: readFileSync(
+        resolve("src/shared/field-presentation.ts"),
+        "utf8",
+      ),
       viewports: browserViewports,
     }),
   };
@@ -135,7 +143,7 @@ const attr = (name: string, value: string) =>
 /** One action transaction, including an already-open form after a rejection. */
 async function browserAction(
   page: Page,
-  step: Extract<BrowserStep, {kind: "action"}>,
+  step: Extract<BrowserStep, { kind: "action" }>,
   owner: string,
   taskId: string,
   open: () => Promise<void>,
@@ -143,8 +151,11 @@ async function browserAction(
 ) {
   const form = page.locator("[data-action-form]");
   let awaitingInput = await form.isVisible();
-  if (awaitingInput && (await form.getAttribute("data-action-form")) !== step.action) {
-    await form.getByRole("button", {name: "取消", exact: true}).click();
+  if (
+    awaitingInput &&
+    (await form.getAttribute("data-action-form")) !== step.action
+  ) {
+    await form.getByRole("button", { name: "取消", exact: true }).click();
     await open();
     awaitingInput = false;
   }
@@ -158,12 +169,17 @@ async function browserAction(
     if (await contributionAction.count())
       response = await command(() => contributionAction.click());
     else {
-      await page.getByRole("button", {name: "关闭任务详情", exact: true}).click();
-      response = await command(() => page
-        .locator(attr("task-id", taskId))
-        .locator(attr("action-id", step.action)).click());
+      await page
+        .getByRole("button", { name: "关闭任务详情", exact: true })
+        .click();
+      response = await command(() =>
+        page
+          .locator(attr("task-id", taskId))
+          .locator(attr("action-id", step.action))
+          .click(),
+      );
     }
-    const body = (await response.json()) as {decision?: {kind?: string}};
+    const body = (await response.json()) as { decision?: { kind?: string } };
     if (response.ok() && body.decision?.kind === "commit") {
       if (Object.keys(step.input ?? {}).length)
         throw new Error("动作直接提交而未请求表单，冻结的非空输入未被使用");
@@ -171,25 +187,29 @@ async function browserAction(
       return;
     }
     if (!response.ok() || body.decision?.kind !== "input-required") return;
-    await form.waitFor({state: "visible"});
+    await form.waitFor({ state: "visible" });
   }
   if (step.input === undefined) return;
   // Each data step describes the entire input. Failed drafts must not leak into
   // a subsequent retry or silently supply fields omitted by the frozen case.
   const fields = await form.locator("[data-input-field]").all();
-  const keys = await Promise.all(fields.map(field => field.getAttribute("data-input-field")));
-  if (keys.some(key => !key))
+  const keys = await Promise.all(
+    fields.map((field) => field.getAttribute("data-input-field")),
+  );
+  if (keys.some((key) => !key))
     throw new BrowserEnvironmentError("browser/1 输入字段缺少宿主 DOM 标识");
-  if (Object.keys(step.input).some(key => !keys.includes(key)))
+  if (Object.keys(step.input).some((key) => !keys.includes(key)))
     throw new Error("冻结输入字段在实际动作表单中不存在");
   for (const [index, field] of fields.entries())
     await field.fill(step.input[keys[index]!] ?? "");
   if (await form.locator(":invalid").count())
     throw new Error("动作表单被宿主原生输入校验阻止，未发送提交请求");
-  const response = await command(() => form.locator('button[type="submit"]').click());
-  const body = (await response.json()) as {decision?: {kind?: string}};
+  const response = await command(() =>
+    form.locator('button[type="submit"]').click(),
+  );
+  const body = (await response.json()) as { decision?: { kind?: string } };
   if (response.ok() && body.decision?.kind === "commit") {
-    await form.waitFor({state: "hidden"});
+    await form.waitFor({ state: "hidden" });
     await open();
   }
 }
@@ -241,7 +261,7 @@ export async function verifyBrowser(
     viewport: { width: number; height: number };
     caseId: string;
     task: Task;
-    initial: {title: string; description: string};
+    initial: { title: string; description: string };
   }[] = [];
   await writeFile(
     join(directory, "fixtures.json"),
@@ -412,7 +432,9 @@ export async function verifyBrowser(
         if (c.prepare && c.task !== "existing")
           throw new BrowserEnvironmentError("历史准备仅支持基础版本已有任务");
         if (c.task !== "existing") continue;
-        const preparationBase = c.prepare ? formal.release.get(c.prepare.baseVersion) : base;
+        const preparationBase = c.prepare
+          ? formal.release.get(c.prepare.baseVersion)
+          : base;
         if (isolated.activeVersion().id !== preparationBase.id) {
           importCompositionVersions(formal, isolated, preparationBase);
           await isolated.activateForAcceptance(preparationBase.id, signal);
@@ -466,7 +488,11 @@ export async function verifyBrowser(
         const title = `${fixtures.new} ${index}`;
         const taskId =
           c.task === "existing" ? existing.get(c.id)! : await create(title);
-        const initial = {title: c.task === "existing" ? `${fixtures.existing} ${index}` : title, description: ""};
+        const initial = {
+          title:
+            c.task === "existing" ? `${fixtures.existing} ${index}` : title,
+          description: "",
+        };
         fixtureTasks.push({
           viewport,
           caseId: c.id,
@@ -497,7 +523,11 @@ export async function verifyBrowser(
           viewport,
           status: "passed",
           phase: "candidate",
-          classification: c.classification ?? (c.id.startsWith("host:") ? "system-protection" : "frozen-business"),
+          classification:
+            c.classification ??
+            (c.id.startsWith("host:")
+              ? "system-protection"
+              : "frozen-business"),
           ...(c.obligationId ? { obligationId: c.obligationId } : {}),
         };
         let actual = "";
@@ -542,8 +572,13 @@ export async function verifyBrowser(
               await open();
             } else if (step.kind === "task") {
               const expectedTitle = step.title ?? initial.title;
-              const expectedDescription = step.description ?? initial.description;
-              expected = {kind: "task", title: expectedTitle, description: expectedDescription};
+              const expectedDescription =
+                step.description ?? initial.description;
+              expected = {
+                kind: "task",
+                title: expectedTitle,
+                description: expectedDescription,
+              };
               const title = await page
                 .getByLabel("任务名称", { exact: true })
                 .inputValue();
@@ -551,10 +586,74 @@ export async function verifyBrowser(
                 .getByLabel("备注", { exact: true })
                 .inputValue();
               actual = JSON.stringify({ title, description });
-              if (title !== expectedTitle || description !== expectedDescription)
+              if (
+                title !== expectedTitle ||
+                description !== expectedDescription
+              )
                 throw new Error("标题或备注不符合预期");
             } else if (step.kind === "action") {
               await runAction(step, taskId);
+            } else if (step.kind === "form-invalid") {
+              await runAction({kind:"action",member:step.member,action:step.action},taskId);
+              const form=page.locator("[data-action-form]");
+              await form.waitFor({state:"visible"});
+              const fields=await form.locator("[data-input-field]").all();
+              for (const field of fields) {
+                const key=await field.getAttribute("data-input-field");
+                if(!key)throw new BrowserEnvironmentError("原生表单缺少稳定字段 ID");
+                await field.fill(step.input[key]??"");
+              }
+              const target=form.locator(attr("input-field",step.field));
+              if(!await target.evaluate((field:HTMLTextAreaElement)=>field.required&&field.validity.valueMissing&&!field.validity.valid))
+                throw new Error("冻结必填字段没有触发原生空值校验");
+              const before=hash(isolated!.read(taskId));
+              let submitted=false;
+              const observe=(request:import("playwright").Request)=>{if(request.method()==="POST"&&new URL(request.url()).pathname==="/api/commands")submitted=true;};
+              page.on("request",observe);
+              try {await form.locator('button[type="submit"]').click();}
+              finally {page.off("request",observe);}
+              actual=JSON.stringify({submitted,unchanged:before===hash(isolated!.read(taskId))});
+              if(submitted||before!==hash(isolated!.read(taskId))||!await form.isVisible())
+                throw new Error("原生必填失败仍提交了动作或改变任务");
+            } else if (step.kind === "ui-identity") {
+              const contributions = isolated!.composition().uiContributions;
+              const observed = step.contributions.map((c) => {
+                const current = contributions.find(
+                  (ui) =>
+                    ui.providerId === c.member && ui.id === c.contribution,
+                );
+                return current
+                  ? {
+                      member: current.providerId,
+                      contribution: current.id,
+                      fields: current.fields.map((f) => f.key),
+                      actions: current.actions.map((a) => a.commandId),
+                    }
+                  : null;
+              });
+              actual = JSON.stringify(observed);
+              if (
+                step.contributions.some((c, index) => {
+                  const current = observed[index];
+                  return (
+                    !current ||
+                    c.fields.some((f) => !current.fields.includes(f)) ||
+                    c.actions.some((a) => !current.actions.includes(a))
+                  );
+                })
+              )
+                throw new Error("界面贡献、字段或动作身份已变化");
+              for (const c of step.contributions) {
+                const section = editor.locator(
+                  attr("provider", c.member) +
+                    attr("contribution", c.contribution),
+                );
+                await section.waitFor({ state: "visible" });
+                for (const key of c.fields)
+                  await section
+                    .locator(attr("field", key))
+                    .waitFor({ state: "visible" });
+              }
             } else if (
               step.kind === "field" ||
               step.kind === "action-visible"
@@ -564,8 +663,15 @@ export async function verifyBrowser(
               if (!contribution) {
                 if (step.member === "workflow") contribution = "workflow";
                 else {
-                  const matches = (composition.uiContributions ?? []).filter(c => c.providerId === step.member && (step.kind === "field" ? c.fields.some(f => f.key === step.field) : c.actions.some(a => a.commandId === step.action)));
-                  if (matches.length !== 1) throw new Error("浏览器贡献身份不存在或不唯一");
+                  const matches = (composition.uiContributions ?? []).filter(
+                    (c) =>
+                      c.providerId === step.member &&
+                      (step.kind === "field"
+                        ? c.fields.some((f) => f.key === step.field)
+                        : c.actions.some((a) => a.commandId === step.action)),
+                  );
+                  if (matches.length !== 1)
+                    throw new Error("浏览器贡献身份不存在或不唯一");
                   contribution = matches[0].id;
                 }
               }
@@ -586,11 +692,20 @@ export async function verifyBrowser(
                     throw new Error("可见字段值不符合预期");
                 }
               } else {
-                const button = step.member === "workflow"
-                  ? page.locator(attr("task-id", taskId)).locator(attr("action-id", step.action))
-                  : editor.locator(attr("provider", step.member) + attr("contribution", contribution)).locator(attr("action-id", step.action));
+                const button =
+                  step.member === "workflow"
+                    ? page
+                        .locator(attr("task-id", taskId))
+                        .locator(attr("action-id", step.action))
+                    : editor
+                        .locator(
+                          attr("provider", step.member) +
+                            attr("contribution", contribution),
+                        )
+                        .locator(attr("action-id", step.action));
                 actual = String(await button.isVisible());
-                if ((actual === "true") !== step.visible) throw new Error("可见动作不符合预期");
+                if ((actual === "true") !== step.visible)
+                  throw new Error("可见动作不符合预期");
               }
             } else if (step.kind === "error") {
               const alert = page

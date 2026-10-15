@@ -1,9 +1,23 @@
 import type { TechnicalFact } from "./technical-facts.js";
 import { hash } from "../release/storage.js";
 import { schemaProblems } from "./model-protocol.js";
+import type { ClarificationDecision } from "./clarification-review.js";
 
 type Source = { id: string; text: string };
 type Citation = { sourceRevision: string; sourceQuote: string };
+export const questionReviewKey = (question:string,sources:Source[],facts:TechnicalFact[]) => hash({question,sources,facts});
+export function admissionQuestionState(admission:RequestAdmission,sources:Source[],facts:TechnicalFact[],reviews:{key:string;decision:ClarificationDecision}[]) {
+  const pending:string[]=[], questions:string[]=[], blockers:string[]=[];
+  for(const q of admission.questions){
+    const matches=reviews.filter(r=>r.key===questionReviewKey(q.question,sources,facts));
+    if(new Set(matches.map(r=>hash(r.decision))).size>1){blockers.push("同一澄清裁决冲突，须重新调查");continue;}
+    const decision=matches[0]?.decision;
+    if(!decision){pending.push(q.question);continue;}
+    if(decision.kind==="business-ambiguity")questions.push(q.question);
+    else if(decision.kind==="scope-reduction" || (decision.kind==="technical"&&decision.fact?.expected!==decision.fact?.actual))blockers.push(`澄清审查确认需要维护者处理：${decision.detail}`);
+  }
+  return {pending:[...new Set(pending)],questions:[...new Set(questions)],blockers:[...new Set(blockers)]};
+}
 export type RequestAdmission = {
   key: string;
   baseVersion: string;

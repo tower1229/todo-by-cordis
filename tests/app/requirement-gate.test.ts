@@ -124,6 +124,7 @@ for (const [name, transform] of [
     "界面仅由后端断言覆盖",
     (args: Record<string, unknown>) => {
       (args.requirements as Requirement[])[0].type = "interface";
+      args.workflowRules = [];
     },
   ],
   [
@@ -163,9 +164,27 @@ test("冻结要求的删除、期望替换、摘要篡改及修订均不能开�
     .prepare("SELECT body FROM evolution_runs WHERE id=?")
     .get(run.id)!;
   for (const mutate of [
-    (p: InvestigatedPlan) => {p.questionAdjudications=[{key:"forged",question:"伪造问题",call:1,decision:{kind:"unnecessary",sourceRevision:"forged",sourceQuote:"forged",detail:"forged"}}];},
-    (p: InvestigatedPlan) => {delete p.requestAdmission;},
-    (p: InvestigatedPlan) => {p.requestAdmission!.factsHash = "forged";},
+    (p: InvestigatedPlan) => {
+      p.questionAdjudications = [
+        {
+          key: "forged",
+          question: "伪造问题",
+          call: 1,
+          decision: {
+            kind: "unnecessary",
+            sourceRevision: "forged",
+            sourceQuote: "forged",
+            detail: "forged",
+          },
+        },
+      ];
+    },
+    (p: InvestigatedPlan) => {
+      delete p.requestAdmission;
+    },
+    (p: InvestigatedPlan) => {
+      p.requestAdmission!.factsHash = "forged";
+    },
     (p: InvestigatedPlan) => {
       p.requirements = [];
     },

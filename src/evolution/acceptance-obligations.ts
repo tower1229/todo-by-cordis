@@ -1,10 +1,8 @@
 import type { Requirement } from "../shared/assistant.js";
 import type { BrowserCase, BrowserStep } from "../shared/browser-cases.js";
-import type {
-  AcceptanceObligation,
-  BaselinePreparation,
-} from "../shared/acceptance-obligations.js";
+import type { AcceptanceObligation } from "../shared/acceptance-obligations.js";
 import type { MemberAcceptanceCase } from "../shared/acceptance-cases.js";
+import { historicalPreparation } from "./historical-preparation.js";
 import { obligationCases } from "../shared/acceptance-obligations.js";
 import { hash } from "../release/storage.js";
 import { readOnlyFieldText } from "../shared/field-presentation.js";
@@ -32,58 +30,6 @@ function text(value: unknown): string {
   return value;
 }
 
-/** History is a replay of trusted baseline cases, never a model-supplied database seed. */
-export function compileHistory(
-  value: unknown,
-  baseline: MemberAcceptanceCase[],
-  baseVersion: string,
-): BaselinePreparation {
-  const h = row(value, ["actions"]);
-  let state = "open";
-  let fields: Record<string, string> = {};
-  const origins: MemberAcceptanceCase[] = [];
-  const actions = list(h.actions, 1, 8).map((value) => {
-    const a = row(value, ["action", "input"]);
-    const action = text(a.action);
-    const input = row(a.input, Object.keys(a.input as Row));
-    if (
-      Object.values(input).some(
-        (v) => typeof v !== "string" || v.length > 10000,
-      )
-    )
-      throw new Error("历史准备输入无效");
-    const matches = baseline.filter(
-      (c) =>
-        c.action === action &&
-        c.state === state &&
-        hash(c.fields) === hash(fields) &&
-        hash(c.input) === hash(input) &&
-        c.expected.kind === "commit",
-    );
-    if (matches.length !== 1)
-      throw new Error(`历史准备必须唯一匹配基础版本冻结成功案例：${action}`);
-    const c = matches[0];
-    if (c.expected.kind !== "commit")
-      throw new Error("历史准备不能使用拒绝案例");
-    state = c.expected.state!;
-    fields = structuredClone(c.expected.fields!);
-    origins.push(c);
-    return {
-      kind: "action" as const,
-      member: c.member,
-      action,
-      input: input as Record<string, string>,
-    };
-  });
-  if (!baseVersion) throw new Error("历史准备缺少精确基础版本");
-  return {
-    baseVersion,
-    actions,
-    expected: { state, fields },
-    sourceHash: hash(origins),
-  };
-}
-
 export function compileObligations(
   value: unknown,
   requirement: Omit<Requirement, "obligations">,
@@ -91,6 +37,11 @@ export function compileObligations(
   baseline: MemberAcceptanceCase[],
   inherited: AcceptanceObligation[] = [],
   baseVersion = "",
+  accepted: AcceptanceObligation[] = inherited,
+  lifecycle?: {
+    existing: (target: { member: string; field: string }) => boolean;
+    ui: Extract<AcceptanceObligation, { kind: "ui-identity" }>["contributions"];
+  },
 ): AcceptanceObligation[] {
   return list(value).map((value, index) => {
     const v = row(
@@ -117,10 +68,24 @@ export function compileObligations(
       if (!checks.length) throw new Error("后端验收义务缺少检查器映射");
       return { ...identity, kind: "backend", scope: "checker-suite", checks };
     }
+    if (v.kind === "preserve-ui") {
+      row(v, ["kind"]);
+      if (!lifecycle?.ui.length)
+        throw new Error("界面身份保护没有可信基础贡献，无法推导");
+      return {
+        ...identity,
+        kind: "ui-identity",
+        contributions: structuredClone(lifecycle.ui),
+      };
+    }
     if (v.kind === "history") {
-      row(v, ["kind", "field", "history"]);
+      row(v, ["kind", "field"]);
       const bound = bind([{ kind: "field", field: v.field, value: "" }])[0];
       if (bound.kind !== "field") throw new Error("历史字段绑定失败");
+      if (lifecycle && !lifecycle.existing(bound))
+        throw new Error(
+          `新字段 ${bound.member}:${bound.field} 不存在基础历史；请用字段业务定义表达动作后保留，宿主负责旧任务矩阵`,
+        );
       return {
         ...identity,
         id:
@@ -134,13 +99,13 @@ export function compileObligations(
         member: bound.member,
         ...(bound.contribution ? { contribution: bound.contribution } : {}),
         field: bound.field,
-        history: compileHistory(v.history, baseline, baseVersion),
+        history: historicalPreparation(bound, baseline, baseVersion, accepted),
       };
     }
     if (v.kind === "field") {
       row(
         v,
-        ["kind", "field", "initial", "history", "scenarios"],
+        ["kind", "field", "initial", "scenarios"],
         ["kind", "field", "initial", "scenarios"],
       );
       const initial = row(v.initial, ["kind", "value"], ["kind"]);
@@ -149,17 +114,13 @@ export function compileObligations(
       row(initial, initial.kind === "visible" ? ["kind", "value"] : ["kind"]);
       const bound = bind([{ kind: "field", field: v.field, value: "" }])[0];
       if (bound.kind !== "field") throw new Error("字段义务绑定失败");
-      const history =
-        v.history === undefined
-          ? undefined
-          : compileHistory(v.history, baseline, baseVersion);
       const scenarios = list(v.scenarios, 1, 8).map((value) => {
         const s = row(value, ["steps", "value"]);
         const steps = bind(list(s.steps, 1, 40));
         if (!steps.some((s) => s.kind === "action" || s.kind === "edit"))
           throw new Error("字段动作后义务缺少真实操作");
         return {
-          id: hash({ steps, history: history?.baseVersion }).slice(0, 16),
+          id: hash({ steps, history: undefined }).slice(0, 16),
           steps,
           value: text(s.value),
         };
@@ -188,7 +149,6 @@ export function compileObligations(
               ? { kind: "visible", value: text(initial.value) }
               : { kind: "absent" },
         scenarios,
-        ...(history ? { history } : {}),
       };
     }
     if (v.kind === "assertion") {

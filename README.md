@@ -23,7 +23,7 @@ pnpm start
 - 主界面只显示任务、筛选、搜索与添加；详情在侧栏中编辑，关闭时保留草稿。
 - AI 助手通过常驻按钮呼出，不占用导航或独立页面。工作区设置和版本记录位于右上角“更多选项”。
 - AI 面板已支持服务端状态契约：需求分析、追问、方案确认、执行步骤、成功、失败和取消；收起不取消执行，刷新后从服务端读取状态。
-- 服务端使用官方 `@google/genai` 与 `gemini-3.1-pro-preview`，通过 `models.generateContent` 显式处理工具调用。密钥保存在 Git 忽略的本地 `.env`：`GEMINI_API_KEY=...`；没有密钥时如实显示未连接。密钥不传给浏览器或插件。
+- 服务端通过 DeepSeek 官方 Chat Completions API 使用 DeepSeek V4.1 Flash（`deepseek-flash`），由宿主显式处理工具调用及结构化输出。密钥保存在 Git 忽略的本地 `.env`：`DEEPSEEK_API_KEY=...`；没有密钥时如实显示未连接。密钥不传给浏览器或插件。
 - 自然语言由模型结合当前任务、插件源码与公开契约路由。任务操作复用 Workspace 命令；新建/修改插件先生成方案，确认后才构建和执行。
 - 当前支持现有工作流中的文本字段和动作表单。模型只提交 TypeScript 候选，宿主固定验收条件并独立构建、运行保护回归，通过后原子切换。修改保留插件身份和历史字段。
 - 已通过验证的待应用候选支持完整组合的隔离体验，标注“候选体验 · 测试数据 · 尚未应用”。刷新可重连，结束体验不应用候选；超时或宿主重启后需重建。辅助成员启停也经方案、候选、体验与独立应用确认，保留实现版本与任务字段。
@@ -41,7 +41,7 @@ pnpm build
 pnpm exec playwright install chromium
 pnpm test:e2e
 pnpm bench:m1
-# 真实模型验收（需要 .env，会调用 Gemini 并产生 usage）
+# 真实模型验收（需要 .env，会调用 DeepSeek 并产生 usage）
 node --import tsx scripts/accept-m2.ts
 # #33 缩短试跑：新增标签 → 升级小写（显式授权；无候选体验；不覆盖旧证据）
 ACCEPT_REAL_MODEL=1 pnpm accept:shortened-tags

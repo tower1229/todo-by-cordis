@@ -64,9 +64,11 @@ export function usageFromCalls(
   let promptTokens = 0;
   let completionTokens = 0;
   for (const { usage } of calls) {
-    const prompt = usage!.promptTokens ?? usage!.promptTokenCount;
+    const prompt =
+      usage!.promptTokens ?? usage!.promptTokenCount ?? usage!.prompt_tokens;
     const completion =
       usage!.completionTokens ??
+      usage!.completion_tokens ??
       usage!.candidatesTokenCount ??
       (usage!.totalTokenCount === prompt + (usage!.thoughtsTokenCount ?? 0)
         ? 0
@@ -87,6 +89,9 @@ export function firstPlanResult(
   const proposals = calls.flatMap((call) => {
     const body = call as {
       response?: {
+        choices?: {
+          message?: { tool_calls?: { function?: { name?: string } }[] };
+        }[];
         candidates?: {
           content?: { parts?: { functionCall?: { name?: string } }[] };
         }[];
@@ -95,14 +100,20 @@ export function firstPlanResult(
     };
     if (body.request?.tools?.some((t) => t.name === "submit_candidate"))
       return [];
-    return (
-      body.response?.candidates?.flatMap(
+    return [
+      ...(body.response?.choices?.flatMap(
+        (c) =>
+          c.message?.tool_calls?.filter(
+            (t) => t.function?.name === "propose_plan",
+          ) ?? [],
+      ) ?? []),
+      ...(body.response?.candidates?.flatMap(
         (c) =>
           c.content?.parts?.filter(
             (p) => p.functionCall?.name === "propose_plan",
           ) ?? [],
-      ) ?? []
-    );
+      ) ?? []),
+    ];
   });
   if (!proposals.length) return null;
   return proposals.length === 1 && (confirmed || blocked);

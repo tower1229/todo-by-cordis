@@ -1,5 +1,15 @@
 /** Data interpreted by the trusted host; never executable model code or selectors. */
 export type BrowserStep =
+  | {kind:"form-invalid";member:"workflow";action:"complete";field:string;input:Record<string,string>}
+  | {
+      kind: "ui-identity";
+      contributions: {
+        member: string;
+        contribution: string;
+        fields: string[];
+        actions: string[];
+      }[];
+    }
   | { kind: "open" | "refresh" | "restart" }
   | { kind: "edit"; title?: string; description?: string }
   | {

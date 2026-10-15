@@ -135,7 +135,6 @@ test("独立历史义务只产生已有任务检查，不能把旧ok当成全新
       {
         kind: "history",
         field: "noteMark",
-        history: { actions: [{ action: "markNote", input: {} }] },
       },
     ]),
   ]);
@@ -154,6 +153,100 @@ test("独立历史义务只产生已有任务检查，不能把旧ok当成全新
     field: "noteMark",
     value: "ok",
   });
+});
+
+test("历史义务排在展示义务之前，不能误把同字段的新任务初始检查当成历史检查", () => {
+  const c = compile([
+    requirement("legacy", [{ kind: "history", field: "noteMark" }]),
+    requirement("display"),
+  ]);
+  const p = { ...plan(), ...c } as InvestigatedPlan;
+  assert.deepEqual(
+    coverage(p, sources, ["browser/1"]).flatMap((c) => c.reasons),
+    [],
+  );
+});
+
+test("只声明历史字段时，宿主从基础冻结案例推导准备动作和旧值，候选新值不能影响历史", () => {
+  const d = {
+    workflowRules: [],
+    browserCases: [],
+    memberCases: panelMemberCases.map((c) =>
+      c.expected.kind === "commit"
+        ? {
+            ...c,
+            expected: { ...c.expected, fields: { noteMark: "reviewed" } },
+          }
+        : c,
+    ),
+    requirements: [
+      requirement("legacy", [{ kind: "history", field: "noteMark" }]),
+    ],
+  };
+  const c = compileReferences(d, sources, [], workflow, {
+    memberCases: panelMemberCases,
+    baseVersion: "a".repeat(64),
+  });
+  const historical = c.browserCases[0];
+  assert.equal(historical.task, "existing");
+  assert.deepEqual(historical.prepare?.actions, [
+    { kind: "action", member: "panel", action: "markNote", input: {} },
+  ]);
+  assert.deepEqual(historical.prepare?.expected, {
+    state: "open",
+    fields: { noteMark: "ok" },
+  });
+  assert.equal(historical.prepare?.sourceHash, hash([panelMemberCases[0]]));
+});
+
+test("新字段无动作后业务规格时阻塞，不能捏造基础历史（模型桩）", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "history-blocked-"));
+  const w = await Workspace.open(join(dir, "workspace.db"));
+  const before = { tasks: w.query(), composition: w.composition() };
+  const e = new Evolution(
+    w.db,
+    new PlanningDriver({
+      workflowRules: [],
+      writableScope: [],
+      memberAdditions: [{ pluginId: "panel", name: "标记" }],
+      memberCases: panelMemberCases,
+      capabilityChanges: [
+        {
+          capability: "command.register",
+          provider: "member:panel",
+          consumers: ["src/web/TaskEditor.tsx"],
+          change: "添加标记",
+        },
+      ],
+      requirements: [
+        requirement("legacy", [{ kind: "history", field: "noteMark" }]),
+      ],
+    }),
+    new EvolutionDomain(w),
+  );
+  t.after(async () => {
+    await e.close();
+    await w.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  await e.command({
+    type: "request",
+    text: sources[0].text,
+    operationId: "request",
+  });
+  let s = await e.observe();
+  while (s.run?.status === "planning") {
+    await new Promise((r) => setTimeout(r, 10));
+    s = await e.observe();
+  }
+  assert.equal(s.run?.status, "blocked");
+  assert.match(
+    s.run && "message" in s.run ? s.run.message : "",
+    /没有基础历史.*缺少可推导动作后义务/,
+  );
+  assert.equal(s.run?.budget?.callsUsed, 3);
+  assert.equal(s.candidates?.length ?? 0, 0);
+  assert.deepEqual({ tasks: w.query(), composition: w.composition() }, before);
 });
 
 test("后端引用绑定完整workflow检查器，选择单个序号不遗漏其他真实断言，伪造序号仍拒绝", () => {
@@ -190,6 +283,228 @@ test("后端引用绑定完整workflow检查器，选择单个序号不遗漏其
       ),
     /不存在/,
   );
+});
+
+test("新字段误报历史由宿主按真实生命周期绑定动作后矩阵，不能虚构旧值或遗漏已有任务", () => {
+  const c = compileReferences(
+    {
+      workflowRules: [{ key: "review", required: true, minLength: 1 }],
+      browserCases: [],
+      requirements: [
+        {
+          ...requirement("write", [{ kind: "backend" }]),
+          checks: [{ kind: "workflow" }],
+        },
+        {
+          ...requirement("retain", [{ kind: "history", field: "review" }]),
+          checks: [],
+        },
+      ],
+    },
+    sources,
+    [{ checker: "workflow/1", given: "open", when: "complete", then: "done" }],
+    { ...workflow, fields: [] },
+    { baseVersion: "a".repeat(64) },
+  );
+  const retained = c.requirements[1];
+  assert.ok(retained.obligations.every((o) => o.kind === "field"));
+  assert.ok(!c.browserCases.some((b) => b.prepare));
+  assert.deepEqual(
+    new Set(c.browserCases.map((b) => b.task)),
+    new Set(["existing", "new"]),
+  );
+  assert.ok(
+    c.browserCases
+      .filter((b) => b.id.includes("after-"))
+      .every((b) => b.steps.some((s) => s.kind === "restart")),
+  );
+  assert.deepEqual(retained.checks, c.requirements[0].checks);
+});
+
+test("界面要求只有后端映射时从字段和成功案例生成义务；未知目标仍不能借无关 UI 放行", () => {
+  const baseline = {
+    baseVersion: "a".repeat(64),
+    memberCases: panelMemberCases,
+    uiContributions: [
+      {
+        id: "note-panel",
+        providerId: "panel",
+        fields: [{ key: "noteMark" }],
+        actions: [{ commandId: "markNote" }],
+      },
+    ],
+  };
+  const r = {
+    ...requirement("display", [{ kind: "backend" }]),
+    checks: [{ kind: "member", index: 1 }],
+  };
+  const c = compileReferences(
+    {
+      memberCases: panelMemberCases.map((c) =>
+        c.expected.kind === "commit"
+          ? {
+              ...c,
+              expected: { ...c.expected, fields: { noteMark: "reviewed" } },
+            }
+          : c,
+      ),
+      browserCases: [],
+      requirements: [r],
+    },
+    sources,
+    [],
+    workflow,
+    baseline,
+  );
+  assert.ok(c.requirements[0].obligations.some((o) => o.kind === "field"));
+  assert.ok(
+    c.browserCases.some((b) => b.prepare?.expected.fields.noteMark === "ok"),
+  );
+  assert.deepEqual(
+    coverage({ ...plan(), ...c, memberCases: panelMemberCases }, sources, [
+      "workspace/1",
+      "browser/1",
+    ]).flatMap((c) => c.reasons),
+    [],
+  );
+  const unknown = compileReferences(
+    {
+      memberCases: panelMemberCases,
+      browserCases: [],
+      requirements: [{ ...r, checks: [{ kind: "workflow" }] }],
+    },
+    sources,
+    [{ checker: "workflow/1", given: "open", when: "complete", then: "done" }],
+    workflow,
+    baseline,
+  );
+  assert.ok(
+    coverage(
+      {
+        ...plan(),
+        ...unknown,
+        cases: [
+          {
+            checker: "workflow/1",
+            given: "open",
+            when: "complete",
+            then: "done",
+          },
+        ],
+      },
+      sources,
+      ["workflow/1", "browser/1"],
+    ).some((c) => c.reasons.some((r) => r.includes("界面要求"))),
+  );
+});
+
+test("界面身份义务快照由宿主生成，不添加动作可见性限制；缺失、伪造和删除断言均拒绝", () => {
+  const r = requirement("identity", [{ kind: "preserve-ui" }]);
+  const baseline = {
+    uiContributions: [
+      {
+        id: "note-panel",
+        providerId: "panel",
+        fields: [{ key: "noteMark" }],
+        actions: [{ commandId: "markNote" }],
+      },
+    ],
+  };
+  const c = compileReferences(
+    { requirements: [r] },
+    sources,
+    [],
+    workflow,
+    baseline,
+  );
+  assert.ok(
+    c.browserCases.every((b) =>
+      b.steps.every((s) => s.kind !== "action-visible"),
+    ),
+  );
+  assert.deepEqual(parseBrowserCases(c.browserCases), c.browserCases);
+  const p = { ...plan(), ...c };
+  assert.deepEqual(
+    coverage(p, sources, ["browser/1"]).flatMap((c) => c.reasons),
+    [],
+  );
+  const changed = structuredClone(p);
+  changed.browserCases[0].steps = [];
+  assert.ok(
+    coverage(changed, sources, ["browser/1"]).some((c) => c.reasons.length),
+  );
+  assert.throws(
+    () => compileReferences({ requirements: [r] }, sources, [], workflow),
+    /没有可信基础贡献/,
+  );
+  assert.throws(
+    () =>
+      compileReferences(
+        {
+          requirements: [r],
+          browserCases: [
+            {
+              id: "fake",
+              task: "new",
+              steps: [{ kind: "ui-identity", contributions: [] }],
+            },
+          ],
+        },
+        sources,
+        [],
+        workflow,
+        baseline,
+      ),
+    /宿主生成/,
+  );
+});
+
+test("宿主派生样本可按规则重编译并保留身份，但不能手工伪造来源或删除既有字段义务", () => {
+  const cases = [
+    { checker: "workflow/1", given: "open", when: "complete", then: "done" },
+  ];
+  const raw = {
+    workflowRules: [{ key: "review", minLength: 1 }],
+    requirements: [
+      {
+        ...requirement("write", [{ kind: "backend" }]),
+        checks: [{ kind: "workflow" }],
+      },
+    ],
+  };
+  const first = compileReferences(raw, sources, cases, workflow);
+  const next = compileReferences(
+    {
+      ...raw,
+      workflowRules: [{ key: "review", minLength: 3 }],
+      requirements: [{ ...raw.requirements[0], id: "new" }],
+    },
+    sources,
+    cases,
+    workflow,
+    { requirements: first.requirements, browserCases: first.browserCases },
+  );
+  const old = first.browserCases.find((c) => c.id.includes("after-"))!;
+  const revised = next.browserCases.find((c) => c.id === old.id)!;
+  assert.ok(revised);
+  assert.notDeepEqual(old.steps, revised.steps);
+  assert.equal(
+    next.requirements.find((r) => r.id === "write")?.sourceRevision,
+    first.requirements[0].sourceRevision,
+  );
+  assert.throws(
+    () =>
+      compileReferences(
+        { ...raw, workflowRules: [], requirements: [] },
+        sources,
+        cases,
+        workflow,
+        { requirements: first.requirements },
+      ),
+    /不能删除旧断言/,
+  );
+  const forged = { ...field(), derivation: { checker: "workflow/1" } };
+  assert.throws(() => compile([requirement("fake", [forged])]), /派生字段/);
 });
 
 test("技术复核wire不允许手工目标/立场，宿主绑定事实后裁决；模型schema强制区分业务和技术", () => {
@@ -366,20 +681,72 @@ test("用户明确空白呈现且宿主无法表达时，公开规划门禁直�
   assert.equal(snapshot.candidates?.length ?? 0, 0);
 });
 
-test("规划器虚构的初始ok经来源复核退回规格修正，不能误报维护者缺口或删除原审查（模型桩）",async t=>{
-  const dir=await mkdtemp(join(tmpdir(),"source-adjudication-"));const w=await Workspace.open(join(dir,"workspace.db"));
-  const fixture=new PlanningDriver({workflowRules:[],writableScope:[],memberAdditions:[{pluginId:"panel",name:"标记"}],memberCases:panelMemberCases,capabilityChanges:[{capability:"command.register",provider:"member:panel",consumers:["src/web/TaskEditor.tsx"],change:"添加标记"}],requirements:[requirement("display")]});
-  let plans=0;
-  const e=new Evolution(w.db,{async generate(request,signal){
-    const reply=await fixture.generate(request,signal);
-    if(reply.calls[0]?.name==="propose_plan" && ++plans===1){const rs=reply.calls[0].args.requirements as {obligations:Record<string,unknown>[]}[];rs[0].obligations[0].initial={kind:"visible",value:"ok"};}
-    if(request.schema && JSON.parse(request.message!).kind!=="clarification-review/1"){const r=JSON.parse(reply.text);r.fieldDecisions[0].initial={kind:"unspecified"};reply.text=JSON.stringify(r);}
-    return reply;
-  }},new EvolutionDomain(w));
-  t.after(async()=>{await e.close();await w.close();await rm(dir,{recursive:true,force:true});});
-  await e.command({type:"request",text:sources[0].text,operationId:"request"});
-  let s=await e.observe();while(s.run?.status==="planning"){await new Promise(r=>setTimeout(r,10));s=await e.observe();}
-  assert.equal(s.run?.status,"ready",JSON.stringify(s.run));assert.equal(s.run.budget?.callsUsed,5);assert.equal(s.run.revisions!.length,1);
-  assert.equal(s.run.reviewLedger!.attempts.length,2);assert.ok(s.run.reviewLedger!.attempts[0].review.issues.some(i=>i.kind==="extra-constraint"));
-  assert.equal(s.candidates?.length??0,0);
+test("规划器虚构的初始ok经来源复核退回规格修正，不能误报维护者缺口或删除原审查（模型桩）", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "source-adjudication-"));
+  const w = await Workspace.open(join(dir, "workspace.db"));
+  const fixture = new PlanningDriver({
+    workflowRules: [],
+    writableScope: [],
+    memberAdditions: [{ pluginId: "panel", name: "标记" }],
+    memberCases: panelMemberCases,
+    capabilityChanges: [
+      {
+        capability: "command.register",
+        provider: "member:panel",
+        consumers: ["src/web/TaskEditor.tsx"],
+        change: "添加标记",
+      },
+    ],
+    requirements: [requirement("display")],
+  });
+  let plans = 0;
+  const e = new Evolution(
+    w.db,
+    {
+      async generate(request, signal) {
+        const reply = await fixture.generate(request, signal);
+        if (reply.calls[0]?.name === "propose_plan" && ++plans === 1) {
+          const rs = reply.calls[0].args.requirements as {
+            obligations: Record<string, unknown>[];
+          }[];
+          rs[0].obligations[0].initial = { kind: "visible", value: "ok" };
+        }
+        if (
+          request.schema &&
+          JSON.parse(request.message!).kind !== "clarification-review/1"
+        ) {
+          const r = JSON.parse(reply.text);
+          r.fieldDecisions[0].initial = { kind: "unspecified" };
+          reply.text = JSON.stringify(r);
+        }
+        return reply;
+      },
+    },
+    new EvolutionDomain(w),
+  );
+  t.after(async () => {
+    await e.close();
+    await w.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+  await e.command({
+    type: "request",
+    text: sources[0].text,
+    operationId: "request",
+  });
+  let s = await e.observe();
+  while (s.run?.status === "planning") {
+    await new Promise((r) => setTimeout(r, 10));
+    s = await e.observe();
+  }
+  assert.equal(s.run?.status, "ready", JSON.stringify(s.run));
+  assert.equal(s.run.budget?.callsUsed, 5);
+  assert.equal(s.run.revisions!.length, 1);
+  assert.equal(s.run.reviewLedger!.attempts.length, 2);
+  assert.ok(
+    s.run.reviewLedger!.attempts[0].review.issues.some(
+      (i) => i.kind === "extra-constraint",
+    ),
+  );
+  assert.equal(s.candidates?.length ?? 0, 0);
 });

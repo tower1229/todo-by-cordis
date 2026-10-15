@@ -76,6 +76,12 @@ for (const archiveFails of [false, true])
   });
 
 test("partial usage is unknown and thinking tokens are included", () => {
+  assert.deepEqual(
+    usageFromCalls([
+      { usage: { prompt_tokens: 8, completion_tokens: 5, total_tokens: 13 } },
+    ]),
+    { promptTokens: 8, completionTokens: 5 },
+  );
   assert.equal(usageFromCalls([{ usage: null }]), null);
   assert.equal(
     usageFromCalls([
@@ -117,6 +123,15 @@ test("first-plan metric counts rejected proposals rather than eventual confirmat
   assert.equal(firstPlanResult([], false, false), null);
   assert.equal(firstPlanResult([proposal], true, false), true);
   assert.equal(firstPlanResult([proposal, proposal], true, false), false);
+  const deepseek = {
+    response: {
+      choices: [
+        { message: { tool_calls: [{ function: { name: "propose_plan" } }] } },
+      ],
+    },
+  };
+  assert.equal(firstPlanResult([deepseek], true, false), true);
+  assert.equal(firstPlanResult([deepseek, deepseek], true, false), false);
 });
 
 test("dependency fault is real and the original environment stays healthy", () => {

@@ -1,4 +1,4 @@
-// External Gemini calls require explicit authorization. Only a fresh synthetic DB is used.
+// External DeepSeek calls require explicit authorization. Only a fresh synthetic DB is used.
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,20 +7,20 @@ import { randomUUID } from "node:crypto";
 import { Workspace } from "../src/server/workspace.js";
 import { Evolution } from "../src/evolution/evolution.js";
 import { EvolutionDomain } from "../src/server/evolution-domain.js";
-import { Gemini } from "../src/evolution/gemini.js";
+import { DeepSeek } from "../src/evolution/deepseek.js";
 import type {
   AssistantCommand,
   AssistantSnapshot,
 } from "../src/shared/assistant.js";
 process.loadEnvFile(".env");
-if (!process.env.GEMINI_API_KEY)
-  throw new Error("GEMINI_API_KEY is not configured");
+if (!process.env.DEEPSEEK_API_KEY)
+  throw new Error("DEEPSEEK_API_KEY is not configured");
 const directory = mkdtempSync(join(tmpdir(), "cordis-issue6-model-"));
 console.log(directory);
 const workspace = await Workspace.open(join(directory, "workspace.db"));
 const evolution = new Evolution(
   workspace.db,
-  new Gemini(process.env.GEMINI_API_KEY),
+  new DeepSeek(process.env.DEEPSEEK_API_KEY),
   new EvolutionDomain(workspace),
 );
 const evidence: unknown[] = [];

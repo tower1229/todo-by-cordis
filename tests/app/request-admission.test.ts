@@ -9,17 +9,20 @@ import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import {
-  providerSchema,
+  responseSchema,
   schemaProblems,
 } from "../../src/evolution/model-protocol.js";
 import { clarificationSchema } from "../../src/evolution/clarification-review.js";
 import {
   parseAdmission,
   admissionSchema,
+  admissionQuestionState,
+  questionReviewKey,
 } from "../../src/evolution/request-admission.js";
 import { technicalFacts } from "../../src/evolution/technical-facts.js";
 import { BudgetScheduler } from "../../src/evolution/budget.js";
 import { ModelTransportError } from "../../src/evolution/driver.js";
+import { DeepSeek } from "../../src/evolution/deepseek.js";
 
 const reply = (value: unknown) => ({
   text: JSON.stringify(value),
@@ -30,6 +33,56 @@ const reply = (value: unknown) => ({
 });
 const empty = () => ({ presentations: [], questions: [], facts: [] });
 const input = (r: ModelRequest) => JSON.parse(r.message ?? "{}");
+test("需求预检的额外问题必须独立审查；不必要问题不打断规划，原问题和裁决随计划冻结",async(t)=>{
+ const fixture=new PlanningDriver();
+ const {w,e}=await setup(t,{async generate(r,s){
+   const value=input(r);
+   if(value.kind==="request-admission/1")return reply({...empty(),questions:[{source:1,sourceQuote:"已有数据不自动更改",question:"显式完成动作能否更新已有值？"}]});
+   if(value.kind==="clarification-review/1")return reply({kind:"unnecessary",source:1,sourceQuote:"已有数据不自动更改",detail:"自动迁移与显式完成动作属于不同作用范围，未要求改变既有动作规则"});
+   return fixture.generate(r,s);
+ }});
+ await e.command({type:"request",text:"完成前必须填写复盘，已有数据不自动更改",operationId:"request"});
+ const run=await settle(e);assert.equal(run.status,"ready");if(run.status!=="ready")return;
+ assert.equal(run.budget?.callsUsed,4);assert.equal(run.requestAdmissions?.[0].questions.length,1);
+ assert.equal(run.clarificationReviews?.[0].decision.kind,"unnecessary");
+ assert.deepEqual(run.plan.questionAdjudications,run.clarificationReviews);
+ assert.equal(w.db.prepare("SELECT count(*) n FROM evolution_calls").get()!.n,4);
+});
+
+test("多项预检问题一次合批审查，只向用户展示仍未决定的业务问题",async(t)=>{
+ const {e}=await setup(t,{async generate(r){const v=input(r);
+   if(v.kind==="request-admission/1")return reply({...empty(),questions:[{source:1,sourceQuote:"必填尚未决定",question:"复盘是否必填？"},{source:1,sourceQuote:"其他行为不变",question:"是否修改其他行为？"}]});
+   assert.equal(v.kind,"admission-clarification-review/1");assert.deepEqual(r.history,[]);assert.equal(r.tools,undefined);
+   return reply({decisions:[{index:1,decision:{kind:"business-ambiguity",source:1,sourceQuote:"必填尚未决定",detail:"尚未决定"}},{index:2,decision:{kind:"unnecessary",source:1,sourceQuote:"其他行为不变",detail:"用户已明确"}}]});
+ }});
+ await e.command({type:"request",text:"必填尚未决定，其他行为不变",operationId:"request"});
+ const run=await settle(e);assert.equal(run.status,"awaiting-input");if(run.status==="awaiting-input")assert.equal(run.question,"复盘是否必填？");
+ assert.equal(run.budget?.callsUsed,2);assert.equal(run.clarificationReviews?.length,2);
+});
+
+test("预检问题的裁决绑定精确来源与事实；伪造键、旧来源及冲突裁决不能清除待审问题",()=>{
+ const sources=[{id:"s:1",text:"必填未决定"}],facts=technicalFacts({workflowRules:[],binding:undefined});
+ const admission=parseAdmission(JSON.stringify({...empty(),questions:[{source:1,sourceQuote:"必填未决定",question:"是否必填？"}]}),"base",sources,facts);
+ const decision={kind:"unnecessary" as const,sourceRevision:"s:1",sourceQuote:"必填未决定",detail:"测试裁决"};
+ const review={key:questionReviewKey("是否必填？",sources,facts),decision};
+ assert.deepEqual(admissionQuestionState(admission,sources,facts,[review]),{pending:[],questions:[],blockers:[]});
+ assert.equal(admissionQuestionState(admission,[{...sources[0],id:"s:2"}],facts,[review]).pending.length,1);
+ assert.equal(admissionQuestionState(admission,sources,[...facts,{id:"new",properties:{x:"y"},evidenceHash:"new"}],[review]).pending.length,1);
+ assert.equal(admissionQuestionState(admission,sources,facts,[{...review,key:"fake"}]).pending.length,1);
+ assert.equal(admissionQuestionState(admission,sources,facts,[review,{...review,decision:{...decision,kind:"business-ambiguity"}}]).blockers.length,1);
+});
+
+test("删除宿主输入义务并同步删案例与映射仍不能通过开始门禁",async(t)=>{
+ const {w,e}=await setup(t,new PlanningDriver());
+ await e.command({type:"request",text:"完成前必填复盘",operationId:"request"});const ready=await settle(e);assert.equal(ready.status,"ready");if(ready.status!=="ready")return;
+ const before=w.composition();const stored=JSON.parse(String(w.db.prepare("SELECT body FROM evolution_runs WHERE id=?").get(ready.id)!.body));
+ const plan=structuredClone(ready.plan);const ids=plan.requirements!.flatMap(r=>r.obligations??[]).filter(o=>o.kind==="workflow-input").map(o=>o.id);assert.ok(ids.length);
+ const removed=plan.browserCases!.filter(c=>ids.includes(c.obligationId??"")).map(c=>c.id);
+ plan.browserCases=plan.browserCases!.filter(c=>!removed.includes(c.id));for(const r of plan.requirements!){r.obligations=r.obligations!.filter(o=>o.kind!=="workflow-input");r.checks=r.checks.filter(c=>!removed.includes(c.caseId));}
+ stored.plan=plan;stored.run.plan=plan;w.db.prepare("UPDATE evolution_runs SET body=? WHERE id=?").run(JSON.stringify(stored),ready.id);
+ await assert.rejects(e.command({type:"start",runId:ready.id,planId:plan.id,operationId:"start"}),/冻结|需求|验收|规格/);
+ assert.deepEqual(w.composition(),before);assert.equal((await e.observe()).candidates?.length,0);
+});
 async function setup(t: test.TestContext, driver: Driver, calls = 12) {
   const dir = await mkdtemp(join(tmpdir(), "cordis-admission-"));
   const w = await Workspace.open(join(dir, "workspace.db"));
@@ -56,7 +109,8 @@ async function settle(e: Evolution) {
 
 test("供应商投影显式声明根必填及分支字段；宿主仍拒绝空对象和跨分支伪造", () => {
   const strict = clarificationSchema();
-  const wire = providerSchema(strict);
+  const wire = (responseSchema(strict).properties as Record<string, unknown>)
+    .result as Record<string, unknown>;
   assert.ok(Array.isArray(wire.anyOf));
   assert.ok(schemaProblems({}, wire).length);
   assert.ok(schemaProblems({}, strict).length);
@@ -82,7 +136,10 @@ test("供应商投影显式声明根必填及分支字段；宿主仍拒绝空�
   );
   assert.deepEqual(strict, clarificationSchema(), "投影不能改写原验收契约");
   const strings = { type: "string", minLength: 1, maxLength: 8, pattern: "^a" };
-  assert.deepEqual(providerSchema(strings), { type: "string" });
+  assert.deepEqual(
+    (responseSchema(strings).properties as Record<string, unknown>).result,
+    strings,
+  );
   assert.ok(schemaProblems("", strings).length);
   assert.ok(schemaProblems("wrong", strings).length);
   const bounded = {
@@ -91,11 +148,10 @@ test("供应商投影显式声明根必填及分支字段；宿主仍拒绝空�
     maxItems: 20,
     items: { type: "integer", minimum: 1, maximum: 5 },
   };
-  assert.deepEqual(providerSchema(bounded), {
-    type: "array",
-    minItems: 1,
-    items: { type: "integer" },
-  });
+  assert.deepEqual(
+    (responseSchema(bounded).properties as Record<string, unknown>).result,
+    bounded,
+  );
   assert.ok(schemaProblems([], bounded).length);
   assert.ok(schemaProblems([6], bounded).length);
 });
@@ -120,7 +176,8 @@ test("互斥步骤不能因供应商投影而混填字段，错误反馈绑定�
       },
     ],
   };
-  const wire = providerSchema(original);
+  const wire = (responseSchema(original).properties as Record<string, unknown>)
+    .result as Record<string, unknown>;
   assert.ok(Array.isArray(wire.anyOf));
   assert.deepEqual(schemaProblems({ kind: "open" }, wire), []);
   assert.ok(
@@ -206,6 +263,37 @@ test("JSON合法但来源绑定非法时也在同一交换内有界纠正，不�
     w.db.prepare("SELECT count(*) AS n FROM evolution_calls").get()!.n,
     4,
   );
+});
+
+test("传输断连仅消耗一次预算并持久化根因，不重试或转交模型修正业务", async (t) => {
+  let calls = 0;
+  const { w, e } = await setup(
+    t,
+    new DeepSeek("synthetic-key", async () => {
+      calls++;
+      throw new TypeError("fetch failed", {
+        cause: Object.assign(new Error("other side closed"), {
+          code: "UND_ERR_SOCKET",
+        }),
+      });
+    }),
+  );
+  await e.command({
+    type: "request",
+    text: "完成前填写复盘",
+    operationId: "request",
+  });
+  const r = await settle(e);
+  assert.equal(r.status, "failed");
+  assert.equal(r.budget?.callsUsed, 1);
+  assert.equal(calls, 1);
+  const rows = w.db.prepare("SELECT body FROM evolution_calls").all();
+  assert.equal(rows.length, 1);
+  const call = JSON.parse(String(rows[0].body));
+  assert.equal(call.status, "failed");
+  assert.equal(call.transport.failure.kind, "connection");
+  assert.equal(call.transport.failure.causes[1].code, "UND_ERR_SOCKET");
+  assert.equal((await e.observe()).candidates?.length ?? 0, 0);
 });
 
 test("供应商400作为模型契约故障独立阻塞，保留精确传输摘要且不重试或转交业务澄清", async (t) => {
@@ -354,7 +442,7 @@ test("明确但无法支持的空白初始呈现在源码调查前阻塞，不�
   assert.deepEqual(stored.investigation.deliveries, []);
 });
 
-test("必要澄清在预检集中提出，回答使旧预检失效，同一运行4次调用ready", async (t) => {
+test("必要澄清经过独立审查，回答使旧预检失效，同一运行5次调用ready", async (t) => {
   const fixture = new PlanningDriver();
   const seen: ModelRequest[] = [];
   const { e } = await setup(t, {
@@ -385,7 +473,7 @@ test("必要澄清在预检集中提出，回答使旧预检失效，同一运�
   });
   const waiting = await settle(e);
   assert.equal(waiting.status, "awaiting-input");
-  assert.equal(waiting.budget?.callsUsed, 1);
+  assert.equal(waiting.budget?.callsUsed, 2);
   await e.command({
     type: "answer",
     runId: waiting.id,
@@ -395,7 +483,7 @@ test("必要澄清在预检集中提出，回答使旧预检失效，同一运�
   const ready = await settle(e);
   assert.equal(ready.id, waiting.id);
   assert.equal(ready.status, "ready");
-  assert.equal(ready.budget?.callsUsed, 4);
+  assert.equal(ready.budget?.callsUsed, 5);
   assert.equal(ready.requestAdmissions?.length, 2);
   assert.notEqual(
     ready.requestAdmissions![0].sourceHash,

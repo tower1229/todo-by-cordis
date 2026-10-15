@@ -74,8 +74,8 @@ if (!child) {
   );
   reserveArchive(root);
   if (real && existsSync(".env")) process.loadEnvFile(".env");
-  if (real && !process.env.GEMINI_API_KEY?.trim())
-    throw new Error("GEMINI_API_KEY is not configured");
+  if (real && !process.env.DEEPSEEK_API_KEY?.trim())
+    throw new Error("DEEPSEEK_API_KEY is not configured");
   const source = process.cwd();
   const directory = mkdtempSync(join(tmpdir(), "cordis-baseline-product-"));
   const archiveDirectory = mkdtempSync(
@@ -183,7 +183,7 @@ if (!child) {
   const { computeStabilityMetrics } = await import(
     "./lib/stability-eval/metrics.js"
   );
-  const { Gemini } = await import("../src/evolution/gemini.js");
+  const { DeepSeek } = await import("../src/evolution/deepseek.js");
   const manifest = freezeManifest(
     postchange
       ? postchangeManifest(identity.productCommit)
@@ -197,7 +197,7 @@ if (!child) {
     harnessCommit: identity.harnessCommit,
     continuationRoot: process.env.STABILITY_CONTINUATION_ROOT,
     driverFactory: real
-      ? () => new Gemini(process.env.GEMINI_API_KEY!)
+      ? () => new DeepSeek(process.env.DEEPSEEK_API_KEY!)
       : undefined,
   });
   const summaryHash = writeVerifiedJson(join(root, "summary.json"), {

@@ -29,11 +29,9 @@ export type ShortenedBreakpoint = {
 
 export function requireRealModelAuthorization(): void {
   if (process.env.ACCEPT_REAL_MODEL !== "1")
-    throw new Error(
-      "缩短真实模型试跑需要显式授权：设置 ACCEPT_REAL_MODEL=1",
-    );
-  if (!process.env.GEMINI_API_KEY?.trim())
-    throw new Error("GEMINI_API_KEY is not configured");
+    throw new Error("缩短真实模型试跑需要显式授权：设置 ACCEPT_REAL_MODEL=1");
+  if (!process.env.DEEPSEEK_API_KEY?.trim())
+    throw new Error("DEEPSEEK_API_KEY is not configured");
 }
 
 export function resolveBaseCommit(fallback = "HEAD"): string {
@@ -64,20 +62,22 @@ export function buildShortenedTrialHeader(input: {
     businessRequests: input.businessRequests,
     maxAttemptsPerPhase: 1,
     experienceInteraction: false,
-    note:
-      "缩短试跑证据；完整六步场景使用 real-model-full-six-step，不覆盖 issue-8 等历史验收记录。",
+    note: "缩短试跑证据；完整六步场景使用 real-model-full-six-step，不覆盖 issue-8 等历史验收记录。",
   };
 }
 
 const SENSITIVE_KEY =
-  /^(authorization|api[_-]?key|gemini[_-]?api[_-]?key|token|secret)$/i;
+  /^(authorization|api[_-]?key|(?:gemini|deepseek)[_-]?api[_-]?key|token|secret)$/i;
 
 export function redactSensitive(value: unknown): unknown {
   if (value === null || value === undefined) return value;
   if (typeof value === "string") {
     if (/AIza[0-9A-Za-z_-]{30,}/.test(value))
-      return value.replace(/AIza[0-9A-Za-z_-]{30,}/g, "[REDACTED_GEMINI_KEY]");
-    return value;
+      value = value.replace(/AIza[0-9A-Za-z_-]{30,}/g, "[REDACTED_GEMINI_KEY]");
+    return (value as string).replace(
+      /sk-[0-9A-Za-z_-]{20,}/g,
+      "[REDACTED_MODEL_KEY]",
+    );
   }
   if (Array.isArray(value)) return value.map(redactSensitive);
   if (typeof value === "object") {
@@ -118,8 +118,7 @@ export function summarizeCandidateResults(
 export function summarizeRunConfirmation(snapshot: AssistantSnapshot) {
   const run = snapshot.run;
   if (!run) return null;
-  const planSummary =
-    "plan" in run && run.plan ? run.plan.summary : undefined;
+  const planSummary = "plan" in run && run.plan ? run.plan.summary : undefined;
   const planId = "plan" in run && run.plan ? run.plan.id : undefined;
   return {
     id: run.id,
@@ -186,7 +185,6 @@ export function buildBreakpoint(input: {
     runStatus: input.runStatus,
     diagnostic: input.diagnostic,
     preservedDirectory: input.preservedDirectory,
-    nextAction:
-      "补确定性回归后再跑；禁止无限重试或手工改生成代码后算通过。",
+    nextAction: "补确定性回归后再跑；禁止无限重试或手工改生成代码后算通过。",
   };
 }
