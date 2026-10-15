@@ -15,7 +15,7 @@ import { Workspace } from "../../src/server/workspace.js";
 import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { bindPlan, capture } from "../../src/server/planning.js";
-import { PlanningDriver } from "./planning-fixture.js";
+import { PlanningDriver, admissionReceiptFixture } from "./planning-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
 import { hash } from "../../src/release/storage.js";
 import type { InvestigatedPlan } from "../../src/shared/assistant.js";
@@ -114,8 +114,22 @@ async function certifyFixture(
       checks: [
         { checker: "host-member-enabled/1", caseId: "host-member-enabled/1:1" },
       ],
+      obligations: [
+        {
+          version: 1,
+          id: "fixture-enabled-backend",
+          kind: "backend",
+          checks: [
+            {
+              checker: "host-member-enabled/1",
+              caseId: "host-member-enabled/1:1",
+            },
+          ],
+        },
+      ],
     },
   ];
+  plan.requestAdmission = admissionReceiptFixture(plan.baseVersion!,[{id:"fixture:1",text:plan.summary}]);
   plan.browserCases = [];
   plan.changeSpec = compileSpec(plan, runId, hash(w.release.get(plan.baseVersion!).source));
   plan.requirementGate = freezeRequirements(
@@ -201,6 +215,7 @@ async function awaitingMemberEnabledApply(
           request: "停用标签插件",
           updatedAt: new Date().toISOString(),
           status: "awaiting-apply",
+          requestAdmissions: [plan.requestAdmission],
           plan,
           steps: [],
           summary: `${plan.outcome}（候选已验证，尚未应用）`,
@@ -508,6 +523,7 @@ test("self-iteration apply re-enable restores contributions with retained field 
           request: "再启用标签插件",
           updatedAt: new Date().toISOString(),
           status: "awaiting-apply",
+          requestAdmissions: [plan.requestAdmission],
           plan,
           steps: [],
           summary: `${plan.outcome}（候选已验证，尚未应用）`,
@@ -739,6 +755,7 @@ test("impure enable-status candidate does not take member-enabled experience sho
           request: "杂质启用态候选",
           updatedAt: new Date().toISOString(),
           status: "awaiting-apply",
+          requestAdmissions: [plan.requestAdmission],
           plan,
           steps: [],
           summary: `${plan.outcome}（候选已验证，尚未应用）`,

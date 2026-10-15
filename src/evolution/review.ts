@@ -10,6 +10,7 @@ export function recordReview(
   definitionHash: string,
 ) {
   const blockers: string[] = [];
+  const previousAttempts = structuredClone(ledger.findings);
   for (const resolution of review.resolutions ?? []) {
     const finding = ledger.findings.find((f) => f.id === resolution.issueId);
     if (!finding)
@@ -37,7 +38,7 @@ export function recordReview(
       opposite.status = "conflicting";
       blockers.push("独立复核对同一要求给出相反立场：" + opposite.id);
     }
-    const repeated = previous.find(
+    const repeated = previousAttempts.filter(f => f.key === key).find(
       (f) =>
         f.definitionHash === definitionHash &&
         f.revision === revision &&

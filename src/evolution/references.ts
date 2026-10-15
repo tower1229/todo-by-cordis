@@ -1,5 +1,9 @@
 import type { InvestigatedPlan, RequirementGate } from "../shared/assistant.js";
 import { hash } from "../release/storage.js";
+import type { BrowserStep } from "../shared/browser-cases.js";
+import { compileObligations } from "./acceptance-obligations.js";
+import { obligationCases } from "../shared/acceptance-obligations.js";
+import type { Requirement } from "../shared/assistant.js";
 
 type Row = Record<string, unknown>;
 function row(value: unknown): Row {
@@ -28,7 +32,11 @@ export function compileReferences(
   sources: RequirementGate["sources"],
   workflowCases: InvestigatedPlan["cases"],
   workflow: { id: string; actions: { id: string }[] },
-  inherited: Pick<InvestigatedPlan, "memberCases" | "browserCases"> & {
+  inherited: Pick<
+    InvestigatedPlan,
+    "memberCases" | "browserCases" | "requirements"
+  > & {
+    baseVersion?: string;
     uiContributions?: {
       id: string;
       providerId: string;
@@ -80,6 +88,69 @@ export function compileReferences(
       throw new Error(`浏览器业务引用不存在或身份不唯一：${kind}:${key}`);
     return [...ids][0];
   };
+  const bindSteps = (steps: unknown[], caseId: unknown): BrowserStep[] => {
+    const taskExpectation: Row = {};
+    return steps.map((value) => {
+      const s = row(value);
+      if (s.kind === "edit") {
+        if (s.title !== undefined) {
+          if (typeof s.title !== "string") throw new Error("任务编辑标题无效");
+          taskExpectation.title = s.title.trim();
+        }
+        if (s.description !== undefined) {
+          if (typeof s.description !== "string")
+            throw new Error("任务编辑备注无效");
+          taskExpectation.description = s.description;
+        }
+      }
+      if (s.kind === "task") {
+        if (Object.keys(s).some((key) => key !== "kind"))
+          throw new Error(
+            "任务属性断言由宿主绑定合成基线及编辑步骤，不得提交手工期望",
+          );
+        return { kind: "task", ...taskExpectation };
+      }
+      if (["action", "field", "action-visible"].includes(String(s.kind))) {
+        if (s.member !== undefined || s.contribution !== undefined)
+          throw new Error("浏览器身份由宿主绑定，不得提交 member/contribution");
+        const member = owner(
+          s.kind === "field" ? s.field : s.action,
+          s.kind === "field" ? "field" : "action",
+        );
+        if (s.kind === "action") {
+          if (
+            member === "workflow" &&
+            s.action === "complete" &&
+            s.input !== undefined
+          ) {
+            const input = row(s.input);
+            const missing = rules.filter(
+              (f) =>
+                f.required &&
+                (input[f.key] === undefined || input[f.key] === ""),
+            );
+            if (missing.length)
+              throw new Error(
+                `浏览器案例 ${caseId} 的动作输入被宿主原生必填校验阻止，不能提交或断言页面 alert：${missing.map((f) => f.key).join("、")}`,
+              );
+          }
+          return { ...s, member };
+        }
+        const matches = (inherited.uiContributions ?? []).filter(
+          (c) =>
+            c.providerId === member &&
+            (s.kind === "field"
+              ? c.fields.some((f) => f.key === s.field)
+              : c.actions.some((a) => a.commandId === s.action)),
+        );
+        if (matches.length > 1) throw new Error("浏览器基线贡献身份不唯一");
+        const contribution =
+          member === "workflow" ? "workflow" : matches[0]?.id;
+        return { ...s, member, ...(contribution ? { contribution } : {}) };
+      }
+      return s;
+    }) as BrowserStep[];
+  };
   const browsers = list(draft.browserCases ?? []).map((value) => {
     const c = row(value);
     if (
@@ -88,64 +159,12 @@ export function compileReferences(
       Object.keys(c).some((k) => !["id", "task", "steps"].includes(k))
     )
       throw new Error("浏览器局部案例身份无效");
-    const taskExpectation: Row = {};
     return {
       ...c,
       id: inherited.browserCases?.some((old) => old.id === c.id)
         ? c.id
         : "browser-" + hash({ workflow: workflow.id, key: c.id }).slice(0, 24),
-      steps: list(c.steps).map((value) => {
-        const s = row(value);
-        if (s.kind === "edit") {
-          if (s.title !== undefined) {
-            if (typeof s.title !== "string") throw new Error("任务编辑标题无效");
-            taskExpectation.title = s.title.trim();
-          }
-          if (s.description !== undefined) {
-            if (typeof s.description !== "string") throw new Error("任务编辑备注无效");
-            taskExpectation.description = s.description;
-          }
-        }
-        if (s.kind === "task") {
-          if (Object.keys(s).some(key => key !== "kind"))
-            throw new Error("任务属性断言由宿主绑定合成基线及编辑步骤，不得提交手工期望");
-          return {kind: "task", ...taskExpectation};
-        }
-        if (["action", "field", "action-visible"].includes(String(s.kind))) {
-          if (s.member !== undefined || s.contribution !== undefined)
-            throw new Error(
-              "浏览器身份由宿主绑定，不得提交 member/contribution",
-            );
-          const member = owner(
-            s.kind === "field" ? s.field : s.action,
-            s.kind === "field" ? "field" : "action",
-          );
-          if (s.kind === "action") {
-            // The trusted form uses native required validation. Such input cannot
-            // reach the command or produce the visible alert asserted by error.
-            if (member === "workflow" && s.action === "complete" && s.input !== undefined) {
-              const input = row(s.input);
-              const missing = rules.filter(f => f.required && (input[f.key] === undefined || input[f.key] === ""));
-              if (missing.length)
-                throw new Error(`浏览器案例 ${c.id} 的动作输入被宿主原生必填校验阻止，不能提交或断言页面 alert：${missing.map(f => f.key).join("、")}`);
-            }
-            return { ...s, member };
-          }
-          const matches = (inherited.uiContributions ?? []).filter(
-            (c) =>
-              c.providerId === member &&
-              (s.kind === "field"
-                ? c.fields.some((f) => f.key === s.field)
-                : c.actions.some((a) => a.commandId === s.action)),
-          );
-          if (matches.length > 1) throw new Error("浏览器基线贡献身份不唯一");
-          // Existing UI identities stay pinned; a renamed candidate cannot pass by matching the same field elsewhere.
-          const contribution =
-            member === "workflow" ? "workflow" : matches[0]?.id;
-          return { ...s, member, ...(contribution ? { contribution } : {}) };
-        }
-        return s;
-      }),
+      steps: bindSteps(list(c.steps), c.id),
     };
   });
   const catalogs = {
@@ -183,6 +202,7 @@ export function compileReferences(
             "sourceQuote",
             "type",
             "checks",
+            "obligations",
           ].includes(k),
       )
     )
@@ -190,8 +210,8 @@ export function compileReferences(
     if (r.sourceRevision !== undefined)
       throw new Error("需求来源修订由宿主绑定");
     const source = at(sources, r.source);
-    const { source: _source, ...definition } = r;
-    return {
+    const { source: _source, obligations: rawObligations, ...definition } = r;
+    const requirement = {
       ...definition,
       sourceRevision: source.id,
       checks: list(r.checks).flatMap((value) => {
@@ -202,14 +222,30 @@ export function compileReferences(
         )
           throw new Error("需求案例引用无效，使用结构化 kind/index");
         const catalog = catalogs[check.kind as keyof typeof catalogs];
-        if (
-          ["workflow", "enabled"].includes(String(check.kind)) &&
-          check.index === undefined
-        )
+        if (["workflow", "enabled"].includes(String(check.kind))) {
+          if (check.index !== undefined) at(catalog, check.index);
           return catalog;
+        }
         return [at(catalog, check.index)];
       }),
-    };
+    } as Requirement;
+    const obligations = compileObligations(
+      rawObligations,
+      requirement,
+      (steps) => bindSteps(steps, r.id),
+      inherited.memberCases ?? [],
+      inherited.requirements?.find((old) => old.id === r.id)?.obligations,
+      inherited.baseVersion,
+    );
+    for (const obligation of obligations) {
+      for (const c of obligationCases(obligation)) {
+        const existing = browsers.find(b => b.id === c.id);
+        if (existing && hash(existing) !== hash(c)) throw new Error("同一字段验收义务发生冲突，初始状态或相同操作不能要求不同结果");
+        if (!existing) browsers.push(c);
+        requirement.checks.push({ checker: "browser/1", caseId: c.id });
+      }
+    }
+    return { ...requirement, obligations };
   });
   return { requirements, browserCases: browsers };
 }

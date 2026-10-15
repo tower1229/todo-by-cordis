@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Workspace } from "../../src/server/workspace.js";
-import { Evolution } from "../../src/evolution/evolution.js";
+import { AdmissionEvolution as Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { PlanningDriver, toolReply } from "./planning-fixture.js";
 import { panelMemberCases } from "./member-case-fixtures.js";
@@ -32,7 +32,7 @@ async function setup(t: test.TestContext) {
   return workspace;
 }
 
-test("正式新协议：一次业务规格加一次独立复核即可ready，派生步骤和稳定需求ID由宿主冻结", async (t) => {
+test("正式新协议：需求预检、业务规格和独立复核后ready，派生步骤和稳定需求ID由宿主冻结", async (t) => {
   const w = await setup(t);
   const driver = new PlanningDriver();
   const e = new Evolution(w.db, driver, new EvolutionDomain(w));
@@ -45,7 +45,7 @@ test("正式新协议：一次业务规格加一次独立复核即可ready，派
   const ready = await settle(e);
   assert.equal(ready.status, "ready");
   if (ready.status !== "ready") return;
-  assert.equal(ready.budget?.callsUsed, 2);
+  assert.equal(ready.budget?.callsUsed, 3);
   assert.equal(ready.plan.changeSpec?.version, "change/3");
   assert.deepEqual(
     ready.plan.steps.map((s) => s.id),
@@ -67,7 +67,7 @@ test("正式新协议：一次业务规格加一次独立复核即可ready，派
         .body,
     ),
   );
-  assert.equal(stored.investigation.deliveries[0].call, 1);
+  assert.equal(stored.investigation.deliveries[0].call, 2);
   assert.equal(stored.investigation.deliveries[0].phase, "planning");
   assert.deepEqual(
     stored.investigation.deliveries[0].materials.map(
@@ -100,11 +100,88 @@ test("独立复核API故障直接阻塞，不消耗调用反复重做规划", as
   });
   const done = await settle(e);
   assert.equal(done.status, "blocked");
-  assert.equal(done.budget?.callsUsed, 2);
+  assert.equal(done.budget?.callsUsed, 3);
   assert.equal(calls, 2);
   assert.match(
     "message" in done ? done.message : "",
     /review transport unavailable/,
+  );
+});
+
+test("未绑定技术事实的自由复核问题不能进入awaiting-input，保留原预算", async (t) => {
+  const w = await setup(t);
+  const fixture = new PlanningDriver();
+  const e = new Evolution(w.db, {async generate(request, signal) {
+    const reply = await fixture.generate(request, signal);
+    if (request.schema) {
+      const input = JSON.parse(request.message!);
+      const result = JSON.parse(reply.text);
+      result.issues = [{kind: "unverifiable", sourceRevision: input.sources[0].id, sourceQuote: input.sources[0].text,
+        target: {subject: input.requirements[0].id, aspect: "meaning"}, stance: "undetermined", detail: "计数描述", clarification: "请确认字与 Unicode 码点是否一致？"}];
+      reply.text = JSON.stringify(result);
+    }
+    return reply;
+  }}, new EvolutionDomain(w));
+  t.after(() => e.close());
+  await e.command({type: "request", text: "完成前填写复盘", operationId: "request"});
+  const done = await settle(e);
+  assert.equal(done.status, "blocked");
+  assert.match("message" in done ? done.message : "", /协议未收敛.*契约分支/);
+  assert.ok(done.budget!.callsUsed <= 12);
+  assert.equal(done.budget!.callsUsed + done.budget!.callsRemaining, 12);
+});
+
+test("独立技术争议绑定检查器事实后由宿主裁决，3次调用ready且不增加用户澄清", async (t) => {
+  const w = await setup(t);
+  const fixture = new PlanningDriver();
+  const e = new Evolution(
+    w.db,
+    {
+      async generate(request, signal) {
+        const reply = await fixture.generate(request, signal);
+        if (request.schema) {
+          const input = JSON.parse(request.message!);
+          const result = JSON.parse(reply.text);
+          result.issues = [
+            {
+              kind: "conflict",
+              sourceRevision: input.sources[0].id,
+              sourceQuote: input.sources[0].text,
+              detail: "长度检查计数口径",
+              technical: {
+                factId: "host-fact:workflow-text",
+                property: "lengthMetric",
+                expected: "unicode-code-point",
+              },
+            },
+          ];
+          reply.text = JSON.stringify(result);
+        }
+        return reply;
+      },
+    },
+    new EvolutionDomain(w),
+  );
+  t.after(() => e.close());
+  await e.command({
+    type: "request",
+    text: "完成前填写复盘",
+    operationId: "request",
+  });
+  const ready = await settle(e);
+  assert.equal(ready.status, "ready");
+  assert.equal(ready.budget?.callsUsed, 3);
+  assert.equal(ready.budget!.callsUsed + ready.budget!.callsRemaining, 12);
+  if (ready.status !== "ready") return;
+  assert.equal(ready.plan.requirementGate!.review.issues.length, 0);
+  assert.equal(
+    ready.plan.requirementGate!.review.technicalDecisions![0].outcome,
+    "satisfied",
+  );
+  assert.equal(
+    ready.plan.requirementGate!.reviewLedger!.attempts[0].review
+      .technicalDecisions![0].issue.clarification,
+    undefined,
   );
 });
 
@@ -128,10 +205,10 @@ test("合成任务属性不得手填：冻结前退回同一规划循环，宿�
   const ready = await settle(e);
   assert.equal(ready.status, "ready");
   if (ready.status !== "ready") return;
-  assert.equal(ready.budget?.callsUsed, 3);
+  assert.equal(ready.budget?.callsUsed, 4);
   assert.equal(ready.budget!.callsUsed + ready.budget!.callsRemaining, 12);
   assert.deepEqual(ready.plan.browserCases![0].steps, [{kind: "task"}]);
-  assert.ok(JSON.stringify(fixture.requests).includes("不得提交手工期望"));
+  assert.ok(JSON.stringify(fixture.requests).includes("protocolCorrection"));
 });
 
 test("生成阶段补读按下一次实际调用记录精确资料，失败读取不计交付且冻结规格不变", async (t) => {
@@ -184,7 +261,7 @@ test("生成阶段补读按下一次实际调用记录精确资料，失败读�
   });
   const done = await settle(e);
   assert.equal(done.status, "blocked");
-  assert.equal(done.budget?.callsUsed, 4);
+  assert.equal(done.budget?.callsUsed, 5);
   const stored = JSON.parse(
     String(
       w.db.prepare("SELECT body FROM evolution_runs WHERE id=?").get(done.id)!
@@ -193,7 +270,7 @@ test("生成阶段补读按下一次实际调用记录精确资料，失败读�
   );
   assert.equal(hash(stored.plan), frozen);
   const receipt = stored.investigation.deliveries.at(-1);
-  assert.equal(receipt.call, 4);
+  assert.equal(receipt.call, 5);
   assert.equal(receipt.phase, "generation");
   assert.deepEqual(
     receipt.materials.map((m: { ref: string }) => m.ref),
@@ -254,11 +331,11 @@ test("澄清直接等待用户，回答沿同一运行和预算复用已验证�
   const ready = await settle(e);
   assert.equal(ready.status, "ready");
   assert.equal(ready.id, waiting.id);
-  assert.equal(ready.budget?.callsUsed, 4);
+  assert.equal(ready.budget?.callsUsed, 7);
   assert.ok(
     continuationMaterials.some((d) => d.ref === "guide/command.register"),
   );
-  assert.equal(fixture.requests.filter((r) => r.schema).length, 1);
+  assert.equal(fixture.requests.filter((r) => r.schema && JSON.parse(r.message!).kind !== "clarification-review/1").length, 1);
 });
 
 test("正式差异协议：辅助新增files为空，精确继承旧主工作流，浏览器通过后才待应用（模型桩）", async (t) => {
@@ -319,7 +396,7 @@ test("正式差异协议：辅助新增files为空，精确继承旧主工作流
     "awaiting-apply",
     "message" in done ? done.message : done.status,
   );
-  assert.equal(done.budget?.callsUsed, 3);
+  assert.equal(done.budget?.callsUsed, 4);
   assert.deepEqual(w.composition(), before);
   const candidate = (await e.observe()).candidates!.find((c) => c.passed)!;
   assert.ok(candidate.browser?.results.every((r) => r.status === "passed"));
@@ -349,6 +426,7 @@ test("独立复核可直接提出业务澄清；同一运行回答后复核必�
           const input = JSON.parse(request.message!);
           reply.text = JSON.stringify({
             reviewedIds: input.requirements.map((r: { id: string }) => r.id),
+            fieldDecisions: [],
             issues: [
               {
                 kind: "unverifiable",
@@ -357,7 +435,7 @@ test("独立复核可直接提出业务澄清；同一运行回答后复核必�
                 detail: "缺少必填预期",
                 target: { subject: input.requirements[0].id, aspect: "input" },
                 stance: "undetermined",
-                clarification: "复盘必填还是选填？",
+                clarificationChoice: input.businessChoices.find((c: {id: string}) => c.id.startsWith("business-choice:input-required:")).id,
               },
             ],
           });
@@ -375,7 +453,7 @@ test("独立复核可直接提出业务澄清；同一运行回答后复核必�
   });
   const waiting = await settle(e);
   assert.equal(waiting.status, "awaiting-input");
-  assert.equal(waiting.budget?.callsUsed, 2);
+  assert.equal(waiting.budget?.callsUsed, 4);
   assert.equal(waiting.reviewLedger!.findings[0].status, "open");
   await e.command({
     type: "answer",
@@ -385,7 +463,7 @@ test("独立复核可直接提出业务澄清；同一运行回答后复核必�
   });
   const ready = await settle(e);
   assert.equal(ready.status, "ready");
-  assert.equal(ready.budget?.callsUsed, 4);
+  assert.equal(ready.budget?.callsUsed, 7);
   assert.equal(ready.reviewLedger!.findings[0].status, "resolved");
   if (ready.status !== "ready") return;
   assert.deepEqual(
@@ -436,6 +514,26 @@ test("宿主字段投影与修正基线贯穿构建、后端及双视口浏览�
         source: 1,
         sourceQuote: "保存后界面显示复盘",
         type: "interface",
+        obligations: [
+          {
+            kind: "field",
+            field: "reflection",
+            initial: { kind: "absent" },
+            scenarios: [
+              {
+                steps: [
+                  {
+                    kind: "action",
+                    action: "complete",
+                    input: { reflection: "复盘" },
+                  },
+                  { kind: "action", action: "reopen", input: {} },
+                ],
+                value: "复盘",
+              },
+            ],
+          },
+        ],
         checks: [
           { kind: "browser", index: 1 },
           { kind: "browser", index: 2 },
@@ -528,7 +626,7 @@ const plugin: Plugin = {
     "awaiting-apply",
     "message" in done ? done.message : done.status,
   );
-  assert.equal(done.budget?.callsUsed, 4);
+  assert.equal(done.budget?.callsUsed, 5);
   assert.equal(done.budget!.callsUsed + done.budget!.callsRemaining, 12);
   const candidates = (await e.observe()).candidates!;
   const first = candidates.find((c) => c.attempt === 1)!;
@@ -541,7 +639,7 @@ const plugin: Plugin = {
   );
   assert.equal(
     passed.browser?.results.filter((r) => r.requirementIds.length).length,
-    4,
+    12,
   );
   assert.ok(passed.browser?.results.every((r) => r.status === "passed"));
   assert.deepEqual({ composition: w.composition(), tasks: w.query() }, before);

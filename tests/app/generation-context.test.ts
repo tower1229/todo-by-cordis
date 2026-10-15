@@ -52,7 +52,7 @@ test("规划已用九次调用时，首轮精确资料支持合批补读和修�
       requests.push(request);
       if (!request.tools?.some((tool) => tool.name === "submit_candidate")) {
         const reply = await planning.generate(request);
-        if (reply.calls[0]?.name === "propose_plan" && padding++ < 7)
+        if (reply.calls[0]?.name === "propose_plan" && padding++ < 6)
           return {
             ...toolReply("read_source", { ref: "active-source" }),
             history: request.history,
@@ -149,7 +149,7 @@ test("规划已用九次调用时，首轮精确资料支持合批补读和修�
   domain.verifyAcceptance(candidates[1].versionId!, ready.plan);
   assert.equal(finished.budget?.callsUsed, 12);
   assert.equal(finished.budget?.callsRemaining, 0);
-  assert.equal(requests.length, 12);
+  assert.equal(requests.length + 1, 12, "独立预检由夹具适配器计入同一运行预算");
   assert.deepEqual({ composition: w.composition(), tasks: w.query() }, before);
 });
 

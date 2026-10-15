@@ -464,8 +464,8 @@ test("A10: execution rejects unknown tools, apply tools and unauthorized patch",
     planId: ready.plan.id,
   });
   const failed = await settle(e);
-  assert.equal(failed.status, "failed");
-  if (failed.status === "failed") assert.match(failed.message, /未授权|工具/);
+  assert.equal(failed.status, "blocked");
+  if (failed.status === "blocked") assert.match(failed.message, /未授权|工具/);
   assert.equal(w.composition().revision, 1);
 
   const e2 = new Evolution(w.db, driver, new EvolutionDomain(w));
@@ -487,8 +487,8 @@ test("A10: execution rejects unknown tools, apply tools and unauthorized patch",
     planId: ready2.plan.id,
   });
   const failed2 = await settle(e2);
-  assert.equal(failed2.status, "failed");
-  if (failed2.status === "failed") assert.match(failed2.message, /未授权/);
+  assert.equal(failed2.status, "blocked");
+  if (failed2.status === "blocked") assert.match(failed2.message, /授权目录/);
 });
 
 test("Todo commands remain available while a candidate is generating", async (t) => {

@@ -558,6 +558,8 @@ test("browser planning corrects bad guide arguments and rejects an unsent catalo
           calls: [{ name: "read_guides", args: { refs: ["guide/unknown"] } }],
         };
       if (phase === 2)
+        return {...reply,calls:[{name:"read_source",args:{ref:"active-source"}}]};
+      if (phase === 3)
         return {
           ...reply,
           calls: [
@@ -607,15 +609,14 @@ test("browser planning corrects bad guide arguments and rejects an unsent catalo
             .run?.status,
       )
       .toBe("ready");
-    expect(phase).toBe(3);
-    const history = JSON.stringify(
-      base.requests.filter((r) => !r.schema).at(-1)?.history,
-    );
-    expect(history).toContain("REF_UNAVAILABLE");
-    expect(history).toContain("统一规格不得提交宿主派生字段");
+    expect(phase).toBe(4);
+    expect(JSON.stringify(base.requests)).toContain("protocolCorrection");
     const snapshot = await (
       await page.request.get(`${baseURL}/api/assistant`)
     ).json();
+    expect(snapshot.run.protocolFailures).toHaveLength(2);
+    expect(snapshot.run.protocolFailures[0].problems.join(";")).toContain("refs");
+    expect(snapshot.run.protocolFailures[1].problems.join(";")).toContain("evidence");
     expect(
       snapshot.run.plan.binding.materials.some(
         (item: { ref: string }) => item.ref === "guide/command.register",

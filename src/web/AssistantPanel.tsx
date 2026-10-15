@@ -147,6 +147,24 @@ function PlanSummary({ plan }: { plan: InvestigatedPlan }) {
                     将如何验证：
                     {r.checks.map(verification).join("；") || "尚未映射"}
                   </p>
+                  {r.obligations
+                    ?.filter((o) => o.kind === "field")
+                    .map(
+                      (o) =>
+                        o.kind === "field" && (
+                          <p className="text-xs text-muted" key={o.id}>
+                            字段 {o.field}：初始
+                            {o.initial.kind === "absent"
+                              ? "不存在"
+                              : `显示 ${JSON.stringify(o.initial.value)}`}
+                            ；{o.scenarios.length}{" "}
+                            组操作后值；新旧任务、刷新及重启检查
+                            {o.history
+                              ? "；基础版本真实页面准备历史数据并检查原值"
+                              : ""}
+                          </p>
+                        ),
+                    )}
                   {coverage?.reasons.map((reason) => (
                     <p className="text-xs text-danger" key={reason}>
                       未覆盖：{reason}
@@ -160,6 +178,14 @@ function PlanSummary({ plan }: { plan: InvestigatedPlan }) {
                 复核：{issue.detail}
               </p>
             ))}
+            {plan.requirementGate?.review.technicalDecisions?.map(
+              (decision, i) => (
+                <p key={`technical-${i}`} className="text-xs text-muted">
+                  宿主技术裁决：{decision.factId}.{decision.property} ={" "}
+                  {decision.actual ?? "不支持"}（{decision.outcome}）
+                </p>
+              ),
+            )}
           </dd>
         </div>
       )}
@@ -565,11 +591,12 @@ export function AssistantPanel({
                   {candidate.requirementSeal ? "冻结定义已绑定" : "待验证"} ·
                   浏览器：
                   {candidate.browser
-                    ? `${candidate.browser.results.filter((r) => r.status === "passed").length}/${candidate.browser.results.length} 项通过`
+                    ? `${candidate.browser.results.filter((r) => r.classification !== "system-protection" && r.status === "passed").length}/${candidate.browser.results.filter(r => r.classification !== "system-protection").length} 项通过`
                     : "待验证"}
                 </p>
                 <p className="text-xs text-muted">
                   系统保护：宿主检查构建、权限与隔离；模型自测不作为通过依据。
+                  {candidate.browser && ` 浏览器保护 ${candidate.browser.results.filter(r => r.classification === "system-protection" && r.status === "passed").length}/${candidate.browser.results.filter(r => r.classification === "system-protection").length} 项通过。`}
                 </p>
                 {candidate.diagnostic && (
                   <p className="mt-2 whitespace-pre-wrap break-words text-xs text-muted">

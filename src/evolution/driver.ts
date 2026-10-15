@@ -4,7 +4,24 @@ export type ModelReply = {
   calls: { id?: string; name: string; args: Record<string, unknown> }[];
   usage: unknown;
   raw: unknown;
+  transport?: {
+    profile?: string;
+    envelopeValid?: boolean;
+    schemaHash?: string;
+    toolsHash?: string;
+    functionMode?: string;
+    finishReason?: string;
+  };
 };
+export class ModelTransportError extends Error {
+  constructor(
+    message: string,
+    readonly transport: NonNullable<ModelReply["transport"]>,
+    readonly httpStatus?: number,
+  ) {
+    super(message);
+  }
+}
 export type ModelRequest = {
   instruction: string;
   history: unknown[];

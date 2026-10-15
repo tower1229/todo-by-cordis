@@ -21,8 +21,14 @@ import { PlanningDriver, toolReply } from "./planning-fixture.js";
 import { activateWorkflowOnly } from "./dual-composition-fixture.js";
 import { panelMemberCases } from "./member-case-fixtures.js";
 import { panelPluginCode } from "../fixtures/member-ui.js";
-import { parseBrowserCases } from "../../src/server/requirement-coverage.js";
+import {
+  parseBrowserCases,
+  parseRequirements,
+  coverage,
+} from "../../src/server/requirement-coverage.js";
+import { compileReferences } from "../../src/evolution/references.js";
 import { ExecutionDriver } from "./execution-fixture.js";
+import { hash } from "../../src/release/storage.js";
 
 async function workspace(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), "browser-gate-"));
@@ -95,19 +101,57 @@ test("归档真实重要标记候选：后端通过，默认普通的真实页�
     new AbortController().signal,
   );
   assert.ok(checks.length > 0);
-  const cases: BrowserCase[] = ["existing", "new"].map((task) => ({
-    id: `default-${task}`,
-    task: task as "existing" | "new",
-    steps: [
+  const sources = [
+    { id: "archive:1", text: "重要标记，新旧任务默认普通，标记后显示重要" },
+  ];
+  const compiled = compileReferences(
+    {
+      workflowRules: [],
+      memberCases: archived.cases,
+      browserCases: [],
+      requirements: [
+        {
+          id: "default-ordinary",
+          source: 1,
+          sourceQuote: sources[0].text,
+          description: sources[0].text,
+          type: "interface",
+          checks: [],
+          obligations: [
+            {
+              kind: "field",
+              field: "isImportant",
+              initial: { kind: "visible", value: "普通" },
+              scenarios: [
+                {
+                  steps: [
+                    { kind: "action", action: "markImportant", input: {} },
+                  ],
+                  value: "重要",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    sources,
+    [],
+    { id: base.pluginId, actions: [{ id: "complete" }, { id: "reopen" }] },
+  );
+  const cases = parseBrowserCases(compiled.browserCases);
+  const requirements = parseRequirements(compiled.requirements);
+  assert.ok(
+    coverage(
       {
-        kind: "field",
-        member: "important-marker",
-        contribution: "important-detail",
-        field: "isImportant",
-        value: "普通",
-      },
-    ],
-  }));
+        requirements,
+        browserCases: cases,
+        cases: [],
+      } as unknown as import("../../src/shared/assistant.js").InvestigatedPlan,
+      sources,
+      ["browser/1"],
+    )[0].reasons.length === 0,
+  );
   let screenshots: string[] = [];
   await assert.rejects(
     verifyBrowser(
@@ -115,7 +159,7 @@ test("归档真实重要标记候选：后端通过，默认普通的真实页�
       candidate,
       base,
       cases,
-      [],
+      requirements,
       "archived-default-ordinary",
       new AbortController().signal,
     ),
@@ -126,6 +170,19 @@ test("归档真实重要标记候选：后端通过，默认普通的真实页�
       );
       assert.equal(failed.length, 4);
       assert.ok(failed.every((r) => r.actual === "（空）"));
+      assert.ok(
+        failed.every(
+          (r) =>
+            r.caseId.includes("initial-") &&
+            r.obligationId &&
+            r.requirementIds.includes("default-ordinary"),
+        ),
+      );
+      assert.ok(
+        error.evidence.results
+          .filter((r) => r.caseId.includes("after-"))
+          .every((r) => r.status === "passed"),
+      );
       screenshots = failed.map((r) => r.screenshot!);
       return true;
     },
@@ -242,6 +299,19 @@ for (const candidateLimit of [3, 1])
             const r = (reply.calls[0].args.requirements as Requirement[])[0];
             r.type = "interface";
             r.checks = [{ checker: "browser/1", caseId: "panel-display" }];
+            r.obligations = [
+              {
+                kind: "field",
+                field: "noteMark",
+                initial: { kind: "visible", value: "（空）" },
+                scenarios: [
+                  {
+                    steps: [{ kind: "action", action: "markNote", input: {} }],
+                    value: "ok",
+                  },
+                ],
+              },
+            ] as unknown as Requirement["obligations"];
           }
           return reply;
         },
@@ -377,7 +447,8 @@ test("缺少浏览器或构建时只阻塞自迭代；浏览器契约禁止任�
   });
   const run = await settle(e);
   assert.equal(run.status, "blocked");
-  assert.match("message" in run ? run.message : "", /browser\/1|环境/);
+  assert.match("message" in run ? run.message : "", /browser\/1|环境|预检缺少依赖或检查器/);
+  assert.equal(run.budget?.callsUsed, 0);
   const result = await w.command({
     type: "create",
     operationId: "ordinary-todo",
@@ -625,6 +696,193 @@ test("检查器故障单独阻塞，不让模型修业务源码或重置候选�
   assert.match(candidates[0].diagnostic!, /检查器故障桩/);
   assert.deepEqual({ tasks: w.query(), composition: w.composition() }, before);
 });
+
+for (const faultyBase of [false, true])
+  test(
+    faultyBase
+      ? "基础版本历史准备失败独立归类为环境/夹具故障并保留证据"
+      : "历史数据由基础页面真实动作准备，候选只改变后续动作，旧值跨刷新重启保留",
+    async (t) => {
+      const w = await workspace(t);
+      const workflow = w.activeVersion();
+      const oldSource = await panelPluginCode();
+      const recordPanel = (source: string) =>
+        w.release.record({
+          pluginId: "panel",
+          name: "历史面板",
+          service: "plugin:panel",
+          contractVersion: "extensions/1",
+          source,
+          code: source,
+          definition: {},
+          evidence: { passed: true, origin: "historical-fixture" },
+        });
+      const old = recordPanel(
+        faultyBase
+          ? oldSource.replace('noteMark: "ok"', 'noteMark: "unexpected"')
+          : oldSource,
+      );
+      const compose = (memberId: string, parentId?: string) =>
+        w.release.record({
+          pluginId: workflow.pluginId,
+          name: workflow.name,
+          service: workflow.service,
+          contractVersion: workflow.contractVersion,
+          source: workflow.source,
+          code: workflow.code,
+          definition: workflow.definition,
+          evidence: { passed: !parentId, origin: "historical-fixture" },
+          ...(parentId ? { parentId } : {}),
+          members: [
+            { pluginId: workflow.pluginId, role: "workflow", enabled: true },
+            {
+              pluginId: "panel",
+              role: "auxiliary",
+              enabled: true,
+              versionId: memberId,
+            },
+          ],
+        });
+      const base = compose(old.id);
+      await w.activate(
+        {
+          versionId: base.id,
+          compositionRevision: w.composition().revision,
+          operationId: "historical-fixture-base",
+        },
+        () => undefined,
+      );
+      const before = { tasks: w.query(), composition: w.composition() };
+      const updated = recordPanel(
+        oldSource.replace('noteMark: "ok"', 'noteMark: "reviewed"'),
+      );
+      const candidate = compose(updated.id, base.id);
+      const updatedCases = panelMemberCases.map((c) => ({
+        ...c,
+        expected:
+          c.expected.kind === "commit"
+            ? { ...c.expected, fields: { noteMark: "reviewed" } }
+            : c.expected,
+      }));
+      const sources = [
+        {
+          id: "history:1",
+          text: "原标记不自动替换，新动作写 reviewed，详情刷新重启保留",
+        },
+      ];
+      const compiled = compileReferences(
+        {
+          workflowRules: [],
+          memberCases: updatedCases,
+          browserCases: [],
+          requirements: [
+            {
+              id: "history",
+              source: 1,
+              sourceQuote: sources[0].text,
+              description: sources[0].text,
+              type: "interface",
+              checks: [],
+              obligations: [
+                {
+                  kind: "field",
+                  field: "noteMark",
+                  initial: { kind: "visible", value: "（空）" },
+                  history: { actions: [{ action: "markNote", input: {} }] },
+                  scenarios: [
+                    {
+                      steps: [
+                        { kind: "action", action: "markNote", input: {} },
+                      ],
+                      value: "reviewed",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        sources,
+        [],
+        {
+          id: workflow.pluginId,
+          actions: [{ id: "complete" }, { id: "reopen" }],
+        },
+        {
+          memberCases: panelMemberCases,
+          baseVersion: base.id,
+          uiContributions: [
+            {
+              id: "note-panel",
+              providerId: "panel",
+              fields: [{ key: "noteMark" }],
+              actions: [{ commandId: "markNote" }],
+            },
+          ],
+        },
+      );
+      const cases = parseBrowserCases(compiled.browserCases);
+      const checking = verifyBrowser(
+        w,
+        candidate,
+        base,
+        cases,
+        parseRequirements(compiled.requirements),
+        "history-definition",
+        new AbortController().signal,
+      );
+      if (faultyBase) {
+        await assert.rejects(checking, (error: unknown) => {
+          assert.ok(error instanceof BrowserEnvironmentError);
+          assert.match(error.message, /历史准备失败/);
+          assert.equal(error.evidence!.preparations![0].status, "failed");
+          assert.equal(
+            error.evidence!.preparations![0].actual.fields.noteMark,
+            "unexpected",
+          );
+          assert.ok(error.evidence!.preparations![0].screenshot);
+          return true;
+        });
+      } else {
+        const evidence = await checking;
+        assert.equal(evidence.preparations!.length, 4);
+        assert.ok(
+          evidence.preparations!.every(
+            (p) => p.status === "passed" && p.actual.fields.noteMark === "ok",
+          ),
+        );
+        assert.ok(evidence.results.every((r) => r.status === "passed"));
+        assert.equal(
+          evidence.results.filter((r) => r.caseId.includes("-historical-"))
+            .length,
+          2,
+        );
+        const fixtures = JSON.parse(
+          await readFile(join(evidence.directory, "fixtures.json"), "utf8"),
+        );
+        assert.ok(
+          fixtures.tasks
+            .filter((r: { caseId: string }) => r.caseId.includes("-historical-"))
+            .every(
+              (r: { task: { fields: Record<string, string> } }) =>
+                r.task.fields.noteMark === "ok",
+            ),
+        );
+        const broken = structuredClone(evidence);
+        broken.preparations = [];
+        assert.notEqual(hash(broken), hash(evidence));
+        const advancedBase = compose(updated.id, base.id);
+        const next = compose(updated.id, advancedBase.id);
+        const inherited = await verifyBrowser(w, next, advancedBase, cases, parseRequirements(compiled.requirements), "inherited-history-definition", new AbortController().signal);
+        assert.ok(inherited.results.every(r => r.status === "passed"));
+        assert.ok(inherited.preparations!.every(p => p.baseVersion === base.id && p.actual.fields.noteMark === "ok"));
+      }
+      assert.deepEqual(
+        { tasks: w.query(), composition: w.composition() },
+        before,
+      );
+    },
+  );
 
 test("公开取消浏览器验收后候选仍可定位部分检查和清理证据（模型桩）", async (t) => {
   const w = await workspace(t);

@@ -650,9 +650,20 @@ for (const endBeforeFire of [true, false]) {
       sourceQuote: "体验调度候选",
       type: "behavior" as const,
       checks: [{ checker: "schedule/1", caseId: "schedule/1:1" }],
+      obligations: [
+        {
+          version: 1 as const,
+          id: "fixture-schedule-backend",
+          kind: "backend" as const,
+          checks: [{ checker: "schedule/1", caseId: "schedule/1:1" }],
+        },
+      ],
     };
+    const {admissionReceiptFixture} = await import("../app/planning-fixture.js");
+    const requestAdmission=admissionReceiptFixture(formalVersion.id,[{id:"fixture:1",text:requirement.sourceQuote}]);
     const planDefinition = {
       ...planDraft,
+      requestAdmission,
       requirements: [requirement],
       browserCases: [],
       cases: [
@@ -663,7 +674,7 @@ for (const endBeforeFire of [true, false]) {
           checker: "schedule/1",
         },
       ],
-      binding: bindPlan(planDraft, capture(workspace), []),
+      binding: bindPlan({...planDraft, cases: [{given: "体验任务含未来截止", when: "退出体验或等待到期", then: "定时器按体验生命周期释放或触发", checker: "schedule/1"}]}, capture(workspace), []),
     };
     // This is an authored lifecycle fixture, not real-model semantic review.
     // It receives actual Chromium receipts instead of bypassing the new gate.
@@ -725,6 +736,7 @@ for (const endBeforeFire of [true, false]) {
     const domain = new EvolutionDomain(workspace);
     const run = {
       id: "schedule-run",
+      requestAdmissions: [requestAdmission],
       request: "体验调度候选",
       updatedAt: new Date().toISOString(),
       status: "awaiting-apply",

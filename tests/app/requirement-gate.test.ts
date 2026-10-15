@@ -93,7 +93,7 @@ test("公开规划入口拒绝没有需求清单和验收映射的计划", async
     run = (await e.observe()).run;
   }
   assert.equal(run?.status, "blocked");
-  assert.match(run && "message" in run ? run.message : "", /需求/);
+  assert.match(run && "message" in run ? run.message : "", /需求|requirements/);
 });
 
 test("独立复核收到浏览器错误断言的真实匹配语义，仍使用空历史和原预算", async (t) => {
@@ -109,7 +109,7 @@ test("独立复核收到浏览器错误断言的真实匹配语义，仍使用�
   assert.match(input.checkerSemantics["browser/1"].error, /包含/);
   assert.deepEqual(reviews[0].history, []);
   assert.equal(reviews[0].tools, undefined);
-  assert.equal(run.budget?.callsUsed, fixture.requests.length);
+  assert.equal(run.budget?.callsUsed, fixture.requests.length + 1);
   assert.ok((run.budget?.callsUsed ?? 13) < 12);
 });
 
@@ -136,7 +136,7 @@ for (const [name, transform] of [
   test(`需求门禁拒绝${name}`, async (t) => {
     const { run } = await planned(t, transform);
     assert.equal(run.status, "blocked");
-    assert.match("message" in run ? run.message : "", /需求/);
+    assert.match("message" in run ? run.message : "", /需求|requirements/);
   });
 
 for (const issue of ["omission", "extra-constraint"] as const)
@@ -146,8 +146,8 @@ for (const issue of ["omission", "extra-constraint"] as const)
     const reviews = fixture.requests.filter((r) => r.schema);
     assert.equal(reviews.length, 2);
     assert.ok(reviews.every((r) => r.history.length === 0 && !r.tools));
-    assert.equal(run.budget?.callsUsed, fixture.requests.length);
-    assert.equal(run.budget?.callsUsed, 4);
+    assert.equal(run.budget?.callsUsed, fixture.requests.length + 1);
+    assert.equal(run.budget?.callsUsed, 5);
     assert.ok(
       fixture.requests
         .filter((r) => !r.schema)
@@ -163,6 +163,9 @@ test("冻结要求的删除、期望替换、摘要篡改及修订均不能开�
     .prepare("SELECT body FROM evolution_runs WHERE id=?")
     .get(run.id)!;
   for (const mutate of [
+    (p: InvestigatedPlan) => {p.questionAdjudications=[{key:"forged",question:"伪造问题",call:1,decision:{kind:"unnecessary",sourceRevision:"forged",sourceQuote:"forged",detail:"forged"}}];},
+    (p: InvestigatedPlan) => {delete p.requestAdmission;},
+    (p: InvestigatedPlan) => {p.requestAdmission!.factsHash = "forged";},
     (p: InvestigatedPlan) => {
       p.requirements = [];
     },

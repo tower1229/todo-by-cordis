@@ -14,6 +14,7 @@ export type BrowserStep =
       contribution?: string;
       field: string;
       value: string;
+      visible?: boolean;
     }
   | {
       kind: "action-visible";
@@ -28,6 +29,9 @@ export type BrowserCase = {
   id: string;
   task: "existing" | "new";
   steps: BrowserStep[];
+  prepare?: import("./acceptance-obligations.js").BaselinePreparation;
+  obligationId?: string;
+  classification?: "frozen-business" | "system-protection";
 };
 export type BrowserCaseResult = {
   caseId: string;
@@ -38,6 +42,9 @@ export type BrowserCaseResult = {
   actual?: string;
   diagnostic?: string;
   screenshot?: string;
+  phase?: "preparation" | "candidate";
+  obligationId?: string;
+  classification?: "frozen-business" | "system-protection";
 };
 export type BrowserEvidence = {
   checker: "browser/1";
@@ -51,4 +58,15 @@ export type BrowserEvidence = {
   fixtureHash: string;
   directory: string;
   results: BrowserCaseResult[];
+  preparations?: {
+    caseId: string;
+    viewport: { width: number; height: number };
+    sourceHash: string;
+    baseVersion: string;
+    expected: { state: string; fields: Record<string, string> };
+    actual: { state: string; fields: Record<string, string> };
+    status: "passed" | "failed";
+    screenshot?: string;
+    diagnostic?: string;
+  }[];
 };

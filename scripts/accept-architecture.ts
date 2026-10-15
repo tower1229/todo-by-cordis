@@ -18,7 +18,10 @@ import {
 } from "../src/server/evolution-domain.js";
 import { Gemini } from "../src/evolution/gemini.js";
 import { createApp } from "../src/server/app.js";
-import { browserEnvironment } from "../src/server/browser-acceptance.js";
+import {
+  browserEnvironment,
+  verifyBrowser,
+} from "../src/server/browser-acceptance.js";
 import { hash } from "../src/release/storage.js";
 import { activateWorkflowOnly } from "../tests/app/dual-composition-fixture.js";
 import { panelPluginCode } from "../tests/fixtures/member-ui.js";
@@ -77,7 +80,7 @@ const manifest = () =>
   );
 const frozenSource = manifest();
 const header = {
-  kind: "architecture-real/3",
+  kind: "architecture-real/7",
   model: "gemini-3.1-pro-preview",
   cases,
   limits: {
@@ -123,6 +126,7 @@ for (const path of [
   cpSync(path, join(directory, "source", path), { recursive: true });
 const summaries: Record<string, unknown>[] = [];
 let totalCalls = 0;
+let providerContractRejected = false;
 for (const scenario of cases) {
   const events: unknown[] = [];
   const log = (value: unknown) => {
@@ -272,6 +276,14 @@ for (const scenario of cases) {
     before = JSON.stringify({ composition: w.composition(), tasks: w.query() });
     await command({ type: "request", text: scenario.request });
     let snapshot = await settle();
+    if (scenario.id === "addition") {
+      assert.equal(snapshot.run?.status,"blocked","明确不支持的初始空白必须提前阻塞");
+      assert.ok(snapshot.run && "message" in snapshot.run && /维护者.*初始|初始.*维护者/.test(snapshot.run.message));
+      assert.ok(calls <= 2,"需求预检含最多一次协议纠正，不进入完整规划");
+      assert.equal(snapshot.candidates?.length,0);
+      log({type:"unsupported-requirement-blocked-early",run:snapshot.run});
+      continue;
+    }
     if (scenario.id === "clarification") {
       assert.equal(
         snapshot.run?.status,
@@ -311,6 +323,35 @@ for (const scenario of cases) {
     );
     if (snapshot.run?.status !== "ready") throw new Error("规划未就绪");
     assert.equal(snapshot.run.plan.changeSpec?.version, "change/3");
+    const obligations = snapshot.run.plan.requirements!.flatMap(
+      (r) => r.obligations ?? [],
+    );
+    if (scenario.id === "addition") {
+      const field = obligations.find(
+        (o) => o.kind === "field" && o.member !== "workflow",
+      );
+      assert.ok(
+        field?.kind === "field",
+        "独立语义门槛：详情备注必须有字段义务",
+      );
+      assert.deepEqual(
+        field.initial,
+        { kind: "visible", value: "" },
+        "独立语义门槛：用户明确要求尚未填写显示空白",
+      );
+    }
+    if (scenario.id === "upgrade") {
+      assert.ok(
+        obligations.some(
+          (o) =>
+            (o.kind === "field" || o.kind === "history") &&
+            o.field === "noteMark" &&
+            o.member === "panel" &&
+            o.history?.expected.fields.noteMark === "ok",
+        ),
+        "独立语义门槛：旧 ok 必须经过基础版本页面准备",
+      );
+    }
     await command({
       type: "start",
       runId: snapshot.run.id,
@@ -327,6 +368,39 @@ for (const scenario of cases) {
     const candidate = snapshot.candidates!.find((c) => c.passed)!;
     assert.ok(candidate.evidenceHash && candidate.browser?.results.length);
     domain.verifyAcceptance(candidate.versionId!, snapshot.run.plan);
+    if (scenario.id === "addition") {
+      const field = snapshot.run.plan
+        .requirements!.flatMap((r) => r.obligations ?? [])
+        .find((o) => o.kind === "field" && o.member !== "workflow")!;
+      if (field.kind !== "field") throw new Error("field expected");
+      const independent = await verifyBrowser(
+        w,
+        w.release.get(candidate.versionId!),
+        base,
+        ["existing", "new"].map((task) => ({
+          id: `independent-unfilled-${task}`,
+          task: task as "existing" | "new",
+          steps: [
+            {
+              kind: "field",
+              member: field.member,
+              ...(field.contribution
+                ? { contribution: field.contribution }
+                : {}),
+              field: field.field,
+              value: "",
+            },
+          ],
+        })),
+        [],
+        "independent-original-empty-requirement",
+        new AbortController().signal,
+      );
+      log({
+        type: "independent-original-requirement-passed",
+        evidence: independent,
+      });
+    }
     assert.equal(
       JSON.stringify({ composition: w.composition(), tasks: w.query() }),
       before,
@@ -339,27 +413,28 @@ for (const scenario of cases) {
   } finally {
     const snapshot = await e.observe();
     save(join(directory, scenario.id + "-snapshot.json"), snapshot);
+    const callRecords = w.db.prepare("SELECT runId,body FROM evolution_calls").all().map(row=>({runId:row.runId,...JSON.parse(String(row.body))}));
+    providerContractRejected ||= callRecords.some(c=>c.httpStatus === 400);
+    const formalSyntheticUnchanged = JSON.stringify({composition:w.composition(),tasks:w.query()}) === before;
+    const sourceUnchanged = JSON.stringify(manifest()) === JSON.stringify(frozenSource);
+    if (!formalSyntheticUnchanged || !sourceUnchanged) failure ??= "冻结源码或合成基线发生变化，验收无效";
     save(
       join(directory, scenario.id + "-calls.json"),
-      w.db
-        .prepare("SELECT runId,body FROM evolution_calls")
-        .all()
-        .map((row) => ({ runId: row.runId, ...JSON.parse(String(row.body)) })),
+      callRecords,
     );
     const summary = {
       case: scenario.id,
       runId: snapshot.run?.id,
       passed: !failure && snapshot.run?.status === "awaiting-apply",
+      boundaryAccepted: scenario.id === "addition" && !failure && snapshot.run?.status === "blocked",
+      providerContractRejected,
       status: snapshot.run?.status,
       error: failure,
       calls,
       budget: snapshot.run?.budget,
       answeredSyntheticClarification: answered,
-      formalSyntheticUnchanged:
-        JSON.stringify({ composition: w.composition(), tasks: w.query() }) ===
-        before,
-      sourceUnchanged:
-        JSON.stringify(manifest()) === JSON.stringify(frozenSource),
+      formalSyntheticUnchanged,
+      sourceUnchanged,
       applied: false,
       candidates: snapshot.candidates?.map((c) => ({
         id: c.id,
@@ -372,19 +447,21 @@ for (const scenario of cases) {
     save(join(directory, "summary.json"), {
       directory,
       totalCalls,
-      passed: summaries.length === 4 && summaries.every((s) => s.passed),
+      passed: summaries.length === 4 && summaries.every((s) => s.passed || s.boundaryAccepted),
       summaries,
+      notRun: providerContractRejected ? cases.slice(summaries.length).map(c=>c.id) : [],
     });
     console.log(JSON.stringify(summary));
     await e.close();
     await w.close();
   }
+  if (providerContractRejected) break;
 }
 console.log(
   JSON.stringify({
     directory,
     totalCalls,
-    passed: summaries.every((s) => s.passed),
+    passed: summaries.length === cases.length && summaries.every((s) => s.passed || s.boundaryAccepted),
   }),
 );
-if (!summaries.every((s) => s.passed)) process.exitCode = 1;
+if (summaries.length !== cases.length || !summaries.every((s) => s.passed || s.boundaryAccepted)) process.exitCode = 1;

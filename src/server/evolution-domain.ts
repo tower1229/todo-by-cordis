@@ -7,6 +7,9 @@ import {
   candidateProgramHash,
   browserViewports,
 } from "./browser-acceptance.js";
+import { workflowTextVector } from "../shared/checker-semantics.js";
+import { obligationFailure } from "../evolution/acceptance-obligations.js";
+import { technicalFacts } from "../evolution/technical-facts.js";
 import {
   BusinessAssertionError,
   verifyExtensions,
@@ -282,6 +285,9 @@ export class EvolutionDomain implements Domain {
   context() {
     return capture(this.workspace);
   }
+  admission(context: Investigation) {
+    return {facts: technicalFacts({workflowRules: [],binding: undefined}),missing:[...context.environment.missing,...(context.environment.browser?.missing ?? [])]};
+  }
   planningInstruction = planningInstruction;
   planningTools = planningTools;
   read(
@@ -488,7 +494,37 @@ export class EvolutionDomain implements Domain {
     const actualCases = browser?.results
       .map((r) => `${r.caseId}:${r.viewport.width}x${r.viewport.height}`)
       .sort();
+    const expectedPreparations = (plan.browserCases ?? [])
+      .filter((c) => c.prepare)
+      .flatMap((c) =>
+        browserViewports.map((viewport) => ({
+          caseId: c.id,
+          viewport,
+          sourceHash: c.prepare!.sourceHash,
+          baseVersion: c.prepare!.baseVersion,
+          expected: c.prepare!.expected,
+        })),
+      )
+      .sort((a, b) => hash(a).localeCompare(hash(b)));
+    const actualPreparations = (browser?.preparations ?? [])
+      .filter(
+        (p) => p.status === "passed" && hash(p.actual) === hash(p.expected),
+      )
+      .map(({ caseId, viewport, sourceHash, baseVersion, expected }) => ({
+        caseId,
+        viewport,
+        sourceHash,
+        baseVersion,
+        expected,
+      }))
+      .sort((a, b) => hash(a).localeCompare(hash(b)));
     if (
+      !plan.requirements?.length ||
+      plan.requirements.some(
+        (r) => obligationFailure(r, plan.browserCases ?? []).length,
+      ) ||
+      hash(expectedPreparations) !== hash(actualPreparations) ||
+      (browser?.preparations?.length ?? 0) !== expectedPreparations.length ||
       hash(expectedCases) !== hash(actualCases) ||
       !evidence.passed ||
       !browser ||
@@ -1865,18 +1901,18 @@ export async function verifyWorkflow(
     if (f.minLength > 1) {
       const d = await decide("open", "complete", {
         ...valid,
-        [f.key]: "字".repeat(f.minLength - 1),
+        [f.key]: workflowTextVector(f.minLength - 1),
       });
       assert(d.kind === "reject", `${f.key}:minimum`);
     }
     const d = await decide("open", "complete", {
       ...valid,
-      [f.key]: "字".repeat(f.maxLength + 1),
+      [f.key]: workflowTextVector(f.maxLength + 1),
     });
     assert(d.kind === "reject", `${f.key}:maximum`);
     const boundary = await decide("open", "complete", {
       ...valid,
-      [f.key]: "🙂".repeat(f.maxLength),
+      [f.key]: workflowTextVector(f.maxLength, true),
     });
     assert(boundary.kind === "commit", `${f.key}:unicode-boundary`);
   }

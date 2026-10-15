@@ -36,7 +36,13 @@ export const browserSteps = [
   ),
   step(
     "field",
-    { member: text, contribution: text, field: text, value: text },
+    {
+      member: text,
+      contribution: text,
+      field: text,
+      value: text,
+      visible: { type: "boolean" },
+    },
     ["member", "field", "value"],
   ),
   step(

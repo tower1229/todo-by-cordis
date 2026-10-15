@@ -1,4 +1,28 @@
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
+import type { AcceptanceObligation } from "../../src/shared/acceptance-obligations.js";
+import { parseAdmission } from "../../src/evolution/request-admission.js";
+import { technicalFacts } from "../../src/evolution/technical-facts.js";
+/** Authored model-stub receipt for manually seeded lifecycle candidates; never real-model evidence. */
+export function admissionReceiptFixture(baseVersion: string, sources: {id:string;text:string}[]) {
+  return parseAdmission(JSON.stringify({presentations:[],questions:[],facts:[]}),baseVersion,sources,technicalFacts({workflowRules:[],binding:undefined}));
+}
+/** Legacy control-flow fixtures have no source-intake semantics; dedicated intake tests supply them. */
+export function admissionFixture(request: ModelRequest) {
+  if (!request.schema || JSON.parse(request.message ?? "{}").kind !== "request-admission/1") return;
+  return {text: JSON.stringify({presentations:[],questions:[],facts:[]}),history:[],calls:[],usage:{fixture:true},raw:{fixture:"request-admission"}};
+}
+/** Model-stub interpretation; real acceptance uses Gemini's independent source interpretation. */
+export function fieldDecisionsFixture(input: {
+  requirements?: {obligations?: AcceptanceObligation[]}[];
+  fieldReviewTargets?: {obligationId: string; sources: {quote: string}[]}[];
+}) {
+  return (input.fieldReviewTargets ?? []).map((target, index) => {
+    const o = input.requirements?.flatMap(r => r.obligations ?? []).find(o => o.id === target.obligationId);
+    if (o?.kind !== "field") throw new Error("模型桩缺少字段解释目标");
+    return {target: index + 1, source: 1, sourceQuote: target.sources[0].quote,
+      initial: o.initialOrigin === "host" ? {kind: "unspecified"} : o.initial};
+  });
+}
 export const toolReply = (name: string, args: Record<string, unknown>) => ({
   text: "",
   history: [],
@@ -13,15 +37,23 @@ export class PlanningDriver implements Driver {
   constructor(public finish: Record<string, unknown> = {}) {}
   async generate(request: ModelRequest) {
     this.requests.push(request);
+    const admission = admissionFixture(request);
+    if (admission) return admission;
+    if (request.schema && JSON.parse(request.message ?? "{}").kind === "clarification-review/1") {
+      const input = JSON.parse(request.message!);
+      return {text: JSON.stringify({kind: "business-ambiguity", source: input.sources.length, sourceQuote: input.sources.at(-1).text, detail: "模型桩确认必要业务歧义"}), history: [], calls: [], usage: {fixture: true}, raw: {fixture: "clarification-review"}};
+    }
     if (request.schema) {
       const input = JSON.parse(request.message ?? "{}") as {
-        requirements: { id: string }[];
+        requirements: { id: string; obligations?: AcceptanceObligation[] }[];
+        fieldReviewTargets?: {obligationId: string; sources: {quote: string}[]}[];
         reviewLedger?: {findings: {id: string; issue: {sourceRevision: string; sourceQuote: string}}[]};
       };
       return {
         text: JSON.stringify({
           reviewedIds: input.requirements.map((r) => r.id),
           issues: [],
+          fieldDecisions: fieldDecisionsFixture(input),
           resolutions: (input.reviewLedger?.findings ?? []).map(f => ({issueId: f.id, sourceRevision: f.issue.sourceRevision, sourceQuote: f.issue.sourceQuote, reason: "模型桩确认本次规格已修正历史问题"})),
         }),
         history: [],
@@ -168,18 +200,69 @@ export class PlanningDriver implements Driver {
 /** Test-only migration of archived full-reference fixtures to the host-bound wire contract. */
 export function referenceFixture(draft: Record<string, unknown>, sources: {id: string; text: string}[]) {
   const copy = structuredClone(draft);
-  if (Array.isArray(copy.unresolved) && !copy.unresolved.length) delete copy.unresolved;
-  if (Array.isArray(copy.requirements)) copy.requirements = copy.requirements.map((r: Record<string, unknown>) => {
-    const {sourceRevision, ...rest} = r;
-    return {...rest, source: sourceRevision === undefined ? r.source : sources.findIndex(s => s.id === sourceRevision) + 1,
-      checks: (r.checks as {checker: string; caseId: string; kind?: string; index?: number}[]).map(c => {
-        if (c.kind !== undefined && c.checker === undefined && c.caseId === undefined) return c;
-        if (c.checker === "workflow/1" || c.checker === "host-member-enabled/1") return {kind: c.checker === "workflow/1" ? "workflow" : "enabled", index: Number(c.caseId.split(":").at(-1))};
-        if (c.checker === "browser/1") return {kind: "browser", index: (copy.browserCases as {id: string}[] ?? []).findIndex(b => b.id === c.caseId) + 1};
-        if (c.checker === "workspace/1") return {kind: "member", index: (copy.memberCases as {member: string; name: string}[] ?? []).findIndex(b => `member:${b.member}:${b.name}` === c.caseId) + 1};
-        return {kind: "invalid", index: 0};
-      })};
-  });
-  if (Array.isArray(copy.browserCases)) copy.browserCases = copy.browserCases.map((c: Record<string, unknown>) => ({...c, steps: (c.steps as Record<string, unknown>[]).map(({member: _member, contribution: _contribution, ...s}) => s.kind === "task" ? {kind: "task"} : s)}));
+  if (Array.isArray(copy.unresolved) && !copy.unresolved.length)
+    delete copy.unresolved;
+  if (Array.isArray(copy.requirements))
+    copy.requirements = copy.requirements.map((r: Record<string, unknown>) => {
+      const { sourceRevision, ...rest } = r;
+      return {
+        ...rest,
+        obligations: r.obligations ?? [{ kind: "backend" }],
+        source:
+          sourceRevision === undefined
+            ? r.source
+            : sources.findIndex((s) => s.id === sourceRevision) + 1,
+        checks: (
+          r.checks as {
+            checker: string;
+            caseId: string;
+            kind?: string;
+            index?: number;
+          }[]
+        ).map((c) => {
+          if (
+            c.kind !== undefined &&
+            c.checker === undefined &&
+            c.caseId === undefined
+          )
+            return c;
+          if (
+            c.checker === "workflow/1" ||
+            c.checker === "host-member-enabled/1"
+          )
+            return {
+              kind: c.checker === "workflow/1" ? "workflow" : "enabled",
+              index: Number(c.caseId.split(":").at(-1)),
+            };
+          if (c.checker === "browser/1")
+            return {
+              kind: "browser",
+              index:
+                ((copy.browserCases as { id: string }[]) ?? []).findIndex(
+                  (b) => b.id === c.caseId,
+                ) + 1,
+            };
+          if (c.checker === "workspace/1")
+            return {
+              kind: "member",
+              index:
+                (
+                  (copy.memberCases as { member: string; name: string }[]) ?? []
+                ).findIndex(
+                  (b) => `member:${b.member}:${b.name}` === c.caseId,
+                ) + 1,
+            };
+          return { kind: "invalid", index: 0 };
+        }),
+      };
+    });
+  if (Array.isArray(copy.browserCases))
+    copy.browserCases = copy.browserCases.map((c: Record<string, unknown>) => ({
+      ...c,
+      steps: (c.steps as Record<string, unknown>[]).map(
+        ({ member: _member, contribution: _contribution, ...s }) =>
+          s.kind === "task" ? { kind: "task" } : s,
+      ),
+    }));
   return copy;
 }

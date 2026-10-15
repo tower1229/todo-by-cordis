@@ -32,6 +32,25 @@ const draft = () => ({
       sourceQuote: "显示复盘",
       type: "interface",
       checks: [{ kind: "browser", index: 1 }],
+      obligations: [
+        {
+          kind: "field",
+          field: "review",
+          initial: { kind: "absent" },
+          scenarios: [
+            {
+              steps: [
+                {
+                  kind: "action",
+                  action: "complete",
+                  input: { review: "复盘" },
+                },
+              ],
+              value: "复盘",
+            },
+          ],
+        },
+      ],
     },
   ],
 });
@@ -40,9 +59,10 @@ test("来源、检查器案例与浏览器所有者由宿主从结构化引用�
   const compiled = compileReferences(draft(), sources, cases, workflow);
   const requirement = compiled.requirements[0];
   assert.equal(requirement.sourceRevision, sources[0].id);
-  assert.deepEqual(requirement.checks, [
-    { checker: "browser/1", caseId: compiled.browserCases[0].id },
-  ]);
+  assert.deepEqual(
+    requirement.checks.map((c) => c.caseId),
+    compiled.browserCases.map((c) => c.id),
+  );
   assert.match(compiled.browserCases[0].id, /^browser-[a-f0-9]{24}$/);
   assert.equal(compiled.browserCases[0].steps[0].member, "workflow");
   assert.equal(compiled.browserCases[0].steps[1].member, "workflow");
@@ -80,6 +100,9 @@ test("伪造引用、来源、身份歧义仍阻塞，后端引用仍不能覆�
   );
   const backend = draft();
   backend.requirements[0].checks = [{ kind: "workflow", index: 1 }];
+  Object.assign(backend.requirements[0], {
+    obligations: [{ kind: "backend" }],
+  });
   const compiled = compileReferences(backend, sources, cases, workflow);
   const plan = { ...compiled, cases } as unknown as InvestigatedPlan;
   assert.ok(
@@ -98,6 +121,7 @@ test("宿主可绑定完整 workflow 检查器，既有浏览器案例修订保�
         ...d.requirements[0],
         type: "behavior",
         checks: [{ kind: "workflow" }],
+        obligations: [{ kind: "backend" }],
       },
     ],
   };

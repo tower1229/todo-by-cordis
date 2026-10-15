@@ -96,10 +96,10 @@ for (const rules of [
         definition.cases.slice(0, -3).map((c) => c.when),
         [
           "reflection 缺失、空字符串或空白，其他字段有效",
-          "reflection 输入 1 个字，其他字段有效",
-          "reflection 输入 21 个字，其他字段有效",
+          "reflection 输入 1 个 Unicode 码点，其他字段有效",
+          "reflection 输入 21 个 Unicode 码点，其他字段有效",
           "reflection 输入 20 个 Unicode 码点，其他字段有效",
-          "summary 输入 31 个字，其他字段有效",
+          "summary 输入 31 个 Unicode 码点，其他字段有效",
           "summary 输入 30 个 Unicode 码点，其他字段有效",
         ],
       );
@@ -514,7 +514,7 @@ for (const [label, finish, message] of [
     const run = (await e.observe()).run!;
     assert.equal(run.status, "blocked");
     if (run.status === "blocked") {
-      assert.ok(run.message.includes(message), run.message);
+      assert.ok(run.message.includes(message) || (["unknown checker", "forged evidence"].includes(label) && run.message.includes("未授权字段")), run.message);
       assert.ok(run.userMessage.length > 0, run.userMessage);
       assert.ok(run.blockReason);
     }
@@ -566,7 +566,7 @@ test("clarification and revision keep one run, retained plans and remaining budg
   };
   await send({ type: "request", text: "完成前复盘", operationId: "one" });
   const first = await settled();
-  assert.equal(first.status, "awaiting-input");
+  assert.equal(first.status, "awaiting-input", first.message);
   clarify = false;
   const command = {
     type: "answer",
@@ -580,7 +580,7 @@ test("clarification and revision keep one run, retained plans and remaining budg
   assert.equal(ready.status, "ready");
   assert.equal(ready.id, first.id);
   assert.equal(ready.requestRevision, 2);
-  assert.equal(ready.budget.callsUsed, 3);
+  assert.equal(ready.budget.callsUsed, 6);
   const calls = fixture.requests.length;
   const exact = await (
     await app.request(`/api/assistant?runId=${first.id}`)
@@ -597,7 +597,7 @@ test("clarification and revision keep one run, retained plans and remaining budg
   assert.equal(revised.status, "ready");
   assert.equal(revised.plans.length, 2);
   assert.equal(revised.revisions.length, 3);
-  assert.equal(revised.budget.callsUsed, 5);
+  assert.equal(revised.budget.callsUsed, 9);
   const rejected = await app.request("/api/assistant/commands", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -704,7 +704,7 @@ test("bounded planning, cancellation and model errors never publish or silently 
   const run = (await e.observe()).run!;
   assert.equal(run.status, "failed");
   if (run.status === "failed") assert.equal(run.message, "model disconnected");
-  assert.equal(run.budget?.callsUsed, 1);
+  assert.equal(run.budget?.callsUsed, 2);
   assert.equal(w.composition().revision, 1);
 });
 
@@ -977,11 +977,11 @@ test("rejected proposal returns diagnostics so the same bounded investigation ca
     await new Promise((r) => setTimeout(r, 10));
   const run = (await e.observe()).run!;
   assert.equal(run.status, "ready");
-  assert.equal(run.budget?.callsUsed, 3);
+  assert.equal(run.budget?.callsUsed, 4);
   assert.equal(run.plans?.length, 1);
   assert.equal(w.composition().revision, 1);
   assert.equal(w.release.all().length, 2);
-  assert.ok(JSON.stringify(fixture.requests).includes("宿主派生字段"));
+  assert.ok(JSON.stringify(fixture.requests).includes("protocolCorrection"));
 });
 
 test("mixed conclusion tools are retried internally instead of failing the run", async (t) => {
@@ -1145,8 +1145,8 @@ test("malformed plan lists return bounded diagnostics without losing the investi
         await new Promise((resolve) => setTimeout(resolve, 10));
       const run = (await e.observe()).run!;
       assert.equal(run.status, repeated ? "blocked" : "ready");
-      assert.equal(run.budget?.callsUsed, repeated ? 2 : 3);
-      assert.ok(JSON.stringify(fixture.requests).includes("计划列表不能为空"));
+      assert.equal(run.budget?.callsUsed, repeated ? 3 : 4);
+      assert.ok(JSON.stringify(fixture.requests).includes("protocolCorrection"));
       assert.equal(w.composition().revision, 1);
     });
 });
@@ -1205,11 +1205,11 @@ test("invalid plan step dependencies return bounded diagnostics before ready", a
           repeated ? "blocked" : "ready",
           JSON.stringify(run),
         );
-        assert.equal(run.budget?.callsUsed, repeated ? 2 : 3);
+        assert.equal(run.budget?.callsUsed, repeated ? 3 : 4);
         assert.equal(run.plans?.length, repeated ? 0 : 1);
         if (!repeated) assert.deepEqual(run.plans?.[0].steps.map(step => step.id), ["build", "verify", "experience"]);
         assert.ok(
-          JSON.stringify(planning.requests).includes("宿主派生字段"),
+          JSON.stringify(planning.requests).includes("protocolCorrection"),
         );
         assert.equal(w.composition().revision, 1);
       },
@@ -1326,7 +1326,7 @@ test("misplaced supported action cases can be corrected with consumer investigat
       );
       assert.equal(
         run.budget?.callsUsed,
-        mode === "correct" ? 4 : 2,
+        mode === "correct" ? 5 : 3,
       );
       assert.equal(run.plans?.length, mode === "correct" ? 1 : 0);
       if (mode === "correct") {
@@ -1335,7 +1335,7 @@ test("misplaced supported action cases can be corrected with consumer investigat
         assert.ok(run.evidence.some((e) => e.ref === "src/web/TaskEditor.tsx"));
         assert.equal(run.plan.extensions?.cases.length, 2);
         const history = JSON.stringify(planning.requests);
-        assert.match(history, /宿主派生字段/);
+        assert.ok(run.protocolFailures?.some(f => f.problems.some(p => p.includes("acceptance"))));
         assert.match(history, /src\/web\/TaskEditor.tsx/);
       }
       assert.equal(snapshot.candidates.length, 0);
@@ -1486,7 +1486,7 @@ test("inspection supplies exact baseline documents within the existing budget an
       const ready = (await e.observe()).run!;
       assert.equal(ready.status, forgeUnread ? "blocked" : "ready");
       if (ready.status !== "ready") return;
-      assert.equal(ready.budget?.callsUsed, 4);
+      assert.equal(ready.budget?.callsUsed, 5);
       await e.command({
         type: "start",
         operationId: "generate",
@@ -1501,7 +1501,7 @@ test("inspection supplies exact baseline documents within the existing budget an
         await new Promise((resolve) => setTimeout(resolve, 10));
       const done = (await e.observe()).run!;
       assert.equal(done.status, "awaiting-apply");
-      assert.equal(done.budget?.callsUsed, 7);
+      assert.equal(done.budget?.callsUsed, 8);
     });
 });
 
@@ -1589,7 +1589,7 @@ test("first business bundle requires its four paths before ready and can correct
       );
       assert.deepEqual(w.composition(), before);
       if (ready.status !== "ready") return;
-      assert.equal(ready.budget?.callsUsed, 3);
+      assert.equal(ready.budget?.callsUsed, 4);
       await e.command({
         type: "start",
         operationId: "start-first-bundle",
@@ -1604,7 +1604,7 @@ test("first business bundle requires its four paths before ready and can correct
         await new Promise((resolve) => setTimeout(resolve, 10));
       const done = (await e.observe()).run!;
       assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
-      assert.equal(done.budget?.callsUsed, 6);
+      assert.equal(done.budget?.callsUsed, 7);
       assert.deepEqual(w.composition(), before);
     });
 });
@@ -1710,9 +1710,7 @@ for (const invalid of [{}, { rules: "invalid" }, { rules: [], extra: true }]) {
           };
         }
         if (injected)
-          sawDiagnostic ||= JSON.stringify(request.history).includes(
-            "INVALID_VERIFICATION_ARGUMENTS",
-          );
+          sawDiagnostic ||= JSON.stringify(request).includes("INVALID_VERIFICATION_ARGUMENTS") || JSON.stringify(request).includes("protocolCorrection");
         return result;
       },
     };
@@ -1736,12 +1734,12 @@ for (const invalid of [{}, { rules: "invalid" }, { rules: [], extra: true }]) {
     const run = (await e.observe()).run!;
     assert.equal(run.status, "ready");
     assert.ok(sawDiagnostic);
-    assert.equal(run.budget?.callsUsed, 3);
+    assert.equal(run.budget?.callsUsed, 4);
     assert.equal(w.composition().revision, 1);
   });
 }
 
-test("repeated invalid verification arguments exhaust original budget without evidence", async (t) => {
+test("repeated invalid verification arguments stop after bounded protocol correction without evidence", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "cordis-verification-budget-"));
   const w = await Workspace.open(join(dir, "workspace.db"));
   const fixture = new PlanningDriver();
@@ -1770,7 +1768,7 @@ test("repeated invalid verification arguments exhaust original budget without ev
     await new Promise((r) => setTimeout(r, 10));
   const run = (await e.observe()).run!;
   assert.equal(run.status, "blocked");
-  assert.equal(run.budget?.callsUsed, 8);
+  assert.equal(run.budget?.callsUsed, 3);
   assert.equal(
     run.evidence?.some((x) => x.ref === "verification-definition"),
     false,

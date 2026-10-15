@@ -1,14 +1,44 @@
-import { GoogleGenAI, type Content } from "@google/genai";
+import {
+  GoogleGenAI,
+  FunctionCallingConfigMode,
+  ApiError,
+  type Content,
+} from "@google/genai";
 import type { Driver, ModelRequest } from "./driver.js";
+import { ModelTransportError } from "./driver.js";
+import {
+  providerSchema,
+  responseSchema,
+  responsePayload,
+} from "./model-protocol.js";
+import { hash } from "../release/storage.js";
 export class Gemini implements Driver {
-  private client: GoogleGenAI;
-  constructor(private key: string) {
-    this.client = new GoogleGenAI({ apiKey: key });
+  private client: { models: Pick<GoogleGenAI["models"], "generateContent"> };
+  constructor(
+    private key: string,
+    client?: { models: Pick<GoogleGenAI["models"], "generateContent"> },
+  ) {
+    this.client = client ?? new GoogleGenAI({ apiKey: key });
   }
   async generate(request: ModelRequest, signal: AbortSignal) {
     const history = [...request.history] as Content[];
     if (request.message)
       history.push({ role: "user", parts: [{ text: request.message }] });
+    const schema = request.schema ? responseSchema(request.schema) : undefined;
+    const declarations = request.tools?.length
+      ? request.tools.map(({ name, description, parameters }) => ({
+          name,
+          description,
+          parametersJsonSchema: providerSchema(parameters),
+        }))
+      : undefined;
+    const transport = {
+      profile: "gemini-3.1-shape/2",
+      ...(schema ? { schemaHash: hash(schema) } : {}),
+      ...(declarations
+        ? { toolsHash: hash(declarations), functionMode: "ANY" }
+        : {}),
+    };
     const response = await this.client.models
       .generateContent({
         model: "gemini-3.1-pro-preview",
@@ -20,32 +50,45 @@ export class Gemini implements Driver {
           ...(request.schema
             ? {
                 responseMimeType: "application/json",
-                responseJsonSchema: request.schema,
+                responseJsonSchema: schema,
               }
             : {}),
-          ...(request.tools
-            ? { tools: [{ functionDeclarations: request.tools.map(({name, description, parameters}) => ({name, description, parametersJsonSchema: parameters})) }] }
+          ...(declarations
+            ? {
+                tools: [{ functionDeclarations: declarations }],
+                toolConfig: {
+                  functionCallingConfig: {
+                    mode: FunctionCallingConfigMode.ANY,
+                    allowedFunctionNames: declarations.map((t) => t.name),
+                  },
+                },
+              }
             : {}),
         },
       })
       .catch((error: unknown) => {
-        throw new Error(
+        throw new ModelTransportError(
           (error instanceof Error
             ? error.message
             : "Gemini 请求失败"
           ).replaceAll(this.key, "[redacted]"),
+          transport,
+          error instanceof ApiError ? error.status : undefined,
         );
       });
     const content = response.candidates?.[0]?.content;
-    if (!content) throw new Error("模型未返回内容");
     // Keep the complete Content, including thought signatures, without reconstructing parts.
-    history.push(content);
+    if (content?.parts?.length) history.push({ ...content, role: "model" });
+    const text =
+      content?.parts
+        ?.filter((part) => !part.thought && part.text)
+        .map((part) => part.text)
+        .join("") ?? "";
+    const payload: { text: string; envelopeValid?: boolean } = schema
+      ? responsePayload(text)
+      : { text };
     return {
-      text:
-        content.parts
-          ?.filter((part) => !part.thought && part.text)
-          .map((part) => part.text)
-          .join("") ?? "",
+      text: payload.text,
       history,
       calls: (response.functionCalls ?? []).map((call) => ({
         id: call.id,
@@ -54,6 +97,13 @@ export class Gemini implements Driver {
       })),
       usage: response.usageMetadata ?? null,
       raw: response,
+      transport: {
+        ...transport,
+        ...("envelopeValid" in payload
+          ? { envelopeValid: payload.envelopeValid }
+          : {}),
+        finishReason: response.candidates?.[0]?.finishReason,
+      },
     };
   }
 }

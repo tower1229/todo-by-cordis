@@ -4,6 +4,7 @@ import type {
   UiContributionFault,
 } from "../shared/contracts.js";
 import { Button, ErrorMessage } from "./ui.js";
+import { readOnlyFieldText } from "../shared/field-presentation.js";
 
 export function TaskDetailContributions({
   task,
@@ -54,7 +55,7 @@ export function TaskDetailContributions({
               <div key={field.key} className="space-y-1">
                 <p className="field-label">{field.label}</p>
                 <p data-field={field.key} className="whitespace-pre-wrap break-words text-sm leading-6">
-                  {task.fields[field.key] || "（空）"}
+                  {readOnlyFieldText(task.fields[field.key])}
                 </p>
               </div>
             ))}

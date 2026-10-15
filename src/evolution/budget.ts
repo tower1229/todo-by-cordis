@@ -4,7 +4,7 @@ export type BudgetLimits = {
   candidates: number;
   milliseconds: number;
 };
-export type ModelPhase = "planning" | "review" | "generation";
+export type ModelPhase = "admission" | "planning" | "review" | "generation";
 
 /** Admission, not a second budget. Every API attempt is still charged once. */
 export class BudgetScheduler {
@@ -15,8 +15,11 @@ export class BudgetScheduler {
   remaining(used: number) {
     return Math.max(0, this.limits.calls - used);
   }
-  canClarify(used: number) {
-    return this.remaining(used) >= this.executionReserve + 2;
+  canClarify(used: number, admission = false) {
+    return this.remaining(used) >= this.executionReserve + 2 + Number(admission);
+  }
+  canAuditQuestion(used: number) {
+    return this.remaining(used) >= this.executionReserve + 3;
   }
   conclusionOnly(used: number) {
     return this.remaining(used) <= this.executionReserve + 2;
@@ -25,7 +28,7 @@ export class BudgetScheduler {
     const required =
       phase === "generation"
         ? 1
-        : this.executionReserve + (phase === "review" ? 1 : 2);
+        : this.executionReserve + (phase === "review" ? 1 : phase === "admission" ? 3 : 2);
     if (this.remaining(used) < required)
       throw new BudgetExhaustedError(
         phase === "generation"

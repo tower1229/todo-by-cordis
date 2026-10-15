@@ -115,8 +115,16 @@ export function browserEnvironment(
       version: "browser/1",
       source: readFileSync(resolve("src/server/browser-acceptance.ts"), "utf8"),
       contract: readFileSync(resolve("src/shared/browser-cases.ts"), "utf8"),
-      caseSchema: readFileSync(resolve("src/shared/browser-contract.ts"), "utf8"),
+      caseSchema: readFileSync(
+        resolve("src/shared/browser-contract.ts"),
+        "utf8",
+      ),
+      obligations: readFileSync(
+        resolve("src/shared/acceptance-obligations.ts"),
+        "utf8",
+      ),
       playwright: "1.63.0",
+      presentation: readFileSync(resolve("src/shared/field-presentation.ts"), "utf8"),
       viewports: browserViewports,
     }),
   };
@@ -212,6 +220,9 @@ export async function verifyBrowser(
     title: "浏览器合成任务",
     description: "隔离验收备注",
     viewports: browserViewports,
+    preparations: cases
+      .filter((c) => c.prepare)
+      .map((c) => ({ caseId: c.id, prepare: c.prepare })),
   };
   const evidence: BrowserEvidence = {
     checker: "browser/1",
@@ -224,6 +235,7 @@ export async function verifyBrowser(
     fixtureHash: hash(fixtures),
     directory,
     results: [],
+    preparations: [],
   };
   const fixtureTasks: {
     viewport: { width: number; height: number };
@@ -351,10 +363,104 @@ export async function verifyBrowser(
         { id: "host:basic-new", task: "new", steps: [{ kind: "open" }] },
         ...cases,
       ];
+      const openTask = async (taskId: string) => {
+        await page.goto(origin);
+        await page
+          .locator('[data-filter="all"]')
+          .filter({ visible: true })
+          .click();
+        await page
+          .locator(attr("task-id", taskId))
+          .locator("[data-task-open]")
+          .click();
+        await page.locator("[data-task-editor]").waitFor({ state: "visible" });
+        if (
+          !(
+            await page.getByLabel("任务名称", { exact: true }).inputValue()
+          ).trim()
+        )
+          throw new BrowserEnvironmentError("browser/1 任务详情未加载");
+      };
+      const runAction = async (
+        step: Extract<BrowserStep, { kind: "action" }>,
+        taskId: string,
+      ) => {
+        const workflowId = isolated!
+          .composition()
+          .members.find((m) => m.role === "workflow")!.pluginId;
+        const owner =
+          isolated!
+            .extensionRegistry()
+            .commands()
+            .find((c) => c.id === step.action)?.providerId ?? workflowId;
+        if (
+          owner !== step.member &&
+          !(step.member === "workflow" && owner === workflowId)
+        )
+          throw new Error("动作不属于冻结的目标成员");
+        await browserAction(
+          page,
+          step,
+          owner,
+          taskId,
+          () => openTask(taskId),
+          command,
+        );
+      };
       const existing = new Map<string, string>();
-      for (const [index, c] of allCases.entries())
-        if (c.task === "existing")
-          existing.set(c.id, await create(`${fixtures.existing} ${index}`));
+      for (const [index, c] of allCases.entries()) {
+        if (c.prepare && c.task !== "existing")
+          throw new BrowserEnvironmentError("历史准备仅支持基础版本已有任务");
+        if (c.task !== "existing") continue;
+        const preparationBase = c.prepare ? formal.release.get(c.prepare.baseVersion) : base;
+        if (isolated.activeVersion().id !== preparationBase.id) {
+          importCompositionVersions(formal, isolated, preparationBase);
+          await isolated.activateForAcceptance(preparationBase.id, signal);
+        }
+        const taskId = await create(`${fixtures.existing} ${index}`);
+        existing.set(c.id, taskId);
+        if (!c.prepare) continue;
+        const receipt: NonNullable<BrowserEvidence["preparations"]>[number] = {
+          caseId: c.id,
+          viewport,
+          sourceHash: c.prepare.sourceHash,
+          baseVersion: c.prepare.baseVersion,
+          expected: c.prepare.expected,
+          actual: { state: "", fields: {} },
+          status: "passed",
+        };
+        try {
+          await openTask(taskId);
+          for (const action of c.prepare.actions) {
+            signal.throwIfAborted();
+            await runAction(action, taskId);
+          }
+          const task = isolated!.read(taskId);
+          receipt.actual = { state: task.state, fields: task.fields };
+          if (hash(receipt.actual) !== hash(receipt.expected))
+            throw new Error("基础版本实际历史状态与冻结成功案例不符");
+        } catch (error) {
+          signal.throwIfAborted();
+          receipt.status = "failed";
+          receipt.diagnostic =
+            error instanceof Error ? error.message : String(error);
+          receipt.screenshot = join(
+            directory,
+            `${viewportIndex}-${index}-preparation-failed.png`,
+          );
+          await page.screenshot({ path: receipt.screenshot, fullPage: true });
+        }
+        evidence.preparations!.push(receipt);
+        await writeFile(
+          join(directory, "evidence.json"),
+          JSON.stringify(evidence, null, 2),
+        );
+        if (receipt.status === "failed")
+          throw new BrowserEnvironmentError(
+            `browser/1 基础版本历史准备失败：${receipt.diagnostic}`,
+            evidence,
+          );
+      }
       await isolated.activateForAcceptance(candidate.id, signal);
       for (const [index, c] of allCases.entries()) {
         const title = `${fixtures.new} ${index}`;
@@ -390,30 +496,13 @@ export async function verifyBrowser(
             .map((r) => r.id),
           viewport,
           status: "passed",
+          phase: "candidate",
+          classification: c.classification ?? (c.id.startsWith("host:") ? "system-protection" : "frozen-business"),
+          ...(c.obligationId ? { obligationId: c.obligationId } : {}),
         };
         let actual = "";
         let expected: BrowserStep = { kind: "open" };
-        const open = async () => {
-          // All-category avoids assuming the current workflow state after an action.
-          await page.goto(origin);
-          await page
-            .locator('[data-filter="all"]')
-            .filter({ visible: true })
-            .click();
-          await page
-            .locator(attr("task-id", taskId))
-            .locator("[data-task-open]")
-            .click();
-          await page
-            .locator("[data-task-editor]")
-            .waitFor({ state: "visible" });
-          if (
-            !(
-              await page.getByLabel("任务名称", { exact: true }).inputValue()
-            ).trim()
-          )
-            throw new BrowserEnvironmentError("browser/1 任务详情未加载");
-        };
+        const open = () => openTask(taskId);
         try {
           await open();
           for (const step of c.steps) {
@@ -465,21 +554,11 @@ export async function verifyBrowser(
               if (title !== expectedTitle || description !== expectedDescription)
                 throw new Error("标题或备注不符合预期");
             } else if (step.kind === "action") {
-              const workflowId = isolated!
-                .composition()
-                .members.find((m) => m.role === "workflow")!.pluginId;
-              const owner =
-                isolated!
-                  .extensionRegistry()
-                  .commands()
-                  .find((c) => c.id === step.action)?.providerId ?? workflowId;
-              if (
-                owner !== step.member &&
-                !(step.member === "workflow" && owner === workflowId)
-              )
-                throw new Error("动作不属于冻结的目标成员");
-              await browserAction(page, step, owner, taskId, open, command);
-            } else if (step.kind === "field" || step.kind === "action-visible") {
+              await runAction(step, taskId);
+            } else if (
+              step.kind === "field" ||
+              step.kind === "action-visible"
+            ) {
               const composition = isolated!.composition();
               let contribution = step.contribution;
               if (!contribution) {
@@ -491,10 +570,21 @@ export async function verifyBrowser(
                 }
               }
               if (step.kind === "field") {
-                const field = editor.locator(attr("provider", step.member) + attr("contribution", contribution)).locator(attr("field", step.field));
-                await field.waitFor({state: "visible"});
-                actual = (await field.innerText()).trim();
-                if (actual !== step.value) throw new Error("可见字段值不符合预期");
+                const field = editor
+                  .locator(
+                    attr("provider", step.member) +
+                      attr("contribution", contribution),
+                  )
+                  .locator(attr("field", step.field));
+                if (step.visible === false) {
+                  await field.waitFor({ state: "hidden" });
+                  actual = "absent";
+                } else {
+                  await field.waitFor({ state: "visible" });
+                  actual = (await field.innerText()).trim();
+                  if (actual !== step.value)
+                    throw new Error("可见字段值不符合预期");
+                }
               } else {
                 const button = step.member === "workflow"
                   ? page.locator(attr("task-id", taskId)).locator(attr("action-id", step.action))

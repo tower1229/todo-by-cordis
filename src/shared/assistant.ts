@@ -74,6 +74,8 @@ export type RepairEvidence = {
   diagnostic: string;
 };
 export type InvestigatedPlan = AssistantPlan & {
+  requestAdmission?: import("../evolution/request-admission.js").RequestAdmission;
+  questionAdjudications?: NonNullable<Run["clarificationReviews"]>;
   changeSpec?: ChangeSpec;
   /** Optional only for reading historical plans; all new starts require a frozen receipt. */
   requirements?: Requirement[];
@@ -149,6 +151,7 @@ export type Requirement = {
   sourceQuote: string;
   type: "behavior" | "interface" | "compatibility" | "constraint";
   checks: { checker: string; caseId: string }[];
+  obligations?: import("./acceptance-obligations.js").AcceptanceObligation[];
 };
 export type RequirementReview = {
   reviewedIds: string[];
@@ -160,8 +163,17 @@ export type RequirementReview = {
     target?: { subject: string; aspect: 'availability' | 'input' | 'visibility' | 'persistence' | 'compatibility' | 'meaning' | 'coverage' };
     stance?: 'required' | 'forbidden' | 'undetermined';
     clarification?: string;
+    clarificationChoice?: string;
+    technical?: { factId: string; property: string; expected: string };
   }[];
-  resolutions?: { issueId: string; sourceRevision: string; sourceQuote: string; reason: string }[];
+  resolutions?: {
+    issueId: string;
+    sourceRevision: string;
+    sourceQuote: string;
+    reason: string;
+  }[];
+  technicalDecisions?: import("../evolution/technical-facts.js").TechnicalDecision[];
+  fieldDecisions?: import("../evolution/field-review.js").FieldDecision[];
 };
 export type RequirementGate = {
   gateVersion: string;
@@ -174,6 +186,9 @@ export type RequirementGate = {
   seal: string;
 };
 type Run = {
+  requestAdmissions?: import("../evolution/request-admission.js").RequestAdmission[];
+  protocolFailures?: {phase: string;call: number;requestHash: string;responseHash: string;problems: string[]}[];
+  clarificationReviews?: {key: string; question: string; call: number; decision: import("../evolution/clarification-review.js").ClarificationDecision}[];
   reviewLedger?: ReviewLedger;
   staleReason?: string;
   historicalPlan?: AssistantPlan;

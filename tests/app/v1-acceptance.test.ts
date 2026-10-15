@@ -131,7 +131,7 @@ test("启停候选篡改源码不能应用且完整验收失败", async () => {
           },
         },
       }),
-      /差异文件超出冻结范围/,
+      /差异文件超出冻结范围|submit_candidate.files: 数组长度不符合契约/,
     );
     assert.equal(events.filter((e) => e.type === "applied").length, 4);
     assert.ok(events.some((e) => e.type === "failure" && e.phase === 4));

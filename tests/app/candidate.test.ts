@@ -739,15 +739,14 @@ test("A10: protected paths, type-only escapes and forged validation reports stop
       });
       const snapshot = await settled(e);
       assert.equal(snapshot.run?.status, "blocked");
-      assert.equal(snapshot.candidates?.length, 1);
-      assert.equal(snapshot.candidates?.[0].passed, false);
-      if (attack === "source")
-        assert.match(
-          snapshot.candidates![0].diagnostic!,
-          /差异文件超出冻结范围：active-source/,
-        );
-      if (attack === "scope")
-        assert.match(snapshot.candidates![0].diagnostic!, /冻结(?:可写)?范围/);
+      if (["path", "report", "scope", "source"].includes(attack)) {
+        assert.equal(snapshot.candidates?.length, 0, "未授权数据在生成候选前被协议契约拒绝");
+        assert.equal(snapshot.run?.protocolFailures?.length, 2);
+        assert.ok(snapshot.run?.protocolFailures?.every(f => f.problems.length > 0));
+      } else {
+        assert.equal(snapshot.candidates?.length, 1);
+        assert.equal(snapshot.candidates?.[0].passed, false);
+      }
       assert.equal(w.composition().revision, 1);
     });
   }

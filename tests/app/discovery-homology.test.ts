@@ -517,7 +517,7 @@ test("unknown checker still blocks after live catalog homology", async (t) => {
   });
   const run = await settle(e);
   assert.equal(run.status, "blocked", JSON.stringify(run));
-  assert.match(run.message ?? "", /检查器/);
+  assert.match(run.message ?? "", /检查器|propose_plan.acceptance: 未授权字段/);
 });
 
 test("inspect_application 列出成员精确源码与验收 ref，且可读到与活动组合一致的内容", async (t) => {
@@ -727,8 +727,9 @@ test(`生成阶段 read_member 有界纠正且只返回精确成员：${lookup}`
     return;
   }
   assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
-  assert.equal(errors.length, lookup === "exact" ? 0 : 1);
-  assert.equal(done.budget?.callsUsed, lookup === "exact" ? 6 : 7);
+  assert.equal(errors.length, ["exact", "malformed"].includes(lookup) ? 0 : 1);
+  if (lookup === "malformed") assert.equal(done.protocolFailures?.length, 1);
+  assert.equal(done.budget?.callsUsed, lookup === "exact" ? 7 : 8);
   assert.ok(readPayload);
   assert.equal(readPayload!.pluginId, "tags");
   assert.equal(readPayload!.versionId, tags.id);
