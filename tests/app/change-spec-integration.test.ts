@@ -12,8 +12,8 @@ import { panelPluginCode } from "../fixtures/member-ui.js";
 import { hash } from "../../src/release/storage.js";
 import type { AssistantRun } from "../../src/shared/assistant.js";
 
-async function settle(e: Evolution): Promise<AssistantRun> {
-  const deadline = Date.now() + 30000;
+async function settle(e: Evolution, timeout = 30000): Promise<AssistantRun> {
+  const deadline = Date.now() + timeout;
   for (;;) {
     const r = (await e.observe()).run!;
     if (!["planning", "executing"].includes(r.status)) return r;
@@ -620,7 +620,9 @@ const plugin: Plugin = {
     planId: ready.plan.id,
     operationId: "start",
   });
-  const done = await settle(e);
+  // Two candidates and every frozen case in both viewports exceed the old
+  // 30-second observer window; the production run budget remains unchanged.
+  const done = await settle(e, 180000);
   assert.equal(
     done.status,
     "awaiting-apply",
