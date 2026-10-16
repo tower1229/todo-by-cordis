@@ -616,7 +616,16 @@ export async function verifyBrowser(
               if(submitted||before!==hash(isolated!.read(taskId))||!await form.isVisible())
                 throw new Error("原生必填失败仍提交了动作或改变任务");
             } else if (step.kind === "ui-identity") {
-              const contributions = isolated!.composition().uiContributions;
+              const composition=isolated!.composition();
+              if(step.workflow){
+                const w=composition.workflow;
+                if(w.id!==step.workflow.id || step.workflow.fields.some(f=>!w.fields.some(actual=>actual.key===f.key)) || step.workflow.actions.some(a=>!w.actions.some(actual=>actual.id===a.id)))throw new Error("主工作流字段或动作身份已变化");
+                if(await editor.getAttribute("data-workflow-id")!==step.workflow.id)throw new Error("页面主工作流身份与冻结基线不一致");
+                await editor.getByLabel("任务名称",{exact:true}).waitFor({state:"visible"});
+                await editor.getByLabel("备注",{exact:true}).waitFor({state:"visible"});
+                for(const f of step.workflow.fields)if(Object.hasOwn(isolated!.read(taskId).fields,f.key))await editor.locator(attr("provider","workflow")+attr("contribution","workflow")).locator(attr("field",f.key)).waitFor({state:"visible"});
+              }
+              const contributions = composition.uiContributions;
               const observed = step.contributions.map((c) => {
                 const current = contributions.find(
                   (ui) =>
@@ -631,7 +640,7 @@ export async function verifyBrowser(
                     }
                   : null;
               });
-              actual = JSON.stringify(observed);
+              actual = JSON.stringify({workflow:step.workflow ? composition.workflow : undefined,contributions:observed});
               if (
                 step.contributions.some((c, index) => {
                   const current = observed[index];

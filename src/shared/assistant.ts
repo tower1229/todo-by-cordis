@@ -58,6 +58,7 @@ export type PlanBinding = {
     enabled: boolean;
     authorized: boolean;
     checkerCoverage: string[];
+    registeredFields?: string[];
   }[];
   checkers: { id: string; version: string }[];
 };

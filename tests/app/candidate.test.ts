@@ -121,12 +121,12 @@ for (const [binding, provider, capability] of [
     const ready = (await settled(e)).run;
     if (binding === "不存在的成员") {
       assert.equal(ready?.status, "blocked", JSON.stringify(ready));
-      assert.match(ready?.message ?? "", /不是已存在或计划新增的辅助成员/);
+      assert.match(ready?.message ?? "", /propose_plan\.changes: 数组长度不符合契约/);
       return;
     }
     if (binding === "未知接口" || binding === "占位接口") {
       assert.equal(ready?.status, "blocked", JSON.stringify(ready));
-      assert.match(ready?.message ?? "", /辅助成员能力接口尚不支持/);
+      assert.match(ready?.message ?? "", /propose_plan\.changes\[1\]\.features\[0\]: 不在允许值中/);
       return;
     }
     assert.ok(ready?.status === "ready");

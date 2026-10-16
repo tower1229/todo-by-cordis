@@ -1,3 +1,4 @@
+import { parseExpression } from "@babel/parser";
 import type { ModelReply, ModelRequest } from "./driver.js";
 
 type Schema = Record<string, unknown>;
@@ -5,6 +6,28 @@ const record = (v: unknown): v is Schema =>
   !!v && typeof v === "object" && !Array.isArray(v);
 const schemas = (v: unknown): Schema[] =>
   Array.isArray(v) ? v.filter(record) : [];
+/** JSON syntax is checked first; the AST is data only and is never evaluated. */
+export function parseToolArguments(text: string): unknown {
+  const value: unknown = JSON.parse(text);
+  const visit = (node: unknown) => {
+    if (!record(node)) return;
+    if (node.type === "ObjectExpression" && Array.isArray(node.properties)) {
+      const keys = new Set<string>();
+      for (const value of node.properties) {
+        const property = record(value) ? value : {};
+        const key = record(property.key) ? property.key.value : undefined;
+        if (typeof key !== "string" || keys.has(key))
+          throw new ModelProtocolError("工具 JSON 属性重复或无效");
+        keys.add(key);
+      }
+    }
+    for (const child of Object.values(node))
+      if (Array.isArray(child)) child.forEach(visit);
+      else if (child && typeof child === "object") visit(child);
+  };
+  visit(parseExpression(text));
+  return value;
+}
 /** A mandatory envelope prevents an object union at the JSON document root. */
 export function responseSchema(schema: Schema): Schema {
   return {
@@ -34,6 +57,14 @@ export function schemaProblems(
   schema: Schema,
   path = "$o",
 ): string[] {
+  if (Array.isArray(schema.type)) {
+    const type = schema.type.find(type => !schemaProblems(value, { type }, path).length);
+    // Preserve nested business diagnostics for a nullable collection of the correct type.
+    return type === undefined ? [`${path}: 类型不符合声明分支`]
+      : schemaProblems(value, { ...schema, type }, path);
+  }
+  if (schema.type === "null")
+    return value === null ? [] : [`${path}: 应为 null`];
   const union = schemas(schema.anyOf);
   if (
     union.length &&

@@ -79,24 +79,3 @@ export const browserCasesSchema = {
     },
   },
 };
-
-/** The model chooses business steps; identity and fixture expectations are host projections. */
-export const modelBrowserCasesSchema = {
-  ...browserCasesSchema,
-  items: {
-    ...browserCasesSchema.items,
-    properties: {
-      ...browserCasesSchema.items.properties,
-      steps: {
-        ...browserCasesSchema.items.properties.steps,
-        items: {anyOf: browserSteps.map(variant => {
-          const derived = new Set(["member", "contribution", ...(variant.properties.kind.enum[0] === "task" ? ["title", "description"] : [])]);
-          return {...variant,
-            properties: Object.fromEntries(Object.entries(variant.properties).filter(([key]) => !derived.has(key))),
-            required: variant.required.filter(key => !derived.has(key)),
-          };
-        })},
-      },
-    },
-  },
-};

@@ -62,6 +62,17 @@ test("宿主编译的表单矩阵通过真实 Chromium：原生必填、空白�
  assert.deepEqual({tasks:w.query(),composition:w.composition()},before);
 });
 
+test("无辅助贡献的计划保护主工作流身份，真实页面、刷新与重启均执行保护（模型桩）",async(t)=>{
+ const w=await workspace(t);const before={tasks:w.query(),composition:w.composition()};
+ const planning=new PlanningDriver({requirements:[{id:"preserve",description:"完成前复盘，保留主工作流界面身份",source:1,sourceQuote:"完成前复盘，保留主工作流界面身份",type:"constraint",checks:[{kind:"workflow"}],obligations:[{kind:"backend"},{kind:"preserve-ui"}]}]});
+ const e=new Evolution(w.db,new ExecutionDriver(planning,w.activeVersion().pluginId,w.activeVersion().name),new EvolutionDomain(w));t.after(()=>e.close());
+ await e.command({type:"request",text:"完成前复盘，保留主工作流界面身份",operationId:"request"});const ready=await settle(e);assert.equal(ready.status,"ready","message"in ready?ready.message:ready.status);if(ready.status!=="ready")return;
+ const identity=ready.plan.requirements!.flatMap(r=>r.obligations??[]).find(o=>o.kind==="ui-identity");assert.ok(identity?.kind==="ui-identity"&&identity.workflow);assert.deepEqual(identity.contributions,[]);
+ await e.command({type:"start",runId:ready.id,planId:ready.plan.id,operationId:"start"});const done=await settle(e);assert.equal(done.status,"awaiting-apply","message"in done?done.message:done.status);
+ const candidate=(await e.observe()).candidates!.find(c=>c.passed)!;const cases=ready.plan.browserCases!.filter(c=>c.steps.some(s=>s.kind==="ui-identity"));assert.equal(cases.length,2);for(const c of cases)assert.equal(candidate.browser!.results.filter(r=>r.caseId===c.id&&r.status==="passed").length,2);
+ assert.deepEqual({tasks:w.query(),composition:w.composition()},before);
+});
+
 test("归档真实重要标记候选：后端通过，默认普通的真实页面断言失败并保留截图", async (t) => {
   const w = await workspace(t);
   const base = w.activeVersion();
@@ -308,22 +319,9 @@ for (const candidateLimit of [3, 1])
           }
           const reply = await planning.generate(request);
           if (reply.calls[0]?.name === "propose_plan") {
-            const r = (reply.calls[0].args.requirements as Requirement[])[0];
-            r.type = "interface";
-            r.obligations = [
-              ...(r.obligations??[]),
-              {
-                kind: "field",
-                field: "noteMark",
-                initial: { kind: "visible", value: "（空）" },
-                scenarios: [
-                  {
-                    steps: [{ kind: "action", action: "markNote", input: {} }],
-                    value: "ok",
-                  },
-                ],
-              },
-            ] as unknown as Requirement["obligations"];
+            const r = (reply.calls[0].args.requirements as {type:string;expectations:Record<string,unknown>[]}[])[0];
+            r.type="interface";
+            r.expectations.push({kind:"field",field:"noteMark",initial:{kind:"baseline"}});
           }
           return reply;
         },

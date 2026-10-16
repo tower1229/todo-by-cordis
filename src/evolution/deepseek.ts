@@ -1,10 +1,14 @@
 import type { Driver, ModelReply, ModelRequest } from "./driver.js";
 import { ModelTransportError } from "./driver.js";
-import { responseSchema, responsePayload } from "./model-protocol.js";
+import {
+  responseSchema,
+  responsePayload,
+  schemaProblems,
+  parseToolArguments,
+} from "./model-protocol.js";
 import { hash } from "../release/storage.js";
 import { configureModelNetwork } from "./model-network.js";
 import { transportFailure } from "./transport-failure.js";
-import { compileToolContract } from "./tool-contract.js";
 
 export const DEEPSEEK_MODEL = "deepseek-flash";
 type Row = Record<string, unknown>;
@@ -49,20 +53,18 @@ export class DeepSeek implements Driver {
     if (request.message)
       history.push({ role: "user", content: request.message });
     const schema = request.schema ? responseSchema(request.schema) : undefined;
-    const contracts = new Map((request.tools ?? []).map(t => [t.name, compileToolContract(t.parameters)]));
     const tools = request.tools?.length
       ? request.tools.map((t) => ({
           type: "function",
           function: {
             name: t.name,
             description: t.description,
-            strict: true,
-            parameters: contracts.get(t.name)!.schema,
+            parameters: t.parameters,
           },
         }))
       : undefined;
     const transport: NonNullable<ModelReply["transport"]> = {
-      profile: "deepseek-chat/2",
+      profile: "deepseek-chat/3",
       requestedModel: DEEPSEEK_MODEL,
       ...(schema ? { schemaHash: hash(schema) } : {}),
       ...(tools ? { toolsHash: hash(tools), functionMode: "required" } : {}),
@@ -102,9 +104,7 @@ export class DeepSeek implements Driver {
           : { thinking: { type: "enabled" } }),
         ...(schema ? { response_format: { type: "json_object" } } : {}),
       };
-      const endpoint = tools && this.endpoint === "https://api.deepseek.com/chat/completions"
-        ? "https://api.deepseek.com/beta/chat/completions" : this.endpoint;
-      const result = await this.http(endpoint, {
+      const result = await this.http(this.endpoint, {
         method: "POST",
         signal,
         headers: {
@@ -205,13 +205,24 @@ export class DeepSeek implements Driver {
         fn = row(call.function);
       let args: Row = {};
       try {
-        const decoded: unknown = JSON.parse(String(fn.arguments));
+        const decoded: unknown = parseToolArguments(String(fn.arguments));
         if (!decoded || typeof decoded !== "object" || Array.isArray(decoded))
           throw new Error("工具参数不是对象");
-        const contract = contracts.get(String(fn.name));
-        args = row(contract ? contract.decode(decoded) : decoded);
+        const schema = request.tools?.find(
+          (t) => t.name === fn.name,
+        )?.parameters;
+        if (schema) {
+          const problems = schemaProblems(decoded, schema);
+          if (problems.length) throw new Error(problems.join("；"));
+        }
+        args = row(decoded);
       } catch (error) {
-        protocolErrors.push("工具参数不符合严格 JSON 契约：" + String(fn.name) + "：" + (error instanceof Error ? error.message : "解码失败"));
+        protocolErrors.push(
+          "工具参数不符合 JSON 业务契约：" +
+            String(fn.name) +
+            "：" +
+            (error instanceof Error ? error.message : "解码失败"),
+        );
       }
       if (typeof call.id !== "string" || !call.id)
         protocolErrors.push("工具调用缺少回执 ID");

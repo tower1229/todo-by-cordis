@@ -21,27 +21,7 @@ import {
 
 const tagsTrimOnlySource = tagsReferenceSource;
 
-const tagsLowercaseSource = `export default {
-  contribute() {
-    return {
-      fields: [{ key: "tags", label: "标签", type: "text" }],
-      commands: [{ id: "setTags", label: "设标签", from: ["open", "done"] }],
-    };
-  },
-  decide(data) {
-    const { task, action, input } = data;
-    if (action === "setTags") {
-      const tags = String(input?.tags ?? "").trim().toLowerCase();
-      if (!tags) return { kind: "reject", message: "标签为空" };
-      return {
-        kind: "commit",
-        state: task.state,
-        fields: { ...task.fields, tags },
-      };
-    }
-    return { kind: "reject", message: "未知动作" };
-  },
-};`;
+const tagsLowercaseSource = tagsReferenceSource.replace("String(input.tags).trim()", "String(input.tags).trim().toLowerCase()");
 
 const tagsLowercaseRevisedCases = [
   {
@@ -270,6 +250,10 @@ test("缩短试跑两阶段桩：新增 tags 去空格 → 确认修订后升级
   const pending = await settle(e, "awaiting-acceptance");
   assert.equal(pending.status, "awaiting-acceptance", JSON.stringify(pending));
   await applyReady("phase2");
+  const evidence = ctx.w.activeVersion().evidence as { workspaceCases?: import("../../src/server/workspace-acceptance.js").WorkspaceCaseEvidence[] };
+  const fieldChecks = evidence.workspaceCases?.filter(c=>c.member==="tags") ?? [];
+  assert.ok(fieldChecks.length > 0);
+  assert.ok(fieldChecks.every(c=>c.requiredFields?.includes("tags") && c.actual.registeredFields?.includes("tags")), "升级必须真实执行冻结字段注册断言，不能只在计划记录");
   await action({ tags: "  HeLLo " });
   assert.equal(ctx.w.read(ctx.taskId).fields.tags, "hello");
   await assert.rejects(action({ tags: "  " }));

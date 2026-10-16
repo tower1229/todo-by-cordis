@@ -117,20 +117,20 @@ for (const [name, transform] of [
   [
     "伪造案例引用",
     (args: Record<string, unknown>) => {
-      (args.requirements as Requirement[])[0].checks[0].caseId = "invented";
+      (args.requirements as unknown as {checks:unknown[]}[])[0].checks = [{checker:"workflow/1",caseId:"invented"}];
     },
   ],
   [
     "界面仅由后端断言覆盖",
     (args: Record<string, unknown>) => {
       (args.requirements as Requirement[])[0].type = "interface";
-      args.workflowRules = [];
+      (args.changes as {target:string;fields:unknown[]}[]).find(c=>c.target==="workflow")!.fields = [];
     },
   ],
   [
     "原文引用不存在",
     (args: Record<string, unknown>) => {
-      (args.requirements as Requirement[])[0].sourceQuote = "用户从未说过";
+      (args.requirements as unknown as {quote:string}[])[0].quote = "用户从未说过";
     },
   ],
 ] as const)

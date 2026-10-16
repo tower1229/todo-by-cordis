@@ -54,14 +54,14 @@ test("六步模型桩按运行来源推进阶段；同运行的规划纠正不�
   );
   for (const r of [a, again, correction]) {
     assert.equal(
-      (r.calls[0].args.memberAdditions as { pluginId: string }[])[0].pluginId,
+      (r.calls[0].args.changes as { target: string }[]).find(c=>c.target!=="workflow")!.target,
       "tags",
     );
     assert.equal((r.calls[0].args.requirements as unknown[]).length, 1);
   }
   const b = await exchange("run-b");
   assert.equal(
-    (b.calls[0].args.memberAdditions as { pluginId: string }[])[0].pluginId,
+    (b.calls[0].args.changes as { target: string }[]).find(c=>c.target!=="workflow")!.target,
     "counter",
   );
   await exchange("run-c");

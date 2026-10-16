@@ -490,9 +490,10 @@ for (const [label, finish, message] of [
   test(`A03 blocks ${label} and retains the goal`, async (t) => {
     const dir = mkdtempSync(join(tmpdir(), "cordis-plan-"));
     const w = await Workspace.open(join(dir, "workspace.db"));
+    const fixture = new PlanningDriver(finish);
     const e = new Evolution(
       w.db,
-      new PlanningDriver(finish),
+      {async generate(request){const reply=await fixture.generate(request);if(label==="unread consumer" && reply.calls[0]?.name==="propose_plan")reply.calls[0].args.capabilityChanges=finish.capabilityChanges;return reply;}},
       new EvolutionDomain(w),
     );
     t.after(async () => {
@@ -514,7 +515,7 @@ for (const [label, finish, message] of [
     const run = (await e.observe()).run!;
     assert.equal(run.status, "blocked");
     if (run.status === "blocked") {
-      assert.ok(run.message.includes(message) || (["unknown checker", "forged evidence"].includes(label) && run.message.includes("未授权字段")), run.message);
+      assert.ok(run.message.includes(message) || (["unknown checker", "forged evidence", "missing dependency", "unread consumer"].includes(label) && run.message.includes("未授权字段")), run.message);
       assert.ok(run.userMessage.length > 0, run.userMessage);
       assert.ok(run.blockReason);
     }
@@ -1537,13 +1538,13 @@ test("first business bundle requires its four paths before ready and can correct
             const response = await fixture.generate(request, signal);
             const call = response.calls[0];
             if (call?.name === "propose_plan" && (++proposals === 1 || repeat))
-              call.args.writableScope = ["business/label.ts"];
+              (call.args.changes as {target:string;modules:string[]}[]).find(c=>c.target==="workflow")!.modules = ["label"];
             if (call?.name === "submit_candidate") {
-              call.args.files = (
-                JSON.parse(candidateSource(source("default", "轻快完成"))) as {
-                  files: unknown;
-                }
-              ).files;
+              const files = (JSON.parse(candidateSource(source("default", "轻快完成"))) as {files:{path:string;content:string}[]}).files;
+              const entry = files.find(f=>f.path==="business/entry.ts")!;
+              entry.content = 'import { label } from "./label.js";\n' + entry.content.replace('name:"轻快完成"', 'name:label');
+              files.push({path:"business/label.ts",content:'export const label = "轻快完成";'});
+              call.args.files = files;
               delete call.args.source;
             }
             return response;
@@ -1636,10 +1637,9 @@ for (const repair of [false, true])
             ++proposals > 1 &&
             repair
           )
-            reply.calls[0].args.memberCases = [
+            (reply.calls[0].args.changes as {target:string;cases:unknown[]}[]).find(c=>c.target!=="workflow")!.cases = [
               {
                 name: "标签成功",
-                member: "tags",
                 state: "open",
                 fields: {},
                 action: "setTags",
@@ -1652,7 +1652,6 @@ for (const repair of [false, true])
               },
               {
                 name: "标签拒绝",
-                member: "tags",
                 state: "done",
                 fields: {},
                 action: "setTags",

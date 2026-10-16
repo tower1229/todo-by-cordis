@@ -5,7 +5,6 @@ import { DeepSeek } from "../../src/evolution/deepseek.js";
 import { admissionSchema } from "../../src/evolution/request-admission.js";
 import { ModelTransportError } from "../../src/evolution/driver.js";
 import { replyProblems } from "../../src/evolution/model-protocol.js";
-import { compileToolContract } from "../../src/evolution/tool-contract.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -120,7 +119,7 @@ test("DeepSeek 实际本机 HTTP：精确 JSON 契约、授权工具、原生回
     );
     assert.equal(bodies.length, 3);
     assert.equal(bodies[1].tool_choice, "required");
-    assert.equal(((bodies[1].tools as {function:{strict:boolean}}[])[0]).function.strict,true);
+    assert.notEqual(((bodies[1].tools as {function:{strict?:boolean}}[])[0]).function.strict,true);
     assert.deepEqual(bodies[1].thinking, { type: "disabled" });
     assert.deepEqual((bodies[2].messages as unknown[]).slice(-2), [
       assistant,
@@ -196,7 +195,7 @@ test("DeepSeek 断连仅请求一次并保留底层分类；HTTP 400 保留契�
         ),
         (error) => {
           assert.ok(error instanceof ModelTransportError);
-          assert.equal(error.transport.profile, "deepseek-chat/2");
+          assert.equal(error.transport.profile, "deepseek-chat/3");
           assert.ok(error.transport.schemaHash);
           assert.ok(!error.message.includes("synthetic-key"));
           if (kind === "socket") {
@@ -218,19 +217,17 @@ test("DeepSeek 断连仅请求一次并保留底层分类；HTTP 400 保留契�
   }
 });
 
-test("严格 Beta 工具传输由宿主解码，保留供应商历史；字典伪造不能执行",async()=>{
- const parameters={type:"object",additionalProperties:false,required:["input"],properties:{input:{type:"object",additionalProperties:{type:"string"}},optional:{type:"string",minLength:2}}};
- const contract=compileToolContract(parameters);let count=0;
+test("原生工具参数与供应商历史无损保留；字典非法值不能执行",async()=>{
+ const parameters={type:"object",additionalProperties:false,required:["input"],properties:{input:{type:"object",additionalProperties:{type:"string"}},optional:{type:"string",minLength:2}}};let count=0;
  const request={instruction:"合成",history:[],tools:[{name:"save",description:"合成",parameters}]};
  const driver=new DeepSeek("synthetic-key",async(url,init)=>{
-   count++;assert.equal(String(url),"https://api.deepseek.com/beta/chat/completions");
-   const body=JSON.parse(String(init?.body));assert.equal(body.tools[0].function.strict,true);
-   const args=contract.encode({input:{review:"原文"}}) as Record<string,unknown>;
-   if(count===2)args.input=[{key:"review",value:"one"},{key:"review",value:"two"}];
+   count++;assert.equal(String(url),"https://api.deepseek.com/chat/completions");
+   const body=JSON.parse(String(init?.body));assert.notEqual(body.tools[0].function.strict,true);assert.deepEqual(body.tools[0].function.parameters,parameters);
+   const args={input:{review:count===2?42:"原文"}};
    return Response.json({model:"deepseek-flash",choices:[{finish_reason:"tool_calls",message:{role:"assistant",content:null,tool_calls:[{id:"a",type:"function",function:{name:"save",arguments:JSON.stringify(args)}}]}}]});
  });
  const reply=await driver.generate(request,new AbortController().signal);assert.deepEqual(reply.calls[0].args,{input:{review:"原文"}});assert.deepEqual(replyProblems(request,reply),[]);
- assert.ok(JSON.stringify(reply.history).includes("omit"));
+ assert.ok(JSON.stringify(reply.history).includes("原文"));
  const invalid=await driver.generate(request,new AbortController().signal);assert.ok(replyProblems(request,invalid).length);assert.equal(count,2);
 });
 

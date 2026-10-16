@@ -52,7 +52,9 @@ export type WorkspaceCaseEvidence = {
   initial: { state: string; fields: Record<string, string> };
   input: Record<string, string>;
   expected: AcceptanceExpected | FormExpected;
+  requiredFields?: string[];
   actual: {
+    registeredFields?: string[];
     state?: string;
     fields?: Record<string, string>;
     decision?: string;
@@ -158,9 +160,15 @@ export async function verifyViaIsolatedWorkspace(
   cases: WorkspaceAcceptanceCase[],
   signal: AbortSignal,
   recordCase?: (evidence: WorkspaceCaseEvidence) => void,
+  fieldRequirements: { member: string; fields: string[] }[] = [],
 ): Promise<string[]> {
   if (!cases.length)
     throw new BusinessAssertionError("缺少隔离 Workspace 业务验收用例");
+  for (const required of fieldRequirements)
+    if (!required.fields.length || !cases.some(c => c.member === required.member))
+      throw new BusinessAssertionError(
+        `字段注册 ${required.member} 缺少可执行验收绑定`,
+      );
   const directory = await mkdtemp(join(tmpdir(), "cordis-accept-isolated-"));
   const isolated = await Workspace.open(join(directory, "workspace.db"), {
     acceptanceProbe: true,
@@ -322,6 +330,18 @@ export async function verifyViaIsolatedWorkspace(
             throw new BusinessAssertionError(
               `业务验收失败：${c.name}；动作 ${c.action} 不是成员 ${c.member} 的贡献`,
             );
+          const required = fieldRequirements.find(r => r.member === c.member);
+          if (required) {
+            receipt.requiredFields = [...required.fields];
+            const registered = registry.fields()
+              .filter(f => f.providerId === c.member).map(f => f.key).sort();
+            receipt.actual.registeredFields = registered;
+            const missing = required.fields.filter(key => !registered.includes(key));
+            if (missing.length)
+              throw new BusinessAssertionError(
+                `业务验收失败：${c.name}；字段注册 ${c.member} 缺失 ${missing.join("、")}`,
+              );
+          }
         }
         try {
           const compositionRevision = isolated.composition().revision;

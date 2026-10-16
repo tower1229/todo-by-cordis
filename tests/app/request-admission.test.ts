@@ -18,6 +18,8 @@ import {
   admissionSchema,
   admissionQuestionState,
   questionReviewKey,
+  adjudicateAdmission,
+  admissionResolved,
 } from "../../src/evolution/request-admission.js";
 import { technicalFacts } from "../../src/evolution/technical-facts.js";
 import { BudgetScheduler } from "../../src/evolution/budget.js";
@@ -33,6 +35,49 @@ const reply = (value: unknown) => ({
 });
 const empty = () => ({ presentations: [], questions: [], facts: [] });
 const input = (r: ModelRequest) => JSON.parse(r.message ?? "{}");
+test("来源标签误判经独立裁决后继续必要澄清，完整原文及争议随同一运行和预算保留", async (t) => {
+  const fixture = new PlanningDriver();
+  const { e, w } = await setup(t, { async generate(r, signal) {
+    const v = input(r);
+    if (v.kind === "request-admission/1") return reply(v.sources.length === 1 ? {
+      ...empty(),
+      presentations: [{ source: 1, sourceQuote: "完成前填写复盘", surface: "workflow", kind: "visible", value: "复盘" }],
+      questions: [{ source: 1, sourceQuote: "是否必填尚未决定", question: "复盘是否必填？" }],
+    } : empty());
+    if (v.kind === "admission-source-review/1") {
+      assert.deepEqual(r.history, []); assert.equal(r.tools, undefined);
+      assert.equal(v.claims[0].interpretation.condition, "initial-missing-field");
+      return reply({ decisions: [{ claim: 1, source: 1, sourceQuote: "完成前填写复盘", verdict: "not-requested", detail: "复盘是待填写的字段，原文没有要求该字样作为初始值" }] });
+    }
+    return fixture.generate(r, signal);
+  } });
+  await e.command({ type: "request", text: "完成前填写复盘，是否必填尚未决定", operationId: "request" });
+  const waiting = await settle(e); assert.equal(waiting.status, "awaiting-input");
+  assert.equal(waiting.budget?.callsUsed, 3);
+  assert.equal(waiting.requestAdmissions?.[0].claims.length, 1);
+  assert.equal(waiting.requestAdmissions?.[0].semanticReview?.decisions[0].verdict, "not-requested");
+  await e.command({ type: "answer", runId: waiting.id, text: "复盘必填，其他行为不变", operationId: "answer" });
+  const ready = await settle(e); assert.equal(ready.status, "ready");
+  assert.equal(ready.budget?.callsUsed, 6); assert.equal(ready.budget!.callsRemaining, 6);
+  assert.equal(ready.requestAdmissions?.length, 2);
+  assert.equal(w.db.prepare("SELECT count(*) n FROM evolution_calls").get()!.n, 6);
+});
+
+test("来源裁决不能漏项、重复、伪造原文或将未裁决争议标为已解决", () => {
+  const sources = [{ id: "source:1", text: "完成前填写复盘" }];
+  const proposed = parseAdmission(JSON.stringify({ ...empty(), presentations: [{ source: 1, sourceQuote: sources[0].text, surface: "workflow", kind: "visible", value: "复盘" }] }), "base", sources, technicalFacts({ workflowRules: [], binding: undefined }));
+  assert.equal(admissionResolved(proposed), false);
+  const decision = { claim: 1, source: 1, sourceQuote: sources[0].text, verdict: "not-requested", detail: "只是字段标签" };
+  for (const decisions of [[], [decision, decision], [{ ...decision, sourceQuote: "未填写时显示复盘" }], [{ ...decision, claim: 2 }]]) assert.throws(() => adjudicateAdmission(JSON.stringify({ decisions }), proposed, sources));
+  const resolved = adjudicateAdmission(JSON.stringify({ decisions: [decision] }), proposed, sources);
+  assert.ok(admissionResolved(resolved));
+  assert.equal(admissionResolved({ ...resolved, claims: [{ ...resolved.claims[0], interpretation: { value: "篡改" } }] }), false);
+  assert.equal(admissionResolved({ ...resolved, semanticReview: undefined }), false);
+  const uncertain = adjudicateAdmission(JSON.stringify({ decisions: [{ ...decision, verdict: "uncertain" }] }), proposed, sources);
+  assert.match(uncertain.blockers[0], /尚未裁决/);
+  assert.equal(admissionResolved({ ...uncertain, blockers: [] }), false);
+});
+
 test("需求预检的额外问题必须独立审查；不必要问题不打断规划，原问题和裁决随计划冻结",async(t)=>{
  const fixture=new PlanningDriver();
  const {w,e}=await setup(t,{async generate(r,s){
@@ -208,7 +253,10 @@ test("预检不存在状态只提交kind，空值由宿主派生；禁止混入�
     facts,
   );
   assert.equal(admitted.presentations[0].value, "");
-  assert.ok(admitted.blockers.length);
+  assert.equal(admissionResolved(admitted), false);
+  const reviewed = adjudicateAdmission(JSON.stringify({ decisions: [{ claim: 1, source: 1, sourceQuote: sources[0].text, verdict: "entailed", detail: "原文明确要求未填写呈现" }] }), admitted, sources);
+  assert.ok(reviewed.blockers.length);
+  assert.ok(admissionResolved(reviewed));
   assert.throws(
     () =>
       parseAdmission(
@@ -395,6 +443,11 @@ test("明确但无法支持的空白初始呈现在源码调查前阻塞，不�
   const { w, e } = await setup(t, {
     async generate(r) {
       const v = input(r);
+      if (v.kind === "admission-source-review/1") {
+        assert.deepEqual(r.history, []);
+        assert.equal(r.tools, undefined);
+        return reply({ decisions: [{ claim: 1, source: 1, sourceQuote: "尚未填写时显示空白", verdict: "entailed", detail: "原文明确指定未填写时的空白显示" }] });
+      }
       assert.equal(v.kind, "request-admission/1");
       assert.equal(v.materials, undefined);
       return reply({
@@ -429,7 +482,7 @@ test("明确但无法支持的空白初始呈现在源码调查前阻塞，不�
   });
   const run = await settle(e);
   assert.equal(run.status, "blocked");
-  assert.equal(run.budget?.callsUsed, 1);
+  assert.equal(run.budget?.callsUsed, 2);
   assert.match("message" in run ? run.message : "", /维护者.*不能替换/);
   assert.equal((await e.observe()).candidates?.length, 0);
   assert.equal(

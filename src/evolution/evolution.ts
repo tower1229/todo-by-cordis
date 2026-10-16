@@ -5,7 +5,7 @@ import { compileSpec } from "./specification.js";
 import { recordReview } from "./review.js";
 import { fieldReviewTargets } from "./field-review.js";
 import { clarificationSchema, parseClarificationDecision } from "./clarification-review.js";
-import { admissionInstruction, admissionKey, admissionSchema, parseAdmission, admissionQuestionState, questionReviewKey } from "./request-admission.js";
+import { admissionInstruction, admissionKey, admissionSchema, parseAdmission, admissionQuestionState, questionReviewKey, admissionReviewInstruction, admissionReviewSchema, adjudicateAdmission, admissionResolved } from "./request-admission.js";
 import { ModelProtocolError, replyProblems } from "./model-protocol.js";
 import {
   adjudicateTechnicalReview,
@@ -357,7 +357,7 @@ export class Evolution {
         const context=this.domain.context(), inputs=this.domain.admission(context);
         const receipt=plan.requestAdmission;
         const state=receipt ? admissionQuestionState(receipt,trusted?.sources??[],inputs.facts,r.run.clarificationReviews??[]) : undefined;
-        if (inputs.missing.length || !receipt || receipt.key !== admissionKey(context.versionId,trusted?.sources ?? [],inputs.facts) || receipt.blockers.length || !state || state.pending.length || state.questions.length || state.blockers.length || !r.run.requestAdmissions?.some(a=>hash(a) === hash(receipt)))
+        if (inputs.missing.length || !receipt || !admissionResolved(receipt) || receipt.key !== admissionKey(context.versionId,trusted?.sources ?? [],inputs.facts) || receipt.blockers.length || !state || state.pending.length || state.questions.length || state.blockers.length || !r.run.requestAdmissions?.some(a=>hash(a) === hash(receipt)))
           throw new AppError("PLAN_STALE","需求预检事实或来源已变化，请重新规划",409);
       }
       const failure = gateFailure(plan, trusted, hash(r.run.revisions), r.run.reviewLedger);
@@ -1285,13 +1285,22 @@ export class Evolution {
         this.save(r); return;
       }
       const key = admissionKey(context.versionId,sourceCatalog,admissionContext.facts);
-      let admitted = r.run.requestAdmissions?.find(a=>a.key === key);
+      let admitted = r.run.requestAdmissions?.find(a=>a.key === key && admissionResolved(a));
       if (!admitted) {
         const history = r.history;
         try {
           const response = await this.call(r,{history:[],instruction:admissionInstruction,schema:admissionSchema,message:JSON.stringify({kind:"request-admission/1",sources:sourceCatalog,facts:admissionContext.facts})},signal,"admission",reply=>parseAdmission(reply.text,context.versionId,sourceCatalog,admissionContext.facts));
           try { admitted = parseAdmission(response.text,context.versionId,sourceCatalog,admissionContext.facts); }
           catch (error) {throw new ModelProtocolError("需求预检未通过：" + (error instanceof Error ? error.message : "无效来源解释"));}
+          if (admitted.claims.length) {
+            const proposed = admitted;
+            const review = await this.call(r, {
+              history: [], instruction: admissionReviewInstruction, schema: admissionReviewSchema(proposed),
+              message: JSON.stringify({ kind: "admission-source-review/1", sources: sourceCatalog,
+                claims: proposed.claims.map(({ sourceRevision, sourceQuote, interpretation }) => ({ sourceRevision, sourceQuote, interpretation })) }),
+            }, signal, "review", reply => adjudicateAdmission(reply.text, proposed, sourceCatalog));
+            admitted = adjudicateAdmission(review.text, proposed, sourceCatalog);
+          }
           (r.run.requestAdmissions ??= []).push(admitted);
         } finally {r.history=history;}
         this.save(r);

@@ -16,7 +16,7 @@ import {
 import type { InvestigatedPlan } from "../../src/shared/assistant.js";
 import { panelMemberCases } from "./member-case-fixtures.js";
 import { hash } from "../../src/release/storage.js";
-import { obligationsSchema } from "../../src/shared/acceptance-obligations.js";
+import { businessExpectationsSchema as obligationsSchema } from "../../src/evolution/plan-input.js";
 import { compileSpec } from "../../src/evolution/specification.js";
 import { schemaProblems } from "../../src/evolution/model-protocol.js";
 

@@ -43,7 +43,7 @@ test("正式新协议：需求预检、业务规格和独立复核后ready，派
     operationId: "request",
   });
   const ready = await settle(e);
-  assert.equal(ready.status, "ready");
+  assert.equal(ready.status, "ready", "message" in ready ? ready.message : ready.status);
   if (ready.status !== "ready") return;
   assert.equal(ready.budget?.callsUsed, 3);
   assert.equal(ready.plan.changeSpec?.version, "change/3");
@@ -169,7 +169,7 @@ test("独立技术争议绑定检查器事实后由宿主裁决，3次调用read
     operationId: "request",
   });
   const ready = await settle(e);
-  assert.equal(ready.status, "ready");
+  assert.equal(ready.status, "ready", "message" in ready ? ready.message : ready.status);
   assert.equal(ready.budget?.callsUsed, 3);
   assert.equal(ready.budget!.callsUsed + ready.budget!.callsRemaining, 12);
   if (ready.status !== "ready") return;
@@ -194,8 +194,8 @@ test("合成任务属性不得手填：冻结前退回同一规划循环，宿�
       const reply = await fixture.generate(request, signal);
       if (!corrupted && reply.calls[0]?.name === "propose_plan") {
         corrupted = true;
-        const requirements=reply.calls[0].args.requirements as {obligations:{kind:string;expected?:Record<string,unknown>}[]}[];
-        requirements[0].obligations.find(o=>o.kind==="assertion")!.expected = {kind: "task", title: "模型猜测的名称", description: ""};
+        const requirements=reply.calls[0].args.requirements as {expectations:Record<string,unknown>[]}[];
+        Object.assign(requirements[0].expectations.find(o=>o.kind==="task")!,{title: "模型猜测的名称", description: ""});
       }
       return reply;
     },
@@ -203,7 +203,7 @@ test("合成任务属性不得手填：冻结前退回同一规划循环，宿�
   t.after(() => e.close());
   await e.command({type: "request", text: "完成前填写复盘", operationId: "request"});
   const ready = await settle(e);
-  assert.equal(ready.status, "ready");
+  assert.equal(ready.status, "ready", "message" in ready ? ready.message : ready.status);
   if (ready.status !== "ready") return;
   assert.equal(ready.budget?.callsUsed, 4);
   assert.equal(ready.budget!.callsUsed + ready.budget!.callsRemaining, 12);
@@ -250,7 +250,7 @@ test("生成阶段补读按下一次实际调用记录精确资料，失败读�
     operationId: "request",
   });
   const ready = await settle(e);
-  assert.equal(ready.status, "ready");
+  assert.equal(ready.status, "ready", "message" in ready ? ready.message : ready.status);
   if (ready.status !== "ready") return;
   const frozen = hash(ready.plan);
   await e.command({
@@ -329,7 +329,7 @@ test("澄清直接等待用户，回答沿同一运行和预算复用已验证�
     operationId: "answer",
   });
   const ready = await settle(e);
-  assert.equal(ready.status, "ready");
+  assert.equal(ready.status, "ready", "message" in ready ? ready.message : ready.status);
   assert.equal(ready.id, waiting.id);
   assert.equal(ready.budget?.callsUsed, 7);
   assert.ok(
@@ -382,7 +382,7 @@ test("正式差异协议：辅助新增files为空，精确继承旧主工作流
     operationId: "request",
   });
   const ready = await settle(e);
-  assert.equal(ready.status, "ready");
+  assert.equal(ready.status, "ready", "message" in ready ? ready.message : ready.status);
   if (ready.status !== "ready") return;
   await e.command({
     type: "start",
@@ -462,7 +462,7 @@ test("独立复核可直接提出业务澄清；同一运行回答后复核必�
     operationId: "answer",
   });
   const ready = await settle(e);
-  assert.equal(ready.status, "ready");
+  assert.equal(ready.status, "ready", "message" in ready ? ready.message : ready.status);
   assert.equal(ready.budget?.callsUsed, 7);
   assert.equal(ready.reviewLedger!.findings[0].status, "resolved");
   if (ready.status !== "ready") return;
@@ -611,7 +611,7 @@ const plugin: Plugin = {
     operationId: "request",
   });
   const ready = await settle(e);
-  assert.equal(ready.status, "ready");
+  assert.equal(ready.status, "ready", "message" in ready ? ready.message : ready.status);
   if (ready.status !== "ready") return;
   const seal = ready.plan.requirementGate!.seal;
   await e.command({

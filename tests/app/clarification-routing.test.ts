@@ -329,9 +329,9 @@ test("来源未要求的初始限制退回同一规划循环，不增加用户�
       const reply = await fixture.generate(request, signal);
       if (reply.calls[0]?.name === "propose_plan" && ++plans > 1) {
         const r = reply.calls[0].args.requirements as {
-          obligations: Record<string, unknown>[];
+          expectations: Record<string, unknown>[];
         }[];
-        r[0].obligations[1].initial = { kind: "baseline" };
+        r[0].expectations[1].initial = { kind: "baseline" };
       }
       if (request.schema && !auditInput(request)) {
         const input = JSON.parse(request.message!);

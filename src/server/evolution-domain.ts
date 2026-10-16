@@ -1229,6 +1229,11 @@ export default plugin;`,
           workspaceCases,
           signal,
           (receipt) => workspaceCasesEvidence.push(receipt),
+          (verifyGoal.binding?.capabilities ?? []).flatMap(c =>
+            c.interfaceId === "fields.register" && c.registeredFields?.length
+              ? [{ member: c.providerId, fields: c.registeredFields }]
+              : [],
+          ),
         )),
       );
       if (verifyGoal.binding?.checkers.some((item) => item.id === "schedule/1"))

@@ -41,6 +41,7 @@ export function compileObligations(
   lifecycle?: {
     existing: (target: { member: string; field: string }) => boolean;
     ui: Extract<AcceptanceObligation, { kind: "ui-identity" }>["contributions"];
+    workflow?: import("../shared/browser-cases.js").WorkflowUiIdentity;
   },
 ): AcceptanceObligation[] {
   return list(value).map((value, index) => {
@@ -70,12 +71,13 @@ export function compileObligations(
     }
     if (v.kind === "preserve-ui") {
       row(v, ["kind"]);
-      if (!lifecycle?.ui.length)
+      if (!lifecycle?.ui.length && !lifecycle?.workflow)
         throw new Error("界面身份保护没有可信基础贡献，无法推导");
       return {
         ...identity,
         kind: "ui-identity",
-        contributions: structuredClone(lifecycle.ui),
+        contributions: structuredClone(lifecycle!.ui),
+        ...(lifecycle?.workflow ? {workflow:structuredClone(lifecycle.workflow)} : {}),
       };
     }
     if (v.kind === "history") {

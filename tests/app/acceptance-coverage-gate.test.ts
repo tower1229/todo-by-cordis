@@ -245,7 +245,7 @@ test("经公开规划入口：声明升级成员 A（行为变更）却只提交
   assert.notEqual(run.status, "ready");
   assert.equal(run.status, "blocked");
   if (run.status !== "blocked") throw new Error("expected blocked");
-  assert.match(run.message, /覆盖|案例|升级/);
+  assert.match(run.message, /覆盖|案例|升级|未授权字段/);
 });
 
 test("经公开规划入口：合法且覆盖完整的新增计划可以进入 ready，并展示业务语言覆盖摘要", async (t) => {
@@ -395,7 +395,7 @@ test("经公开规划入口：只交新名案例时旧案例仍继承，不能�
   assert.ok(ready.plan.memberCases?.some((c) => c.name === "标签另名正例"));
 });
 
-test("经公开规划入口：另名矛盾案例被拒绝，原名修订仍须独立确认", async (t) => {
+test("经公开规划入口：宿主绑定触发身份，同触发矛盾案例被拒绝，修订仍须独立确认", async (t) => {
   const w = await dualWorkspace(t);
   const { e, freeze, runId } = await freezeTags(t, w);
   const revised = {
@@ -412,7 +412,7 @@ test("经公开规划入口：另名矛盾案例被拒绝，原名修订仍须�
     outcome: "保留大小写",
     dataImpact: "升级 tags",
     memberUpgrades: [{ pluginId: "tags" }],
-    memberCases: [{ ...revised, name: "另名保留大小写" }, tagsMemberCases[1]],
+    memberCases: [tagsMemberCases[0], { ...revised, name: "另名保留大小写" }, tagsMemberCases[1]],
     acceptanceReason: "用户要求标签保留大小写",
     workflowRules: [],
   };
@@ -425,7 +425,7 @@ test("经公开规划入口：另名矛盾案例被拒绝，原名修订仍须�
   });
   const blocked = await settle(e);
   assert.equal(blocked.status, "blocked", JSON.stringify(blocked));
-  assert.match(blocked.message, /案例.*冲突/);
+  assert.match(blocked.message, /案例.*(冲突|重复)/);
   freeze.finish = {
     ...freeze.finish,
     memberCases: [revised, tagsMemberCases[1]],

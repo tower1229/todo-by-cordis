@@ -636,6 +636,7 @@ function App() {
       >
         {panel?.kind === "task" && (
           <Editor
+            workflowId={composition?.workflow.id}
             key={panel.task.id}
             task={panel.task}
             revision={composition?.revision ?? 1}

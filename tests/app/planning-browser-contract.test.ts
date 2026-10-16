@@ -2,13 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { planningTools } from "../../src/server/planning.js";
 import { parseBrowserCases } from "../../src/server/requirement-coverage.js";
+import { browserSteps } from "../../src/shared/browser-contract.js";
 import type { BrowserStep } from "../../src/shared/browser-cases.js";
 
-test("业务义务逐类声明浏览器必填字段，与真实解析器一致；整套案例由宿主生成", () => {
+test("浏览器内部步骤契约逐类校验必填字段；公开计划不接受步骤，由宿主生成", () => {
   const tool = planningTools.find((tool) => tool.name === "propose_plan")!;
   const parameters=tool.parameters;
   assert.ok(!Object.hasOwn(parameters.properties,"browserCases"));
-  const variants=parameters.properties.requirements.items.properties.obligations.items.anyOf.find(s=>s.properties.kind.enum.includes("assertion"))!.properties.steps.items.anyOf;
+  const variants=browserSteps;
+  assert.ok(!JSON.stringify(parameters).includes('"steps":'));
   const steps: BrowserStep[] = [
     { kind: "open" },
     { kind: "refresh" },
@@ -37,7 +39,7 @@ test("业务义务逐类声明浏览器必填字段，与真实解析器一致�
     const schema = variants.find((variant) =>
       variant.properties.kind.enum.includes(step.kind),
     )!;
-    assert.deepEqual([...schema.required].sort(), Object.keys(step).filter(key => !["member", "contribution"].includes(key)).sort());
+    assert.deepEqual([...schema.required].sort(), Object.keys(step).filter(key => key !== "contribution").sort());
     assert.doesNotThrow(() =>
       parseBrowserCases([{ id: "valid", task: "new", steps: [step] }]),
     );

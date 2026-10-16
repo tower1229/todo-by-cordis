@@ -148,7 +148,7 @@ export function v1FixtureDriver(
                   ],
                 }
               : {}),
-            workflowRules: [
+            workflowRules: phase >= 4 ? [] : [
               ...(optionalCompletionField
                 ? [
                     {

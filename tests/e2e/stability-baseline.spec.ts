@@ -148,18 +148,8 @@ test("真实浏览器绑定不依赖 stub 的成员、动作和字段名称", as
           // Rename implementation identifiers while preserving exact user quotes.
           for (const call of renamed.calls) {
             if (call.name !== "propose_plan") continue;
-            const originalRequirements = reply.calls.find(
-              (c) => c.name === "propose_plan",
-            )?.args
-              .requirements as import("../../src/shared/assistant.js").Requirement[];
-            for (const requirement of call.args
-              .requirements as import("../../src/shared/assistant.js").Requirement[]) {
-              const prior = originalRequirements.find(
-                (r) => r.id === requirement.id,
-              )!;
-              requirement.sourceQuote = prior.sourceQuote;
-              // Source identity is host-bound from the structured source index.
-            }
+            const originalRequirements = reply.calls.find(c=>c.name==="propose_plan")!.args.requirements as {quote:string}[];
+            for (const [index,requirement] of (call.args.requirements as {quote:string}[]).entries()) requirement.quote=originalRequirements[index].quote;
           }
           return renamed;
         },
@@ -207,7 +197,9 @@ for (const defect of [
                   defect === "missing-form-blank-reject" &&
                   call.name === "propose_plan"
                 ) {
-                  const memberCases = call.args.memberCases as {
+                  const changes = call.args.changes as {target:string;cases: {name:string;input:Record<string,string>}[]}[];
+                  const member = changes.find(c=>c.target!=="workflow")!;
+                  const memberCases = member.cases as {
                     name: string;
                     input: Record<string, string>;
                   }[];
@@ -215,11 +207,11 @@ for (const defect of [
                     ...call,
                     args: {
                       ...call.args,
-                      memberCases: memberCases.filter(
+                      changes: changes.map(change => change.target !== member.target ? change : {...member,cases: memberCases.filter(
                         (testCase) =>
                           testCase.name !== "缺失标签输入" ||
                           Object.keys(testCase.input).length > 0,
-                      ),
+                      )}),
                     },
                   };
                 }

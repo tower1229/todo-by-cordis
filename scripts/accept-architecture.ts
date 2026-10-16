@@ -17,6 +17,7 @@ import {
   verifyWorkflow,
 } from "../src/server/evolution-domain.js";
 import { DeepSeek } from "../src/evolution/deepseek.js";
+import { admissionResolved } from "../src/evolution/request-admission.js";
 import { createApp } from "../src/server/app.js";
 import {
   browserEnvironment,
@@ -80,7 +81,7 @@ const manifest = () =>
   );
 const frozenSource = manifest();
 const header = {
-  kind: "architecture-real/8",
+  kind: "architecture-real/9",
   model: "deepseek-flash",
   cases,
   limits: {
@@ -280,7 +281,9 @@ for (const scenario of cases) {
     if (scenario.id === "addition") {
       assert.equal(snapshot.run?.status,"blocked","明确不支持的初始空白必须提前阻塞");
       assert.ok(snapshot.run && "message" in snapshot.run && /维护者.*初始|初始.*维护者/.test(snapshot.run.message));
-      assert.ok(calls <= 2,"需求预检含最多一次协议纠正，不进入完整规划");
+      assert.ok(calls <= 4,"来源预检和独立来源裁决各含最多一次原预算内协议纠正，不进入完整规划");
+      const admission = snapshot.run.requestAdmissions?.at(-1);
+      assert.ok(admission && admissionResolved(admission) && admission.blockers.length > 0, "早期能力阻塞必须含完整来源裁决");
       assert.equal(snapshot.candidates?.length,0);
       log({type:"unsupported-requirement-blocked-early",run:snapshot.run});
       continue;

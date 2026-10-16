@@ -19,6 +19,7 @@ import { auxWorkflowCode } from "../fixtures/member-ui.js";
 import { hookedDefinition } from "../fixtures/hooked.js";
 import { capabilityGuides } from "../../src/server/capability-guides.js";
 import { hash } from "../../src/release/storage.js";
+import { capture } from "../../src/server/planning.js";
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
 
 async function activateDisabledScheduleMember(workspace: Workspace) {
@@ -117,21 +118,21 @@ const cases = [
       ],
     },
     status: "blocked",
-    reason: "未安装",
+    reason: "不在允许值中",
   },
   {
-    name: "incompatible host contract",
+    name: "manual contract version cannot override host binding",
+    wireVersion: "schedule.runtime/999",
     finish: {
       requiredCapabilities: [
         {
           interfaceId: "schedule.runtime",
           providerId: "host:online-scheduler",
-          contractVersion: "schedule.runtime/999",
         },
       ],
     },
     status: "blocked",
-    reason: "不兼容",
+    reason: "未授权字段",
   },
   {
     name: "disabled member contribution",
@@ -252,9 +253,15 @@ for (const scenario of cases) {
       await activateDisabledScheduleMember(workspace);
     if ("setup" in scenario && scenario.setup === "stub")
       await activateStubInterface(workspace);
+    const planning = new PlanningDriver(scenario.finish);
     const evolution = new Evolution(
       workspace.db,
-      new PlanningDriver(scenario.finish),
+      {async generate(request, signal) {
+        const reply = await planning.generate(request, signal);
+        if ("wireVersion" in scenario && reply.calls[0]?.name === "propose_plan")
+          (reply.calls[0].args.uses as Record<string,unknown>[])[0].contractVersion = scenario.wireVersion;
+        return reply;
+      }},
       new EvolutionDomain(workspace),
     );
     const app = createApp(workspace, evolution);
@@ -284,6 +291,12 @@ for (const scenario of cases) {
         await page.request.get(`${baseURL}/api/assistant`)
       ).json();
       if (scenario.status === "ready") {
+        const catalog = capture(workspace).capabilities;
+        for (const requirement of snapshot.run.plan.requiredCapabilities ?? []) {
+          if (!requirement.contractVersion) continue;
+          const actual = catalog.find(c=>c.interfaceId===requirement.interfaceId && c.providerId===requirement.providerId);
+          expect(actual?.contractVersion).toBe(requirement.contractVersion);
+        }
         const composition = await (
           await page.request.get(`${baseURL}/api/composition`)
         ).json();

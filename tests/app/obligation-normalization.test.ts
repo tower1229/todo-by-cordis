@@ -434,7 +434,7 @@ test("界面身份义务快照由宿主生成，不添加动作可见性限制�
     coverage(changed, sources, ["browser/1"]).some((c) => c.reasons.length),
   );
   assert.throws(
-    () => compileReferences({ requirements: [r] }, sources, [], workflow),
+    () => compileReferences({ requirements: [r] }, sources, [], {id:"",actions:[]}),
     /没有可信基础贡献/,
   );
   assert.throws(
@@ -707,9 +707,9 @@ test("规划器虚构的初始ok经来源复核退回规格修正，不能误报
         const reply = await fixture.generate(request, signal);
         if (reply.calls[0]?.name === "propose_plan" && ++plans === 1) {
           const rs = reply.calls[0].args.requirements as {
-            obligations: Record<string, unknown>[];
+            expectations: Record<string, unknown>[];
           }[];
-          rs[0].obligations[0].initial = { kind: "visible", value: "ok" };
+          rs[0].expectations[0].initial = { kind: "visible", value: "ok" };
         }
         if (
           request.schema &&

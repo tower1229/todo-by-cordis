@@ -178,6 +178,7 @@ export function CandidateExperiencePanel({
         />
       ) : (
         <Editor
+          workflowId={snapshot.composition.workflow.id}
           key={snapshot.task.id}
           task={snapshot.task}
           revision={snapshot.composition.revision}

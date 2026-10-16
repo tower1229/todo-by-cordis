@@ -104,10 +104,17 @@ export function parseBrowserCases(value: unknown): BrowserCase[] {
         return structuredClone(s) as unknown as BrowserCase["steps"][number];
       }
       if (kind === "ui-identity") {
-        if (Object.keys(s).some((k) => !["kind", "contributions"].includes(k)))
+        if (Object.keys(s).some((k) => !["kind", "contributions", "workflow"].includes(k)))
           throw new Error("界面身份快照结构无效");
         const contributions = array(s.contributions, 30);
-        if (!contributions.length) throw new Error("界面身份快照为空");
+        if (s.workflow !== undefined) {
+          const w=record(s.workflow);
+          if(Object.keys(w).some(k=>!["id","fields","actions"].includes(k)) || typeof w.id!=="string" || !/^[\w.-]{1,100}$/.test(w.id))throw new Error("主工作流身份快照无效");
+          for(const [key,idKey] of [["fields","key"],["actions","id"]])for(const value of array(w[key],100)){
+            const item=record(value);if(Object.keys(item).length!==1 || typeof item[idKey]!=="string" || !/^[\w.-]{1,100}$/.test(String(item[idKey])))throw new Error("主工作流身份必须引用精确稳定 ID");
+          }
+        }
+        if (!contributions.length && s.workflow===undefined) throw new Error("界面身份快照为空");
         for (const value of contributions) {
           const c = record(value);
           if (
@@ -704,7 +711,7 @@ function gateVersion() {
       "src/evolution/historical-preparation.ts",
       "src/evolution/obligation-derivation.ts",
       "src/shared/workflow-browser.ts",
-      "src/evolution/tool-contract.ts",
+      "src/evolution/plan-input.ts",
       "src/shared/acceptance-obligations.ts",
       "src/evolution/technical-facts.ts",
       "src/shared/checker-semantics.ts",

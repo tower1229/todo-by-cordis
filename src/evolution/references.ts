@@ -59,7 +59,7 @@ export function compileReferences(
     }[];
   } = {},
 ) {
-  const lifecycle = fieldLifecycle(inherited, workflow.fields);
+  const lifecycle = {...fieldLifecycle(inherited, workflow.fields), ...(/^[\w.-]{1,100}$/.test(workflow.id ?? "") ? {workflow: {id:workflow.id, fields:(workflow.fields??[]).map(f=>({key:f.key})), actions:workflow.actions.map(a=>({id:a.id}))}} : {})};
   const newFieldPreservation: {
     requirementId: string;
     member: string;

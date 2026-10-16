@@ -21,6 +21,7 @@ import { TaskDetailContributions } from "./TaskDetailContributions.js";
 
 export function Editor({
   task,
+  workflowId,
   revision,
   fields,
   contributions = [],
@@ -35,6 +36,7 @@ export function Editor({
   experienceSessionId,
 }: {
   task: Task;
+  workflowId?: string;
   revision: number;
   fields: Field[];
   contributions?: ResolvedUiContribution[];
@@ -91,6 +93,7 @@ export function Editor({
   return (
     <form
       data-task-editor={task.id}
+      data-workflow-id={workflowId}
       className="flex min-h-0 flex-1 flex-col"
       onSubmit={submit}
       onCompositionStart={() => {
