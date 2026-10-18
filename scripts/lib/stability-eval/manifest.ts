@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { modelPolicy } from "../../../src/evolution/model-policy.js";
 
 /** Outcome class expected for scoring; due-date records current host blocker, not a hand-built success. */
 export const outcomeClasses = [
@@ -18,6 +19,16 @@ export type StabilityScenario = {
     | "rule-revision"
     | "missing-capability"
     | "temporarily-unavailable";
+  baseline?: "dual";
+  clarification?: { question: string; answer: string };
+  /** Evaluator-owned business truth. Never delivered as a solution to the model. */
+  oracle?: { sources: string[] } & (
+    | { kind: "tags"; normalization: "trim" | "lowercase" }
+    | { kind: "reflection"; minLength: number; maxLength: number }
+    | { kind: "counter" }
+    | { kind: "due"; expiredValue: "true" }
+    | { kind: "block"; reason: "offline-delivery" | "blank-presentation" }
+  );
   /** Exact user request text frozen before any run. */
   request: string;
   expectedOutcomeClass: OutcomeClass;
@@ -45,6 +56,10 @@ export type StabilityEvalManifest = {
     stubKind: "model-stub";
     realModelId: string;
     realModelAuthorizationFlag: "--authorize-real-model";
+    outputPolicies?: Record<
+      import("../../../src/evolution/budget.js").ModelPhase,
+      import("../../../src/evolution/model-policy.js").ModelOutputPolicy
+    >;
   };
   budget: {
     calls: number;
@@ -67,6 +82,7 @@ export type StabilityEvalManifest = {
     failureClasses: readonly string[];
   };
   scenarios: readonly StabilityScenario[];
+  evaluation?: "current/1";
 };
 
 export type FrozenManifest = StabilityEvalManifest & {
@@ -227,6 +243,7 @@ const hashable = (manifest: StabilityEvalManifest) => ({
   retry: manifest.retry,
   scoring: manifest.scoring,
   scenarios: manifest.scenarios,
+  ...(manifest.evaluation ? { evaluation: manifest.evaluation } : {}),
 });
 
 export function manifestContentHash(
@@ -242,7 +259,7 @@ export function freezeManifest(
   frozenAt = new Date().toISOString(),
 ): FrozenManifest {
   return {
-    ...manifest,
+    ...structuredClone(manifest),
     frozen: true,
     frozenAt,
     contentHash: manifestContentHash(manifest),
@@ -256,4 +273,51 @@ export function assertManifestFrozen(manifest: FrozenManifest): void {
     throw new Error(
       "评估清单 contentHash 与正文不一致：禁止在执行后选择性修改需求、预算、评分或重试规则",
     );
+  if (manifest.evaluation) {
+    if (
+      manifest.budget.calls !== 12 ||
+      manifest.budget.candidates !== 3 ||
+      manifest.budget.milliseconds !== 600000 ||
+      manifest.retry.externalRetries !== 0 ||
+      manifest.retry.resetBudgetOnFailure ||
+      manifest.retry.handEditCandidates ||
+      manifest.retry.supplyCorrectImplementationToModel
+    )
+      throw new Error("当前评测不得改变原运行预算、门禁或无外层重试约束");
+    for (const phase of [
+      "admission",
+      "planning",
+      "review",
+      "generation",
+    ] as const) {
+      if (
+        JSON.stringify(manifest.model.outputPolicies?.[phase]) !==
+        JSON.stringify(modelPolicy(phase))
+      )
+        throw new Error("当前模型阶段策略与产品不一致");
+    }
+    if (
+      !Number.isInteger(manifest.runs.independentRunsPerScenario) ||
+      manifest.runs.independentRunsPerScenario < 1 ||
+      new Set(manifest.scenarios.map((s) => s.id)).size !==
+        manifest.scenarios.length
+    )
+      throw new Error("当前运行清单身份或次数无效");
+    for (const scenario of manifest.scenarios) {
+      if (
+        !scenario.oracle ||
+        !scenario.oracle.sources.length ||
+        scenario.oracle.sources.some(
+          (q) =>
+            !q.trim() ||
+            ![scenario.request, scenario.clarification?.answer ?? ""].some(
+              (s) => s.includes(q),
+            ),
+        ) ||
+        (scenario.oracle.kind === "block") !==
+          (scenario.expectedOutcomeClass === "accurate-block")
+      )
+        throw new Error("当前清单必须包含匹配原文及预期结果的独立判定");
+    }
+  }
 }

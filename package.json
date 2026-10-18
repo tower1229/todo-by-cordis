@@ -12,12 +12,13 @@
     "dev": "node scripts/dev.mjs",
     "build": "tsc -p tsconfig.server.json && vite build",
     "start": "node dist/server/main.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.evaluation.json",
     "test:e2e": "playwright test",
     "bench:m1": "node scripts/benchmark.mjs",
     "accept:shortened-tags": "node --import tsx scripts/accept-shortened-tags.ts",
     "accept:v1": "node --import tsx scripts/accept-v1.ts",
-    "accept:stability-baseline": "node --import tsx scripts/accept-stability-baseline.ts"
+    "accept:stability-baseline": "node --import tsx scripts/accept-stability-baseline.ts",
+    "accept:stability-current": "node --import tsx scripts/accept-stability-baseline.ts --current"
   },
   "dependencies": {
     "@babel/parser": "7.29.9",

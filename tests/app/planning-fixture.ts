@@ -445,7 +445,7 @@ function businessFixture(
     ...affected.map((m) => ({ operation: "upgrade", ...m })),
     ...rows(draft.memberAdditions).map((m) => ({ operation: "add", ...m })),
     ...rows(draft.memberUpgrades).map((m) => ({ operation: "upgrade", ...m })),
-  ].map((m) => ({
+  ].map((m:Row) => ({
     ...m,
     cases: cases
       .filter((c) => c.member === m.pluginId)

@@ -13,6 +13,8 @@ import {
   reserveArchive,
   usageFromCalls,
   firstPlanResult,
+  sealArchive,
+  verifyArchive,
 } from "../../scripts/lib/stability-eval/archive.js";
 import { runStabilityScenario } from "../../scripts/lib/stability-eval/scenario.js";
 import {
@@ -21,6 +23,25 @@ import {
 } from "../../scripts/lib/stability-eval/manifest.js";
 import { dependencyFault } from "../../scripts/lib/stability-eval/environment.js";
 import { execFileSync } from "node:child_process";
+
+test("归档封存后替换通过记录、删除证据或追加文件都会破坏身份", () => {
+  const root = mkdtempSync(join(tmpdir(), "cordis-seal-"));
+  try {
+    writeFileSync(join(root, "record.json"), JSON.stringify({ passed: false }));
+    const digest = sealArchive(root);
+    assert.doesNotThrow(() => verifyArchive(root, digest));
+    writeFileSync(join(root, "record.json"), JSON.stringify({ passed: true }));
+    assert.throws(() => verifyArchive(root, digest), /归档|摘要/);
+    writeFileSync(join(root, "record.json"), JSON.stringify({ passed: false }));
+    writeFileSync(join(root, "extra.json"), "{}");
+    assert.throws(() => verifyArchive(root, digest), /归档|文件/);
+    rmSync(join(root, "extra.json"));
+    rmSync(join(root, "record.json"));
+    assert.throws(() => verifyArchive(root, digest), /归档|文件/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("existing archive is refused without changing historical content", () => {
   const root = mkdtempSync(join(tmpdir(), "cordis-archive-test-"));

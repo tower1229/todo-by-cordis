@@ -7,8 +7,77 @@ export const failureClasses = [
   "tool-protocol",
   "transport",
   "evaluator",
+  "unknown",
 ] as const;
 export type FailureClass = (typeof failureClasses)[number];
+export type FailureEvidence = {
+  classification: FailureClass;
+  phase: string;
+  code: string;
+  evidence: string[];
+};
+export type CallEvidence = {
+  phase?: string;
+  status?: string;
+  transport?: import("../../../src/evolution/driver.js").ModelReply["transport"];
+};
+
+/** Current evaluations use facts from the host, leaving causal attribution unknown otherwise. */
+export function failureFromEvidence(input: {
+  calls: CallEvidence[];
+  protocolFailures?: { phase: string; call: number }[];
+  resourceFailures?: { phase: string; call: number }[];
+  oracle?: import("./oracle.js").OracleEvidence;
+  archiveComplete?: boolean;
+}): FailureEvidence {
+  const transport = input.calls.findIndex(
+    (c) => c.status === "failed" && c.transport?.failure,
+  );
+  if (transport >= 0)
+    return {
+      classification: "transport",
+      phase: input.calls[transport].phase ?? "unknown",
+      code: `transport:${input.calls[transport].transport!.failure!.kind}`,
+      evidence: [`model-call:${transport + 1}`],
+    };
+  const resource = input.resourceFailures?.at(-1);
+  if (resource)
+    return {
+      classification: "unknown",
+      phase: resource.phase,
+      code: "output-budget",
+      evidence: [`model-call:${resource.call}`],
+    };
+  const protocol = input.protocolFailures?.at(-1);
+  if (protocol)
+    return {
+      classification: "tool-protocol",
+      phase: protocol.phase,
+      code: "invalid-model-protocol",
+      evidence: [`model-call:${protocol.call}`],
+    };
+  if (input.archiveComplete === false)
+    return {
+      classification: "evaluator",
+      phase: "archive",
+      code: "incomplete-evidence",
+      evidence: ["events.jsonl"],
+    };
+  const oracle = input.oracle?.checks.find((c) => c.status === "failed");
+  if (oracle)
+    return {
+      classification: "unknown",
+      phase: oracle.id.split(":")[0],
+      code: "independent-assertion",
+      evidence: ["independent-oracle.json", oracle.id],
+    };
+  return {
+    classification: "unknown",
+    phase: "unknown",
+    code: "unresolved",
+    evidence: [],
+  };
+}
 
 export type ObservedOutcomeClass = OutcomeClass | "failed";
 
@@ -16,6 +85,16 @@ export type ScenarioRunRecord = {
   scenarioId: string;
   evidenceKind: "model-stub" | "real-model";
   evidenceComplete?: boolean;
+  trialId?: string;
+  candidatePassed?: boolean;
+  oracle?: import("./oracle.js").OracleEvidence;
+  failure?: FailureEvidence;
+  resources?: {
+    calls: number;
+    recordedCalls: number;
+    candidates: number;
+    activeMilliseconds: number;
+  };
   recoveredBrowserSucceeded?: boolean;
   expectedOutcomeClass: OutcomeClass;
   observedOutcomeClass: ObservedOutcomeClass;
@@ -40,6 +119,11 @@ export type Rate = {
 };
 
 export type StabilityMetrics = {
+  candidateOracleMismatchRate: Rate;
+  positiveSuccessRate: Rate;
+  correctBlockingRate: Rate;
+  falseBlockingRate: Rate;
+  falseAcceptanceRate: Rate;
   capabilitySelectionAccuracy: Rate;
   errorBlockingAccuracy: Rate;
   firstPlanPassRate: Rate;
@@ -123,6 +207,57 @@ export function computeStabilityMetrics(
   }
 
   return {
+    candidateOracleMismatchRate: rate(
+      runs.filter(
+        (r) =>
+          r.candidatePassed &&
+          r.oracle?.checks.some(
+            (c) => c.id === "candidate:browser" && c.status === "failed",
+          ),
+      ).length,
+      runs.filter(
+        (r) =>
+          r.candidatePassed &&
+          r.oracle?.checks.some(
+            (c) => c.id === "candidate:browser" && c.status !== "not-run",
+          ),
+      ).length,
+    ),
+    positiveSuccessRate: rate(
+      runs.filter(
+        (r) =>
+          r.expectedOutcomeClass === "full-path-success" && r.fullPathSucceeded,
+      ).length,
+      runs.filter((r) => r.expectedOutcomeClass === "full-path-success").length,
+    ),
+    correctBlockingRate: rate(
+      runs.filter(
+        (r) =>
+          r.expectedOutcomeClass !== "full-path-success" &&
+          r.observedOutcomeClass === r.expectedOutcomeClass &&
+          r.errorBlockingCorrect === true,
+      ).length,
+      runs.filter((r) => r.expectedOutcomeClass !== "full-path-success").length,
+    ),
+    falseBlockingRate: rate(
+      runs.filter(
+        (r) =>
+          r.expectedOutcomeClass === "full-path-success" &&
+          (r.observedOutcomeClass === "accurate-block" ||
+            r.observedOutcomeClass === "current-blocker"),
+      ).length,
+      runs.filter((r) => r.expectedOutcomeClass === "full-path-success").length,
+    ),
+    falseAcceptanceRate: rate(
+      runs.filter(
+        (r) =>
+          r.expectedOutcomeClass !== "full-path-success" &&
+          (r.candidatePassed ||
+            r.fullPathSucceeded ||
+            r.observedOutcomeClass === "full-path-success"),
+      ).length,
+      runs.filter((r) => r.expectedOutcomeClass !== "full-path-success").length,
+    ),
     capabilitySelectionAccuracy: rate(capabilityCorrect, capabilityJudged),
     errorBlockingAccuracy: rate(blockingCorrect, blockingJudged),
     firstPlanPassRate: rate(firstPlanPass, firstPlanJudged),

@@ -3,6 +3,7 @@ import {
   writeVerifiedJson,
   usageFromCalls,
   firstPlanResult,
+  archiveBrowserEvidence,
 } from "./archive.js";
 import { dependencyFault } from "./environment.js";
 import { resolveExperienceBindings } from "./bindings.js";
@@ -36,6 +37,8 @@ import {
   classifyFailure,
   type ObservedOutcomeClass,
   type ScenarioRunRecord,
+  failureFromEvidence,
+  type CallEvidence,
 } from "./metrics.js";
 import { runStabilityBrowserPath, type BrowserPathResult } from "./browser.js";
 import {
@@ -43,6 +46,20 @@ import {
   type SettledPlanEvidence,
 } from "./scoring.js";
 import { stabilityDriverFor } from "./driver-fixture.js";
+import {
+  checkIndependentPlan,
+  checkIndependentBlock,
+  checkIndependentBrowser,
+  independentBrowserCases,
+  oracleCheck,
+  oracleComplete,
+  pendingOracle,
+  type OracleCheck,
+} from "./oracle.js";
+import {
+  verifyBrowser,
+  BrowserAssertionError,
+} from "../../../src/server/browser-acceptance.js";
 
 export type StabilityRunOptions = {
   directory: string;
@@ -54,6 +71,7 @@ export type StabilityRunOptions = {
   browserRun?: typeof runStabilityBrowserPath;
   archive?: typeof archiveWorkspace;
   resumeExistingCandidate?: boolean;
+  trialId?: string;
 };
 
 export type StabilityScenarioResult = {
@@ -78,7 +96,8 @@ async function prepareWorkspace(
   directory: string,
 ) {
   const w = await Workspace.open(join(directory, "workspace.db"));
-  if (scenario.id === "member-upgrade-tags") await activateDual(w);
+  if (scenario.id === "member-upgrade-tags" || scenario.baseline === "dual")
+    await activateDual(w);
   await w.command({
     type: "create",
     operationId: randomUUID(),
@@ -126,6 +145,15 @@ export async function runStabilityScenario(
     return await runScenarioInEnvironment(options, fault);
   } catch (error) {
     const record: ScenarioRunRecord = {
+      trialId: options.trialId,
+      ...(options.scenario.oracle
+        ? {
+            oracle: pendingOracle(options.scenario, {
+              manifestHash: options.manifest.contentHash,
+              trialId: options.trialId ?? "unregistered",
+            }),
+          }
+        : {}),
       scenarioId: options.scenario.id,
       evidenceKind: options.evidenceKind,
       evidenceComplete: false,
@@ -171,6 +199,12 @@ async function runScenarioInEnvironment(
   fault?: ReturnType<typeof dependencyFault>,
 ): Promise<StabilityScenarioResult> {
   assertManifestFrozen(options.manifest);
+  if (
+    options.manifest.evaluation &&
+    options.clarificationAnswer &&
+    options.clarificationAnswer !== options.scenario.clarification?.answer
+  )
+    throw new Error("当前评测不得替换冻结的澄清答案");
 
   const eventsPath = join(options.directory, "events.jsonl");
   writeFileSync(eventsPath, "", { flag: "wx", mode: 0o600 });
@@ -183,10 +217,35 @@ async function runScenarioInEnvironment(
   };
 
   const started = Date.now();
+  const oracle = options.scenario.oracle
+    ? pendingOracle(options.scenario, {
+        manifestHash: options.manifest.contentHash,
+        trialId: options.trialId ?? "unregistered",
+      })
+    : undefined;
+  const recordOracle = (checks: OracleCheck[]) => {
+    if (!oracle) return;
+    for (const check of checks) {
+      oracle.checks = oracle.checks.map((c) => (c.id === check.id ? check : c));
+      recordEvent({
+        type: "independent-oracle",
+        check,
+        definitionHash: oracle.definitionHash,
+      });
+    }
+    const failed = checks.filter((check) => check.status === "failed");
+    if (failed.length)
+      throw new Error(
+        `独立需求断言失败：${failed.map((check) => check.id).join("、")}`,
+      );
+  };
   const driver =
     options.driver ??
     (options.evidenceKind === "model-stub"
-      ? stabilityDriverFor(options.scenario.id)
+      ? stabilityDriverFor(
+          options.scenario.id,
+          options.scenario.oracle ? options.scenario : undefined,
+        )
       : undefined);
   if (!driver) throw new Error("真实模型运行必须显式传入已授权 Driver");
 
@@ -215,8 +274,8 @@ async function runScenarioInEnvironment(
   const sessions = new ExperienceSessionHost(w);
   const planningReplies: unknown[] = [];
   const observedDriver: Driver = {
-    async generate(request, signal) {
-      const reply = await driver.generate(request, signal);
+    async generate(request, signal, onTransport) {
+      const reply = await driver.generate(request, signal, onTransport);
       if (!request.tools?.some((tool) => tool.name === "submit_candidate")) {
         const observation = {
           request: { tools: request.tools },
@@ -237,6 +296,7 @@ async function runScenarioInEnvironment(
     },
   };
   const domain = new EvolutionDomain(w);
+  const initialContext = options.scenario.oracle ? domain.context() : undefined;
   if (fault) {
     const environment = domain.context().environment;
     recordEvent({ type: "host-environment", environment });
@@ -266,6 +326,8 @@ async function runScenarioInEnvironment(
   let repairedInOriginalBudget = false;
   let failureMessage: string | undefined;
   let usage: ScenarioRunRecord["usage"] = null;
+  let callEvidence: CallEvidence[] = [];
+  let resources: ScenarioRunRecord["resources"];
   let blockReason: string | undefined;
   let settledMessage: string | undefined;
   let planEvidence: SettledPlanEvidence | null = null;
@@ -280,7 +342,29 @@ async function runScenarioInEnvironment(
       directory: options.directory,
       scenario: options.scenario,
       clarificationAnswer:
-        options.clarificationAnswer ?? clarificationFor(options.scenario),
+        options.clarificationAnswer ??
+        options.scenario.clarification?.answer ??
+        (options.manifest.evaluation
+          ? undefined
+          : clarificationFor(options.scenario)),
+      validatePlan: async () => {
+        if (!oracle) return;
+        const snapshot = await evolution.observe();
+        if (!snapshot.run || !("plan" in snapshot.run) || !snapshot.run.plan)
+          throw new Error("独立判定缺少待执行计划");
+        const baseline = JSON.parse(
+          initialContext!.files["active-acceptance"].content,
+        ) as {
+          rules?: InvestigatedPlan["workflowRules"];
+          requirements?: InvestigatedPlan["requirements"];
+        };
+        recordOracle(
+          checkIndependentPlan(options.scenario, snapshot.run.plan, {
+            workflowRules: baseline.rules,
+            requirements: baseline.requirements,
+          }),
+        );
+      },
       resolveBindings: async () => {
         const snapshot = await evolution.observe();
         const plan =
@@ -307,7 +391,10 @@ async function runScenarioInEnvironment(
           workspaceCases?: WorkspaceCaseEvidence[];
         };
         const bindings = resolveExperienceBindings({
-          scenarioId: options.scenario.id,
+          scenarioId:
+            options.scenario.id === "clarification-reflection"
+              ? "rule-revision-reflection"
+              : options.scenario.id,
           plan: plan as InvestigatedPlan,
           composition,
           evidence,
@@ -316,6 +403,48 @@ async function runScenarioInEnvironment(
             .extensionRegistry()
             .schedules(),
         });
+        if (options.scenario.oracle?.kind === "due" && bindings.due)
+          bindings.due.expiredExpected = options.scenario.oracle.expiredValue;
+        if (oracle) {
+          const cases = independentBrowserCases(
+            options.scenario,
+            composition,
+            bindings,
+          );
+          const candidate = w.release.get(composition.versionId);
+          let actual;
+          try {
+            const evidence = await verifyBrowser(
+              w,
+              candidate,
+              w.release.get(plan.changeSpec!.baseVersion),
+              cases,
+              [],
+              oracle.definitionHash,
+              AbortSignal.timeout(120000),
+            );
+            writeVerifiedJson(
+              join(options.directory, "independent-browser.json"),
+              archiveBrowserEvidence(
+                evidence,
+                join(options.directory, "independent-browser-evidence"),
+              ),
+            );
+            actual = checkIndependentBrowser(cases, evidence);
+          } catch (error) {
+            if (error instanceof BrowserAssertionError) {
+              writeVerifiedJson(
+                join(options.directory, "independent-browser.json"),
+                archiveBrowserEvidence(
+                  error.evidence,
+                  join(options.directory, "independent-browser-evidence"),
+                ),
+              );
+              actual = checkIndependentBrowser(cases, error.evidence);
+            } else throw error;
+          }
+          recordOracle([actual]);
+        }
         return bindings;
       },
       restartHost: () => w.restart(),
@@ -413,6 +542,17 @@ async function runScenarioInEnvironment(
     });
 
     const candidates = snapshot.candidates ?? [];
+    if (options.manifest.evaluation)
+      for (const candidate of candidates) {
+        if (candidate.browser)
+          writeVerifiedJson(
+            join(options.directory, `candidate-browser-${candidate.id}.json`),
+            archiveBrowserEvidence(
+              candidate.browser,
+              join(options.directory, `candidate-browser-${candidate.id}`),
+            ),
+          );
+      }
     if (candidates.length) {
       firstCandidatePassed = candidates[0]?.passed ?? null;
       repairedInOriginalBudget =
@@ -431,6 +571,23 @@ async function runScenarioInEnvironment(
     });
 
     const callBodies = calls.map((row) => JSON.parse(row.body));
+    callEvidence = callBodies;
+    const storedRow = w.db
+      .prepare("SELECT body FROM evolution_runs ORDER BY rowid DESC LIMIT 1")
+      .get() as { body: string } | undefined;
+    if (storedRow) {
+      const stored = JSON.parse(storedRow.body) as {
+        calls: number;
+        candidates: number;
+        elapsed: number;
+      };
+      resources = {
+        calls: stored.calls,
+        recordedCalls: callBodies.length,
+        candidates: stored.candidates,
+        activeMilliseconds: stored.elapsed,
+      };
+    }
     usage = usageFromCalls(callBodies);
     firstPlanPassed = firstPlanResult(
       options.resumeExistingCandidate
@@ -530,13 +687,50 @@ async function runScenarioInEnvironment(
   failureMessage ??= browserResult.message;
   if (!archiveComplete) browserResult.status = "failed";
 
+  if (oracle) {
+    if (options.scenario.oracle?.kind === "block") {
+      const check = checkIndependentBlock(
+        options.scenario,
+        { ...beforeShutdown.run!, status: runStatus ?? "unknown", blockReason },
+        initialContext!,
+      );
+      oracle.checks = oracle.checks.map((c) => (c.id === check.id ? check : c));
+    } else {
+      for (const [id, value] of [
+        ["path:experience", !!browserResult.experienced],
+        ["path:apply", !!browserResult.applied],
+      ] as const)
+        oracle.checks = oracle.checks.map((c) =>
+          c.id === id ? oracleCheck(id, true, value) : c,
+        );
+      if (options.scenario.clarification)
+        oracle.checks = oracle.checks.map((c) =>
+          c.id === "path:clarification"
+            ? oracleCheck(
+                c.id,
+                true,
+                !!browserResult.answeredClarification &&
+                  browserResult.answeredClarification.answer ===
+                    options.scenario.clarification!.answer,
+              )
+            : c,
+        );
+    }
+    writeVerifiedJson(
+      join(options.directory, "independent-oracle.json"),
+      oracle,
+    );
+  }
   const observed = !archiveComplete
     ? "failed"
-    : observeOutcome(
-        options.scenario,
-        browserResult!.status,
-        runStatus ?? browserResult!.observedRunStatus,
-      );
+    : runStatus === "blocked" &&
+        options.scenario.expectedOutcomeClass === "full-path-success"
+      ? "accurate-block"
+      : observeOutcome(
+          options.scenario,
+          browserResult!.status,
+          runStatus ?? browserResult!.observedRunStatus,
+        );
 
   const reachedReadyOnFirstPlan = Boolean(browserResult!.confirmedPlan);
   const blockedWithoutReady =
@@ -560,27 +754,50 @@ async function runScenarioInEnvironment(
     blockedWithoutReady,
   });
 
-  const matchesExpectation = observed === options.scenario.expectedOutcomeClass;
+  if (oracle && options.scenario.oracle?.kind === "block") {
+    scored.errorBlockingCorrect = oracleComplete(options.scenario, oracle);
+    scored.capabilitySelectionCorrect = scored.errorBlockingCorrect;
+  }
+  const matchesExpectation =
+    observed === options.scenario.expectedOutcomeClass &&
+    (!oracle || oracleComplete(options.scenario, oracle));
   const evaluatorStoppedLiveRun =
     browserResult.status === "failed" &&
     ["planning", "executing"].includes(beforeShutdown.run?.status ?? "");
-  const failureClass = evaluatorStoppedLiveRun
-    ? "evaluator"
-    : matchesExpectation
-      ? null
-      : classifyFailure({
-          message: [failureMessage, settledMessage, browserResult!.message]
-            .filter(Boolean)
-            .join(" "),
-          transportFailed: /fetch failed|ECONNRESET|UNAVAILABLE/i.test(
-            failureMessage ?? "",
-          ),
-          documentationGap: /定时|调度基础|检查器|资料/.test(
-            failureMessage ?? "",
-          ),
-        });
+  const failure =
+    options.manifest.evaluation && !matchesExpectation
+      ? failureFromEvidence({
+          calls: callEvidence,
+          protocolFailures: beforeShutdown.run?.protocolFailures,
+          resourceFailures: beforeShutdown.run?.resourceFailures,
+          oracle,
+          archiveComplete,
+        })
+      : undefined;
+  const failureClass =
+    failure?.classification ??
+    (evaluatorStoppedLiveRun
+      ? "evaluator"
+      : matchesExpectation
+        ? null
+        : classifyFailure({
+            message: [failureMessage, settledMessage, browserResult!.message]
+              .filter(Boolean)
+              .join(" "),
+            transportFailed: /fetch failed|ECONNRESET|UNAVAILABLE/i.test(
+              failureMessage ?? "",
+            ),
+            documentationGap: /定时|调度基础|检查器|资料/.test(
+              failureMessage ?? "",
+            ),
+          }));
 
   const record: ScenarioRunRecord = {
+    trialId: options.trialId,
+    candidatePassed: (beforeShutdown.candidates ?? []).some((c) => c.passed),
+    ...(oracle ? { oracle } : {}),
+    ...(failure ? { failure } : {}),
+    ...(resources ? { resources } : {}),
     scenarioId: options.scenario.id,
     evidenceKind: options.evidenceKind,
     evidenceComplete: archiveComplete,
@@ -595,6 +812,7 @@ async function runScenarioInEnvironment(
     firstCandidatePassed,
     fullPathSucceeded:
       !options.resumeExistingCandidate &&
+      (!oracle || oracleComplete(options.scenario, oracle)) &&
       observed === "full-path-success" &&
       Boolean(
         browserResult!.experienced || !options.scenario.requiresExperience,
@@ -662,6 +880,8 @@ export async function runFrozenBaselineSuite(input: {
   records: ScenarioRunRecord[];
 }> {
   assertManifestFrozen(input.manifest);
+  if (input.manifest.evaluation && input.continuationRoot)
+    throw new Error("当前评测不接受外层续跑或复用历史模型运行");
   mkdirSync(input.root, { recursive: true });
   writeFileSync(
     join(input.root, "manifest.frozen.json"),
@@ -752,6 +972,7 @@ export async function runFrozenBaselineSuite(input: {
         }
       }
       const result = await runStabilityScenario({
+        trialId: `${scenario.id}-r${i + 1}`,
         directory,
         scenario,
         manifest: input.manifest,

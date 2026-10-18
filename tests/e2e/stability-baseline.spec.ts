@@ -9,6 +9,8 @@ import {
 import { runStabilityScenario } from "../../scripts/lib/stability-eval/scenario.js";
 import { computeStabilityMetrics } from "../../scripts/lib/stability-eval/metrics.js";
 import type { ScenarioRunRecord } from "../../scripts/lib/stability-eval/metrics.js";
+import { currentManifest } from "../../scripts/lib/stability-eval/current.js";
+import { evaluateSuite } from "../../scripts/lib/stability-eval/report.js";
 
 test.describe.configure({ mode: "serial" });
 
@@ -148,8 +150,13 @@ test("真实浏览器绑定不依赖 stub 的成员、动作和字段名称", as
           // Rename implementation identifiers while preserving exact user quotes.
           for (const call of renamed.calls) {
             if (call.name !== "propose_plan") continue;
-            const originalRequirements = reply.calls.find(c=>c.name==="propose_plan")!.args.requirements as {quote:string}[];
-            for (const [index,requirement] of (call.args.requirements as {quote:string}[]).entries()) requirement.quote=originalRequirements[index].quote;
+            const originalRequirements = reply.calls.find(
+              (c) => c.name === "propose_plan",
+            )!.args.requirements as { quote: string }[];
+            for (const [index, requirement] of (
+              call.args.requirements as { quote: string }[]
+            ).entries())
+              requirement.quote = originalRequirements[index].quote;
           }
           return renamed;
         },
@@ -197,8 +204,11 @@ for (const defect of [
                   defect === "missing-form-blank-reject" &&
                   call.name === "propose_plan"
                 ) {
-                  const changes = call.args.changes as {target:string;cases: {name:string;input:Record<string,string>}[]}[];
-                  const member = changes.find(c=>c.target!=="workflow")!;
+                  const changes = call.args.changes as {
+                    target: string;
+                    cases: { name: string; input: Record<string, string> }[];
+                  }[];
+                  const member = changes.find((c) => c.target !== "workflow")!;
                   const memberCases = member.cases as {
                     name: string;
                     input: Record<string, string>;
@@ -207,11 +217,18 @@ for (const defect of [
                     ...call,
                     args: {
                       ...call.args,
-                      changes: changes.map(change => change.target !== member.target ? change : {...member,cases: memberCases.filter(
-                        (testCase) =>
-                          testCase.name !== "缺失标签输入" ||
-                          Object.keys(testCase.input).length > 0,
-                      )}),
+                      changes: changes.map((change) =>
+                        change.target !== member.target
+                          ? change
+                          : {
+                              ...member,
+                              cases: memberCases.filter(
+                                (testCase) =>
+                                  testCase.name !== "缺失标签输入" ||
+                                  Object.keys(testCase.input).length > 0,
+                              ),
+                            },
+                      ),
                     },
                   };
                 }
@@ -381,4 +398,119 @@ test("响应先超时、点击仍等待时也应捕获失败", async ({ page }) 
       30,
     ),
   ).rejects.toThrow(/Timeout/);
+});
+
+for (const selected of currentManifest("a".repeat(40)).scenarios)
+  test(`当前评测真实浏览器路径与独立达标判定（模型桩）：${selected.id}`, async () => {
+    test.setTimeout(300000);
+    const current = currentManifest("a".repeat(40));
+    const scenario = current.scenarios.find((s) => s.id === selected.id)!;
+    const manifest = freezeManifest({
+      ...current,
+      scenarios: [scenario],
+      runs: { ...current.runs, independentRunsPerScenario: 1 },
+    });
+    const directory = await mkdtemp(join(tmpdir(), "cordis-current-path-"));
+    try {
+      const result = await runStabilityScenario({
+        directory,
+        scenario,
+        manifest,
+        evidenceKind: "model-stub",
+        trialId: `${scenario.id}-r1`,
+      });
+      const events = await readFile(result.eventsPath, "utf8");
+      expect(
+        result.record.fullPathSucceeded,
+        events
+          .split("\n")
+          .filter(
+            (l) =>
+              l.includes('"type":"settled"') ||
+              l.includes('"type":"independent-oracle"'),
+          )
+          .join("\n"),
+      ).toBe(scenario.expectedOutcomeClass === "full-path-success");
+      expect(
+        result.record.oracle?.checks.every((c) => c.status === "passed"),
+      ).toBe(true);
+      expect(evaluateSuite(manifest, [result.record]).acceptancePassed).toBe(
+        true,
+      );
+      if (scenario.requiresExperience) {
+        const browser = JSON.parse(
+          await readFile(join(directory, "independent-browser.json"), "utf8"),
+        );
+        expect(
+          browser.results.every(
+            (r: { status: string }) => r.status === "passed",
+          ),
+        ).toBe(true);
+        expect(browser.directory.startsWith(directory)).toBe(true);
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+test("模型桩复核自报通过但遗漏必填断言时，独立原文判定禁止执行和应用", async () => {
+  test.setTimeout(120000);
+  const { stabilityDriverFor } = await import(
+    "../../scripts/lib/stability-eval/driver-fixture.js"
+  );
+  const current = currentManifest("a".repeat(40));
+  const scenario = current.scenarios.find(
+    (s) => s.id === "rule-revision-reflection",
+  )!;
+  const manifest = freezeManifest({
+    ...current,
+    scenarios: [scenario],
+    runs: { ...current.runs, independentRunsPerScenario: 1 },
+  });
+  const original = stabilityDriverFor(scenario.id, scenario);
+  const directory = await mkdtemp(join(tmpdir(), "cordis-oracle-omission-"));
+  try {
+    const result = await runStabilityScenario({
+      directory,
+      scenario,
+      manifest,
+      evidenceKind: "model-stub",
+      trialId: `${scenario.id}-r1`,
+      driver: {
+        async generate(request, signal, onTransport) {
+          const reply = await original.generate(request, signal, onTransport);
+          for (const call of reply.calls)
+            if (call.name === "propose_plan") {
+              const changes = call.args.changes as {
+                fields?: { required: boolean; minLength: number }[];
+              }[];
+              for (const change of changes)
+                for (const field of change.fields ?? []) {
+                  field.required = false;
+                  field.minLength = 0;
+                }
+            }
+          return reply;
+        },
+      },
+    });
+    expect(
+      result.record.oracle?.checks.find((c) => c.id === "plan:reflection")
+        ?.status,
+    ).toBe("failed");
+    expect(
+      result.record.oracle?.checks.find((c) => c.id === "plan:constraints")
+        ?.status,
+    ).toBe("failed");
+    expect(result.record.candidatePassed).toBe(false);
+    expect(result.record.fullPathSucceeded).toBe(false);
+    expect(evaluateSuite(manifest, [result.record]).acceptancePassed).toBe(
+      false,
+    );
+    expect(await readFile(result.eventsPath, "utf8")).not.toContain(
+      '"applied":true',
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

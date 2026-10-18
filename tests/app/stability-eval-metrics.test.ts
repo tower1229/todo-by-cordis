@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   computeStabilityMetrics,
   classifyFailure,
+  failureFromEvidence,
   type ScenarioRunRecord,
 } from "../../scripts/lib/stability-eval/metrics.js";
 
@@ -22,6 +23,28 @@ const base = (
   usage: { promptTokens: 10, completionTokens: 5 },
   failureClass: null,
   ...partial,
+});
+
+test("当前失败按调用证据定位阶段；未知原因不因出现宿主或资料文字而归类", () => {
+  assert.deepEqual(failureFromEvidence({ calls: [] }), {
+    classification: "unknown",
+    phase: "unknown",
+    code: "unresolved",
+    evidence: [],
+  });
+  const failure = failureFromEvidence({
+    calls: [
+      {
+        phase: "review",
+        status: "failed",
+        transport: { failure: { kind: "timeout", elapsedMs: 100, causes: [] } },
+      },
+    ],
+  });
+  assert.equal(failure.classification, "transport");
+  assert.equal(failure.phase, "review");
+  assert.equal(failure.code, "transport:timeout");
+  assert.deepEqual(failure.evidence, ["model-call:1"]);
 });
 
 test("指标列出分母并区分能力选择、错误阻塞、首个计划/候选、完整路径与预算内纠错", () => {
@@ -91,6 +114,7 @@ test("指标列出分母并区分能力选择、错误阻塞、首个计划/候�
     "tool-protocol": 0,
     transport: 1,
     evaluator: 0,
+    unknown: 0,
   });
 });
 
@@ -133,4 +157,57 @@ test("读取工具参数错误归类工具协议，不冒充业务生成失败",
     "INVALID_CONTRACT_READ",
   ])
     assert.equal(classifyFailure({ message }), "tool-protocol");
+});
+
+test("正向成功与正确阻塞分开计分，错误阻塞和错误放行不能抵消", () => {
+  const metrics = computeStabilityMetrics([
+    base({ scenarioId: "supported-pass", evidenceComplete: true }),
+    base({
+      scenarioId: "supported-block",
+      evidenceComplete: true,
+      observedOutcomeClass: "accurate-block",
+      fullPathSucceeded: false,
+    }),
+    base({
+      scenarioId: "boundary-pass",
+      evidenceComplete: true,
+      expectedOutcomeClass: "accurate-block",
+      observedOutcomeClass: "accurate-block",
+      fullPathSucceeded: false,
+      errorBlockingCorrect: true,
+    }),
+    base({
+      scenarioId: "boundary-false-accept",
+      evidenceComplete: true,
+      expectedOutcomeClass: "accurate-block",
+      candidatePassed: true,
+    }),
+    base({
+      scenarioId: "transport",
+      observedOutcomeClass: "failed",
+      fullPathSucceeded: false,
+      failureClass: "transport",
+      usage: null,
+    }),
+  ]);
+  assert.deepEqual(metrics.positiveSuccessRate, {
+    numerator: 1,
+    denominator: 3,
+    rate: 1 / 3,
+  });
+  assert.deepEqual(metrics.correctBlockingRate, {
+    numerator: 1,
+    denominator: 2,
+    rate: 0.5,
+  });
+  assert.deepEqual(metrics.falseBlockingRate, {
+    numerator: 1,
+    denominator: 3,
+    rate: 1 / 3,
+  });
+  assert.deepEqual(metrics.falseAcceptanceRate, {
+    numerator: 1,
+    denominator: 2,
+    rate: 0.5,
+  });
 });

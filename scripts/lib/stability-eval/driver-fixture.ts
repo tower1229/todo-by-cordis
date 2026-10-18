@@ -12,6 +12,8 @@ import {
   tagsMemberCases,
   tagsTrimOnlyMemberCases,
 } from "../../../tests/app/member-case-fixtures.js";
+import type { StabilityScenario } from "./manifest.js";
+import { dueAutoExpireSource } from "../../../src/server/capability-guides.js";
 
 const tagsSource = (lower: boolean) =>
   `export default {
@@ -78,8 +80,11 @@ export function stabilityStubDriver(scenarioId: string): Driver {
         }
         return (planning ?? new PlanningDriver()).generate(request);
       }
-      const documents = JSON.parse(request.message ?? "{}").materials?.documents as {ref:string;content:unknown}[] | undefined;
-      const delivered = documents?.find(d => d.ref === "active-source")?.content;
+      const documents = JSON.parse(request.message ?? "{}").materials
+        ?.documents as { ref: string; content: unknown }[] | undefined;
+      const delivered = documents?.find(
+        (d) => d.ref === "active-source",
+      )?.content;
       if (typeof delivered === "string") current = delivered;
       if (!current) throw new Error("missing frozen active source");
       return submitCandidate(scenarioId, request, current);
@@ -197,7 +202,11 @@ function planFinish(
   }
 }
 
-function submitCandidate(scenarioId: string, request: ModelRequest, current: string) {
+function submitCandidate(
+  scenarioId: string,
+  request: ModelRequest,
+  current: string,
+) {
   const reply = (name: string, args: Record<string, unknown>) => ({
     ...toolReply(name, args),
     history: request.history,
@@ -279,7 +288,172 @@ export function dueBaselineStubDriver(): Driver {
   };
 }
 
-export function stabilityDriverFor(scenarioId: string): Driver {
+export function stabilityDriverFor(
+  scenarioId: string,
+  scenario?: StabilityScenario,
+): Driver {
+  if (scenario?.oracle && scenarioId === "due-auto-expire")
+    return dueCurrentStubDriver();
+  if (scenarioId === "clarification-reflection") {
+    const original = stabilityStubDriver("rule-revision-reflection");
+    let asked = false;
+    return {
+      async generate(request, signal, onTransport) {
+        const reply = await original.generate(request, signal, onTransport);
+        if (!asked && reply.calls.some((c) => c.name === "propose_plan")) {
+          asked = true;
+          return {
+            ...toolReply("request_clarification", {
+              question: "复盘必填还是选填？",
+            }),
+            history: request.history,
+          };
+        }
+        return reply;
+      },
+    };
+  }
+  if (scenarioId === "unsupported-blank-presentation")
+    return {
+      async generate(request) {
+        const input = JSON.parse(request.message ?? "{}") as {
+          kind?: string;
+          sources?: { text: string }[];
+          claims?: { sourceQuote: string }[];
+        };
+        let value: unknown;
+        if (input.kind === "request-admission/1")
+          value = {
+            presentations: [
+              {
+                source: 1,
+                sourceQuote: "尚未填写时显示空白",
+                target: { kind: "new", name: "评审备注" },
+                meaning: {
+                  kind: "blank",
+                  conditionQuote: "尚未填写时",
+                  effectQuote: "显示空白",
+                },
+              },
+            ],
+            questions: [],
+          };
+        else if (input.kind === "admission-source-review/1")
+          value = {
+            decisions: input.claims!.map((c, i) => ({
+              claim: i + 1,
+              source: 1,
+              sourceQuote: c.sourceQuote,
+              verdict: "entailed",
+              detail: "合成需求明确要求尚未填写显示空白",
+            })),
+          };
+        else throw new Error("空白呈现边界桩不得进入规划或生成");
+        return {
+          text: JSON.stringify(value),
+          history: [],
+          calls: [],
+          usage: null,
+          raw: { fixture: "current-blank-boundary" },
+        };
+      },
+    };
   if (scenarioId === "due-auto-expire") return dueBaselineStubDriver();
   return stabilityStubDriver(scenarioId);
+}
+
+/** Reference output only for evaluator CI. Never selected by a real-model run. */
+function dueCurrentStubDriver(): Driver {
+  const at = new Date(Date.now() + 600000).toISOString();
+  const planning = new PlanningDriver({
+    summary: "可选截止时间与在线自动过期",
+    workflowRules: [],
+    memberAdditions: [{ pluginId: "due", name: "截止时间" }],
+    memberCases: [
+      {
+        name: "设置截止",
+        member: "due",
+        state: "open",
+        fields: {},
+        action: "setDue",
+        input: { dueAt: at },
+        expected: { kind: "commit", state: "open", fields: { dueAt: at } },
+      },
+      {
+        name: "拒绝无效日期",
+        member: "due",
+        state: "open",
+        fields: {},
+        action: "setDue",
+        input: { dueAt: "invalid" },
+        expected: { kind: "reject" },
+      },
+      {
+        name: "到期标记",
+        member: "due",
+        state: "open",
+        fields: { dueAt: at },
+        action: "expire",
+        input: { scheduledAt: at },
+        expected: {
+          kind: "commit",
+          state: "open",
+          fields: { dueAt: at, expired: "true" },
+        },
+      },
+      {
+        name: "完成后拒绝过期",
+        member: "due",
+        state: "done",
+        fields: { dueAt: at },
+        action: "expire",
+        input: { scheduledAt: at },
+        expected: { kind: "reject" },
+      },
+    ],
+    capabilityChanges: [
+      {
+        capability: "command.register",
+        provider: "member:due",
+        consumers: ["src/web/ActionForm.tsx"],
+        change: "截止表单与过期动作",
+      },
+      {
+        capability: "schedule.register",
+        provider: "member:due",
+        consumers: ["src/web/WorkspacePanel.tsx"],
+        change: "在线调度",
+      },
+    ],
+    requiredCapabilities: [
+      { interfaceId: "schedule.runtime", providerId: "host:online-scheduler" },
+    ],
+  });
+  return new DeltaFixture({
+    async generate(request, signal) {
+      if (request.tools?.some((t) => t.name === "submit_candidate")) {
+        const docs = JSON.parse(request.message ?? "{}").materials
+          ?.documents as { ref: string; content: unknown }[];
+        const current = docs.find((d) => d.ref === "active-source")?.content;
+        if (typeof current !== "string") throw new Error("缺少冻结源码");
+        return {
+          ...toolReply("submit_candidate", {
+            source: current,
+            members: [{ pluginId: "due", source: dueAutoExpireSource }],
+          }),
+          history: request.history,
+        };
+      }
+      const reply = await planning.generate(request);
+      if (
+        reply.calls.some((c) => c.name === "propose_plan") &&
+        !JSON.stringify(request.history).includes("read_guides")
+      )
+        return {
+          ...toolReply("read_guides", { refs: ["guide/schedule.register"] }),
+          history: request.history,
+        };
+      return reply;
+    },
+  });
 }

@@ -20,8 +20,8 @@ export class DeltaFixture implements Driver {
     if (admission) return admission;
     if (request.message) {
       const input = JSON.parse(request.message) as {
-        delta?: typeof this.basis;
-        sources?: typeof this.sources;
+        delta?: DeltaFixture["basis"];
+        sources?: {id:string;text:string}[];
       };
       if (input.delta) this.basis = input.delta;
       if (input.sources) this.sources = input.sources;

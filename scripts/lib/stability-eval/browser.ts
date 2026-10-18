@@ -43,6 +43,7 @@ export type BrowserPathResult = {
   resumedExistingCandidate?: boolean;
   confirmedPlan?: boolean;
   confirmedAcceptance?: boolean;
+  answeredClarification?: { runId: string; question: string; answer: string };
   experienced?: boolean;
   experienceActions?: {
     tagSet?: string;
@@ -77,6 +78,7 @@ export async function runStabilityBrowserPath(input: {
   resumeExistingCandidate?: boolean;
   budgetMs?: number;
   restartHost?: () => Promise<void>;
+  validatePlan?: () => Promise<void>;
 }): Promise<BrowserPathResult> {
   const deadline = Date.now() + (input.budgetMs ?? 600_000) + 15_000;
   const remaining = () => Math.max(1, deadline - Date.now());
@@ -92,6 +94,7 @@ export async function runStabilityBrowserPath(input: {
   let page: Page | undefined;
   const errors: string[] = [];
   let latestRun: AssistantSnapshot["run"] = null;
+  const readRun = (): AssistantSnapshot["run"] => latestRun;
   const currentRunStatus = (): string | undefined => latestRun?.status;
   const updateRun = (run: AssistantSnapshot["run"]) => {
     if (run && (!latestRun || run.updatedAt >= latestRun.updatedAt))
@@ -180,6 +183,21 @@ export async function runStabilityBrowserPath(input: {
         currentRunStatus() === "awaiting-input" &&
         input.clarificationAnswer
       ) {
+        if (input.scenario.clarification) {
+          const awaiting = readRun();
+          const question =
+            awaiting && "question" in awaiting ? awaiting.question : "";
+          if (
+            !question.includes("复盘") ||
+            !["必填", "选填", "可选"].some((word) => question.includes(word))
+          )
+            throw new Error("评测没有该问题的冻结答案，不能临时编造澄清");
+          result.answeredClarification = {
+            runId: awaiting!.id,
+            question,
+            answer: input.clarificationAnswer,
+          };
+        }
         await page
           .getByRole("textbox", { name: "告诉 AI 你的需求" })
           .fill(input.clarificationAnswer);
@@ -191,6 +209,11 @@ export async function runStabilityBrowserPath(input: {
           () => page!.getByRole("button", { name: "发送需求" }).click(),
         );
         updateRun(((await answered.json()) as AssistantSnapshot).run);
+        if (
+          result.answeredClarification &&
+          readRun()?.id !== result.answeredClarification.runId
+        )
+          throw new Error("澄清后运行身份改变");
         await expect
           .poll(
             async () =>
@@ -225,6 +248,9 @@ export async function runStabilityBrowserPath(input: {
       await expect(
         page.getByRole("region", { name: "待确认方案" }),
       ).toBeVisible();
+      await input.validatePlan?.();
+      if (input.scenario.clarification && !result.answeredClarification)
+        throw new Error("冻结需求要求先澄清，模型直接给出计划不能视为通过");
       result.confirmedPlan = true;
       await page.getByRole("button", { name: "开始执行", exact: true }).click();
 

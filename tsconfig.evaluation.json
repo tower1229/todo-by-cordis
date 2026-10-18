@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": [
+    "scripts/accept-stability-baseline.ts",
+    "scripts/lib/stability-eval/**/*.ts"
+  ]
+}
