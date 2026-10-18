@@ -660,7 +660,7 @@ for (const endBeforeFire of [true, false]) {
       ],
     };
     const {admissionReceiptFixture} = await import("../app/planning-fixture.js");
-    const requestAdmission=admissionReceiptFixture(formalVersion.id,[{id:"fixture:1",text:requirement.sourceQuote}]);
+    const requestAdmission=admissionReceiptFixture(capture(workspace),[{id:"fixture:1",text:requirement.sourceQuote}]);
     const planDefinition = {
       ...planDraft,
       requestAdmission,
@@ -678,10 +678,13 @@ for (const endBeforeFire of [true, false]) {
     };
     // This is an authored lifecycle fixture, not real-model semantic review.
     // It receives actual Chromium receipts instead of bypassing the new gate.
+    const {compileSemantics} = await import("../../src/evolution/requirement-semantics.js");
+    const semanticState=compileSemantics(planDefinition as import("../../src/shared/assistant.js").InvestigatedPlan,[{id:"fixture:1",text:requirement.sourceQuote}]);
     const specification = {
       ...planDefinition,
+      semanticState,
       changeSpec: compileSpec(
-        planDefinition as import("../../src/shared/assistant.js").InvestigatedPlan,
+        {...planDefinition,semanticState} as import("../../src/shared/assistant.js").InvestigatedPlan,
         "schedule-run",
         hash(formalVersion.source),
       ),

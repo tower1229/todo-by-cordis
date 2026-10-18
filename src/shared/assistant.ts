@@ -46,6 +46,8 @@ export type WorkflowRule = {
 };
 export type PlanEvidence = { ref: string; hash: string };
 export type PlanBinding = {
+  actionAvailability?: import("../evolution/action-availability.js").ActionAvailability;
+  fieldIdentities?: import("../evolution/field-identity.js").FieldIdentity[];
   browser?: { frontendHash: string; checkerHash: string; executable: string };
   guideCatalog: Record<string, string>;
   materials: PlanEvidence[];
@@ -75,6 +77,7 @@ export type RepairEvidence = {
   diagnostic: string;
 };
 export type InvestigatedPlan = AssistantPlan & {
+  semanticState?: import("../evolution/requirement-semantics.js").SemanticState;
   requestAdmission?: import("../evolution/request-admission.js").RequestAdmission;
   questionAdjudications?: NonNullable<Run["clarificationReviews"]>;
   changeSpec?: ChangeSpec;
@@ -155,6 +158,7 @@ export type Requirement = {
   obligations?: import("./acceptance-obligations.js").AcceptanceObligation[];
 };
 export type RequirementReview = {
+  unresolvedChoices?: {targetId:string;sourceRevision:string;sourceQuote:string}[];
   reviewedIds: string[];
   issues: {
     kind: "omission" | "extra-constraint" | "conflict" | "unverifiable";
@@ -174,6 +178,7 @@ export type RequirementReview = {
     reason: string;
   }[];
   technicalDecisions?: import("../evolution/technical-facts.js").TechnicalDecision[];
+  errorDecisions?: import("../evolution/error-review.js").ErrorDecision[];
   fieldDecisions?: import("../evolution/field-review.js").FieldDecision[];
 };
 export type RequirementGate = {
@@ -187,6 +192,7 @@ export type RequirementGate = {
   seal: string;
 };
 type Run = {
+  resourceFailures?: {phase:string;call:number;kind:"output-budget";requestHash:string;responseHash:string;finishReason:"length";usage:unknown}[];
   requestAdmissions?: import("../evolution/request-admission.js").RequestAdmission[];
   protocolFailures?: {phase: string;call: number;requestHash: string;responseHash: string;problems: string[]}[];
   clarificationReviews?: {key: string; question: string; call: number; decision: import("../evolution/clarification-review.js").ClarificationDecision}[];

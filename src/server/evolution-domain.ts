@@ -1,3 +1,4 @@
+import {baselineFields} from "../evolution/field-identity.js";
 import {
   verifyBrowser,
   BrowserAssertionError,
@@ -286,7 +287,7 @@ export class EvolutionDomain implements Domain {
     return capture(this.workspace);
   }
   admission(context: Investigation) {
-    return {facts: technicalFacts({workflowRules: [],binding: undefined}),missing:[...context.environment.missing,...(context.environment.browser?.missing ?? [])]};
+    return {facts: technicalFacts({workflowRules: [],binding: undefined,actionAvailability:context.actionAvailability,fieldIdentities:baselineFields(context)}),missing:[...context.environment.missing,...(context.environment.browser?.missing ?? [])]};
   }
   planningInstruction = planningInstruction;
   planningTools = planningTools;
@@ -521,7 +522,7 @@ export class EvolutionDomain implements Domain {
     if (
       !plan.requirements?.length ||
       plan.requirements.some(
-        (r) => obligationFailure(r, plan.browserCases ?? []).length,
+        (r) => obligationFailure(r, plan.browserCases ?? [],plan).length,
       ) ||
       hash(expectedPreparations) !== hash(actualPreparations) ||
       (browser?.preparations?.length ?? 0) !== expectedPreparations.length ||

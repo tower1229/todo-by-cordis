@@ -1,4 +1,4 @@
-import { referenceFixture, fieldDecisionsFixture, admissionFixture } from "./planning-fixture.js";
+import { referenceFixture, fieldDecisionsFixture, errorDecisionsFixture, admissionFixture } from "./planning-fixture.js";
 import { Evolution as HostEvolution } from "../../src/evolution/evolution.js";
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
 import { hash } from "../../src/release/storage.js";
@@ -31,9 +31,12 @@ export class DeltaFixture implements Driver {
       const review = JSON.parse(reply.text) as {
         issues?: Record<string, unknown>[];
         fieldDecisions?: unknown[];
+        errorDecisions?: unknown[];
       };
+      review.errorDecisions ??= errorDecisionsFixture(JSON.parse(request.message!));
       review.fieldDecisions ??= fieldDecisionsFixture(JSON.parse(request.message!));
       for (const issue of review.issues ?? []) {
+        if (issue.technical) continue;
         issue.target ??= {
           subject: String(issue.sourceRevision),
           aspect: "meaning",

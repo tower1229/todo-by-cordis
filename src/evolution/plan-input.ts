@@ -1,3 +1,4 @@
+import { capabilityChecker } from "../server/capability-checkers.js";
 import { executableMemberInterfaces } from "../server/extensions/registry.js";
 import { hash } from "../release/storage.js";
 import { schemaProblems } from "./model-protocol.js";
@@ -5,20 +6,22 @@ import type { Investigation } from "../server/planning.js";
 import type { RequirementGate, WorkflowRule } from "../shared/assistant.js";
 import type { MemberAcceptanceCase } from "../shared/acceptance-cases.js";
 import type { BusinessExtensions } from "../server/business-verification.js";
+import type { WorkflowDefinition } from "../server/business/contracts.js";
+import { compilePrimaryOperations } from "./planning-operations.js";
 
 const text = { type: "string" };
-const list = (items: Record<string, unknown>, maxItems = 50) => ({
+const list = <T extends Record<string, unknown>>(items: T, maxItems = 50) => ({
   type: "array",
   items,
   maxItems,
 });
-const object = (
-  properties: Record<string, unknown>,
+const object = <T extends Record<string, unknown>>(
+  properties: T,
   required = Object.keys(properties),
 ) => ({ type: "object", properties, required, additionalProperties: false });
 const kind = (...values: string[]) => ({ type: "string", enum: values });
 const strings = list(text);
-const optionalList = (items: Record<string, unknown>, maxItems = 50) => ({
+const optionalList = <T extends Record<string, unknown>>(items: T, maxItems = 50) => ({
   ...list(items, maxItems),
   type: ["array", "null"],
 });
@@ -82,7 +85,8 @@ export const businessExpectationsSchema = list(
         state: text,
         visible: { type: "boolean" },
       }),
-      object({ kind: kind("error"), action: text, text }),
+      object({ kind: kind("error"), action: text, text }, ["kind", "action"]),
+      object({ kind: kind("operation-rejected"), action: text }),
       object({ kind: kind("task") }),
       object({ kind: kind("edit-task"), title: text, description: text }, [
         "kind",
@@ -91,56 +95,108 @@ export const businessExpectationsSchema = list(
   },
   30,
 );
-export const planInputSchema = object(
-  {
-    summary: text,
-    changes: optionalList(
-      object(
+const changeProperties = {
+  name: text,
+  enabled: { type: "boolean" },
+  modules: optionalList(text),
+  data: optionalList(text),
+  features: optionalList(kind(...Object.keys(features))),
+  fields: optionalList(
+    object({
+      key: text,
+      label: text,
+      required: { type: "boolean" },
+      minLength: { type: "integer", minimum: 0, maximum: 5000 },
+      maxLength: { type: "integer", minimum: 1, maximum: 5000 },
+    }),
+  ),
+  actions: optionalList(object({ id: text, label: text, from: strings })),
+  actionFields: optionalList(
+    object({ key: text, label: text, type: kind("text") }),
+  ),
+  cases: optionalList(businessCase),
+};
+
+/** Both the advertised contract and host validation use the real target identity. */
+export function planSchemaFor(
+  context?: Pick<Investigation, "pluginId" | "members">,
+) {
+  const primary = [
+    ...new Set([
+      ...(context?.members.some(
+        (m) => m.pluginId === "workflow" && m.role !== "workflow",
+      )
+        ? []
+        : ["workflow"]),
+      ...(context ? [context.pluginId] : []),
+    ]),
+  ];
+  const escaped = primary.map((id) =>
+    id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+  );
+  const auxiliary = {
+    type: "string",
+    pattern: `^(?!(?:${escaped.join("|")})$)[\\w.-]{1,100}$`,
+  };
+  const pick = (keys: (keyof typeof changeProperties)[]) =>
+    Object.fromEntries(keys.map((key) => [key, changeProperties[key]]));
+  return object(
+    {
+      summary: text,
+      changes: optionalList(
         {
-          target: text,
-          name: text,
-          enabled: { type: "boolean" },
-          modules: optionalList(text),
-          data: optionalList(text),
-          features: optionalList(kind(...Object.keys(features))),
-          fields: optionalList(
+          anyOf: [
+            object(
+              {
+                target: kind(...primary),
+                ...pick([
+                  "modules",
+                  "data",
+                  "fields",
+                  "actions",
+                  "actionFields",
+                  "cases",
+                ]),
+              },
+              ["target"],
+            ),
+            object(
+              { target: auxiliary, ...pick(["name", "features", "cases"]) },
+              ["target"],
+            ),
             object({
-              key: text,
-              label: text,
-              required: { type: "boolean" },
-              minLength: { type: "integer", minimum: 0, maximum: 5000 },
-              maxLength: { type: "integer", minimum: 1, maximum: 5000 },
+              target: context
+                ? kind(
+                    ...context.members
+                      .filter((m) => m.role === "auxiliary")
+                      .map((m) => m.pluginId),
+                  )
+                : auxiliary,
+              enabled: { type: "boolean" },
             }),
-          ),
-          actions: optionalList(
-            object({ id: text, label: text, from: strings }),
-          ),
-          actionFields: optionalList(
-            object({ key: text, label: text, type: kind("text") }),
-          ),
-          cases: optionalList(businessCase),
+          ],
         },
-        ["target"],
+        2,
       ),
-      2,
-    ),
-    requirements: list(
-      object({
-        description: text,
-        quote: text,
-        type: kind("behavior", "interface", "compatibility", "constraint"),
-        expectations: businessExpectationsSchema,
-      }),
-      50,
-    ),
-    uses: optionalList(
-      object({ member: text, feature: kind(...Object.keys(usedFeatures)) }),
-    ),
-    intent: kind("improve", "repair"),
-    acceptanceReason: text,
-  },
-  ["summary", "requirements"],
-);
+      requirements: list(
+        object({
+          description: text,
+          quote: text,
+          type: kind("behavior", "interface", "compatibility", "constraint"),
+          expectations: businessExpectationsSchema,
+        }),
+        50,
+      ),
+      uses: optionalList(
+        object({ member: text, feature: kind(...Object.keys(usedFeatures)) }),
+      ),
+      intent: kind("improve", "repair"),
+      acceptanceReason: text,
+    },
+    ["summary", "requirements"],
+  );
+}
+export const planInputSchema = planSchemaFor();
 
 type CaseInput = Omit<MemberAcceptanceCase, "member" | "name"> & {
   name?: string;
@@ -157,7 +213,8 @@ type Expectation =
     }
   | { kind: "history"; field: string }
   | { kind: "action-visible"; action: string; state: string; visible: boolean }
-  | { kind: "error"; action: string; text: string }
+  | { kind: "error"; action: string; text?: string }
+  | { kind: "operation-rejected"; action: string }
   | { kind: "task" }
   | { kind: "edit-task"; title?: string; description?: string };
 type NormalizedInput = {
@@ -246,9 +303,9 @@ function normalizeInput(
   };
   for (const raw of changes ?? []) {
     const change = { ...raw };
-    // Null means no declaration in the public contract, including properties
-    // that do not belong to the resolved role. Empty rule/action definitions
-    // remain explicit revisions; empty additive sets carry no write intent.
+    // Only properties admitted by the target-specific schema reach normalization.
+    // Null is omitted; empty rules/actions remain explicit revisions.
+    // Empty additive sets carry no write intent.
     for (const key of [
       "modules",
       "data",
@@ -320,7 +377,7 @@ export function compilePlanInput(
   context: PlanContext,
   sources: RequirementGate["sources"],
 ) {
-  const errors = schemaProblems(value, planInputSchema);
+  const errors = schemaProblems(value, planSchemaFor(context));
   if (errors.length) throw new Error("业务计划契约：" + errors.join("；"));
   const input = normalizeInput(value as PlanInput, context);
   if (
@@ -340,12 +397,9 @@ export function compilePlanInput(
       type: string;
     }[];
   };
-  const workflow = JSON.parse(context.files["active-contract"].content) as {
-    id: string;
-    initialState: string;
-    actions: { id: string }[];
-  };
+  const workflow = JSON.parse(context.files["active-contract"].content) as WorkflowDefinition;
   const rules = input.workflow?.fields ?? previous.rules ?? [];
+  const existingFields=new Set([...(workflow.fields??[]).map(f=>f.key),...context.capabilities.flatMap(c=>c.registeredFields??[])]);
   if (rules.some((r) => r.minLength > r.maxLength))
     throw new Error("字段长度规则无效");
   const scope: string[] = [];
@@ -466,17 +520,9 @@ export function compilePlanInput(
       change: input.summary,
     });
   const extensionCases = (input.workflow?.cases ?? []).map((c) => named(c));
-  const extensions =
-    input.workflow &&
-    ["actions", "actionFields", "cases"].some((key) =>
-      Object.hasOwn(input.workflow!, key),
-    )
-      ? {
-          actions: input.workflow.actions ?? [],
-          fields: input.workflow.actionFields ?? [],
-          cases: extensionCases,
-        }
-      : previous.extensions;
+  const extensions = input.workflow
+    ? compilePrimaryOperations({...input.workflow,cases:extensionCases},workflow,rules,previous.extensions)
+    : previous.extensions;
   const mergedCases = [
     ...(previous.memberCases ?? []).filter(
       (old) =>
@@ -498,15 +544,7 @@ export function compilePlanInput(
       const current = context.capabilities.find(
         (c) => c.providerId === need.member && c.interfaceId === interfaceId,
       );
-      const supported: Record<string, string> = {
-        "workflow.provide": "workflow/1",
-        "command.register": "workspace/1",
-        "fields.register": "workspace/1",
-        "ui.slot": "browser/1",
-        "schedule.register": "schedule/1",
-        "schedule.runtime": "schedule/1",
-      };
-      const checker = supported[interfaceId];
+      const checker = capabilityChecker(interfaceId);
       if (
         current?.ready &&
         (!checker || !current.checkerCoverage.includes(checker))
@@ -588,13 +626,16 @@ export function compilePlanInput(
             value: value.trim(),
           }));
         } else
+          // These are independent fresh-task field probes. Backend cases retain
+          // their complete historical fields and expectations; no fields are seeded here.
           scenarios = operations
             .filter(
               (c) =>
                 c.expected.kind === "commit" &&
                 c.state === workflow.initialState &&
-                !Object.keys(c.fields).length &&
+                (!Object.keys(c.fields).length||!existingFields.has(e.field)) &&
                 Object.hasOwn(c.expected.fields, e.field) &&
+                c.expected.fields[e.field] !== c.fields[e.field] &&
                 (!e.examples ||
                   e.examples.includes(c.expected.fields[e.field])),
             )
@@ -624,44 +665,40 @@ export function compilePlanInput(
         });
         continue;
       }
-      if (e.kind === "error") {
-        if (e.action === "complete" && rules.length) {
-          const valid = Object.fromEntries(
-            rules.map((f) => [f.key, "验".repeat(Math.max(1, f.minLength))]),
-          );
-          for (const f of rules)
-            for (const value of [
-              ...(f.required ? [" "] : []),
-              "验".repeat(f.maxLength + 1),
-            ])
-              obligations.push({
-                kind: "assertion",
-                steps: [
-                  {
-                    kind: "action",
-                    action: "complete",
-                    input: { ...valid, [f.key]: value },
-                  },
-                ],
-                expected: { kind: "error", text: e.text },
-              });
+      if (e.kind === "error" || e.kind === "operation-rejected") {
+        const reject = operations.filter(c => c.action === e.action && c.expected.kind === "reject");
+        if (reject.length)
+          obligations.push({kind:"backend-rejection",action:e.action});
+        if (e.kind === "operation-rejected") {
+          if (!reject.length) throw new Error(`动作 ${e.action} 缺少冻结的后端拒绝案例`);
           continue;
         }
-        const reject = operations.filter(
-          (c) =>
-            c.action === e.action &&
-            c.expected.kind === "reject" &&
-            c.state === workflow.initialState &&
-            !Object.keys(c.fields).length,
-        );
-        if (!reject.length)
-          throw new Error(`动作 ${e.action} 没有可推导的页面拒绝操作`);
-        for (const c of reject)
-          obligations.push({
-            kind: "assertion",
-            steps: [{ kind: "action", action: c.action, input: c.input }],
-            expected: { kind: "error", text: e.text },
-          });
+        if (e.text && !r.quote.includes(e.text))
+          throw new Error("固定错误文案没有对应来源原文，不能新增用户未要求的文字限制");
+        const scenarios: {steps:Row[]}[] = [];
+        const unavailable: import("../shared/acceptance-obligations.js").FeedbackUnavailable[] = [];
+        const valid = Object.fromEntries(rules.map(f=>[f.key,"验".repeat(Math.max(1,f.minLength))]));
+        const hidden = (state:string) => input.requirements.some(r => r.expectations.some(e => e.kind === "action-visible" && e.action === action && e.state === state && !e.visible));
+        const action=e.action;
+        if (e.action === "complete" && rules.length) {
+          if (hidden(workflow.initialState)) unavailable.push({code:"action-hidden",state:workflow.initialState});
+          else for (const f of rules)
+            for (const value of [...(f.required ? [" "] : []), "验".repeat(f.maxLength + 1)])
+              scenarios.push({steps:[{kind:"action",action:e.action,input:{...valid,[f.key]:value}}]});
+        } else {
+          if (!reject.length) unavailable.push({code:"missing-rejection"});
+          for (const c of reject) {
+            if (hidden(c.state)) {unavailable.push({code:"action-hidden",state:c.state});continue;}
+            const steps:Row[]=[];
+            if (Object.keys(c.fields).length || c.state !== workflow.initialState && (rules.length > 0 || c.state !== "done" || !workflow.actions.some(a=>a.id==="complete"))) {
+              unavailable.push({code:"state-unreachable",state:c.state});continue;
+            }
+            if (c.state !== workflow.initialState) steps.push({kind:"action",action:"complete",...(rules.length ? {input:valid} : {})});
+            steps.push({kind:"action",action:c.action,input:c.input});
+            scenarios.push({steps});
+          }
+        }
+        obligations.push({kind:"feedback",action:e.action,text:e.text??"",resolution:"pending",scenarios,unavailable});
         continue;
       }
       if (e.kind === "action-visible") {

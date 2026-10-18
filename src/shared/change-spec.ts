@@ -4,8 +4,16 @@ import type {
   RequirementReview,
 } from "./assistant.js";
 
+/** Shared by host delivery and capability documentation; these are material identities, not tools. */
+export const generationMaterialRefs = {
+  source: "active-source",
+  contract: "candidate-contract",
+  scaffold: "candidate-scaffold",
+} as const;
+
 export type ChangeDefinition = Pick<
   InvestigatedPlan,
+  | "semanticState"
   | "requirements"
   | "browserCases"
   | "workflowRules"
@@ -53,6 +61,7 @@ export type ChangeSpec = {
   }[];
   choices: { field: string; origin: "implementation"; value: unknown }[];
   invariants: { id: string; origin: "host"; contract: string }[];
+  hostRules: import("../evolution/checker-rules.js").HostCheckerRule[];
   materials: PlanEvidence[];
 };
 

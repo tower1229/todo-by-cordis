@@ -43,7 +43,7 @@ test("DeepSeek 实际本机 HTTP：精确 JSON 契约、授权工具、原生回
                 ? {
                     role: "assistant",
                     content:
-                      '{"result":{"presentations":[],"questions":[],"facts":[]}}',
+                      '{"result":{"presentations":[],"questions":[]}}',
                   }
                 : assistant,
             finish_reason: "stop",
@@ -64,13 +64,12 @@ test("DeepSeek 实际本机 HTTP：精确 JSON 契约、授权工具、原生回
     );
     const signal = new AbortController().signal;
     const review = await g.generate(
-      { instruction: "合成", history: [], schema: admissionSchema },
+      { instruction: "合成", history: [], schema: admissionSchema() },
       signal,
     );
     assert.deepEqual(JSON.parse(review.text), {
       presentations: [],
       questions: [],
-      facts: [],
     });
     assert.equal(review.transport?.actualModel, "deepseek-flash");
     assert.deepEqual(bodies[0].response_format, { type: "json_object" });
@@ -118,9 +117,10 @@ test("DeepSeek 实际本机 HTTP：精确 JSON 契约、授权工具、原生回
       signal,
     );
     assert.equal(bodies.length, 3);
-    assert.equal(bodies[1].tool_choice, "required");
+    assert.ok(bodies.every(body => body.reasoning_effort === "max"));
+    assert.equal(bodies[1].tool_choice, "auto");
     assert.notEqual(((bodies[1].tools as {function:{strict?:boolean}}[])[0]).function.strict,true);
-    assert.deepEqual(bodies[1].thinking, { type: "disabled" });
+    assert.deepEqual(bodies[1].thinking, { type: "enabled" });
     assert.deepEqual((bodies[2].messages as unknown[]).slice(-2), [
       assistant,
       {
@@ -159,7 +159,7 @@ test("空 JSON、非法工具和截断参数保留原始证据，不能被默认
     const request = {
       instruction: "合成",
       history: [],
-      schema: admissionSchema,
+      schema: admissionSchema(),
     };
     const reply = await g.generate(request, new AbortController().signal);
     assert.ok(replyProblems(request, reply).length);
@@ -190,12 +190,12 @@ test("DeepSeek 断连仅请求一次并保留底层分类；HTTP 400 保留契�
       );
       await assert.rejects(
         g.generate(
-          { instruction: "合成", history: [], schema: admissionSchema },
+          { instruction: "合成", history: [], schema: admissionSchema() },
           new AbortController().signal,
         ),
         (error) => {
           assert.ok(error instanceof ModelTransportError);
-          assert.equal(error.transport.profile, "deepseek-chat/3");
+          assert.equal(error.transport.profile, "deepseek-chat/6");
           assert.ok(error.transport.schemaHash);
           assert.ok(!error.message.includes("synthetic-key"));
           if (kind === "socket") {

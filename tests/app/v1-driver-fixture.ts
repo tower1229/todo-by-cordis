@@ -51,6 +51,7 @@ export function v1FixtureDriver(
     | "extra-required" = "form",
 ): Driver {
   let phase = -1;
+  let current = "";
   let faultInjected = false;
   let planning: PlanningDriver;
   let planningRun: string | undefined;
@@ -204,26 +205,14 @@ export function v1FixtureDriver(
         }
         return planning.generate(request);
       }
-      const history = request.history as {
-        parts?: {
-          functionResponse?: {
-            name: string;
-            response: { result: { source?: string } };
-          };
-        }[];
-      }[];
-      const responses = history
-        .flatMap((m) => m.parts ?? [])
-        .flatMap((p) => (p.functionResponse ? [p.functionResponse] : []));
+      const documents = JSON.parse(request.message ?? "{}").materials?.documents as {ref:string;content:unknown}[] | undefined;
+      const delivered = documents?.find(d => d.ref === "active-source")?.content;
+      if (typeof delivered === "string") current = delivered;
+      if (!current) throw new Error("missing frozen active source");
       const reply = (name: string, args: Record<string, unknown>) => ({
         ...toolReply(name, args),
         history: request.history,
       });
-      if (!responses.some((r) => r.name === "read_contract"))
-        return reply("read_contract", {});
-      const current = responses.find((r) => r.name === "read_current_source")
-        ?.response.result.source;
-      if (!current) return reply("read_current_source", {});
       if (phase >= 4) return reply("submit_candidate", { source: current });
       if (phase === 3) {
         let code = source("default", "轻快完成");

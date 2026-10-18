@@ -1,3 +1,8 @@
+import {
+  initialMeaningSchema,
+  parseInitialMeaning,
+  type InitialMeaning,
+} from "./requirement-semantics.js";
 import type {
   InvestigatedPlan,
   RequirementReview,
@@ -6,6 +11,7 @@ import type { FieldExpectation } from "../shared/acceptance-obligations.js";
 import { hash } from "../release/storage.js";
 
 export type FieldDecision = {
+  meaning?: InitialMeaning;
   obligationId: string;
   sourceRevision: string;
   sourceQuote: string;
@@ -59,30 +65,7 @@ export function fieldReviewSchema(
         target: { type: "integer", minimum: 1, maximum: Math.max(count, 1) },
         source: { type: "integer", minimum: 1 },
         sourceQuote: { type: "string" },
-        initial: {
-          anyOf: [
-            {
-              type: "object",
-              additionalProperties: false,
-              required: ["kind"],
-              properties: {
-                kind: {
-                  type: "string",
-                  enum: ["unspecified", "undetermined", "absent"],
-                },
-              },
-            },
-            {
-              type: "object",
-              additionalProperties: false,
-              required: ["kind", "value"],
-              properties: {
-                kind: { type: "string", enum: ["visible"] },
-                value: { type: "string" },
-              },
-            },
-          ],
-        },
+        initial: initialMeaningSchema,
       },
     },
     description:
@@ -130,27 +113,13 @@ export function parseFieldDecisions(
       !source.quote.includes(r.sourceQuote)
     )
       throw new Error("独立字段解释来源不存在");
-    const initial = row(r.initial);
-    if (
-      !Object.hasOwn(initial, "kind") ||
-      !["unspecified", "undetermined", "absent", "visible"].includes(
-        String(initial.kind),
-      ) ||
-      Object.keys(initial).some(
-        (k) =>
-          !["kind", ...(initial.kind === "visible" ? ["value"] : [])].includes(
-            k,
-          ),
-      ) ||
-      (initial.kind === "visible" &&
-        (typeof initial.value !== "string" || initial.value.length > 10000))
-    )
-      throw new Error("独立字段初始解释无效");
+    const { initial, meaning } = parseInitialMeaning(r.initial, source.quote);
     const decision: FieldDecision = {
       obligationId: target.obligationId,
       sourceRevision: source.revision,
       sourceQuote: r.sourceQuote,
-      initial: initial as FieldDecision["initial"],
+      initial,
+      meaning,
     };
     for (const requirement of plan.requirements ?? [])
       for (const o of requirement.obligations ?? []) {

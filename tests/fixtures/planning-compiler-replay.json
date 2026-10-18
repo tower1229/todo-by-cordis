@@ -1,0 +1,622 @@
+{
+  "origin": ".runtime/architecture-real-wwtl8h",
+  "requests": [
+    {
+      "id": "workflow",
+      "request": "请改进完成流程：完成前必须填写复盘，去掉首尾空白后至少1个、最多100个Unicode码点；重新打开保留复盘。已有和新增任务都适用，当前状态、其他动作、任务数据及未知字段行为不变。"
+    },
+    {
+      "id": "addition",
+      "request": "请新增独立的评审备注插件：所有任务状态均可通过填写评审备注动作输入文本，保存时去掉首尾空格，拒绝空白并保留原值；错误文案只须可理解，不要求特定文字。任务详情显示备注，尚未填写时显示空白，完成与重新打开后仍显示。已有和新增任务均适用，刷新及服务重启后原值保持。保留原完成/重新打开流程、标题、原备注、其他字段与数据行为。"
+    },
+    {
+      "id": "upgrade",
+      "request": "请只升级现有 panel 备注面板：未完成任务点击原 markNote 动作后，将 noteMark 写入值从 ok 改为 reviewed；已有 ok 不自动替换，已完成任务仍不可执行。详情原 note-panel 的 noteMark 字段显示保存值，刷新和重启后保持；原动作及贡献ID不变。保留主工作流、其他成员、其他字段及数据。"
+    },
+    {
+      "id": "clarification",
+      "request": "请改进完成流程，在完成前填写复盘。复盘是否必填尚未决定，请先集中问我这一项；其他行为沿用现有工作流。",
+      "answer": "复盘必填，去掉首尾空格后至少1个、最多100个Unicode码点，重新打开保留复盘；已有与新增任务均适用，其他字段和行为不变。"
+    }
+  ],
+  "proposals": {
+    "workflow": {
+      "changes": [
+        {
+          "cases": [
+            {
+              "action": "complete",
+              "expected": {
+                "fields": {
+                  "retained": "历史文字",
+                  "review": "本次复盘"
+                },
+                "kind": "commit",
+                "state": "done"
+              },
+              "fields": {
+                "retained": "历史文字"
+              },
+              "input": {
+                "review": "本次复盘"
+              },
+              "name": "已有任务填写有效复盘并完成",
+              "state": "open"
+            },
+            {
+              "action": "complete",
+              "expected": {
+                "kind": "reject"
+              },
+              "fields": {},
+              "input": {},
+              "name": "未填写复盘的任务无法完成",
+              "state": "open"
+            },
+            {
+              "action": "reopen",
+              "expected": {
+                "fields": {
+                  "retained": "历史文字",
+                  "review": "本次复盘"
+                },
+                "kind": "commit",
+                "state": "open"
+              },
+              "fields": {
+                "retained": "历史文字",
+                "review": "本次复盘"
+              },
+              "input": {},
+              "name": "已完成任务重新打开保留复盘与历史字段",
+              "state": "done"
+            }
+          ],
+          "fields": [
+            {
+              "key": "review",
+              "label": "复盘",
+              "maxLength": 100,
+              "minLength": 1,
+              "required": true
+            }
+          ],
+          "modules": ["entry"],
+          "target": "workflow"
+        }
+      ],
+      "intent": "improve",
+      "requirements": [
+        {
+          "description": "完成动作新增必填文本字段「复盘」，去除首尾空白后长度在 1 到 100 个 Unicode 码点之间；缺失、空字符串或纯空白时不提交完成并提示补充该字段，超长则拒绝完成。",
+          "expectations": [
+            {
+              "examples": ["本次复盘", "已与团队同步并确认改进项"],
+              "field": "review",
+              "kind": "field"
+            },
+            {
+              "kind": "behavior"
+            }
+          ],
+          "quote": "完成前必须填写复盘，去掉首尾空白后至少1个、最多100个Unicode码点",
+          "type": "behavior"
+        },
+        {
+          "description": "重新打开动作不修改字段，复盘及其他已有字段原样保留。",
+          "expectations": [
+            {
+              "kind": "behavior"
+            }
+          ],
+          "quote": "重新打开保留复盘",
+          "type": "behavior"
+        },
+        {
+          "description": "新字段规则对既有任务与新建任务一致生效，既有任务的复盘按完成时输入与校验规则处理。",
+          "expectations": [
+            {
+              "kind": "behavior"
+            },
+            {
+              "field": "review",
+              "kind": "history"
+            }
+          ],
+          "quote": "已有和新增任务都适用",
+          "type": "behavior"
+        },
+        {
+          "description": "状态集合、动作集合与转移条件、任务名称/备注、其他已存字段（包括未知字段）的保留行为保持不变。",
+          "expectations": [
+            {
+              "kind": "preserve-ui"
+            },
+            {
+              "kind": "behavior"
+            }
+          ],
+          "quote": "当前状态、其他动作、任务数据及未知字段行为不变",
+          "type": "constraint"
+        }
+      ],
+      "summary": "为主流程新增完成前必填的「复盘」文本字段（去除首尾空白后 1–100 个 Unicode 码点），完成时保存去除空白后的复盘并原样保留其他字段；重新打开保留全部字段。状态、动作集合、任务数据与未知字段行为保持不变。"
+    },
+    "addition": {
+      "summary": "新增独立辅助成员 review-note：注册「填写评审备注」动作（未完成、已完成两种状态均可执行，输入文本），提交时去除首尾空格，空白值拒绝并保留原值，其余字段与非本插件字段原样保留；任务详情以 task.detail 贡献展示评审备注，未填写时该处显示空白。主工作流（完成/重新打开、标题、原备注、字段与数据行为）保持不变，未改成员按精确版本继承。",
+      "changes": [
+        {
+          "target": "review-note",
+          "name": "评审备注",
+          "features": ["commands", "fields", "detail"],
+          "cases": [
+            {
+              "name": "未完成任务填写评审备注去除首尾空格",
+              "state": "open",
+              "fields": {
+                "retained": "历史字段值"
+              },
+              "action": "setReviewNote",
+              "input": {
+                "reviewNote": "  评审通过，可上线  "
+              },
+              "expected": {
+                "kind": "commit",
+                "state": "open",
+                "fields": {
+                  "retained": "历史字段值",
+                  "reviewNote": "评审通过，可上线"
+                }
+              }
+            },
+            {
+              "name": "已完成任务填写评审备注",
+              "state": "done",
+              "fields": {
+                "retained": "历史字段值"
+              },
+              "action": "setReviewNote",
+              "input": {
+                "reviewNote": "验收合格"
+              },
+              "expected": {
+                "kind": "commit",
+                "state": "done",
+                "fields": {
+                  "retained": "历史字段值",
+                  "reviewNote": "验收合格"
+                }
+              }
+            },
+            {
+              "name": "改写评审备注保留其他字段",
+              "state": "open",
+              "fields": {
+                "retained": "历史字段值",
+                "reviewNote": "旧评审"
+              },
+              "action": "setReviewNote",
+              "input": {
+                "reviewNote": "新评审"
+              },
+              "expected": {
+                "kind": "commit",
+                "state": "open",
+                "fields": {
+                  "retained": "历史字段值",
+                  "reviewNote": "新评审"
+                }
+              }
+            },
+            {
+              "name": "仅空白评审备注被拒绝并保留原值",
+              "state": "open",
+              "fields": {
+                "retained": "历史字段值",
+                "reviewNote": "旧评审"
+              },
+              "action": "setReviewNote",
+              "input": {
+                "reviewNote": "   "
+              },
+              "expected": {
+                "kind": "reject"
+              }
+            },
+            {
+              "name": "已完成任务空白评审备注被拒绝",
+              "state": "done",
+              "fields": {
+                "retained": "历史字段值",
+                "reviewNote": "旧评审"
+              },
+              "action": "setReviewNote",
+              "input": {
+                "reviewNote": "\t \n"
+              },
+              "expected": {
+                "kind": "reject"
+              }
+            }
+          ]
+        }
+      ],
+      "uses": [
+        {
+          "member": "review-note",
+          "feature": "commands"
+        },
+        {
+          "member": "review-note",
+          "feature": "fields"
+        },
+        {
+          "member": "review-note",
+          "feature": "detail"
+        }
+      ],
+      "requirements": [
+        {
+          "description": "以独立辅助成员方式提供评审备注能力，不改动主工作流源码。",
+          "quote": "请新增独立的评审备注插件：",
+          "type": "constraint",
+          "expectations": [
+            {
+              "kind": "behavior"
+            }
+          ]
+        },
+        {
+          "description": "评审备注动作在未完成与已完成两种任务状态均可用，输入为文本。",
+          "quote": "所有任务状态均可通过填写评审备注动作输入文本，",
+          "type": "behavior",
+          "expectations": [
+            {
+              "kind": "behavior"
+            },
+            {
+              "kind": "action-visible",
+              "action": "setReviewNote",
+              "state": "open",
+              "visible": true
+            },
+            {
+              "kind": "action-visible",
+              "action": "setReviewNote",
+              "state": "done",
+              "visible": true
+            }
+          ]
+        },
+        {
+          "description": "保存时去除评审备注首尾空格后写入任务字段。",
+          "quote": "保存时去掉首尾空格，",
+          "type": "behavior",
+          "expectations": [
+            {
+              "kind": "behavior"
+            }
+          ]
+        },
+        {
+          "description": "首尾空格去除后为空的评审备注被拒绝，任务原字段值不被修改。",
+          "quote": "拒绝空白并保留原值；",
+          "type": "behavior",
+          "expectations": [
+            {
+              "kind": "behavior"
+            },
+            {
+              "kind": "operation-rejected",
+              "action": "setReviewNote"
+            }
+          ]
+        },
+        {
+          "description": "评审备注为可选文本，无历史数据时动作仍直接可用。",
+          "quote": "错误文案只须可理解，不要求特定文字。",
+          "type": "behavior",
+          "expectations": [
+            {
+              "kind": "behavior"
+            }
+          ]
+        },
+        {
+          "description": "任务详情展示评审备注，尚未填写时显示空白。",
+          "quote": "任务详情显示备注，尚未填写时显示空白，",
+          "type": "interface",
+          "expectations": [
+            {
+              "kind": "behavior"
+            },
+            {
+              "kind": "field",
+              "field": "reviewNote",
+              "initial": {
+                "kind": "visible",
+                "value": ""
+              }
+            }
+          ]
+        },
+        {
+          "description": "完成与重新打开后已写入的评审备注仍然显示且值不变。",
+          "quote": "完成与重新打开后仍显示。",
+          "type": "behavior",
+          "expectations": [
+            {
+              "kind": "behavior"
+            },
+            {
+              "kind": "history",
+              "field": "reviewNote"
+            },
+            {
+              "kind": "task"
+            }
+          ]
+        },
+        {
+          "description": "已有任务与新建任务都可填写并展示评审备注。",
+          "quote": "已有和新增任务均适用，",
+          "type": "behavior",
+          "expectations": [
+            {
+              "kind": "behavior"
+            }
+          ]
+        },
+        {
+          "description": "评审备注在刷新页面及服务重启后仍保持原值。",
+          "quote": "刷新及服务重启后原值保持。",
+          "type": "compatibility",
+          "expectations": [
+            {
+              "kind": "behavior"
+            },
+            {
+              "kind": "edit-task",
+              "title": "标题保持",
+              "description": "备注保持"
+            }
+          ]
+        },
+        {
+          "description": "原有完成/重新打开流程、标题、原备注、其他字段与数据行为保持不变。",
+          "quote": "保留原完成/重新打开流程、标题、原备注、其他字段与数据行为。",
+          "type": "compatibility",
+          "expectations": [
+            {
+              "kind": "preserve-ui"
+            }
+          ]
+        }
+      ],
+      "intent": "improve"
+    },
+    "clarification": {
+      "changes": [
+        {
+          "actionFields": [
+            {
+              "key": "review",
+              "label": "复盘",
+              "type": "text"
+            }
+          ],
+          "actions": [
+            {
+              "from": ["open"],
+              "id": "complete",
+              "label": "完成"
+            },
+            {
+              "from": ["done"],
+              "id": "reopen",
+              "label": "重新打开"
+            }
+          ],
+          "cases": [
+            {
+              "action": "complete",
+              "expected": {
+                "fields": {
+                  "review": "已核对需求并交付"
+                },
+                "kind": "commit",
+                "state": "done"
+              },
+              "fields": {},
+              "input": {
+                "review": "已核对需求并交付"
+              },
+              "name": "complete-with-review",
+              "state": "open"
+            },
+            {
+              "action": "complete",
+              "expected": {
+                "kind": "reject"
+              },
+              "fields": {},
+              "input": {},
+              "name": "complete-review-missing",
+              "state": "open"
+            },
+            {
+              "action": "complete",
+              "expected": {
+                "kind": "reject"
+              },
+              "fields": {},
+              "input": {
+                "review": "   "
+              },
+              "name": "complete-review-whitespace-only",
+              "state": "open"
+            },
+            {
+              "action": "complete",
+              "expected": {
+                "kind": "reject"
+              },
+              "fields": {},
+              "input": {
+                "review": "文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文文"
+              },
+              "name": "complete-review-too-long",
+              "state": "open"
+            },
+            {
+              "action": "reopen",
+              "expected": {
+                "fields": {
+                  "review": "已核对需求并交付"
+                },
+                "kind": "commit",
+                "state": "open"
+              },
+              "fields": {
+                "review": "已核对需求并交付"
+              },
+              "input": {},
+              "name": "reopen-keeps-review",
+              "state": "done"
+            }
+          ],
+          "fields": [
+            {
+              "key": "review",
+              "label": "复盘",
+              "maxLength": 100,
+              "minLength": 1,
+              "required": true
+            }
+          ],
+          "target": "workflow"
+        }
+      ],
+      "intent": "improve",
+      "requirements": [
+        {
+          "description": "完成动作执行前必须先填写「复盘」字段；未填写或仅含空白字符的复盘不能完成任务，应返回需要补充必填内容的输入表单。",
+          "expectations": [
+            {
+              "kind": "behavior"
+            },
+            {
+              "field": "review",
+              "initial": {
+                "kind": "baseline"
+              },
+              "kind": "field"
+            },
+            {
+              "action": "complete",
+              "kind": "action-visible",
+              "state": "open",
+              "visible": true
+            },
+            {
+              "action": "complete",
+              "kind": "action-visible",
+              "state": "done",
+              "visible": false
+            }
+          ],
+          "quote": "请改进完成流程，在完成前填写复盘。",
+          "type": "behavior"
+        },
+        {
+          "description": "复盘字段必填；校验前去掉首尾空格，按 Unicode 码点计数，长度须在 1 到 100 之间（含边界），超出上限应被拒绝。",
+          "expectations": [
+            {
+              "kind": "behavior"
+            },
+            {
+              "examples": ["已核对需求并交付", "  已核对需求并交付  "],
+              "field": "review",
+              "kind": "field"
+            }
+          ],
+          "quote": "复盘必填，去掉首尾空格后至少1个、最多100个Unicode码点",
+          "type": "behavior"
+        },
+        {
+          "description": "重新打开任务时保留已填写的复盘内容，不清空也不丢失后续字段值。",
+          "expectations": [
+            {
+              "kind": "behavior"
+            },
+            {
+              "field": "review",
+              "kind": "field"
+            },
+            {
+              "field": "review",
+              "kind": "history"
+            },
+            {
+              "action": "reopen",
+              "kind": "action-visible",
+              "state": "done",
+              "visible": true
+            }
+          ],
+          "quote": "重新打开保留复盘",
+          "type": "behavior"
+        },
+        {
+          "description": "已存在的任务与之后新建的任务都使用同一套复盘必填规则；历史任务没有被写入复盘时不呈现复盘值。",
+          "expectations": [
+            {
+              "kind": "behavior"
+            },
+            {
+              "field": "review",
+              "initial": {
+                "kind": "absent"
+              },
+              "kind": "field"
+            }
+          ],
+          "quote": "已有与新增任务均适用",
+          "type": "behavior"
+        },
+        {
+          "description": "除新增复盘字段及其完成校验外，既有状态（未完成/已完成）、完成与重新打开动作、任务名称与备注的编辑功能及其余字段行为保持不变。",
+          "expectations": [
+            {
+              "kind": "behavior"
+            },
+            {
+              "kind": "preserve-ui"
+            },
+            {
+              "kind": "task"
+            },
+            {
+              "description": "更新后的备注",
+              "kind": "edit-task",
+              "title": "更新后的任务名称"
+            }
+          ],
+          "quote": "其他字段和行为不变",
+          "type": "interface"
+        },
+        {
+          "description": "除上述复盘改动外，其他行为继续沿用现有工作流（未完成/已完成状态、完成与重新打开动作及其原有校验）。",
+          "expectations": [
+            {
+              "kind": "behavior"
+            }
+          ],
+          "quote": "其他行为沿用现有工作流。",
+          "type": "interface"
+        }
+      ],
+      "summary": "在主工作流（aux-workflow）新增「复盘」文本字段：完成动作前必须填写，去首尾空格后长度 1–100 个 Unicode 码点；重新打开保留复盘；其余状态、动作、字段与行为保持不变，已有任务与新增任务同样适用。"
+    }
+  }
+}

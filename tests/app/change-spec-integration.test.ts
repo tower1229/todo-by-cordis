@@ -149,8 +149,7 @@ test("独立技术争议绑定检查器事实后由宿主裁决，3次调用read
               sourceQuote: input.sources[0].text,
               detail: "长度检查计数口径",
               technical: {
-                factId: "host-fact:workflow-text",
-                property: "lengthMetric",
+                target: input.technicalTargets.find((t: { factId: string; property: string }) => t.factId === "host-fact:workflow-text" && t.property === "lengthMetric").target,
                 expected: "unicode-code-point",
               },
             },
@@ -211,34 +210,20 @@ test("合成任务属性不得手填：冻结前退回同一规划循环，宿�
   assert.ok(JSON.stringify(fixture.requests).includes("protocolCorrection"));
 });
 
-test("生成阶段补读按下一次实际调用记录精确资料，失败读取不计交付且冻结规格不变", async (t) => {
+test("生成首轮交付完整精确资料且冻结规格不变", async (t) => {
   const w = await setup(t);
   const fixture = new PlanningDriver();
   const member = w.composition().members[0];
-  let generated = false;
+
   const e = new Evolution(
     w.db,
     {
       async generate(request, signal) {
         if (!request.tools?.some((tool) => tool.name === "submit_candidate"))
           return fixture.generate(request, signal);
-        if (generated)
-          return toolReply("report_blocker", { reason: "收集交付回执后停止" });
-        generated = true;
-        return {
-          text: "",
-          history: request.history,
-          calls: [
-            { name: "read_contract", args: {} },
-            { name: "read_current_source", args: {} },
-            { name: "read_scaffold", args: {} },
-            {
-              name: "read_member",
-              args: { pluginId: member.pluginId, versionId: member.versionId },
-            },
-            { name: "read_scaffold", args: { unknown: true } },
-          ],
-        };
+        assert.ok(JSON.parse(request.message!).materials.documents.length > 3);
+        assert.deepEqual(request.tools?.map(t => t.name).sort(), ["report_blocker", "submit_candidate"]);
+        return toolReply("report_blocker", { reason: "收集交付回执后停止" });
       },
     },
     new EvolutionDomain(w),
@@ -261,7 +246,7 @@ test("生成阶段补读按下一次实际调用记录精确资料，失败读�
   });
   const done = await settle(e);
   assert.equal(done.status, "blocked");
-  assert.equal(done.budget?.callsUsed, 5);
+  assert.equal(done.budget?.callsUsed, 4);
   const stored = JSON.parse(
     String(
       w.db.prepare("SELECT body FROM evolution_runs WHERE id=?").get(done.id)!
@@ -270,19 +255,19 @@ test("生成阶段补读按下一次实际调用记录精确资料，失败读�
   );
   assert.equal(hash(stored.plan), frozen);
   const receipt = stored.investigation.deliveries.at(-1);
-  assert.equal(receipt.call, 5);
+  assert.equal(receipt.call, 4);
   assert.equal(receipt.phase, "generation");
-  assert.deepEqual(
-    receipt.materials.map((m: { ref: string }) => m.ref),
-    [
+  const refs = receipt.materials.map((m: {ref:string}) => m.ref);
+  assert.equal(new Set(refs).size, refs.length);
+  for (const ref of [
       "candidate-contract",
       "active-source",
       "candidate-scaffold",
       `member-source/${member.pluginId}@${member.versionId}`,
       `member-contract/${member.pluginId}@${member.versionId}`,
       `member-acceptance/${member.pluginId}@${member.versionId}`,
-    ],
-  );
+    ]) assert.ok(refs.includes(ref), ref);
+  for (const ref of Object.keys(ready.plan.binding!.guideCatalog)) assert.ok(refs.includes(ref), ref);
 });
 
 test("澄清直接等待用户，回答沿同一运行和预算复用已验证指南并重做最终复核", async (t) => {
@@ -427,17 +412,8 @@ test("独立复核可直接提出业务澄清；同一运行回答后复核必�
           reply.text = JSON.stringify({
             reviewedIds: input.requirements.map((r: { id: string }) => r.id),
             fieldDecisions: JSON.parse(reply.text).fieldDecisions,
-            issues: [
-              {
-                kind: "unverifiable",
-                sourceRevision: input.sources[0].id,
-                sourceQuote: input.sources[0].text,
-                detail: "缺少必填预期",
-                target: { subject: input.requirements[0].id, aspect: "input" },
-                stance: "undetermined",
-                clarificationChoice: input.businessChoices.find((c: {id: string}) => c.id.startsWith("business-choice:input-required:")).id,
-              },
-            ],
+            issues: [],
+            unresolvedChoices:[{targetId:`business-choice:input-required:${input.requirements[0].id}:${input.workflowRules[0].key}`,sourceRevision:input.sources[0].id,sourceQuote:input.sources[0].text}],
           });
         }
         return reply;

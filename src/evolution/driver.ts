@@ -9,6 +9,7 @@ export type ModelReply = {
   protocolErrors?: string[];
   transport?: {
     profile?: string;
+    outputPolicy?: ReturnType<typeof import("./model-policy.js").modelPolicy>;
     requestedModel?: string;
     actualModel?: string;
     envelopeValid?: boolean;
@@ -40,6 +41,7 @@ export class ModelTransportError extends Error {
   }
 }
 export type ModelRequest = {
+  phase?: import("./budget.js").ModelPhase;
   instruction: string;
   history: unknown[];
   message?: string;

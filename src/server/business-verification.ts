@@ -7,6 +7,8 @@ import type {
 } from "./business/contracts.js";
 import type { RuntimeLike } from "../release/types.js";
 import { hash } from "../release/storage.js";
+import { requiredCaseInputs,assertNativeCase,caseExpectation } from "../evolution/planning-operations.js";
+import type { WorkflowRule } from "../shared/assistant.js";
 import type {
   AcceptanceExpected,
   MemberAcceptanceCase,
@@ -26,6 +28,8 @@ export type BusinessExtensions = {
     action: string;
     input: Record<string, string>;
     expected: AcceptanceExpected;
+    /** Host-derived native workflow form rejection; never authored by the model. */
+    inputRequired?: string[];
   }[];
 };
 
@@ -111,6 +115,7 @@ export function parseExtensions(
   value: unknown,
   base: WorkflowDefinition,
   previous?: BusinessExtensions,
+  rules: WorkflowRule[] = [],
 ): BusinessExtensions | undefined {
   if (
     value === undefined ||
@@ -127,7 +132,7 @@ export function parseExtensions(
     !Array.isArray(value.actions) ||
     !Array.isArray(value.fields) ||
     !Array.isArray(value.cases) ||
-    !value.actions.length ||
+    (!value.actions.length && !value.cases.length) ||
     value.actions.length > 8 ||
     value.fields.length > 8 ||
     value.cases.length > 40
@@ -172,7 +177,7 @@ export function parseExtensions(
       !id(c.state) ||
       !Object.hasOwn(base.states, c.state) ||
       !id(c.action) ||
-      !value.actions.some((a) => a.id === c.action) ||
+      ![...base.actions,...value.actions].some((a) => a.id === c.action) ||
       !strings(c.fields) ||
       !strings(c.input) ||
       !record(c.expected)
@@ -180,6 +185,10 @@ export function parseExtensions(
       throw new Error("业务案例无效");
     if (!parseExpected(c.expected, base.states))
       throw new Error("业务案例期望无效");
+    assertNativeCase(c as BusinessExtensions["cases"][number],base,rules,previous);
+    const native=base.actions.some(a=>a.id===c.action&&!previous?.actions.some(old=>old.id===a.id));
+    const required=native?requiredCaseInputs(c as BusinessExtensions["cases"][number],base,rules):[];
+    if(hash(c.inputRequired??[])!==hash(required))throw new Error("原动作案例的必填表单期望缺少宿主规则绑定");
   }
   const extension = structuredClone(value) as BusinessExtensions;
   if (
@@ -231,7 +240,7 @@ export function extensionCases(extension: BusinessExtensions | undefined) {
     extension?.cases.map((c) => ({
       given: JSON.stringify({ state: c.state, fields: c.fields }),
       when: JSON.stringify({ action: c.action, input: c.input }),
-      then: JSON.stringify(c.expected),
+      then: JSON.stringify(caseExpectation(c)),
       checker: "business-actions/1",
     })) ?? []
   );
@@ -355,15 +364,18 @@ export async function verifyExtensions(
       action: c.action,
       input: c.input,
     });
+    const oracle=caseExpectation(c);
     const expected =
-      c.expected.kind === "commit"
+      oracle.kind === "commit"
         ? {
-            ...c.expected,
-            fields: { ...c.expected.fields, host_retained: "preserve" },
+            ...oracle,
+            fields: { ...oracle.fields, host_retained: "preserve" },
           }
-        : c.expected;
+        : oracle;
     if (
-      expected.kind === "reject"
+      expected.kind==="input-required"
+        ? d.kind !== "input-required" || expected.fields.some(key=>!d.fields.some(f=>f.key===key&&f.type==="text"&&f.required))
+        : expected.kind === "reject"
         ? d.kind !== "reject"
         : hash(d) !== hash(expected)
     )

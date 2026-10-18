@@ -11,9 +11,31 @@ export type BaselinePreparation = {
   sourceHash: string;
 };
 type Identity = { version: 1; id: string };
+export type FeedbackUnavailable = {
+  code: "action-hidden" | "state-unreachable" | "missing-rejection";
+  state?: string;
+};
+export type RejectionReference = {
+  checker: string;
+  caseId: string;
+  definitionHash: string;
+};
 export type AcceptanceObligation = Identity &
   (
-    | {kind:"workflow-input";rules:import("./assistant.js").WorkflowRule[]}
+    | {
+        kind: "backend-rejection";
+        action: Extract<BrowserStep, { kind: "action" }>;
+        cases: RejectionReference[];
+      }
+    | {
+        kind: "feedback";
+        action: Extract<BrowserStep, { kind: "action" }>;
+        text: string;
+        resolution: "pending" | "required" | "not-requested";
+        scenarios: { steps: BrowserStep[] }[];
+        unavailable: FeedbackUnavailable[];
+      }
+    | { kind: "workflow-input"; rules: import("./assistant.js").WorkflowRule[] }
     | {
         kind: "ui-identity";
         workflow?: import("./browser-cases.js").WorkflowUiIdentity;
@@ -49,6 +71,7 @@ export type AcceptanceObligation = Identity &
       }
     | {
         kind: "assertion";
+        availability?: {origin:"host";state:string};
         steps: BrowserStep[];
         expected: Extract<
           BrowserStep,
@@ -60,8 +83,10 @@ export type AcceptanceObligation = Identity &
 export function obligationCases(
   obligation: AcceptanceObligation,
 ): BrowserCase[] {
-  if (obligation.kind === "backend") return [];
-  if (obligation.kind === "workflow-input") return workflowBrowserCases(obligation.id,obligation.rules);
+  if (obligation.kind === "backend" || obligation.kind === "backend-rejection")
+    return [];
+  if (obligation.kind === "workflow-input")
+    return workflowBrowserCases(obligation.id, obligation.rules);
   const cases: BrowserCase[] = [];
   const add = (
     key: string,
@@ -85,6 +110,18 @@ export function obligationCases(
     { kind: "restart" },
     assertion,
   ];
+  if (obligation.kind === "feedback") {
+    if (obligation.resolution !== "required" || obligation.unavailable.length)
+      return [];
+    obligation.scenarios.forEach((scenario, index) => {
+      for (const task of ["existing", "new"] as const)
+        add(`${index + 1}-${task}`, task, [
+          ...scenario.steps,
+          { kind: "error", text: obligation.text },
+        ]);
+    });
+    return cases;
+  }
   if (obligation.kind === "ui-identity") {
     for (const task of ["existing", "new"] as const)
       add(
@@ -93,14 +130,14 @@ export function obligationCases(
         persist({
           kind: "ui-identity",
           contributions: obligation.contributions,
-          ...(obligation.workflow ? {workflow: obligation.workflow} : {}),
+          ...(obligation.workflow ? { workflow: obligation.workflow } : {}),
         }),
       );
     return cases;
   }
   if (obligation.kind === "assertion") {
     for (const task of ["existing", "new"] as const)
-      add(task, task, [...obligation.steps, obligation.expected]);
+      add(task, task, [...obligation.steps, obligation.expected],undefined,obligation.availability?"system-protection":"frozen-business");
     return cases;
   }
   const field = (value: string, visible = true): BrowserStep => ({

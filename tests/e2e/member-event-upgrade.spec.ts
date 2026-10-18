@@ -197,18 +197,7 @@ function upgradeDriver(
           ...toolReply(name, args),
           history: request.history,
         });
-        if (!history.includes("read_contract"))
-          return reply("read_contract", {});
-        if (!history.includes("read_current_source"))
-          return reply("read_current_source", {});
-        if (!history.includes("read_member"))
-          return reply("read_member", {
-            pluginId: "tags",
-            versionId: tagsVersionId,
-          });
-        if (!history.includes("read_guide"))
-          return reply("read_guide", { ref: "guide/task.events" });
-        reads.push(history);
+        reads.push(request.message ?? history);
         return reply("submit_candidate", {
           source: workflowSource,
           members: [{ pluginId: "tags", source: memberSource }],

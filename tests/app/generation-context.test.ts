@@ -37,7 +37,7 @@ async function settle(e: Evolution) {
   throw new Error("run did not settle");
 }
 
-test("规划已用九次调用时，首轮精确资料支持合批补读和修正，十二次内通过现有门禁（模型桩）", async (t) => {
+test("规划已用九次调用时，首轮精确资料支持直接修正，十一次内通过现有门禁（模型桩）", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "generation-context-"));
   const w = await Workspace.open(join(dir, "workspace.db"));
   const before = { composition: w.composition(), tasks: w.query() };
@@ -45,7 +45,6 @@ test("规划已用九次调用时，首轮精确资料支持合批补读和修�
   const planning = new PlanningDriver();
   let padding = 0;
   let generation = 0;
-  let preloaded = false;
   const requests: ModelRequest[] = [];
   const driver: Driver = {
     async generate(request) {
@@ -66,9 +65,7 @@ test("规划已用九次调用时，首轮精确资料支持合批补读和修�
       });
       if (generation === 1) {
         const input = JSON.parse(request.message!) as GenerationInput;
-        // Reproduce the former three separate bootstrap reads if no materials arrive.
-        if (!input.materials) return reply("read_scaffold", {});
-        preloaded = true;
+        assert.ok(input.materials);
         assert.equal(input.materials.baseVersion, base.id);
         assert.equal(
           input.materials.compositionRevision,
@@ -94,22 +91,7 @@ test("规划已用九次调用时，首轮精确资料支持合批补读和修�
           source: "invalid candidate source",
         });
       }
-      if (!preloaded)
-        return reply(
-          generation === 2 ? "read_current_source" : "read_contract",
-          {},
-        );
-      if (generation === 2) {
-        assert.match(request.instruction, /"callsRemaining":2/);
-        return {
-          ...reply("read_contract", {}),
-          calls: [
-            { name: "read_contract", args: {} },
-            { name: "read_current_source", args: {} },
-          ],
-        };
-      }
-      assert.match(request.instruction, /"callsRemaining":1/);
+      assert.match(request.instruction, /"callsRemaining":2/);
       return reply("submit_candidate", {
         source: source(base.pluginId, base.name),
       });
@@ -147,9 +129,9 @@ test("规划已用九次调用时，首轮精确资料支持合批补读和修�
   assert.equal(candidates[1].requirementSeal, seal);
   assert.ok(candidates[1].browser?.results.every((r) => r.status === "passed"));
   domain.verifyAcceptance(candidates[1].versionId!, ready.plan);
-  assert.equal(finished.budget?.callsUsed, 12);
-  assert.equal(finished.budget?.callsRemaining, 0);
-  assert.equal(requests.length + 1, 12, "独立预检由夹具适配器计入同一运行预算");
+  assert.equal(finished.budget?.callsUsed, 11);
+  assert.equal(finished.budget?.callsRemaining, 1);
+  assert.equal(requests.length + 1, 11, "独立预检由夹具适配器计入同一运行预算");
   assert.deepEqual({ composition: w.composition(), tasks: w.query() }, before);
 });
 
@@ -157,7 +139,7 @@ for (const stale of [false, true])
   test(
     stale
       ? "交付源码与冻结摘要不一致时在模型调用前拒绝"
-      : "首轮交付精确升级成员及已绑定指南，不交付其他成员源码（模型桩）",
+      : "首轮复用全部已冻结成员资料及指南，不交付未绑定版本（模型桩）",
     async (t) => {
       const dir = await mkdtemp(join(tmpdir(), "generation-materials-"));
       const w = await Workspace.open(join(dir, "workspace.db"));
@@ -221,14 +203,11 @@ for (const stale of [false, true])
             capabilityGuides["guide/command.register"],
           );
           assert.ok(documents.every((d) => d.hash === hash(d.content)));
-          assert.equal(
-            documents.some((d) => d.ref.startsWith("member-source/due@")),
-            false,
-          );
-          assert.equal(
-            documents.some((d) => d.ref === "guide/schedule.register"),
-            false,
-          );
+          const plan = JSON.parse(request.message!).plan;
+          for (const doc of documents.filter(d=>d.ref.startsWith("member-source/")))
+            assert.ok(plan.binding.materials.some((m:{ref:string;hash:string})=>m.ref===doc.ref && m.hash===doc.hash));
+          for(const ref of Object.keys(plan.binding.guideCatalog))
+            assert.equal(documents.find(d=>d.ref===ref)?.hash,plan.binding.guideCatalog[ref]);
           return {
             ...toolReply("report_blocker", {
               reason: "模型桩检查交付后停止，不生成候选",

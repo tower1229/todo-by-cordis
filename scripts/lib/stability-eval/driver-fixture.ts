@@ -68,6 +68,7 @@ function memberPlan(
 /** CI model stubs only — never imported by the authorized real-model entry path for generation. */
 export function stabilityStubDriver(scenarioId: string): Driver {
   let planning: PlanningDriver | undefined;
+  let current = "";
   return new DeltaFixture({
     async generate(request: ModelRequest) {
       if (request.schema && planning) return planning.generate(request);
@@ -77,7 +78,11 @@ export function stabilityStubDriver(scenarioId: string): Driver {
         }
         return (planning ?? new PlanningDriver()).generate(request);
       }
-      return submitCandidate(scenarioId, request);
+      const documents = JSON.parse(request.message ?? "{}").materials?.documents as {ref:string;content:unknown}[] | undefined;
+      const delivered = documents?.find(d => d.ref === "active-source")?.content;
+      if (typeof delivered === "string") current = delivered;
+      if (!current) throw new Error("missing frozen active source");
+      return submitCandidate(scenarioId, request, current);
     },
   });
 }
@@ -192,28 +197,11 @@ function planFinish(
   }
 }
 
-function submitCandidate(scenarioId: string, request: ModelRequest) {
-  const history = request.history as {
-    parts?: {
-      functionResponse?: {
-        name: string;
-        response: { result: { source?: string } };
-      };
-    }[];
-  }[];
-  const responses = history
-    .flatMap((m) => m.parts ?? [])
-    .flatMap((p) => (p.functionResponse ? [p.functionResponse] : []));
+function submitCandidate(scenarioId: string, request: ModelRequest, current: string) {
   const reply = (name: string, args: Record<string, unknown>) => ({
     ...toolReply(name, args),
     history: request.history,
   });
-  if (!responses.some((r) => r.name === "read_contract"))
-    return reply("read_contract", {});
-  const current = responses.find((r) => r.name === "read_current_source")
-    ?.response.result.source;
-  if (!current) return reply("read_current_source", {});
-
   if (scenarioId === "rule-revision-reflection")
     return reply("submit_candidate", {
       source: source("default", "轻快完成"),

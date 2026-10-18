@@ -1,7 +1,18 @@
-import { compilePlanInput, planInputSchema } from "../evolution/plan-input.js";
+import {
+  capabilityCheckerContract,
+  capabilityCheckerCoverage,
+} from "./capability-checkers.js";
+import {
+  compilePlanInput,
+  planInputSchema,
+  planSchemaFor,
+} from "../evolution/plan-input.js";
 import { compileReferences } from "../evolution/references.js";
+import {captureAvailability} from "../evolution/action-availability.js";
+import {baselineFields} from "../evolution/field-identity.js";
 import { workflowTextSemantics } from "../shared/checker-semantics.js";
 import { technicalFacts } from "../evolution/technical-facts.js";
+import { workflowCheckerRules } from "../evolution/checker-rules.js";
 import { readOnlyFieldText } from "../shared/field-presentation.js";
 import { browserEnvironment } from "./browser-acceptance.js";
 import { browserErrorAssertionDescription } from "../shared/browser-contract.js";
@@ -148,6 +159,8 @@ export function bindPlan(
       .filter((item): item is string => !!item),
   ]);
   return {
+    ...(context.actionAvailability?{actionAvailability:structuredClone(context.actionAvailability)}:{}),
+    fieldIdentities: baselineFields(context),
     browser: context.environment.browser
       ? {
           frontendHash: context.environment.browser.frontendHash,
@@ -170,6 +183,8 @@ export function planBindingFailure(
   current: Investigation,
 ): string | undefined {
   if (!binding) return "计划缺少宿主资料快照";
+  if(current.actionAvailability&&hash(binding.actionAvailability)!==hash(current.actionAvailability))return "动作可见性基线、成员或渲染器已变化，请重新规划";
+  if(hash(binding.fieldIdentities??[])!==hash(baselineFields(current)))return "字段归属目录已变化，请重新规划";
   if (
     binding.browser &&
     (current.environment.browser?.missing.length ||
@@ -298,6 +313,7 @@ export type InvestigationCapability = {
 };
 
 export type Investigation = {
+  actionAvailability?: import("../evolution/action-availability.js").ActionAvailability;
   guideHashes: Record<string, string>;
   checkerVersions: Record<string, string>;
   revision: number;
@@ -390,18 +406,10 @@ function planningCapabilities(
           ? [`schedule.runtime:${ONLINE_SCHEDULER_SERVICE_ID}`]
           : [],
       ...(c.interfaceId === "fields.register" ? {registeredFields: registeredFields.map(field=>field.key).sort()} : {}),
-      checkerCoverage:
-        c.interfaceId === "workflow.provide"
-          ? ["workflow/1"]
-          : c.interfaceId === "command.register" && commandCasesCovered
-            ? ["workspace/1"]
-            : c.interfaceId === "fields.register" && fieldCasesCovered
-              ? ["workspace/1"]
-            : c.interfaceId === "schedule.register"
-              ? ["schedule/1"]
-              : c.interfaceId === "ui.slot"
-                ? ["browser/1"]
-                : [],
+      checkerCoverage: capabilityCheckerCoverage(c.interfaceId, {
+        commands: commandCasesCovered,
+        fields: fieldCasesCovered,
+      }),
       purpose:
         c.interfaceId === "workflow.provide"
           ? "提供当前任务工作流"
@@ -434,7 +442,10 @@ function planningCapabilities(
       ),
       authorized: true,
       dependencies: [],
-      checkerCoverage: ["schedule/1"],
+      checkerCoverage: capabilityCheckerCoverage(s.interfaceId, {
+        commands: false,
+        fields: false,
+      }),
       purpose: "进程在线期间执行已注册的定时业务动作",
       limitations:
         "仅当前进程在线运行；业务任务须由成员注册，定时行为由隔离工作区受控时钟检查",
@@ -554,6 +565,7 @@ export function capture(workspace: Workspace): Investigation {
     }),
   );
   return {
+    actionAvailability:captureAvailability({baseVersion:composition.versionId,revision:composition.revision,initialState:composition.workflow.initialState,states:Object.keys(composition.workflow.states),workflowProvider:active.pluginId,members:composition.members,actions:composition.workflow.actions,contributions:composition.uiContributions,rendererHash:hash(["src/web/main.tsx","src/web/CandidateExperiencePanel.tsx","src/web/TaskDetailContributions.tsx","src/server/extensions/registry.ts"].map(path=>readFileSync(resolve(path),"utf8")))}),
     guideHashes: Object.fromEntries(
       Object.entries(capabilityGuides).map(([ref, content]) => [
         ref,
@@ -690,7 +702,7 @@ export function compilePlanDraft(value: unknown, context: Investigation, seen: P
   const workflow = JSON.parse(context.files["active-contract"].content) as WorkflowDefinition;
   const previous = JSON.parse(context.files["active-acceptance"].content) as {memberCases?: MemberAcceptanceCase[]};
   const merged = resolveMemberCases(draft.memberCases, previous.memberCases, new Set([...context.members.filter(m => m.role === "auxiliary").map(m => m.pluginId), ...(draft.memberAdditions ?? []).map(m => m.pluginId)]), workflow.states).merged;
-  const references = compileReferences({...draft, memberCases: merged}, sources, definition.cases, workflow, {...JSON.parse(context.files["active-acceptance"].content), baseVersion: context.versionId, uiContributions: context.uiContributions});
+  const references = compileReferences({...draft, memberCases: merged}, sources, definition.cases, workflow, {...JSON.parse(context.files["active-acceptance"].content), baseVersion: context.versionId, uiContributions: context.uiContributions,actionAvailability:context.actionAvailability});
   const compiled = {...draft, ...references, unresolved: [], evidence, acceptance: definition.cases,
     steps: [
       {id: "build", purpose: "构建冻结范围内候选", dependsOn: [], artifact: "完整组合产物", evidence: "严格构建检查"},
@@ -819,7 +831,10 @@ export function readInvestigation(
               boundaries:
                 "方案确认后生成候选；隔离体验不写正式数据；应用需另行确认",
             },
+            checkerRules: { origin: "host", checker: "workflow/1", scope: "complete 文本字段", predicates: workflowCheckerRules },
             technicalFacts: technicalFacts({
+              fieldIdentities: baselineFields(context),
+              actionAvailability: context.actionAvailability,
               workflowRules: [],
               binding: {
                 guideCatalog: {},
@@ -836,14 +851,7 @@ export function readInvestigation(
                 provider: "member:<pluginId>",
                 builder: "self-contained auxiliary module; contribute/decide",
                 consumers: memberConsumers(item.id),
-                checkers:
-                  item.id === "ui.slot"
-                    ? ["browser/1"]
-                    : item.id === "schedule.register"
-                      ? ["schedule/1"]
-                      : item.id === "command.register"
-                        ? ["workspace/1"]
-                        : [],
+                ...capabilityCheckerContract(item.id),
                 lifecycle:
                   "composition prepare/start/stop; inherited exact versions; independent apply",
               }),
@@ -854,10 +862,31 @@ export function readInvestigation(
             })),
             planningRequirements: {
               requiredEvidence,
-              capabilityReferences:
-                "capabilityChanges 的辅助成员 provider 使用 member:<pluginId>（已存在或本计划新增的 auxiliary）；主工作流 provider 和 consumers 使用已读取源码 ref，例如 active-source 与 src/web/ActionForm.tsx。不要把辅助成员伪装成主 bundle 文件。",
-              derivedReadOnly:
-                "active-contract 是 active-source 中 describe() 的派生定义，不是可单独编辑文件；active-acceptance 是受保护验收记录，不可写入。修改字段应修改 active-source 的 describe/decide，计划用 workflowRules 表达新规则。",
+              writeContract: {
+                tool: "propose_plan",
+                targets: planSchemaFor(context).properties.changes.items.anyOf.map((branch) => ({
+                  target: branch.properties.target,
+                  properties: Object.keys(branch.properties),
+                })),
+                hostDerived: [
+                  "role",
+                  "operation",
+                  "capabilityChanges",
+                  "workflowRules",
+                  "checkerBindings",
+                  "caseReferences",
+                ],
+              },
+              derivedReadOnly: {
+                "active-contract": {
+                  derivedFrom: "active-source",
+                  editable: false,
+                },
+                "active-acceptance": {
+                  kind: "protected-evidence",
+                  editable: false,
+                },
+              },
               publication:
                 "业务工作流更新需要重启隔离的业务子进程并短暂停写，不是修改当前进程中的模块。体验使用独立合成数据，应用需要之后单独确认。",
             },
@@ -1128,6 +1157,7 @@ export function parsePlan(
     v.extensions,
     JSON.parse(context.files["active-contract"].content) as WorkflowDefinition,
     previous.extensions,
+    workflowRules,
   );
   for (const old of previous.extensions?.cases ?? []) {
     const next = extensions?.cases.find((c) => c.name === old.name);

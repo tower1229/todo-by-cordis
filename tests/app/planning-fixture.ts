@@ -2,16 +2,17 @@ import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
 import type { AcceptanceObligation } from "../../src/shared/acceptance-obligations.js";
 import { parseAdmission } from "../../src/evolution/request-admission.js";
 import { technicalFacts } from "../../src/evolution/technical-facts.js";
+import {baselineFields} from "../../src/evolution/field-identity.js";
 /** Authored model-stub receipt for manually seeded lifecycle candidates; never real-model evidence. */
 export function admissionReceiptFixture(
-  baseVersion: string,
+  context: import("../../src/server/planning.js").Investigation,
   sources: { id: string; text: string }[],
 ) {
   return parseAdmission(
-    JSON.stringify({ presentations: [], questions: [], facts: [] }),
-    baseVersion,
+    JSON.stringify({ presentations: [], questions: [] }),
+    context.versionId,
     sources,
-    technicalFacts({ workflowRules: [], binding: undefined }),
+    technicalFacts({ workflowRules: [], binding: undefined,actionAvailability:context.actionAvailability,fieldIdentities:baselineFields(context) }),
   );
 }
 /** Legacy control-flow fixtures have no source-intake semantics; dedicated intake tests supply them. */
@@ -22,7 +23,7 @@ export function admissionFixture(request: ModelRequest) {
   )
     return;
   return {
-    text: JSON.stringify({ presentations: [], questions: [], facts: [] }),
+    text: JSON.stringify({ presentations: [], questions: [] }),
     history: [],
     calls: [],
     usage: { fixture: true },
@@ -32,19 +33,36 @@ export function admissionFixture(request: ModelRequest) {
 /** Model-stub interpretation; real acceptance uses Gemini's independent source interpretation. */
 export function fieldDecisionsFixture(input: {
   requirements?: { obligations?: AcceptanceObligation[] }[];
-  fieldReviewTargets?: { obligationId: string; sources: { quote: string }[] }[];
+  sources?: { text: string }[];
+  fieldReviewTargets?: { obligationId: string; sources: { quote?: string; source?: number }[] }[];
 }) {
   return (input.fieldReviewTargets ?? []).map((target, index) => {
     const o = input.requirements
       ?.flatMap((r) => r.obligations ?? [])
       .find((o) => o.id === target.obligationId);
     if (o?.kind !== "field") throw new Error("模型桩缺少字段解释目标");
+    const quote = target.sources[0].quote ?? input.sources?.[target.sources[0].source! - 1]?.text;
+    if (!quote) throw new Error("模型桩缺少字段来源");
     return {
       target: index + 1,
       source: 1,
-      sourceQuote: target.sources[0].quote,
-      initial: o.initialOrigin === "host" ? { kind: "unspecified" } : o.initial,
+      sourceQuote: quote,
+      initial: o.initialOrigin === "host" ? { kind: "unspecified" } : { ...(o.initial.kind === "absent" ? {kind:"hidden"} : o.initial.value === "" ? {kind:"blank"} : {kind:"literal",value:o.initial.value}), conditionQuote:quote,effectQuote:quote },
     };
+  });
+}
+/** Model stub only; source interpretation is tested independently with adversarial decisions. */
+export function errorDecisionsFixture(input: {
+  requirements?: { obligations?: AcceptanceObligation[] }[];
+  sources?: { text: string }[];
+  errorReviewTargets?: { obligationId: string; sources: { quote?: string; source?: number }[] }[];
+}) {
+  return (input.errorReviewTargets ?? []).map((target, index) => {
+    const o = input.requirements?.flatMap(r => r.obligations ?? []).find(o => o.id === target.obligationId);
+    if (o?.kind !== "feedback" && (o?.kind !== "assertion" || o.expected.kind !== "error")) throw new Error("模型桩缺少错误解释目标");
+    const quote = target.sources[0].quote ?? input.sources?.[target.sources[0].source! - 1]?.text;
+    if (!quote) throw new Error("模型桩缺少错误来源");
+    return {target:index+1,source:1,sourceQuote:quote,feedback:"required",effectQuote:quote,text:o.kind==="feedback"?o.text:o.expected.kind==="error"?o.expected.text:""};
   });
 }
 export const toolReply = (name: string, args: Record<string, unknown>) => ({
@@ -83,16 +101,18 @@ export class PlanningDriver implements Driver {
     }
     if (request.schema) {
       const input = JSON.parse(request.message ?? "{}") as {
+        sources: { text: string }[];
         requirements: { id: string; obligations?: AcceptanceObligation[] }[];
         fieldReviewTargets?: {
           obligationId: string;
-          sources: { quote: string }[];
+          sources: { source: number }[];
         }[];
         reviewLedger?: {
           findings: {
             id: string;
-            issue: { sourceRevision: string; sourceQuote: string };
+            issueRef: string;
           }[];
+          issues: Record<string, { sourceRevision: string; sourceQuote: string }>;
         };
       };
       return {
@@ -100,10 +120,11 @@ export class PlanningDriver implements Driver {
           reviewedIds: input.requirements.map((r) => r.id),
           issues: [],
           fieldDecisions: fieldDecisionsFixture(input),
+          errorDecisions: errorDecisionsFixture(JSON.parse(request.message!)),
           resolutions: (input.reviewLedger?.findings ?? []).map((f) => ({
             issueId: f.id,
-            sourceRevision: f.issue.sourceRevision,
-            sourceQuote: f.issue.sourceQuote,
+            sourceRevision: input.reviewLedger!.issues[f.issueRef].sourceRevision,
+            sourceQuote: input.reviewLedger!.issues[f.issueRef].sourceQuote,
             reason: "模型桩确认本次规格已修正历史问题",
           })),
         }),

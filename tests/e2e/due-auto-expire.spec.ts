@@ -116,12 +116,6 @@ function dueDriver(source: string, expiryCaseAt?: string): Driver {
             tool.name === "submit_candidate" || tool.name === "build_candidate",
         )
       ) {
-        if (!history.includes("read_contract"))
-          return reply("read_contract", {});
-        if (!history.includes("read_current_source"))
-          return reply("read_current_source", {});
-        if (!history.includes("read_guide"))
-          return reply("read_guide", { ref: "guide/schedule.register" });
         return reply("submit_candidate", {
           source,
           members: [{ pluginId: "due", source: dueAutoExpireSource }],

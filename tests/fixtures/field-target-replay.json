@@ -1,0 +1,27 @@
+{
+  "origin": "exact failed responses from .runtime/planning-semantics-b86Qx1; not rewritten or passing real-model evidence",
+  "responses": [
+    {
+      "id": "admission-literal-empty-word",
+      "sources": [
+        {
+          "id": "qualification:admission-literal-empty-word",
+          "text": "请只修改 panel 的 noteMark 初始展示：尚未填写时显示文字“空白”。原动作和其他行为不变。"
+        }
+      ],
+      "text": "{\"presentations\":[{\"source\":1,\"sourceQuote\":\"noteMark 初始展示：尚未填写时显示文字“空白”。\",\"field\":\"panel.noteMark\",\"meaning\":{\"kind\":\"literal\",\"value\":\"空白\",\"conditionQuote\":\"尚未填写时\",\"effectQuote\":\"显示文字“空白”\"}}],\"questions\":[]}",
+      "actualModel": "deepseek-flash"
+    },
+    {
+      "id": "admission-hidden-field",
+      "sources": [
+        {
+          "id": "qualification:admission-hidden-field",
+          "text": "请只修改 panel 的 noteMark 初始展示：尚未填写时不显示 noteMark 字段。原动作和其他行为不变。"
+        }
+      ],
+      "text": "{\"presentations\":[{\"source\":1,\"sourceQuote\":\"请只修改 panel 的 noteMark 初始展示：尚未填写时不显示 noteMark 字段。原动作和其他行为不变。\",\"field\":\"panel.noteMark\",\"meaning\":{\"kind\":\"hidden\",\"conditionQuote\":\"尚未填写时\",\"effectQuote\":\"不显示 noteMark 字段\"}}],\"questions\":[]}",
+      "actualModel": "deepseek-flash"
+    }
+  ]
+}

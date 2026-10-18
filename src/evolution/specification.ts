@@ -1,8 +1,10 @@
 import type { InvestigatedPlan } from "../shared/assistant.js";
 import type { ChangeDefinition, ChangeSpec } from "../shared/change-spec.js";
 import { hash } from "../release/storage.js";
+import { hostCheckerRules } from "./checker-rules.js";
 
 const keys = [
+  "semanticState",
   "requirements",
   "browserCases",
   "workflowRules",
@@ -95,6 +97,7 @@ export function compileSpec(
       }),
     ),
     materials: structuredClone(plan.binding?.materials ?? plan.evidence),
+    hostRules: hostCheckerRules(plan),
     invariants: [
       {
         id: "preserve-data",
@@ -123,7 +126,8 @@ export function specificationFailure(plan: InvestigatedPlan) {
     spec.requestRevision !== plan.requestRevision ||
     spec.baseVersion !== plan.baseVersion ||
     spec.compositionRevision !== plan.compositionRevision ||
-    hash(spec.definition) !== hash(changeDefinition(plan))
+    hash(spec.definition) !== hash(changeDefinition(plan)) ||
+    hash(spec.hostRules) !== hash(hostCheckerRules(plan))
   )
     return "冻结需求的统一变更规格与执行投影不一致，请重新规划";
 }

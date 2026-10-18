@@ -9,6 +9,7 @@ import {
 import { hash } from "../release/storage.js";
 import { configureModelNetwork } from "./model-network.js";
 import { transportFailure } from "./transport-failure.js";
+import { modelPolicy, type ModelOutputPolicy } from "./model-policy.js";
 
 export const DEEPSEEK_MODEL = "deepseek-flash";
 type Row = Record<string, unknown>;
@@ -42,6 +43,9 @@ export class DeepSeek implements Driver {
     private key: string,
     private http: typeof fetch = fetch,
     private endpoint = "https://api.deepseek.com/chat/completions",
+    private policy: (
+      phase: ModelRequest["phase"],
+    ) => ModelOutputPolicy = modelPolicy,
   ) {}
 
   async generate(
@@ -63,11 +67,33 @@ export class DeepSeek implements Driver {
           },
         }))
       : undefined;
+    const policy = this.policy(request.phase);
+    const { hash: digest, ...policyBody } = policy;
+    if (
+      digest !== hash(policyBody) ||
+      policy.phase !== (request.phase ?? "standalone") ||
+      policy.version !== 3 ||
+      policy.maxTokens !== modelPolicy(request.phase).maxTokens ||
+      policy.tokenScope !== "reasoning-and-answer" ||
+      policy.truncation !== "block" ||
+      !(
+        (policy.thinking === "enabled" && policy.reasoningEffort === "max") ||
+        (policy.thinking === "disabled" && policy.reasoningEffort === "none")
+      )
+    )
+      throw new Error("宿主模型输出策略无效");
+    // Thinking cannot force provider tool choice; the host still requires valid calls.
+    const functionMode = tools
+      ? policy.thinking === "enabled"
+        ? "auto"
+        : "required"
+      : undefined;
     const transport: NonNullable<ModelReply["transport"]> = {
-      profile: "deepseek-chat/3",
+      profile: "deepseek-chat/6",
+      outputPolicy: policy,
       requestedModel: DEEPSEEK_MODEL,
       ...(schema ? { schemaHash: hash(schema) } : {}),
-      ...(tools ? { toolsHash: hash(tools), functionMode: "required" } : {}),
+      ...(tools ? { toolsHash: hash(tools), functionMode } : {}),
       http: { stage: "request", bodyBytes: 0, whitespaceBytes: 0 },
     };
     const started = performance.now();
@@ -81,8 +107,6 @@ export class DeepSeek implements Driver {
       )
         transport.network = configureModelNetwork();
       publish();
-      // Thinking mode rejects required tool_choice. Use the documented non-thinking
-      // protocol for tool phases; independent JSON reviews retain thinking mode.
       const body = {
         model: DEEPSEEK_MODEL,
         messages: [
@@ -98,10 +122,10 @@ export class DeepSeek implements Driver {
           ...history,
         ],
         stream: false,
-        max_tokens: 32768,
-        ...(tools
-          ? { tools, tool_choice: "required", thinking: { type: "disabled" } }
-          : { thinking: { type: "enabled" } }),
+        max_tokens: policy.maxTokens,
+        thinking: { type: policy.thinking },
+        reasoning_effort: policy.reasoningEffort,
+        ...(tools ? { tools, tool_choice: functionMode } : {}),
         ...(schema ? { response_format: { type: "json_object" } } : {}),
       };
       const result = await this.http(this.endpoint, {

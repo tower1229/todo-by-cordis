@@ -1502,7 +1502,7 @@ test("inspection supplies exact baseline documents within the existing budget an
         await new Promise((resolve) => setTimeout(resolve, 10));
       const done = (await e.observe()).run!;
       assert.equal(done.status, "awaiting-apply");
-      assert.equal(done.budget?.callsUsed, 8);
+      assert.equal(done.budget?.callsUsed, 6, "冻结资料首轮交付，执行只用一次候选提交");
     });
 });
 
@@ -1605,7 +1605,7 @@ test("first business bundle requires its four paths before ready and can correct
         await new Promise((resolve) => setTimeout(resolve, 10));
       const done = (await e.observe()).run!;
       assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
-      assert.equal(done.budget?.callsUsed, 7);
+      assert.equal(done.budget?.callsUsed, 5, "冻结资料首轮交付，执行只用一次候选提交");
       assert.deepEqual(w.composition(), before);
     });
 });

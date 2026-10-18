@@ -298,15 +298,6 @@ for (const candidateLimit of [3, 1])
       const driver: Driver = {
         async generate(request) {
           if (request.tools?.some((tool) => tool.name === "submit_candidate")) {
-            if (!JSON.stringify(request.history).includes("read_contract"))
-              return toolReply("read_contract", {});
-            if (
-              !JSON.stringify(request.history).includes("read_current_source")
-            )
-              return {
-                ...toolReply("read_current_source", {}),
-                history: request.history,
-              };
             return {
               ...toolReply("submit_candidate", {
                 source: workflow,

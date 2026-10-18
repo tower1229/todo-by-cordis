@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compilePlanInput } from "../../src/evolution/plan-input.js";
+import { compilePlanInput, planSchemaFor } from "../../src/evolution/plan-input.js";
 import { parseAdmission } from "../../src/evolution/request-admission.js";
 import { technicalFacts } from "../../src/evolution/technical-facts.js";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -162,7 +162,7 @@ test("字段注册的检查器来自真实字段及成对写入案例，保留�
   };
   const covered = await activate(panelMemberCases);
   const inheritedFeatures = compilePlanInput(
-    { ...base, changes: [{ target: "panel", cases: null, features: null }] },
+    { ...base, changes: [{ target: "panel", cases: null }] },
     covered,
     sources,
   );
@@ -317,11 +317,6 @@ test("写入目标的主辅及新增升级角色由宿主解析，模型不再�
   const nullable = {
     target: "panel",
     features: ["detail"],
-    fields: null,
-    modules: null,
-    data: [],
-    actions: null,
-    actionFields: null,
     cases: [],
   };
   assert.deepEqual(
@@ -338,7 +333,7 @@ test("可选空集合等价且不修复非集合；冻结规则、非空要求�
       {
         ...input,
         uses: null,
-        changes: [{ ...input.changes[0], cases: null, features: null }],
+        changes: [{ ...input.changes[0], cases: null }],
       },
       context,
       sources,
@@ -360,7 +355,7 @@ test("可选空集合等价且不修复非集合；冻结规则、非空要求�
         context,
         sources,
       ),
-    /主工作流/,
+    /未授权字段/,
   );
   assert.throws(
     () =>
@@ -369,7 +364,7 @@ test("可选空集合等价且不修复非集合；冻结规则、非空要求�
         context,
         sources,
       ),
-    /主工作流/,
+    /未授权字段/,
   );
   assert.throws(
     () =>
@@ -395,31 +390,10 @@ test("可选空集合等价且不修复非集合；冻结规则、非空要求�
         context,
         sources,
       ),
-    /启停/,
+    /未授权字段|target/,
   );
-  for (const empty of [null, []])
-    assert.deepEqual(
-      compilePlanInput(
-        {
-          ...base,
-          changes: [
-            {
-              target: "panel",
-              enabled: false,
-              cases: empty,
-              features: empty,
-              modules: empty,
-              fields: null,
-              actions: null,
-              actionFields: null,
-            },
-          ],
-        },
-        context,
-        sources,
-      ).memberEnabled,
-      { pluginId: "panel", enabled: false },
-    );
+  assert.deepEqual(compilePlanInput({...base,changes:[{target:"panel",enabled:false}]},context,sources).memberEnabled,{pluginId:"panel",enabled:false});
+  for (const empty of [null, []]) assert.throws(()=>compilePlanInput({...base,changes:[{target:"panel",enabled:false,features:empty}]},context,sources),/未授权字段/);
   assert.throws(
     () =>
       compilePlanInput(
@@ -463,7 +437,7 @@ test("可选空集合等价且不修复非集合；冻结规则、非空要求�
         context,
         sources,
       ),
-    /已安装辅助成员/,
+    /未授权字段|target/,
   );
   assert.throws(
     () =>
@@ -507,7 +481,7 @@ test("原生模型参数的空集合经过实际 Adapter 和同一宿主编译�
     const args = {
       ...base,
       changes: [
-        { target: "primary", fields: [rule], features: null, cases: null },
+        { target: "primary", fields: [rule], cases: null },
       ],
       uses,
     };
@@ -546,7 +520,7 @@ test("原生模型参数的空集合经过实际 Adapter 和同一宿主编译�
         }),
       );
     }).generate(
-      { history: [], instruction: "测试业务契约", tools: planningTools },
+      { history: [], instruction: "测试业务契约", tools: planningTools.map(t=>t.name==="propose_plan"?{...t,parameters:planSchemaFor(context)}:t) },
       new AbortController().signal,
     );
     assert.equal(requests, 1);
@@ -568,13 +542,11 @@ test("来源预检中的字段标签不能仅凭一次模型解释变成已裁�
         {
           source: 1,
           sourceQuote: "完成前填写复盘",
-          surface: "workflow",
-          kind: "visible",
-          value: "复盘",
+          target: {kind:"new",name:"复盘"},
+          meaning:{kind:"literal",value:"复盘",conditionQuote:"完成前填写复盘",effectQuote:"完成前填写复盘"},
         },
       ],
       questions: [],
-      facts: [],
     }),
     "base",
     sources,

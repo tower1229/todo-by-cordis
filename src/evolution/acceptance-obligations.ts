@@ -6,6 +6,40 @@ import { historicalPreparation } from "./historical-preparation.js";
 import { obligationCases } from "../shared/acceptance-obligations.js";
 import { hash } from "../release/storage.js";
 import { readOnlyFieldText } from "../shared/field-presentation.js";
+type Outcomes = Pick<
+  import("../shared/assistant.js").InvestigatedPlan,
+  "memberCases" | "extensions"
+>;
+export function rejectionReferences(
+  action: Extract<BrowserStep, { kind: "action" }>,
+  outcomes: Outcomes,
+) {
+  return [
+    ...(outcomes.memberCases ?? [])
+      .filter(
+        (c) =>
+          c.member === action.member &&
+          c.action === action.action &&
+          c.expected.kind === "reject",
+      )
+      .map((c) => ({
+        checker: "workspace/1",
+        caseId: `member:${c.member}:${c.name}`,
+        definitionHash: hash(c),
+      })),
+    ...(action.member === "workflow"
+      ? (outcomes.extensions?.cases ?? [])
+          .filter(
+            (c) => c.action === action.action && c.expected.kind === "reject",
+          )
+          .map((c) => ({
+            checker: "business-actions/1",
+            caseId: `action:${c.name}`,
+            definitionHash: hash(c),
+          }))
+      : []),
+  ];
+}
 
 type Row = Record<string, unknown>;
 function row(value: unknown, keys: string[], required = keys): Row {
@@ -43,11 +77,24 @@ export function compileObligations(
     ui: Extract<AcceptanceObligation, { kind: "ui-identity" }>["contributions"];
     workflow?: import("../shared/browser-cases.js").WorkflowUiIdentity;
   },
+  outcomes: Outcomes = {},
 ): AcceptanceObligation[] {
   return list(value).map((value, index) => {
     const v = row(
       value,
-      ["kind", "field", "initial", "history", "scenarios", "steps", "expected"],
+      [
+        "kind",
+        "field",
+        "initial",
+        "history",
+        "scenarios",
+        "steps",
+        "expected",
+        "action",
+        "text",
+        "resolution",
+        "unavailable",
+      ],
       ["kind"],
     );
     const identity = {
@@ -61,6 +108,62 @@ export function compileObligations(
             index,
           }).slice(0, 24),
     };
+    if (v.kind === "backend-rejection" || v.kind === "feedback") {
+      const action = bind([{ kind: "action", action: text(v.action) }])[0];
+      if (action.kind !== "action") throw new Error("动作拒绝绑定失败");
+      if (v.kind === "backend-rejection") {
+        row(v, ["kind", "action"]);
+        const cases = rejectionReferences(action, outcomes);
+        if (!cases.length) throw new Error("后端拒绝义务缺少精确拒绝案例");
+        return { ...identity, kind: "backend-rejection", action, cases };
+      }
+      row(v, [
+        "kind",
+        "action",
+        "text",
+        "resolution",
+        "scenarios",
+        "unavailable",
+      ]);
+      if (v.resolution !== "pending")
+        throw new Error("反馈裁决只能由独立来源复核产生");
+      const scenarios = list(v.scenarios, 0, 40).map((value) => {
+        const s = row(value, ["steps"]);
+        const steps = bind(list(s.steps, 1, 40));
+        if (
+          !steps.some(
+            (s) =>
+              s.kind === "action" &&
+              s.action === action.action &&
+              s.member === action.member,
+          )
+        )
+          throw new Error("反馈缺少目标动作");
+        return { steps };
+      });
+      const unavailable = list(v.unavailable, 0, 40).map((value) => {
+        const d = row(value, ["code", "state"], ["code"]);
+        if (
+          !["action-hidden", "state-unreachable", "missing-rejection"].includes(
+            String(d.code),
+          )
+        )
+          throw new Error("反馈编译冲突无效");
+        return {
+          code: d.code as import("../shared/acceptance-obligations.js").FeedbackUnavailable["code"],
+          ...(d.state === undefined ? {} : { state: text(d.state) }),
+        };
+      });
+      return {
+        ...identity,
+        kind: "feedback",
+        action,
+        text: text(v.text),
+        resolution: "pending",
+        scenarios,
+        unavailable,
+      };
+    }
     if (v.kind === "backend") {
       row(v, ["kind"]);
       const checks = requirement.checks.filter(
@@ -77,7 +180,9 @@ export function compileObligations(
         ...identity,
         kind: "ui-identity",
         contributions: structuredClone(lifecycle!.ui),
-        ...(lifecycle?.workflow ? {workflow:structuredClone(lifecycle.workflow)} : {}),
+        ...(lifecycle?.workflow
+          ? { workflow: structuredClone(lifecycle.workflow) }
+          : {}),
       };
     }
     if (v.kind === "history") {
@@ -173,13 +278,14 @@ export function compileObligations(
 export function obligationFailure(
   requirement: Requirement,
   browsers: BrowserCase[],
+  outcomes: Outcomes = {},
 ): string[] {
   const obligations = requirement.obligations;
   if (!obligations?.length) return ["缺少可执行验收义务，请重新规划"];
   const reasons: string[] = [];
   if (
     requirement.type === "interface" &&
-    !obligations.some((o) => o.kind !== "backend")
+    !obligations.some((o) => obligationCases(o).length)
   )
     reasons.push("界面要求缺少可执行浏览器义务");
   for (const o of obligations) {
@@ -198,6 +304,31 @@ export function obligationFailure(
       )
         reasons.push("后端义务映射不一致");
       continue;
+    }
+    if (o.kind === "backend-rejection") {
+      if (
+        !o.cases.length ||
+        hash(o.cases) !== hash(rejectionReferences(o.action, outcomes)) ||
+        o.cases.some(
+          (c) =>
+            !requirement.checks.some(
+              (ref) => ref.checker === c.checker && ref.caseId === c.caseId,
+            ),
+        )
+      )
+        reasons.push("后端拒绝义务与冻结案例不一致");
+      continue;
+    }
+    if (o.kind === "feedback") {
+      if (o.resolution === "pending")
+        reasons.push(`页面反馈 ${o.id} 尚未完成独立来源裁决`);
+      if (
+        o.resolution === "required" &&
+        (!o.scenarios.length || o.unavailable.length)
+      )
+        reasons.push(
+          `页面反馈 ${o.id} 不可执行：${o.unavailable.map((d) => d.code + (d.state ? ":" + d.state : "")).join("、") || "missing-scenario"}`,
+        );
     }
     if (o.kind === "field" && (!o.initial || !o.scenarios.length)) {
       reasons.push("字段义务缺少初始或动作后状态");

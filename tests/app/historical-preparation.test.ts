@@ -74,6 +74,7 @@ function compile(browserCases: unknown[] = []) {
 const plan = (c: ReturnType<typeof compile>) =>
   ({
     ...c,
+    workflowRules: [],
     cases: [],
     memberCases: [],
     requirements: parseRequirements(c.requirements),

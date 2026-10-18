@@ -5,6 +5,9 @@ import type {
 import { workflowTextSemantics } from "../shared/checker-semantics.js";
 import { hash } from "../release/storage.js";
 import { readOnlyFieldText } from "../shared/field-presentation.js";
+import {isInheritedAvailability,availabilityFacts,type ActionAvailability} from "./action-availability.js";
+import {fieldFacts,type FieldIdentity} from "./field-identity.js";
+import { workflowCheckerRules } from "./checker-rules.js";
 
 export type TechnicalFact = {
   id: string;
@@ -20,43 +23,74 @@ export type TechnicalDecision = {
   actual?: string;
   outcome: "satisfied" | "conflict" | "unsupported";
 };
-export function businessChoices(
-  plan: Pick<InvestigatedPlan, "requirements" | "workflowRules">,
+/** Known aspects are facts, not pending questions. Only independent unresolved judgments create choices. */
+export function semanticChoiceTargets(
+  plan: Pick<InvestigatedPlan, "requirements" | "workflowRules" | "binding">,
 ) {
-  return (plan.requirements ?? []).flatMap((requirement) => [
-    ...plan.workflowRules.map((field) => ({
-      id: `business-choice:input-required:${requirement.id}:${field.key}`,
-      requirementId: requirement.id,
-      question: `${field.label}是必填还是选填？`,
+  return (plan.requirements ?? []).flatMap((r) => [
+    ...plan.workflowRules.map((f) => ({
+      id: `business-choice:input-required:${r.id}:${f.key}`,
+      requirementId: r.id,
+      aspect: "required" as const,
+      subject: `workflow:${f.key}`,
+      question: `${f.label}是必填还是选填？`,
     })),
-    ...(requirement.obligations ?? []).flatMap((o) =>
-      o.kind === "field"
+    ...(r.obligations ?? []).flatMap((o) =>
+      o.kind === "assertion" && o.expected.kind === "action-visible" && !isInheritedAvailability(o,plan.binding?.actionAvailability)
         ? [
             {
-              id: `business-choice:initial-display:${requirement.id}:${o.id}`,
-              requirementId: requirement.id,
-              obligationId: o.id,
-              question: `尚未填写 ${o.field} 时，详情应显示什么？`,
+              id: `business-choice:action-availability:${o.id}`,
+              requirementId: r.id,
+              aspect: "action-availability" as const,
+              subject: o.id,
+              question: `在这项要求的场景中，是否应显示 ${o.expected.action} 动作？`,
             },
           ]
-        : o.kind === "assertion" && o.expected.kind === "action-visible"
+        : [],
+    ),
+  ]);
+}
+export function businessChoices(
+  plan: Pick<InvestigatedPlan, "requirements" | "workflowRules" | "binding">,
+  review?: Pick<RequirementReview, "fieldDecisions" | "unresolvedChoices">,
+): {
+  id: string;
+  requirementId: string;
+  question: string;
+  obligationId?: string;
+}[] {
+  const targets = semanticChoiceTargets(plan);
+  return [
+    ...(review?.unresolvedChoices ?? []).map((c) => {
+      const target = targets.find((t) => t.id === c.targetId);
+      if (!target) throw new Error("未决语义目标不存在");
+      return target;
+    }),
+    ...(plan.requirements ?? []).flatMap((r) =>
+      (r.obligations ?? []).flatMap((o) =>
+        o.kind === "field" &&
+        review?.fieldDecisions?.some(
+          (d) => d.obligationId === o.id && d.initial.kind === "undetermined",
+        )
           ? [
               {
-                id: `business-choice:action-availability:${o.id}`,
-                requirementId: requirement.id,
-                question: `在这项要求的场景中，是否应显示 ${o.expected.action} 动作？`,
+                id: `business-choice:initial-display:${r.id}:${o.id}`,
+                requirementId: r.id,
+                obligationId: o.id,
+                question: `尚未填写 ${o.field} 时，详情应显示什么？`,
               },
             ]
           : [],
+      ),
     ),
-  ]);
+  ];
 }
 /** A review cannot send arbitrary wording to the user. Questions are host projections. */
 export function reviewQuestion(
   review: RequirementReview,
-  plan: Pick<InvestigatedPlan, "requirements" | "workflowRules">,
+  plan: Pick<InvestigatedPlan, "requirements" | "workflowRules" | "binding">,
 ): string | undefined {
-  const choices = businessChoices(plan);
+  const choices = businessChoices(plan, review);
   let question: string | undefined;
   for (const issue of review.issues) {
     if (!issue.clarification && !issue.clarificationChoice) continue;
@@ -67,11 +101,29 @@ export function reviewQuestion(
         c.id === issue.clarificationChoice &&
         c.requirementId === issue.target?.subject,
     );
+    if (
+      !choice &&
+      (plan.requirements ?? []).some(
+        (r) =>
+          r.id === issue.target?.subject &&
+          (r.obligations ?? []).some(
+            (o) =>
+              o.kind === "field" &&
+              issue.clarificationChoice ===
+                `business-choice:initial-display:${r.id}:${o.id}` &&
+              review.fieldDecisions?.some(
+                (d) =>
+                  d.obligationId === o.id && d.initial.kind !== "undetermined",
+              ),
+          ),
+      )
+    )
+      continue;
     if (!choice)
       throw new Error(
         "复核澄清缺少宿主业务选项目录绑定；自由文本及技术问题不能直接提问",
       );
-    if ("obligationId" in choice) {
+    if (choice.obligationId) {
       const decision = review.fieldDecisions?.find(
         (d) => d.obligationId === choice.obligationId,
       );
@@ -83,12 +135,12 @@ export function reviewQuestion(
   for (const decision of review.fieldDecisions ?? [])
     if (decision.initial.kind === "undetermined")
       question ??= choices.find(
-        (c) => "obligationId" in c && c.obligationId === decision.obligationId,
+        (c) => c.obligationId === decision.obligationId,
       )?.question;
   return question;
 }
 export function technicalFacts(
-  plan: Pick<InvestigatedPlan, "workflowRules" | "binding">,
+  plan: Pick<InvestigatedPlan, "workflowRules" | "binding"> & Partial<Pick<InvestigatedPlan,"requirements">> & {actionAvailability?:ActionAvailability;fieldIdentities?:FieldIdentity[]},
 ): TechnicalFact[] {
   const facts: Omit<TechnicalFact, "evidenceHash">[] = [
     {
@@ -102,10 +154,7 @@ export function technicalFacts(
     },
     {
       id: "host-fact:workflow-text",
-      properties: {
-        normalization: workflowTextSemantics.normalization,
-        lengthMetric: workflowTextSemantics.lengthMetric,
-      },
+      properties: Object.fromEntries(workflowCheckerRules.map((rule) => [rule.property, rule.value])),
     },
     {
       id: "host-fact:browser-error",
@@ -137,18 +186,18 @@ export function technicalFacts(
     {
       id: "host-fact:browser-generation",
       properties: {
-        definition:"host-compiled-rules-and-obligations",
-        requiredEmpty:"native-valueMissing-without-command-or-alert",
-        whitespace:"business-feedback-after-submit",
-        manualCases:"not-authorized-in-planning-tool",
+        definition: "host-compiled-rules-and-obligations",
+        requiredEmpty: "native-valueMissing-without-command-or-alert",
+        whitespace: "business-feedback-after-submit",
+        manualCases: "not-authorized-in-planning-tool",
       },
     },
     {
       id: "host-fact:write-scope",
       properties: {
-        activation:"no-business-data-write",
-        action:"explicit-command-only",
-        historicalPreparation:"baseline-replay-not-candidate-action",
+        activation: "no-business-data-write",
+        action: "explicit-command-only",
+        historicalPreparation: "baseline-replay-not-candidate-action",
       },
     },
     ...plan.workflowRules.map((rule) => ({
@@ -160,15 +209,35 @@ export function technicalFacts(
         lengthMetric: workflowTextSemantics.lengthMetric,
       },
     })),
+    ...(plan.requirements??[]).flatMap(r=>(r.obligations??[]).flatMap(o=>o.kind==="feedback" ? [{
+      id:`host-fact:feedback:${o.id}`,
+      properties:{executable:String(o.scenarios.length>0&&!o.unavailable.length),failureCodes:o.unavailable.map(d=>d.code).join(","),sourceDecision:"independent-review-required",backendRejection:"separate-frozen-checker"},
+    }] : [])),
+    ...(plan.requirements??[]).flatMap(r=>(r.obligations??[]).flatMap(o=>o.kind==="assertion"&&o.expected.kind==="action-visible"&&isInheritedAvailability(o,plan.binding?.actionAvailability)?[{
+      id:`host-fact:action-availability:${o.id}`,
+      properties:{visible:String(o.expected.visible),state:o.availability!.state,origin:"host-baseline-preservation",baselineHash:plan.binding!.actionAvailability!.hash},
+    }]:[])),
   ];
-  return facts.map((f) => ({
+  return [...facts.map((f) => ({
     ...f,
     evidenceHash: hash({
       fact: f,
       checkers: plan.binding?.checkers ?? [],
       rules: plan.workflowRules,
     }),
-  }));
+  })),...availabilityFacts(plan.binding?.actionAvailability??plan.actionAvailability),...fieldFacts(plan.binding?.fieldIdentities??plan.fieldIdentities??[])];
+}
+
+/** The host binds each property once; reviewers cannot construct fact/property pairs. */
+export function technicalReviewTargets(plan: Parameters<typeof technicalFacts>[0]) {
+  return technicalFacts(plan).flatMap((fact) =>
+    Object.entries(fact.properties).map(([property, actual]) => ({
+      factId: fact.id,
+      property,
+      actual,
+      evidenceHash: fact.evidenceHash,
+    })),
+  ).map((target, index) => ({ target: index + 1, ...target }));
 }
 
 /** A technical claim is an equality against a closed host fact, never prose voting. */

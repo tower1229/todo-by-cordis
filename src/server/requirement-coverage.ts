@@ -1,3 +1,10 @@
+import { compileSemantics } from "../evolution/requirement-semantics.js";
+import {availabilityFailure} from "../evolution/action-availability.js";
+import {
+  errorReviewSchema,
+  errorReviewTargets,
+  parseErrorDecisions,
+} from "../evolution/error-review.js";
 import type { ReviewLedger } from "../shared/change-spec.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -16,7 +23,9 @@ import { obligationFailure } from "../evolution/acceptance-obligations.js";
 import { fieldCaseObligation } from "../evolution/historical-preparation.js";
 import {
   businessChoices,
+  semanticChoiceTargets,
   technicalFacts,
+  technicalReviewTargets,
 } from "../evolution/technical-facts.js";
 import {
   fieldReviewSchema,
@@ -96,25 +105,62 @@ export function parseBrowserCases(value: unknown): BrowserCase[] {
       const s = record(item);
       const kind = boundedText(s.kind);
       if (kind === "form-invalid") {
-        if (Object.keys(s).some(k=>!["kind","member","action","field","input"].includes(k)) || s.member!=="workflow" || s.action!=="complete" || !/^[\w.-]{1,100}$/.test(String(s.field)))
+        if (
+          Object.keys(s).some(
+            (k) => !["kind", "member", "action", "field", "input"].includes(k),
+          ) ||
+          s.member !== "workflow" ||
+          s.action !== "complete" ||
+          !/^[\w.-]{1,100}$/.test(String(s.field))
+        )
           throw new Error("宿主原生表单断言结构无效");
-        const input=record(s.input);
-        if (input[String(s.field)]!=="" || Object.entries(input).some(([key,value])=>!/^[\w.-]{1,100}$/.test(key)||typeof value!=="string"||value.length>10000))
+        const input = record(s.input);
+        if (
+          input[String(s.field)] !== "" ||
+          Object.entries(input).some(
+            ([key, value]) =>
+              !/^[\w.-]{1,100}$/.test(key) ||
+              typeof value !== "string" ||
+              value.length > 10000,
+          )
+        )
           throw new Error("宿主原生表单断言输入无效");
         return structuredClone(s) as unknown as BrowserCase["steps"][number];
       }
       if (kind === "ui-identity") {
-        if (Object.keys(s).some((k) => !["kind", "contributions", "workflow"].includes(k)))
+        if (
+          Object.keys(s).some(
+            (k) => !["kind", "contributions", "workflow"].includes(k),
+          )
+        )
           throw new Error("界面身份快照结构无效");
         const contributions = array(s.contributions, 30);
         if (s.workflow !== undefined) {
-          const w=record(s.workflow);
-          if(Object.keys(w).some(k=>!["id","fields","actions"].includes(k)) || typeof w.id!=="string" || !/^[\w.-]{1,100}$/.test(w.id))throw new Error("主工作流身份快照无效");
-          for(const [key,idKey] of [["fields","key"],["actions","id"]])for(const value of array(w[key],100)){
-            const item=record(value);if(Object.keys(item).length!==1 || typeof item[idKey]!=="string" || !/^[\w.-]{1,100}$/.test(String(item[idKey])))throw new Error("主工作流身份必须引用精确稳定 ID");
-          }
+          const w = record(s.workflow);
+          if (
+            Object.keys(w).some(
+              (k) => !["id", "fields", "actions"].includes(k),
+            ) ||
+            typeof w.id !== "string" ||
+            !/^[\w.-]{1,100}$/.test(w.id)
+          )
+            throw new Error("主工作流身份快照无效");
+          for (const [key, idKey] of [
+            ["fields", "key"],
+            ["actions", "id"],
+          ])
+            for (const value of array(w[key], 100)) {
+              const item = record(value);
+              if (
+                Object.keys(item).length !== 1 ||
+                typeof item[idKey] !== "string" ||
+                !/^[\w.-]{1,100}$/.test(String(item[idKey]))
+              )
+                throw new Error("主工作流身份必须引用精确稳定 ID");
+            }
         }
-        if (!contributions.length && s.workflow===undefined) throw new Error("界面身份快照为空");
+        if (!contributions.length && s.workflow === undefined)
+          throw new Error("界面身份快照为空");
         for (const value of contributions) {
           const c = record(value);
           if (
@@ -265,6 +311,7 @@ export function caseCatalog(
 }
 export function requirementDefinition(plan: InvestigatedPlan) {
   return {
+    semanticState: plan.semanticState,
     requestAdmission: plan.requestAdmission,
     questionAdjudications: plan.questionAdjudications ?? [],
     changeSpec: plan.changeSpec,
@@ -292,10 +339,12 @@ export function coverage(
   const ids = (plan.requirements ?? []).map((r) => r.id);
   return (plan.requirements ?? []).map((r) => {
     const reasons: string[] = [];
+    const availability=availabilityFailure(plan);
+    if(availability) reasons.push(availability);
     const fieldObligations = (plan.requirements ?? []).flatMap(
       (r) => r.obligations ?? [],
     );
-    reasons.push(...obligationFailure(r, plan.browserCases ?? []));
+    reasons.push(...obligationFailure(r, plan.browserCases ?? [],plan));
     if (ids.filter((id) => id === r.id).length !== 1)
       reasons.push("需求 ID 重复");
     if (
@@ -462,10 +511,9 @@ export const reviewSchema = {
           technical: {
             type: "object",
             additionalProperties: false,
-            required: ["factId", "property", "expected"],
+            required: ["target", "expected"],
             properties: {
-              factId: { type: "string" },
-              property: { type: "string" },
+              target: { type: "integer", minimum: 1, description: "technicalTargets 中的 target，一基序号；事实和属性由宿主绑定" },
               expected: { type: "string" },
             },
           },
@@ -492,7 +540,7 @@ export function boundReviewSchema(
   Object.assign(schema.properties.issues.items.properties.sourceRevision, {
     enum: sourceIds,
   });
-  const facts = technicalFacts(plan);
+  const technicalTargets = technicalReviewTargets(plan);
   const choices = businessChoices(plan);
   Object.assign(schema.properties.issues.items.properties.clarificationChoice, {
     enum: choices.length ? choices.map((c) => c.id) : ["unavailable"],
@@ -502,12 +550,8 @@ export function boundReviewSchema(
     { enum: [...ids, ...sourceIds] },
   );
   Object.assign(
-    schema.properties.issues.items.properties.technical.properties.factId,
-    { enum: facts.map((f) => f.id) },
-  );
-  Object.assign(
-    schema.properties.issues.items.properties.technical.properties.property,
-    { enum: [...new Set(facts.flatMap((f) => Object.keys(f.properties)))] },
+    schema.properties.issues.items.properties.technical.properties.target,
+    { maximum: technicalTargets.length },
   );
   Object.assign(schema.properties.resolutions.items.properties.sourceRevision, {
     enum: sourceIds,
@@ -519,12 +563,37 @@ export function boundReviewSchema(
     });
   else Object.assign(schema.properties.resolutions, { maxItems: 0 });
   const properties = schema.properties.issues.items.properties;
+  const choiceIds = semanticChoiceTargets(plan).map((t) => t.id);
   return {
     ...schema,
-    required: [...schema.required, "fieldDecisions"],
+    required: [
+      ...schema.required,
+      "fieldDecisions",
+      ...(errorReviewTargets(plan).length ? ["errorDecisions"] : []),
+    ],
     properties: {
       ...schema.properties,
+      unresolvedChoices: {
+        type: "array",
+        maxItems: Math.min(20,choiceIds.length),
+        description:
+          "独立复核新发现的真实未决选择；目录中的技术目标本身不代表未决，必须引用来源中未决证据。问题文字由宿主生成。",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["targetId", "sourceRevision", "sourceQuote"],
+          properties: {
+            targetId: {
+              type: "string",
+              enum: choiceIds.length ? choiceIds : ["unavailable"],
+            },
+            sourceRevision: { type: "string", enum: sourceIds },
+            sourceQuote: { type: "string", minLength: 1 },
+          },
+        },
+      },
       fieldDecisions: fieldReviewSchema(plan),
+      errorDecisions: errorReviewSchema(plan),
       issues: {
         ...schema.properties.issues,
         items: {
@@ -596,9 +665,16 @@ export function parseReview(
       )
         throw new Error("技术复核的目标和立场由宿主绑定，不得手工维护");
       const claim = record(wire.technical);
+      const target = technicalReviewTargets(plan).find((t) => t.target === claim.target);
+      if (
+        Object.keys(claim).some((k) => !["target", "expected"].includes(k)) ||
+        !target
+      )
+        throw new Error("技术复核必须引用宿主属性目标，事实和属性由宿主绑定");
       i = {
         ...wire,
-        target: { subject: boundedText(claim.factId), aspect: "meaning" },
+        technical: { factId: target.factId, property: target.property, expected: boundedText(claim.expected) },
+        target: { subject: target.factId, aspect: "meaning" },
         stance: "required",
       };
     } else if (wire.clarification !== undefined)
@@ -690,12 +766,60 @@ export function parseReview(
             throw new Error("复核问题消解缺少有效来源引用");
           return resolution;
         });
+  const unresolvedChoices = (
+    v.unresolvedChoices === undefined ? [] : array(v.unresolvedChoices)
+  ).map((value) => {
+    const c = record(value);
+    if (
+      Object.keys(c).some(
+        (k) => !["targetId", "sourceRevision", "sourceQuote"].includes(k),
+      )
+    )
+      throw new Error("未决语义包含未授权字段");
+    const choice = {
+      targetId: boundedText(c.targetId),
+      sourceRevision: boundedText(c.sourceRevision),
+      sourceQuote: boundedText(c.sourceQuote),
+    };
+    const target = semanticChoiceTargets(plan).find(
+      (t) => t.id === choice.targetId,
+    );
+    if (
+      !target ||
+      !sources.some(
+        (s) =>
+          s.id === choice.sourceRevision && s.text.includes(choice.sourceQuote),
+      )
+    )
+      throw new Error("未决语义缺少真实目标或来源");
+    issues.push({
+      kind: "unverifiable",
+      sourceRevision: choice.sourceRevision,
+      sourceQuote: choice.sourceQuote,
+      target: {
+        subject: target.requirementId,
+        aspect: target.aspect === "required" ? "input" : "availability",
+      },
+      stance: "undetermined",
+      detail: "独立复核发现未决业务选择：" + target.subject,
+      clarificationChoice: choice.targetId,
+    });
+    return choice;
+  });
+  if (
+    new Set(unresolvedChoices.map((c) => c.targetId)).size !==
+    unresolvedChoices.length
+  )
+    throw new Error("未决语义目标重复");
   const fields = parseFieldDecisions(v.fieldDecisions, plan, sources);
+  const errors = parseErrorDecisions(v.errorDecisions, plan, sources);
   return {
     reviewedIds,
-    issues: [...issues, ...fields.issues],
+    unresolvedChoices,
+    issues: [...issues, ...fields.issues, ...errors.issues],
     resolutions,
     fieldDecisions: fields.decisions,
+    errorDecisions: errors.decisions,
   };
 }
 function gateVersion() {
@@ -712,11 +836,22 @@ function gateVersion() {
       "src/evolution/obligation-derivation.ts",
       "src/shared/workflow-browser.ts",
       "src/evolution/plan-input.ts",
+      "src/evolution/planning-operations.ts",
+      "src/evolution/field-identity.ts",
       "src/shared/acceptance-obligations.ts",
+      "src/shared/change-spec.ts",
       "src/evolution/technical-facts.ts",
+      "src/evolution/checker-rules.ts",
+      "src/evolution/review-input.ts",
       "src/shared/checker-semantics.ts",
       "src/shared/field-presentation.ts",
       "src/evolution/field-review.ts",
+      "src/evolution/requirement-semantics.ts",
+      "src/evolution/action-availability.ts",
+      "src/evolution/model-policy.ts",
+      "src/evolution/deepseek.ts",
+      "src/evolution/error-review.ts",
+      "src/server/capability-checkers.ts",
       "src/evolution/clarification-review.ts",
       "src/evolution/request-admission.ts",
       "src/evolution/model-protocol.ts",
@@ -753,6 +888,31 @@ export function gateFailure(
   const g = plan.requirementGate;
   if (!g || !trusted || !plan.requirements?.length)
     return "缺少需求完整性门禁证据，请重新规划";
+  const availability=availabilityFailure(plan);
+  if(availability)return availability;
+  if(plan.requirements.some(r=>r.obligations?.some(o=>{
+    if(o.kind!=="feedback") return false;
+    const decision=g.review.errorDecisions?.find(d=>d.obligationId===o.id);
+    return !decision || decision.feedback!==o.resolution || decision.feedback==="required" && decision.text!==o.text;
+  }))) return "页面反馈义务与独立来源裁决不一致，请重新规划";
+  if (plan.requestAdmission) {
+    try {
+      if (
+        !plan.semanticState ||
+        hash(plan.semanticState) !==
+          hash(compileSemantics(plan, g.sources, g.review))
+      )
+        return "冻结需求语义、来源依赖或裁决状态不一致，请重新规划";
+      if (
+        plan.semanticState.entries.some(
+          (e) => e.status === "conflicting" || e.status === "undetermined",
+        )
+      )
+        return "需求语义仍有未决或冲突命题，请重新规划";
+    } catch {
+      return "需求语义来源依赖失效，请重新规划";
+    }
+  }
   const specFailure = specificationFailure(plan);
   if (specFailure) return specFailure;
   if (

@@ -246,7 +246,7 @@ test("初始呈现提问服从来源解释，未要求或已经明确的值不�
       workflowRules: [],
       cases: [],
     } as unknown as InvestigatedPlan;
-    const choice = businessChoices(p).find((c) =>
+    const choice = businessChoices(p,{fieldDecisions:[{obligationId:c.requirements[0].obligations[0].id,sourceRevision:"r:1",sourceQuote:sources[0].text,initial:{kind:"undetermined"}}]}).find((c) =>
       c.id.includes("initial-display"),
     )!;
     for (const initial of [
@@ -349,9 +349,6 @@ test("来源未要求的初始限制退回同一规划循环，不增加用户�
                 aspect: "visibility",
               },
               stance: "undetermined",
-              clarificationChoice: input.businessChoices.find(
-                (c: { id: string }) => c.id.includes("initial-display"),
-              ).id,
             },
           ];
         reply.text = JSON.stringify(r);
@@ -409,7 +406,7 @@ test("复核生成的未要求初始呈现问题也必须审查，原意见保�
     const audit=auditInput(request);
     if(audit){audits++;return auditReply(audit,"unnecessary");}
     const reply=await fixture.generate(request,signal);
-    if(request.schema){const v=JSON.parse(reply.text);if(++reviews===1)v.fieldDecisions[0].initial={kind:"undetermined"};reply.text=JSON.stringify(v);}
+    if(request.schema){const v=JSON.parse(reply.text);if(++reviews===1)v.fieldDecisions[0].initial={kind:"undetermined",questionQuote:source};reply.text=JSON.stringify(v);}
     return reply;
   }});
   await e.command({type:"request",text:source,operationId:"request"});

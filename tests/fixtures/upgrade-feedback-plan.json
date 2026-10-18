@@ -1,0 +1,192 @@
+{
+  "origin": ".runtime/architecture-real-YGkPGA/upgrade-calls.json:call-4",
+  "request": "请只升级现有 panel 备注面板：未完成任务点击原 markNote 动作后，将 noteMark 写入值从 ok 改为 reviewed；已有 ok 不自动替换，已完成任务仍不可执行。详情原 note-panel 的 noteMark 字段显示保存值，刷新和重启后保持；原动作及贡献ID不变。保留主工作流、其他成员、其他字段及数据。",
+  "plan": {
+    "acceptanceReason": "历史案例“打备注标记成功”的预期字段值由 noteMark=ok 修订为 noteMark=reviewed，以匹配本次明确要求的写入值变更；拒绝案例“已完成不可打备注”行为不变。",
+    "changes": [
+      {
+        "cases": [
+          {
+            "action": "markNote",
+            "expected": {
+              "fields": {
+                "noteMark": "reviewed"
+              },
+              "kind": "commit",
+              "state": "open"
+            },
+            "fields": {},
+            "input": {},
+            "name": "打备注标记成功",
+            "state": "open"
+          },
+          {
+            "action": "markNote",
+            "expected": {
+              "kind": "reject"
+            },
+            "fields": {},
+            "input": {},
+            "name": "已完成不可打备注",
+            "state": "done"
+          },
+          {
+            "action": "markNote",
+            "expected": {
+              "fields": {
+                "noteMark": "reviewed"
+              },
+              "kind": "commit",
+              "state": "open"
+            },
+            "fields": {
+              "noteMark": "ok"
+            },
+            "input": {},
+            "name": "已有标记保留并改写为 reviewed",
+            "state": "open"
+          },
+          {
+            "action": "markNote",
+            "expected": {
+              "fields": {
+                "noteMark": "reviewed",
+                "otherField": "keep"
+              },
+              "kind": "commit",
+              "state": "open"
+            },
+            "fields": {
+              "noteMark": "ok",
+              "otherField": "keep"
+            },
+            "input": {},
+            "name": "其他字段不丢失",
+            "state": "open"
+          }
+        ],
+        "features": ["commands", "fields", "detail"],
+        "name": "备注面板",
+        "target": "panel"
+      }
+    ],
+    "intent": "improve",
+    "requirements": [
+      {
+        "description": "升级现有 panel 成员：未完成任务上原 markNote 动作提交后，noteMark 字段写入值变为 reviewed（不再写 ok）。",
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "examples": ["reviewed"],
+            "field": "noteMark",
+            "kind": "field"
+          }
+        ],
+        "quote": "将 noteMark 写入值从 ok 改为 reviewed",
+        "type": "behavior"
+      },
+      {
+        "description": "已有 noteMark=ok 的历史数据不被自动替换或迁移，仅在用户再次执行 markNote 后变为 reviewed。",
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "field": "noteMark",
+            "kind": "history"
+          }
+        ],
+        "quote": "已有 ok 不自动替换",
+        "type": "behavior"
+      },
+      {
+        "description": "已完成任务执行 markNote 仍被拒绝，动作可用状态规则不变：未完成可见可执行，已完成不可执行。",
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "action": "markNote",
+            "kind": "error"
+          },
+          {
+            "action": "markNote",
+            "kind": "action-visible",
+            "state": "open",
+            "visible": true
+          },
+          {
+            "action": "markNote",
+            "kind": "action-visible",
+            "state": "done",
+            "visible": false
+          }
+        ],
+        "quote": "已完成任务仍不可执行",
+        "type": "behavior"
+      },
+      {
+        "description": "详情区原 note-panel 贡献继续作为 task.detail 展示 noteMark 字段并显示保存值，刷新和重启后保持。",
+        "expectations": [
+          {
+            "kind": "preserve-ui"
+          },
+          {
+            "field": "noteMark",
+            "kind": "field"
+          }
+        ],
+        "quote": "详情原 note-panel 的 noteMark 字段显示保存值，刷新和重启后保持",
+        "type": "interface"
+      },
+      {
+        "description": "原动作 ID markNote、标签及原 UI 贡献 ID note-panel 保持不变，不新增动作或贡献。",
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "kind": "preserve-ui"
+          }
+        ],
+        "quote": "原动作及贡献ID不变。",
+        "type": "compatibility"
+      },
+      {
+        "description": "保留主工作流 aux-workflow 的状态、动作、字段与其他成员、其他字段及现有任务数据。",
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "field": "noteMark",
+            "kind": "history"
+          }
+        ],
+        "quote": "保留主工作流、其他成员、其他字段及数据。",
+        "type": "constraint"
+      }
+    ],
+    "summary": "只升级现有辅助成员 panel：markNote 在未完成任务上把 noteMark 写入值由 ok 改为 reviewed，已完成任务仍拒绝；沿用原命令 markNote 与原 UI 贡献 note-panel（含 noteMark 字段），保留主工作流 aux-workflow、其他成员、其他字段与既有数据（已有 ok 值不被自动替换）。",
+    "uses": [
+      {
+        "feature": "commands",
+        "member": "panel"
+      },
+      {
+        "feature": "fields",
+        "member": "panel"
+      },
+      {
+        "feature": "detail",
+        "member": "panel"
+      },
+      {
+        "feature": "workflow",
+        "member": "aux-workflow"
+      }
+    ]
+  }
+}

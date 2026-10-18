@@ -1,0 +1,206 @@
+{
+  "origin": ".runtime/architecture-real-kPvGpk/upgrade-calls.json:call-6-and-7",
+  "sourceId": "a054226f-b59f-4d41-b66b-76b805d8958b:1",
+  "request": "请只升级现有 panel 备注面板：未完成任务点击原 markNote 动作后，将 noteMark 写入值从 ok 改为 reviewed；已有 ok 不自动替换，已完成任务仍不可执行。详情原 note-panel 的 noteMark 字段显示保存值，刷新和重启后保持；原动作及贡献ID不变。保留主工作流、其他成员、其他字段及数据。",
+  "plan": {
+    "acceptanceReason": "panel 既有验收案例「打备注标记成功」原预期 noteMark=ok，本次需求将写入值改为 reviewed，需修订该历史案例的预期值；「已完成不可打备注」拒绝预期不变。修订后需重新走隔离 Workspace 验收与用户独立应用确认。",
+    "changes": [
+      {
+        "cases": [
+          {
+            "action": "markNote",
+            "expected": {
+              "fields": {
+                "noteMark": "reviewed"
+              },
+              "kind": "commit",
+              "state": "open"
+            },
+            "fields": {},
+            "input": {},
+            "name": "打备注标记成功",
+            "state": "open"
+          },
+          {
+            "action": "markNote",
+            "expected": {
+              "kind": "reject"
+            },
+            "fields": {},
+            "input": {},
+            "name": "已完成不可打备注",
+            "state": "done"
+          },
+          {
+            "action": "markNote",
+            "expected": {
+              "fields": {
+                "noteMark": "reviewed"
+              },
+              "kind": "commit",
+              "state": "open"
+            },
+            "fields": {
+              "noteMark": "ok"
+            },
+            "input": {},
+            "name": "已有ok不自动替换",
+            "state": "open"
+          }
+        ],
+        "features": ["commands", "fields", "detail"],
+        "name": "备注面板",
+        "target": "panel"
+      }
+    ],
+    "intent": "improve",
+    "requirements": [
+      {
+        "description": "仅升级现有 panel 备注面板；未完成任务点击原 markNote 动作后，noteMark 写入值由 ok 改为 reviewed。",
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "field": "noteMark",
+            "initial": {
+              "kind": "baseline"
+            },
+            "kind": "field"
+          },
+          {
+            "action": "markNote",
+            "kind": "operation-rejected"
+          },
+          {
+            "kind": "task"
+          }
+        ],
+        "quote": "请只升级现有 panel 备注面板：未完成任务点击原 markNote 动作后，将 noteMark 写入值从 ok 改为 reviewed",
+        "type": "behavior"
+      },
+      {
+        "description": "已有 ok 值不自动替换为 reviewed，只有用户显式执行 markNote 才写入新值；已完成任务仍不可执行该动作。",
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "field": "noteMark",
+            "kind": "history"
+          },
+          {
+            "action": "markNote",
+            "kind": "operation-rejected"
+          }
+        ],
+        "quote": "已有 ok 不自动替换，已完成任务仍不可执行。",
+        "type": "behavior"
+      },
+      {
+        "description": "详情原 note-panel 的 noteMark 字段显示已保存值，刷新和重启后保持。",
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "field": "noteMark",
+            "initial": {
+              "kind": "baseline"
+            },
+            "kind": "field"
+          }
+        ],
+        "quote": "详情原 note-panel 的 noteMark 字段显示保存值，刷新和重启后保持",
+        "type": "interface"
+      },
+      {
+        "description": "原动作 id 与贡献 id 不变（markNote、note-panel、noteMark 标识保持不变）。",
+        "expectations": [
+          {
+            "kind": "preserve-ui"
+          },
+          {
+            "action": "markNote",
+            "kind": "action-visible",
+            "state": "open",
+            "visible": true
+          },
+          {
+            "action": "markNote",
+            "kind": "action-visible",
+            "state": "done",
+            "visible": false
+          }
+        ],
+        "quote": "原动作及贡献ID不变。",
+        "type": "compatibility"
+      },
+      {
+        "description": "保留主工作流、其他成员、其他字段及数据。",
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "field": "noteMark",
+            "initial": {
+              "kind": "baseline"
+            },
+            "kind": "field"
+          }
+        ],
+        "quote": "保留主工作流、其他成员、其他字段及数据。",
+        "type": "constraint"
+      }
+    ],
+    "summary": "仅升级现有辅助成员 panel 的备注面板（note-panel / markNote）：未完成任务执行 markNote 时 noteMark 写入值由 ok 改为 reviewed，已完成任务仍被拒绝；已有 ok 历史值不自动改写，仅在用户显式执行动作时写入新值。note-panel 的 noteMark 字段继续显示已保存值，刷新与重启后保持。原动作 id、贡献 id、字段 key、主工作流（aux-workflow）、其他成员与其他字段及数据全部保留。",
+    "uses": [
+      {
+        "feature": "commands",
+        "member": "panel"
+      },
+      {
+        "feature": "fields",
+        "member": "panel"
+      },
+      {
+        "feature": "detail",
+        "member": "panel"
+      }
+    ]
+  },
+  "review": {
+    "reviewedIds": [
+      "requirement-80ec3538b7e34143945842fa",
+      "requirement-f875cbd7de4fa8b82328e542",
+      "requirement-75e0cde2b2d7562ed0f333a4",
+      "requirement-205ffa40af65821eba786dcb",
+      "requirement-eb96d2b0f3d7bd438aa9b620"
+    ],
+    "issues": [],
+    "fieldDecisions": [
+      {
+        "target": 1,
+        "source": 1,
+        "sourceQuote": "详情原 note-panel 的 noteMark 字段显示保存值，刷新和重启后保持",
+        "initial": {
+          "kind": "unspecified"
+        }
+      }
+    ],
+    "unresolvedChoices": [
+      {
+        "targetId": "business-choice:action-availability:obligation-b41194436f9fc6a5473c6fca",
+        "sourceRevision": "a054226f-b59f-4d41-b66b-76b805d8958b:1",
+        "sourceQuote": "原动作及贡献ID不变。"
+      },
+      {
+        "targetId": "business-choice:action-availability:obligation-9949e1c395769b2a11f063fe",
+        "sourceRevision": "a054226f-b59f-4d41-b66b-76b805d8958b:1",
+        "sourceQuote": "已完成任务仍不可执行。"
+      }
+    ],
+    "resolutions": []
+  }
+}

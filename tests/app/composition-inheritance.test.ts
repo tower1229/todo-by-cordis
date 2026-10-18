@@ -1073,14 +1073,6 @@ test("纯升级辅助成员且工作流未变时，主成员 versionId 精确保
         request.tools?.some((tool) => tool.name === "submit_candidate") ||
         request.tools?.some((tool) => tool.name === "build_candidate")
       ) {
-        const content = JSON.stringify(request.history);
-        if (!content.includes("read_contract"))
-          return { ...toolReply("read_contract", {}), history: request.history };
-        if (!content.includes("read_current_source"))
-          return {
-            ...toolReply("read_current_source", {}),
-            history: request.history,
-          };
         return {
           ...toolReply("submit_candidate", {
             source: workflowSource,
@@ -1562,17 +1554,6 @@ test("四步连续：纯升辅助 pin 后改主工作流须绑新实现，再纯
           request.tools?.some((tool) => tool.name === "submit_candidate") ||
           request.tools?.some((tool) => tool.name === "build_candidate")
         ) {
-          const content = JSON.stringify(request.history);
-          if (!content.includes("read_contract"))
-            return {
-              ...toolReply("read_contract", {}),
-              history: request.history,
-            };
-          if (!content.includes("read_current_source"))
-            return {
-              ...toolReply("read_current_source", {}),
-              history: request.history,
-            };
           return {
             ...toolReply("submit_candidate", {
               source: workflowSource,
@@ -1725,17 +1706,6 @@ test("四步连续：纯升辅助 pin 后改主工作流须绑新实现，再纯
           request.tools?.some((tool) => tool.name === "submit_candidate") ||
           request.tools?.some((tool) => tool.name === "build_candidate")
         ) {
-          const content = JSON.stringify(request.history);
-          if (!content.includes("read_contract"))
-            return {
-              ...toolReply("read_contract", {}),
-              history: request.history,
-            };
-          if (!content.includes("read_current_source"))
-            return {
-              ...toolReply("read_current_source", {}),
-              history: request.history,
-            };
           return {
             ...toolReply("submit_candidate", {
               ...(workflowSource.startsWith("{")

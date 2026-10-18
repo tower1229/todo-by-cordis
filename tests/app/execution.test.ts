@@ -29,13 +29,13 @@ async function settle(e: Evolution, status?: string) {
 
 for (const tool of ["read_current_source", "read_contract"] as const) {
   for (const repeated of [false, true]) {
-    test(`读取参数错误保持原预算：${tool} · ${repeated ? "重复到上限" : "纠正后继续"}`, async (t) => {
+    test(`未授权执行读取保持原预算：${tool} · ${repeated ? "重复到上限" : "纠正后继续"}`, async (t) => {
       const dir = mkdtempSync(join(tmpdir(), "cordis-read-correction-"));
       const w = await Workspace.open(join(dir, "workspace.db"));
       const before = w.composition();
       const fixture = new ExecutionDriver(new PlanningDriver());
       let generationCalls = 0;
-      const results: Record<string, unknown>[] = [];
+      const corrections: string[] = [];
       const e = new Evolution(
         w.db,
         {
@@ -44,31 +44,13 @@ for (const tool of ["read_current_source", "read_contract"] as const) {
               !request.tools?.some((entry) => entry.name === "submit_candidate")
             )
               return fixture.generate(request, signal);
-            const history = request.history as {
-              parts?: {
-                functionResponse?: {
-                  name: string;
-                  response: { result: Record<string, unknown> };
-                };
-              }[];
-            }[];
-            results.push(
-              ...history
-                .flatMap((message) => message.parts ?? [])
-                .flatMap((part) =>
-                  part.functionResponse?.name === tool
-                    ? [part.functionResponse.response.result]
-                    : [],
-                ),
-            );
+            if (request.message) corrections.push(request.message);
             generationCalls += 1;
             if (generationCalls === 1 || repeated)
               return {
                 ...toolReply(tool, { path: "business/view.ts" }),
                 history: request.history,
               };
-            if (generationCalls === 2)
-              return { ...toolReply(tool, {}), history: request.history };
             return fixture.generate(request, signal);
           },
         },
@@ -99,22 +81,14 @@ for (const tool of ["read_current_source", "read_contract"] as const) {
         repeated ? "blocked" : "awaiting-apply",
         "message" in done ? done.message : done.status,
       );
-      const rejected = results.find((result) => result.error);
-      assert.ok(rejected);
-      assert.match(String(rejected.message), /只接受空对象/);
-      assert.equal(rejected.source, undefined);
-      assert.equal(rejected.contract, undefined);
+      assert.ok(done.protocolFailures?.length);
+      assert.match(corrections.join("\n"), /protocolCorrection/);
       assert.deepEqual(w.composition(), before);
       assert.ok((done.budget?.callsUsed ?? 0) <= 8);
       if (repeated) {
-        assert.equal(done.budget?.callsRemaining, 0);
+        assert.ok((done.budget?.callsUsed ?? 0) <= 8);
         assert.equal(done.budget?.candidatesRemaining, 3);
       } else {
-        assert.ok(
-          results.some((result) =>
-            tool === "read_current_source" ? result.source : result.contract,
-          ),
-        );
         assert.equal(done.budget?.candidatesRemaining, 2);
       }
     });
@@ -193,7 +167,7 @@ test("A04: start freezes the plan, is idempotent, and rejects revise during exec
   assert.ok(w.release.all().length > 2);
   const observed = await e.observe(ready.id, 0);
   assert.ok((observed.events?.length ?? 0) > 0);
-  assert.ok(observed.events?.some((event) => event.tool === "read_contract"));
+  assert.ok(!observed.events?.some((event) => event.tool === "read_current_source"));
   assert.ok(
     observed.events?.some((event) => event.tool === "submit_candidate"),
   );
@@ -255,22 +229,6 @@ test("cancel during candidate build stops work and late results cannot apply", a
       if (!request.tools?.some((t) => t.name === "submit_candidate"))
         return planning.generate(request);
       const content = JSON.stringify(request.history);
-      if (!content.includes("read_contract"))
-        return {
-          text: "",
-          history: request.history,
-          calls: [{ name: "read_contract", args: {} }],
-          usage: null,
-          raw: {},
-        };
-      if (!content.includes("read_current_source"))
-        return {
-          text: "",
-          history: request.history,
-          calls: [{ name: "read_current_source", args: {} }],
-          usage: null,
-          raw: {},
-        };
       await building;
       return {
         text: "",
@@ -348,6 +306,7 @@ test("late candidate success after cancel cannot enter awaiting-apply", async (t
     isReadyVersion: base.isReadyVersion.bind(base),
     acceptanceEvidence: base.acceptanceEvidence.bind(base),
     generation: base.generation.bind(base),
+    readMember: base.readMember.bind(base),
     experience: base.experience.bind(base),
     apply: base.apply.bind(base),
     async candidate(

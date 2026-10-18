@@ -9,6 +9,7 @@ import { compileSpec } from "../../src/evolution/specification.js";
 import {
   adjudicateTechnicalReview,
   technicalFacts,
+  technicalReviewTargets,
   businessChoices,
 } from "../../src/evolution/technical-facts.js";
 import {
@@ -113,7 +114,7 @@ test("宿主初始展示是独立保护事实；相同字段矩阵由宿主复�
   );
   assert.equal(
     businessChoices(p).filter((c) => c.id.includes("initial-display")).length,
-    2,
+    0,
   );
 });
 
@@ -516,8 +517,7 @@ test("技术复核wire不允许手工目标/立场，宿主绑定事实后裁决
     sourceQuote: sources[0].text,
     detail: "计数事实",
     technical: {
-      factId: "host-fact:workflow-text",
-      property: "lengthMetric",
+      target: technicalReviewTargets(p).find((t) => t.factId === "host-fact:workflow-text" && t.property === "lengthMetric")!.target,
       expected: "unicode-code-point",
     },
   };
@@ -585,7 +585,7 @@ test("issues空不能冒充初始覆盖；独立解释指出未填写空白时�
         target: 1,
         source: 1,
         sourceQuote: quote,
-        initial: { kind: "visible", value: "" },
+        initial: { kind: "blank",conditionQuote:quote,effectQuote:quote },
       },
     ],
     p,

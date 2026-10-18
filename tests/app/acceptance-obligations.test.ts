@@ -374,7 +374,7 @@ test("自由文本复核问题不能绕过技术裁决；业务问题只能由�
     () => reviewQuestion(review, p),
     /自由文本及技术问题不能直接提问/,
   );
-  const choice = businessChoices(p)[0];
+  const choice = businessChoices(p,{fieldDecisions:[{obligationId:p.requirements![0].obligations![0].id,sourceRevision:sources[0].id,sourceQuote:sources[0].text,initial:{kind:"undetermined"}}]})[0];
   assert.ok(choice.id.startsWith("business-choice:initial-display:"));
   const bound = {
     ...review, fieldDecisions: [{obligationId: p.requirements![0].obligations![0].id, sourceRevision: sources[0].id, sourceQuote: sources[0].text, initial: {kind: "undetermined" as const}}],

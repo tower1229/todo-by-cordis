@@ -84,6 +84,7 @@ export function deriveFieldObligations(
     field: string;
     contribution?: string;
   }) => boolean = () => true,
+  existing: (target: { member: string; field: string }) => boolean = () => true,
 ): AcceptanceObligation[] {
   const projections: {
     field: string;
@@ -91,6 +92,7 @@ export function deriveFieldObligations(
     value: string;
     checker: "workflow/1" | "workspace/1";
     caseKey: string;
+    seeded: boolean;
   }[] = [];
   for (const c of memberCases) {
     if (
@@ -100,16 +102,18 @@ export function deriveFieldObligations(
           ref.caseId === `member:${c.member}:${c.name}`,
       ) ||
       c.expected.kind !== "commit" ||
-      c.state !== "open" ||
-      Object.keys(c.fields).length
+      c.state !== "open"
     )
       continue;
-    for (const [field, value] of Object.entries(c.expected.fields))
+    for (const [field, value] of Object.entries(c.expected.fields).filter(
+      ([key, value]) => c.fields[key] !== value,
+    ))
       projections.push({
         field,
         value,
         checker: "workspace/1",
         caseKey: c.name,
+        seeded: Object.keys(c.fields).length > 0,
         steps: [{ kind: "action", action: c.action, input: c.input }],
       });
   }
@@ -125,6 +129,7 @@ export function deriveFieldObligations(
         field: r.key,
         checker: "workflow/1",
         caseKey: r.key,
+        seeded: false,
         value: input[r.key],
         steps: [{ kind: "action", action: "complete", input }],
       });
@@ -147,6 +152,7 @@ export function deriveFieldObligations(
         o.field === target.field &&
         o.contribution === target.contribution,
     );
+    if (p.seeded && existing(target) && !declared.length) continue;
     if (!renderable(target) && !declared.length) continue;
     if (
       (requirement.obligations ?? []).some(

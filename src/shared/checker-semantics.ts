@@ -1,6 +1,7 @@
 /** One executable source of truth for workflow/1 vectors and their descriptions. */
 export const workflowTextSemantics = {
-  normalization: "trim",
+  validationNormalization: "trim",
+  persistenceNormalization: "trim",
   lengthMetric: "unicode-code-point",
   unit: "Unicode 码点",
 } as const;

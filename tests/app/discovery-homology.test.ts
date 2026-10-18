@@ -577,14 +577,13 @@ test("inspect_application 列出成员精确源码与验收 ref，且可读到�
 });
 
 for (const lookup of ["exact", "wrong-version", "missing", "malformed", "repeated", "infrastructure"] as const)
-test(`生成阶段 read_member 有界纠正且只返回精确成员：${lookup}`, async (t) => {
+test(`生成阶段精确成员预载与未授权补读有界纠正：${lookup}`, async (t) => {
   const w = await setup(t);
   const { tags } = await activateDual(w);
   const tagsSource = w.release.get(tags.id).source;
   const before = w.composition();
   const invalidLookup = lookup !== "exact" && lookup !== "infrastructure";
   let memberReads = 0;
-  const errors: unknown[] = [];
   let readPayload: { source?: string; pluginId?: string; versionId?: string } |
     undefined;
   const planning = new PlanningDriver({
@@ -608,50 +607,15 @@ test(`生成阶段 read_member 有界纠正且只返回精确成员：${lookup}`
         request.tools?.some((tool) => tool.name === "submit_candidate") ||
         request.tools?.some((tool) => tool.name === "build_candidate")
       ) {
-        const content = JSON.stringify(request.history);
-        if (!content.includes("read_contract"))
-          return { ...toolReply("read_contract", {}), history: request.history };
-        if (!content.includes("read_current_source"))
-          return {
-            ...toolReply("read_current_source", {}),
-            history: request.history,
-          };
+        const documents = JSON.parse(request.message ?? "{}").materials?.documents as {ref:string; content:unknown}[] | undefined;
+        const source = documents?.find(d => d.ref === `member-source/tags@${tags.id}`)?.content;
+        if (typeof source === "string") readPayload = {source,pluginId:"tags",versionId:tags.id};
         if ((invalidLookup && memberReads === 0) || lookup === "repeated") {
           memberReads++;
           return { ...toolReply("read_member", lookup === "malformed" ? {pluginId:"tags"} : {
             pluginId: lookup === "missing" ? "missing" : "tags",
             versionId: w.activeVersion().id,
           }), history: request.history };
-        }
-        if (memberReads === 0 || (invalidLookup && memberReads === 1)) {
-          for (const message of request.history as {parts?:{functionResponse?:{name?:string;response?:{result?:{error?:string;source?:string}}}}[]}[])
-            for (const part of message.parts ?? []) if (part.functionResponse?.name === "read_member") {
-              const result = part.functionResponse.response?.result;
-              assert.ok(result?.error);
-              assert.equal(result.source, undefined);
-              errors.push(result);
-            }
-          memberReads++;
-          return {
-            ...toolReply("read_member", {
-              pluginId: "tags",
-              versionId: tags.id,
-            }),
-            history: request.history,
-          };
-        }
-        for (const message of request.history as {
-          parts?: {
-            functionResponse?: {
-              name?: string;
-              response?: { result?: { source?: string; pluginId?: string; versionId?: string } };
-            };
-          }[];
-        }[]) {
-          for (const part of message.parts ?? []) {
-            if (part.functionResponse?.name === "read_member")
-              readPayload = part.functionResponse.response?.result;
-          }
         }
         return {
           ...toolReply("submit_candidate", {
@@ -721,15 +685,15 @@ test(`生成阶段 read_member 有界纠正且只返回精确成员：${lookup}`
   }
   if (lookup === "repeated") {
     assert.equal(done.status, "blocked");
-    assert.equal(done.budget?.callsRemaining, 0);
+    assert.ok((done.budget?.callsUsed ?? 0) <= 12);
     assert.equal(done.budget?.candidatesRemaining, 3);
-    assert.equal(readPayload, undefined);
+    assert.equal(readPayload?.source, tagsSource);
+    assert.ok(done.protocolFailures?.length);
     return;
   }
   assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
-  assert.equal(errors.length, ["exact", "malformed"].includes(lookup) ? 0 : 1);
-  if (lookup === "malformed") assert.equal(done.protocolFailures?.length, 1);
-  assert.equal(done.budget?.callsUsed, lookup === "exact" ? 7 : 8);
+  if (invalidLookup) assert.equal(done.protocolFailures?.length, 1);
+  assert.equal(done.budget?.callsUsed, ready.budget!.callsUsed + (invalidLookup ? 2 : 1));
   assert.ok(readPayload);
   assert.equal(readPayload!.pluginId, "tags");
   assert.equal(readPayload!.versionId, tags.id);

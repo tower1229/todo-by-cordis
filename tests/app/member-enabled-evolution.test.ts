@@ -1,3 +1,4 @@
+import {compileSemantics} from "../../src/evolution/requirement-semantics.js";
 import { compileSpec } from "../../src/evolution/specification.js";
 import {
   candidateEvidenceHash,
@@ -129,8 +130,9 @@ async function certifyFixture(
       ],
     },
   ];
-  plan.requestAdmission = admissionReceiptFixture(plan.baseVersion!,[{id:"fixture:1",text:plan.summary}]);
+  plan.requestAdmission = admissionReceiptFixture(capture(w),[{id:"fixture:1",text:plan.summary}]);
   plan.browserCases = [];
+  plan.semanticState=compileSemantics(plan,[{id:"fixture:1",text:plan.summary}]);
   plan.changeSpec = compileSpec(plan, runId, hash(w.release.get(plan.baseVersion!).source));
   plan.requirementGate = freezeRequirements(
     plan,

@@ -1,7 +1,20 @@
+import {
+  semanticQuestionKey,
+  initialMeaningSchema,
+  parseInitialMeaning,
+  type InitialMeaning,
+} from "./requirement-semantics.js";
 import type { TechnicalFact } from "./technical-facts.js";
 import { hash } from "../release/storage.js";
 import { schemaProblems } from "./model-protocol.js";
 import type { ClarificationDecision } from "./clarification-review.js";
+import {
+  fieldTargets,
+  fieldReferenceSchema,
+  bindFieldReference,
+  type FieldTarget,
+  type FieldReference,
+} from "./field-identity.js";
 
 type Source = { id: string; text: string };
 type Citation = { sourceRevision: string; sourceQuote: string };
@@ -19,7 +32,7 @@ export const questionReviewKey = (
   question: string,
   sources: Source[],
   facts: TechnicalFact[],
-) => hash({ question, sources, facts });
+) => semanticQuestionKey(question, hash(sources), hash(facts));
 export function admissionQuestionState(
   admission: RequestAdmission,
   sources: Source[],
@@ -56,24 +69,49 @@ export function admissionQuestionState(
     blockers: [...new Set(blockers)],
   };
 }
+type AdmissionIntent = {
+  presentations: {
+    source: number;
+    sourceQuote: string;
+    target: FieldReference;
+    meaning: InitialMeaning;
+  }[];
+  questions: { source: number; sourceQuote: string; question: string }[];
+};
+type PresentationCheck = Citation & {
+  field: string;
+  target?: FieldTarget;
+  factId: string;
+  factHash: string;
+  expected: import("../shared/acceptance-obligations.js").FieldExpectation;
+  actual?: import("../shared/acceptance-obligations.js").FieldExpectation;
+  possible?: import("../shared/acceptance-obligations.js").FieldExpectation[];
+  outcome: "supported" | "unsupported" | "deferred";
+};
 export type RequestAdmission = {
+  contract: "host-admission/6";
+  intents: AdmissionIntent;
+  factsSnapshot: TechnicalFact[];
+  technicalChecks: PresentationCheck[];
   key: string;
   baseVersion: string;
+  sources: Source[];
   sourceHash: string;
   factsHash: string;
+  fieldCatalog: FieldTarget[];
+  initialMeanings: (Citation & {
+    surface: "workflow" | "auxiliary" | "unbound";
+    field: string;
+    target?: FieldTarget;
+    meaning: InitialMeaning;
+    initial: import("./requirement-semantics.js").InitialDecision;
+  })[];
   presentations: (Citation & {
-    surface: "workflow" | "auxiliary";
+    surface: "workflow" | "auxiliary" | "unbound";
     kind: "visible" | "absent";
     value: string;
   })[];
   questions: (Citation & { question: string })[];
-  facts: (Citation & {
-    id: string;
-    property: string;
-    expected: string;
-    actual: string;
-    evidenceHash: string;
-  })[];
   claims: AdmissionClaim[];
   semanticReview?: { claimsHash: string; decisions: AdmissionDecision[] };
   blockers: string[];
@@ -94,51 +132,79 @@ const list = (properties: Record<string, unknown>) => ({
   },
 });
 /** Flat mandatory envelope; semantic references are bound and checked by the host. */
-export const admissionSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["presentations", "questions", "facts"],
-  properties: {
-    presentations: {
-      type: "array",
-      maxItems: 20,
-      items: {
-        anyOf: [
-          list({
-            ...citation,
-            surface: { ...text, enum: ["workflow", "auxiliary"] },
-            kind: { ...text, enum: ["visible"] },
-            value: text,
-          }).items,
-          list({
-            ...citation,
-            surface: { ...text, enum: ["workflow", "auxiliary"] },
-            kind: { ...text, enum: ["absent"] },
-          }).items,
-        ],
-      },
+export function admissionSchema(facts: TechnicalFact[] = []) {
+  const catalog = fieldTargets(facts);
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["presentations", "questions"],
+    properties: {
+      presentations: list({
+        ...citation,
+        target: fieldReferenceSchema(catalog),
+        meaning: initialMeaningSchema,
+      }),
+      questions: list({
+        ...citation,
+        question: { ...text, minLength: 1, maxLength: 3000 },
+      }),
     },
-    questions: list({
-      ...citation,
-      question: { ...text, minLength: 1, maxLength: 3000 },
-    }),
-    facts: list({
-      ...citation,
-      fact: { type: "integer", minimum: 1 },
-      property: text,
-      expected: text,
-    }),
-  },
-};
+  };
+}
 export const admissionInstruction =
-  "独立解释原始需求和回答，输出需求预检 JSON，禁止工具。presentations 只列用户明确要求的字段未填写时呈现（workflow=主工作流字段，auxiliary=独立成员任务详情字段）；没有初始呈现要求则为空，不能从宿主默认推导业务要求。questions 只列全部 sources 看完后仍未决定且影响实现的业务选择，集中提出；用户已明确的值、技术事实及需要维护者扩展的能力不是业务歧义，不能询问是否接受降级。facts 只列需求依赖的现有技术条件，使用宿主 facts 一基序号、property 和 required expected；由宿主比较实际值。每项引用 sources 一基序号及连续原文。facts 中不存在的未知实现细节留给后续调查，不凭猜测拒绝；此预检不替代完整规划及独立需求复核。";
+  "独立解释原始需求和回答，输出需求意图 JSON，空历史且禁止工具。presentations 只列明确的初始呈现要求或真实未决初始选择；没有要求则为空。meaning 使用规定的互斥类型，字段名称、必填性、动作后保存值不属于初始呈现。每项引用连续原文；明确呈现分别引用条件与效果。questions 集中列出影响实现且原文仍未决定的业务选择；技术条件和不支持的能力不得转为降级问题。target 按契约引用 fieldTargets 中的已有 targetId；尚未安装的新字段用 new/name 表达，身份由宿主在计划编译后绑定。facts 仅为只读宿主上下文，技术事实、属性、期望及字段归属由宿主绑定，禁止在输出中重述。此预检不替代完整规划和独立需求复核。";
+
+/** Both production and qualification use the exact same native request contract. */
+export function admissionRequest(
+  sources: Source[],
+  facts: TechnicalFact[],
+  priorSemantics: unknown[] = [],
+): import("./driver.js").ModelRequest {
+  return {
+    phase: "admission",
+    history: [],
+    instruction: admissionInstruction,
+    schema: admissionSchema(facts),
+    message: JSON.stringify({
+      kind: "request-admission/1",
+      sources,
+      facts,
+      fieldTargets: fieldTargets(facts),
+      priorSemantics,
+    }),
+  };
+}
+export function admissionReviewRequest(
+  admission: RequestAdmission,
+  sources: Source[],
+  priorSemantics: unknown[] = [],
+): import("./driver.js").ModelRequest {
+  return {
+    phase: "review",
+    history: [],
+    instruction: admissionReviewInstruction,
+    schema: admissionReviewSchema(admission),
+    message: JSON.stringify({
+      kind: "admission-source-review/1",
+      sources,
+      claims: admission.claims.map(
+        ({ sourceRevision, sourceQuote, interpretation }) => ({
+          sourceRevision,
+          sourceQuote,
+          interpretation,
+        }),
+      ),
+      priorSemantics,
+    }),
+  };
+}
 
 export function admissionKey(
   baseVersion: string,
   sources: Source[],
   facts: TechnicalFact[],
 ) {
-  return hash({ contract: "host-admission/2", baseVersion, sources, facts });
+  return hash({ contract: "host-admission/6", baseVersion, sources, facts });
 }
 export function parseAdmission(
   text: string,
@@ -147,25 +213,9 @@ export function parseAdmission(
   facts: TechnicalFact[],
 ): RequestAdmission {
   const value: unknown = JSON.parse(text);
-  const problems = schemaProblems(value, admissionSchema);
+  const problems = schemaProblems(value, admissionSchema(facts));
   if (problems.length) throw new Error(problems.join("；"));
-  const raw = value as {
-    presentations: {
-      source: number;
-      sourceQuote: string;
-      surface: "workflow" | "auxiliary";
-      kind: "visible" | "absent";
-      value?: string;
-    }[];
-    questions: { source: number; sourceQuote: string; question: string }[];
-    facts: {
-      source: number;
-      sourceQuote: string;
-      fact: number;
-      property: string;
-      expected: string;
-    }[];
-  };
+  const raw = value as AdmissionIntent;
   function bind(v: { source: number; sourceQuote: string }): Citation {
     const s = sources[v.source - 1];
     if (!s || !v.sourceQuote.trim() || !s.text.includes(v.sourceQuote))
@@ -173,6 +223,8 @@ export function parseAdmission(
     return { sourceRevision: s.id, sourceQuote: v.sourceQuote };
   }
   const claims: AdmissionClaim[] = [];
+  const technicalChecks: PresentationCheck[] = [];
+  const fieldCatalog = fieldTargets(facts);
   function claim(
     citation: Citation,
     interpretation: Record<string, string>,
@@ -185,63 +237,113 @@ export function parseAdmission(
       id: hash({ citation, interpretation }),
     });
   }
-  const presentations = raw.presentations.map((v) => {
-    const citation = bind(v);
-    const value = v.kind === "visible" ? v.value! : "";
+  const initialMeanings = raw.presentations.map((v) => ({
+    ...bind(v),
+    ...bindFieldReference(v.target, fieldCatalog),
+    ...parseInitialMeaning(v.meaning, sources[v.source - 1]?.text ?? ""),
+  }));
+  const presentations = initialMeanings.flatMap((v) => {
+    const citation = {
+      sourceRevision: v.sourceRevision,
+      sourceQuote: v.sourceQuote,
+    };
+    if (v.initial.kind !== "visible" && v.initial.kind !== "absent") return [];
+    const kind = v.initial.kind;
+    const value = v.initial.kind === "visible" ? v.initial.value : "";
     const presentation = facts.find(
       (f) => f.id === "host-fact:initial-field-presentation",
     );
-    const supported =
+    const expected = v.initial;
+    const actual: PresentationCheck["actual"] =
       v.surface === "workflow"
-        ? v.kind === "absent" &&
-          presentation?.properties.workflowMissingField === "absent"
-        : v.kind === "visible" &&
-          value === presentation?.properties.auxiliaryMissingField;
+        ? presentation?.properties.workflowMissingField === "absent"
+          ? { kind: "absent" }
+          : undefined
+        : v.surface === "auxiliary" &&
+            presentation?.properties.auxiliaryMissingField !== undefined
+          ? {
+              kind: "visible",
+              value: presentation.properties.auxiliaryMissingField,
+            }
+          : undefined;
+    // A new field has no owner yet. Only a complete, incompatible renderer set
+    // proves early rejection; a possible match still requires exact plan binding.
+    const possible: PresentationCheck["possible"] =
+      v.surface === "unbound" &&
+      presentation?.properties.workflowMissingField === "absent" &&
+      presentation.properties.auxiliaryMissingField !== undefined
+        ? [
+            { kind: "absent" },
+            {
+              kind: "visible",
+              value: presentation.properties.auxiliaryMissingField,
+            },
+          ]
+        : undefined;
+    const outcome =
+      v.surface === "unbound"
+        ? possible && !possible.some((value) => hash(value) === hash(expected))
+          ? "unsupported"
+          : "deferred"
+        : actual && hash(actual) === hash(expected)
+          ? "supported"
+          : "unsupported";
+    technicalChecks.push({
+      ...citation,
+      field: v.field,
+      ...(v.target ? { target: v.target } : {}),
+      factId: "host-fact:initial-field-presentation",
+      factHash: presentation?.evidenceHash ?? "",
+      expected,
+      ...(actual ? { actual } : {}),
+      ...(possible ? { possible } : {}),
+      outcome,
+    });
+    const supported = outcome === "supported";
     if (!supported)
       claim(
         citation,
         {
           surface: v.surface,
+          outcome,
+          targetId: v.target?.targetId ?? "",
+          member: v.target?.member ?? "",
+          contribution: v.target?.contribution ?? "",
+          field: v.field,
           condition: "initial-missing-field",
-          kind: v.kind,
+          kind,
           value,
         },
-        `需求原文 ${JSON.stringify(v.sourceQuote)} 要求的 ${v.surface} 初始呈现 ${v.kind}:${JSON.stringify(value)} 无法由当前受保护渲染器表达，需要维护者扩展；不能替换期望或询问降级`,
+        `需求原文 ${JSON.stringify(v.sourceQuote)} 要求的 ${v.surface} 初始呈现 ${kind}:${JSON.stringify(value)} 无法由当前受保护渲染器表达，需要维护者扩展；不能替换期望或询问降级`,
       );
-    return { ...citation, surface: v.surface, kind: v.kind, value };
-  });
-  const decisions = raw.facts.map((v) => {
-    const citation = bind(v),
-      f = facts[v.fact - 1];
-    if (!f || !Object.hasOwn(f.properties, v.property))
-      throw new Error("需求预检技术事实引用不存在");
-    const actual = f.properties[v.property];
-    if (actual !== v.expected)
-      claim(
-        citation,
-        { factId: f.id, property: v.property, expected: v.expected },
-        `需求原文 ${JSON.stringify(v.sourceQuote)} 所需技术条件 ${f.id}.${v.property}=${v.expected} 与宿主实际 ${actual} 不一致，需要维护者处理`,
-      );
-    return {
-      ...citation,
-      id: f.id,
-      property: v.property,
-      expected: v.expected,
-      actual,
-      evidenceHash: f.evidenceHash,
-    };
+    return [{ ...citation, surface: v.surface, kind, value }];
   });
   return {
+    contract: "host-admission/6",
+    intents: structuredClone(raw),
+    factsSnapshot: structuredClone(facts),
+    technicalChecks,
     key: admissionKey(baseVersion, sources, facts),
     baseVersion,
+    sources: structuredClone(sources),
     sourceHash: hash(sources),
     factsHash: hash(facts),
+    fieldCatalog,
     presentations,
-    questions: raw.questions.map((v) => ({
-      ...bind(v),
-      question: v.question.trim(),
-    })),
-    facts: decisions,
+    initialMeanings,
+    questions: [
+      ...raw.questions.map((v) => ({
+        ...bind(v),
+        question: v.question.trim(),
+      })),
+      ...initialMeanings
+        .filter((v) => v.initial.kind === "undetermined")
+        .map((v) => ({
+          sourceRevision: v.sourceRevision,
+          sourceQuote: v.sourceQuote,
+          question: `尚未填写 ${v.field} 时，应显示什么？`,
+        })),
+    ],
     claims,
     blockers: [],
   };
@@ -249,7 +351,7 @@ export function parseAdmission(
 
 /** Only source entailment is reviewed here; supported capabilities are still host facts. */
 export const admissionReviewInstruction =
-  "独立裁决来源解释，空历史且禁止工具。逐项检查 claims 的 interpretation 是否确实由完整 sources 要求：entailed=原文明确或必然要求，not-requested=该解释把标签、操作、条件或其他语义错当成了要求，uncertain=来源不足以裁决。不要根据宿主能否实现改变原意；不要提出降级。每项引用完整连续原文，detail 说明对应关系。返回每个 claim 的唯一裁决。此审查不替代后续完整需求复核。";
+  "独立裁决每个 claims 原子命题是否由完整 sources 要求，空历史且禁止工具。只返回 verdict：entailed=原文明确或必然要求；not-requested=原文未要求该命题，包括把标签、必填性或动作后值误作初始呈现；uncertain=来源不足或存在真实冲突。不得依据宿主能力改变原意。逐项引用连续原文并说明判断，不重写 meaning、不改期望。priorSemantics 仅复用来源仍一致的具体历史判断，此裁决不替代完整需求及逐字段遗漏复核。";
 export function admissionReviewSchema(admission: RequestAdmission) {
   return {
     type: "object",
@@ -257,21 +359,27 @@ export function admissionReviewSchema(admission: RequestAdmission) {
     required: ["decisions"],
     properties: {
       decisions: {
-        ...list({
-          claim: {
-            type: "integer",
-            minimum: 1,
-            maximum: admission.claims.length,
-          },
-          ...citation,
-          verdict: {
-            type: "string",
-            enum: ["entailed", "not-requested", "uncertain"],
-          },
-          detail: { type: "string", minLength: 1 },
-        }),
+        type: "array",
         minItems: admission.claims.length,
         maxItems: admission.claims.length,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["claim", "source", "sourceQuote", "verdict", "detail"],
+          properties: {
+            claim: {
+              type: "integer",
+              minimum: 1,
+              maximum: Math.max(1, admission.claims.length),
+            },
+            ...citation,
+            verdict: {
+              type: "string",
+              enum: ["entailed", "not-requested", "uncertain"],
+            },
+            detail: { type: "string", minLength: 1 },
+          },
+        },
       },
     },
   };
@@ -282,7 +390,9 @@ function decisionBlockers(admission: RequestAdmission) {
     return !claim
       ? ["来源语义裁决引用不存在"]
       : d.verdict === "entailed"
-        ? [claim.diagnostic]
+        ? claim.interpretation.outcome === "deferred"
+          ? []
+          : [claim.diagnostic]
         : d.verdict === "uncertain"
           ? [`来源语义尚未裁决：${d.detail}`]
           : [];
@@ -333,20 +443,41 @@ export function adjudicateAdmission(
   return { ...resolved, blockers: decisionBlockers(resolved) };
 }
 export function admissionResolved(admission: RequestAdmission): boolean {
-  // Old pending plans must be replanned, never backfilled with an empty successful receipt.
-  if (!Array.isArray(admission.claims)) return false;
-  if (!admission.claims.length)
-    return !admission.semanticReview && !admission.blockers.length;
-  const review = admission.semanticReview;
-  return (
-    !!review &&
-    review.claimsHash === hash(admission.claims) &&
-    new Set(review.decisions.map((d) => d.claimId)).size ===
-      admission.claims.length &&
-    review.decisions.length === admission.claims.length &&
-    review.decisions.every((d) =>
-      admission.claims.some((c) => c.id === d.claimId),
-    ) &&
-    hash(admission.blockers) === hash(decisionBlockers(admission))
-  );
+  // Canonical host replay verifies every derived reference and check; old pending evidence is never upgraded.
+  try {
+    if (
+      admission.contract !== "host-admission/6" ||
+      !Array.isArray(admission.factsSnapshot)
+    )
+      return false;
+    const canonical = parseAdmission(
+      JSON.stringify(admission.intents),
+      admission.baseVersion,
+      admission.sources,
+      admission.factsSnapshot,
+    );
+    if (!admission.semanticReview)
+      return hash(admission) === hash(canonical) && !canonical.claims.length;
+    if (admission.semanticReview.claimsHash !== hash(canonical.claims))
+      return false;
+    const decisions = admission.semanticReview.decisions.map((d) => ({
+      claim: canonical.claims.findIndex((c) => c.id === d.claimId) + 1,
+      source: canonical.sources.findIndex((s) => s.id === d.sourceRevision) + 1,
+      sourceQuote: d.sourceQuote,
+      verdict: d.verdict,
+      detail: d.detail,
+    }));
+    return (
+      hash(admission) ===
+      hash(
+        adjudicateAdmission(
+          JSON.stringify({ decisions }),
+          canonical,
+          admission.sources,
+        ),
+      )
+    );
+  } catch {
+    return false;
+  }
 }

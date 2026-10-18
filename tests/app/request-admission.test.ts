@@ -1,3 +1,4 @@
+import { fieldTargetId } from "../../src/evolution/field-identity.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -25,6 +26,8 @@ import { technicalFacts } from "../../src/evolution/technical-facts.js";
 import { BudgetScheduler } from "../../src/evolution/budget.js";
 import { ModelTransportError } from "../../src/evolution/driver.js";
 import { DeepSeek } from "../../src/evolution/deepseek.js";
+import {fieldFacts} from "../../src/evolution/field-identity.js";
+import {memberUiReleaseInput} from "../fixtures/member-ui.js";
 
 const reply = (value: unknown) => ({
   text: JSON.stringify(value),
@@ -33,7 +36,7 @@ const reply = (value: unknown) => ({
   raw: { fixture: value },
   usage: { totalTokenCount: 7 },
 });
-const empty = () => ({ presentations: [], questions: [], facts: [] });
+const empty = () => ({ presentations: [], questions: [] });
 const input = (r: ModelRequest) => JSON.parse(r.message ?? "{}");
 test("来源标签误判经独立裁决后继续必要澄清，完整原文及争议随同一运行和预算保留", async (t) => {
   const fixture = new PlanningDriver();
@@ -41,13 +44,13 @@ test("来源标签误判经独立裁决后继续必要澄清，完整原文及�
     const v = input(r);
     if (v.kind === "request-admission/1") return reply(v.sources.length === 1 ? {
       ...empty(),
-      presentations: [{ source: 1, sourceQuote: "完成前填写复盘", surface: "workflow", kind: "visible", value: "复盘" }],
+      presentations: [{ source: 1, sourceQuote: "完成前填写复盘", target: {kind:"new",name:"复盘"}, meaning:{kind:"literal",value:"复盘",conditionQuote:"完成前填写复盘",effectQuote:"完成前填写复盘"} }],
       questions: [{ source: 1, sourceQuote: "是否必填尚未决定", question: "复盘是否必填？" }],
     } : empty());
     if (v.kind === "admission-source-review/1") {
       assert.deepEqual(r.history, []); assert.equal(r.tools, undefined);
       assert.equal(v.claims[0].interpretation.condition, "initial-missing-field");
-      return reply({ decisions: [{ claim: 1, source: 1, sourceQuote: "完成前填写复盘", verdict: "not-requested", detail: "复盘是待填写的字段，原文没有要求该字样作为初始值" }] });
+      return reply({ decisions: [{ claim: 1, source: 1, sourceQuote: "完成前填写复盘", verdict:"not-requested", detail: "复盘是待填写的字段，原文没有要求该字样作为初始值" }] });
     }
     return fixture.generate(r, signal);
   } });
@@ -65,15 +68,16 @@ test("来源标签误判经独立裁决后继续必要澄清，完整原文及�
 
 test("来源裁决不能漏项、重复、伪造原文或将未裁决争议标为已解决", () => {
   const sources = [{ id: "source:1", text: "完成前填写复盘" }];
-  const proposed = parseAdmission(JSON.stringify({ ...empty(), presentations: [{ source: 1, sourceQuote: sources[0].text, surface: "workflow", kind: "visible", value: "复盘" }] }), "base", sources, technicalFacts({ workflowRules: [], binding: undefined }));
+  const proposed = parseAdmission(JSON.stringify({ ...empty(), presentations: [{ source: 1, sourceQuote: sources[0].text, target: {kind:"new",name:"复盘"}, meaning:{kind:"literal",value:"复盘",conditionQuote:"完成前填写复盘",effectQuote:"完成前填写复盘"} }] }), "base", sources, technicalFacts({ workflowRules: [], binding: undefined }));
   assert.equal(admissionResolved(proposed), false);
-  const decision = { claim: 1, source: 1, sourceQuote: sources[0].text, verdict: "not-requested", detail: "只是字段标签" };
+  const decision = { claim: 1, source: 1, sourceQuote: sources[0].text, verdict:"not-requested", detail: "只是字段标签" };
   for (const decisions of [[], [decision, decision], [{ ...decision, sourceQuote: "未填写时显示复盘" }], [{ ...decision, claim: 2 }]]) assert.throws(() => adjudicateAdmission(JSON.stringify({ decisions }), proposed, sources));
   const resolved = adjudicateAdmission(JSON.stringify({ decisions: [decision] }), proposed, sources);
   assert.ok(admissionResolved(resolved));
+  assert.equal(admissionResolved({...resolved,initialMeanings:[]}),false);
   assert.equal(admissionResolved({ ...resolved, claims: [{ ...resolved.claims[0], interpretation: { value: "篡改" } }] }), false);
   assert.equal(admissionResolved({ ...resolved, semanticReview: undefined }), false);
-  const uncertain = adjudicateAdmission(JSON.stringify({ decisions: [{ ...decision, verdict: "uncertain" }] }), proposed, sources);
+  const uncertain = adjudicateAdmission(JSON.stringify({ decisions: [{ ...decision, verdict:"uncertain" }] }), proposed, sources);
   assert.match(uncertain.blockers[0], /尚未裁决/);
   assert.equal(admissionResolved({ ...uncertain, blockers: [] }), false);
 });
@@ -239,12 +243,12 @@ test("互斥步骤不能因供应商投影而混填字段，错误反馈绑定�
 
 test("预检不存在状态只提交kind，空值由宿主派生；禁止混入其他分支的value", () => {
   const sources = [{ id: "source", text: "未填写时显示空白" }];
-  const facts = technicalFacts({ workflowRules: [], binding: undefined });
+  const facts = [...technicalFacts({ workflowRules: [], binding: undefined }),...fieldFacts([{member:"panel",field:"备注",label:"备注"}])];
   const presentation = {
     source: 1,
     sourceQuote: sources[0].text,
-    surface: "auxiliary",
-    kind: "absent",
+    target: {kind:"existing",targetId:fieldTargetId({member:"panel",field:"备注"})},
+    meaning:{kind:"hidden",conditionQuote:sources[0].text,effectQuote:sources[0].text},
   };
   const admitted = parseAdmission(
     JSON.stringify({ ...empty(), presentations: [presentation] }),
@@ -254,7 +258,7 @@ test("预检不存在状态只提交kind，空值由宿主派生；禁止混入�
   );
   assert.equal(admitted.presentations[0].value, "");
   assert.equal(admissionResolved(admitted), false);
-  const reviewed = adjudicateAdmission(JSON.stringify({ decisions: [{ claim: 1, source: 1, sourceQuote: sources[0].text, verdict: "entailed", detail: "原文明确要求未填写呈现" }] }), admitted, sources);
+  const reviewed = adjudicateAdmission(JSON.stringify({ decisions: [{ claim: 1, source: 1, sourceQuote: sources[0].text, verdict:"entailed", detail: "原文明确要求未填写呈现" }] }), admitted, sources);
   assert.ok(reviewed.blockers.length);
   assert.ok(admissionResolved(reviewed));
   assert.throws(
@@ -439,14 +443,14 @@ for (const malformed of ["empty", "unknown-tool"])
     assert.equal(run.protocolFailures?.length, 1);
   });
 
-test("明确但无法支持的空白初始呈现在源码调查前阻塞，不能改成降级提问", async (t) => {
+test("已知字段明确但无法支持的空白初始呈现在源码调查前阻塞，不能改成降级提问", async (t) => {
   const { w, e } = await setup(t, {
     async generate(r) {
       const v = input(r);
       if (v.kind === "admission-source-review/1") {
         assert.deepEqual(r.history, []);
         assert.equal(r.tools, undefined);
-        return reply({ decisions: [{ claim: 1, source: 1, sourceQuote: "尚未填写时显示空白", verdict: "entailed", detail: "原文明确指定未填写时的空白显示" }] });
+        return reply({ decisions: [{ claim: 1, source: 1, sourceQuote: "尚未填写时显示空白", verdict:"entailed", detail: "原文明确指定未填写时的空白显示" }] });
       }
       assert.equal(v.kind, "request-admission/1");
       assert.equal(v.materials, undefined);
@@ -455,9 +459,8 @@ test("明确但无法支持的空白初始呈现在源码调查前阻塞，不�
           {
             source: 1,
             sourceQuote: "尚未填写时显示空白",
-            surface: "auxiliary",
-            kind: "visible",
-            value: "",
+            target: {kind:"existing",targetId:fieldTargetId({member:"panel",contribution:"note-panel",field:"noteMark"})},
+            meaning:{kind:"blank",conditionQuote:"尚未填写时显示空白",effectQuote:"尚未填写时显示空白"},
           },
         ],
         questions: [
@@ -467,10 +470,13 @@ test("明确但无法支持的空白初始呈现在源码调查前阻塞，不�
             question: "可否改成（空）？",
           },
         ],
-        facts: [],
       });
     },
   });
+  const fixture=await memberUiReleaseInput("intake-known-field");
+  w.release.record(fixture.panel);
+  const version=w.release.record(fixture.composition);
+  await w.activate({versionId:version.id,compositionRevision:w.composition().revision,operationId:"known-field"},()=>undefined);
   const before = JSON.stringify({
     tasks: w.query(),
     composition: w.composition(),
@@ -616,9 +622,9 @@ test("预检不能伪造来源和技术事实；环境缺失在模型调用前�
         [{ id: "s", text: "原文" }],
         facts,
       ),
-    /事实/,
+    /未授权/,
   );
-  assert.ok(schemaProblems({}, admissionSchema).length);
+  assert.ok(schemaProblems({}, admissionSchema()).length);
   const { w, e } = await setup(t, {
     async generate() {
       throw new Error("不能调用模型");
@@ -646,4 +652,36 @@ test("预检不能伪造来源和技术事实；环境缺失在模型调用前�
   const r = await settle(blocked);
   assert.equal(r.status, "blocked");
   assert.equal(r.budget?.callsUsed, 0);
+});
+
+test("回答只修改必填性，重复标签误读通过同一语义契约纠正；旧判断可调查复用但旧通过证据失效",async t=>{
+  const fixture=new PlanningDriver();
+  let reused=0;
+  const {w,e}=await setup(t,{async generate(request,signal){
+    const v=input(request);
+    if(v.kind==="request-admission/1"){
+      const source=v.sources.length,quote=source===1?"完成前填写复盘":"复盘必填";
+      if(source===2){assert.equal(v.priorSemantics.length,1);assert.equal(v.priorSemantics[0].target.field,"复盘");reused++;}
+      return reply({presentations:[{source,sourceQuote:quote,target: {kind:"new",name:"复盘"},meaning:{kind:"literal",value:"复盘",conditionQuote:quote,effectQuote:quote}}],questions:source===1?[{source:1,sourceQuote:"是否必填尚未决定",question:"复盘是否必填？"}]:[]});
+    }
+    if(v.kind==="admission-source-review/1"){
+      const source=v.sources.length,quote=source===1?"完成前填写复盘":"复盘必填";
+      return reply({decisions:[{claim:1,source,sourceQuote:quote,verdict:"not-requested",detail:"填写对象或必填字段名称，不是初始内容"}]});
+    }
+    return fixture.generate(request,signal);
+  }});
+  await e.command({type:"request",text:"完成前填写复盘，是否必填尚未决定",operationId:"request"});
+  const waiting=await settle(e);assert.equal(waiting.status,"awaiting-input");
+  await e.command({type:"answer",runId:waiting.id,text:"复盘必填",operationId:"answer"});
+  const ready=await settle(e);assert.equal(ready.status,"ready","message" in ready?ready.message:ready.status);
+  assert.equal(ready.id,waiting.id);assert.equal(ready.budget?.callsUsed,7);assert.equal(reused,1);
+  assert.notEqual(ready.requestAdmissions![0].key,ready.requestAdmissions![1].key);
+  if(ready.status!=="ready")return;
+  assert.equal(ready.plan.semanticState!.entries.filter(e=>e.target.aspect==="initial-display").length,1);
+  assert.equal(ready.plan.semanticState!.entries.find(e=>e.target.aspect==="initial-display")!.status,"unspecified");
+  const before=w.composition(),stored=JSON.parse(String(w.db.prepare("SELECT body FROM evolution_runs WHERE id=?").get(ready.id)!.body));
+  const plan=structuredClone(ready.plan);plan.semanticState!.entries[0].value="篡改";stored.plan=plan;stored.run.plan=plan;
+  w.db.prepare("UPDATE evolution_runs SET body=? WHERE id=?").run(JSON.stringify(stored),ready.id);
+  await assert.rejects(e.command({type:"start",runId:ready.id,planId:plan.id,operationId:"start"}),/语义|冻结|规格/);
+  assert.deepEqual(w.composition(),before);assert.equal((await e.observe()).candidates?.length,0);
 });

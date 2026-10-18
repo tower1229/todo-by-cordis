@@ -14,14 +14,6 @@ export function pinnedMemberDriver(
         request.tools?.some((tool) => tool.name === "submit_candidate") ||
         request.tools?.some((tool) => tool.name === "build_candidate")
       ) {
-        const content = JSON.stringify(request.history);
-        if (!content.includes("read_contract"))
-          return { ...toolReply("read_contract", {}), history: request.history };
-        if (!content.includes("read_current_source"))
-          return {
-            ...toolReply("read_current_source", {}),
-            history: request.history,
-          };
         return {
           ...toolReply("submit_candidate", {
             source: workflowSource(),

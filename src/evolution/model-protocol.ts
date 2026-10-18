@@ -74,9 +74,13 @@ export function schemaProblems(
       ? union.filter(
           (s) =>
             record(s.properties) &&
-            record(s.properties.kind) &&
-            Array.isArray(s.properties.kind.enum) &&
-            s.properties.kind.enum.includes(value.kind),
+            ["kind", "target"].some(
+              (key) =>
+                Object.hasOwn(value, key) &&
+                record(s.properties) &&
+                record(s.properties[key]) &&
+                !schemaProblems(value[key], s.properties[key] as Schema).length,
+            ),
         )
       : [];
     const branches = matching.length ? matching : union;
@@ -181,3 +185,4 @@ export function replyProblems(
 }
 
 export class ModelProtocolError extends Error {}
+export class ModelResourceError extends ModelProtocolError {}

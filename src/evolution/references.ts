@@ -14,6 +14,7 @@ import {
   changesBaselineValue,
 } from "./obligation-derivation.js";
 import { historicalPreparation } from "./historical-preparation.js";
+import {bindAvailability,type ActionAvailability} from "./action-availability.js";
 
 type Row = Record<string, unknown>;
 function row(value: unknown): Row {
@@ -51,6 +52,7 @@ export function compileReferences(
     "memberCases" | "browserCases" | "requirements"
   > & {
     baseVersion?: string;
+    actionAvailability?: ActionAvailability;
     uiContributions?: {
       id: string;
       providerId: string;
@@ -299,6 +301,7 @@ export function compileReferences(
           inherited.baseVersion,
           (inherited.requirements ?? []).flatMap((r) => r.obligations ?? []),
           lifecycle,
+          {memberCases:memberCases as import("../shared/acceptance-cases.js").MemberAcceptanceCase[],extensions:extensions as InvestigatedPlan["extensions"]},
         )
       : [];
     if (!raw.length) throw new Error("验收义务列表无效或缺失");
@@ -320,6 +323,7 @@ export function compileReferences(
         (steps) => bindSteps(steps, requirement.id),
         canonical,
         (target) => target.member === "workflow" || !!target.contribution,
+        lifecycle.existing,
       ),
     );
   const fields = requirements
@@ -441,6 +445,7 @@ export function compileReferences(
         }));
       }
     }
+    bindAvailability([requirement],inherited.actionAvailability);
     for (const obligation of requirement.obligations) {
       for (const c of obligationCases(obligation)) {
         const existing = browsers.find((b) => b.id === c.id);

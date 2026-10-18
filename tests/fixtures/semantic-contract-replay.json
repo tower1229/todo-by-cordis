@@ -1,0 +1,17 @@
+{
+  "origin": ".runtime/planning-semantics-CKRBMX",
+  "responses": [
+    {
+      "id": "admission-after-action-disabled",
+      "text": "{\"presentations\":[{\"source\":1,\"sourceQuote\":\"详情原 note-panel 的 noteMark 字段显示保存值\",\"field\":\"noteMark\",\"meaning\":{\"kind\":\"visible\",\"value\":\"保存值\",\"valueRole\":\"field-label\",\"conditionQuote\":\"详情原 note-panel 的 noteMark 字段\",\"effectQuote\":\"显示保存值\"}}],\"questions\":[],\"facts\":[{\"source\":1,\"sourceQuote\":\"未完成任务点击原 markNote 动作后，将 noteMark 写入值从 ok 改为 reviewed\",\"fact\":10,\"property\":\"origin\",\"expected\":\"host-baseline\"},{\"source\":1,\"sourceQuote\":\"未完成任务点击原 markNote 动作后\",\"fact\":11,\"property\":\"state\",\"expected\":\"open\"},{\"source\":1,\"sourceQuote\":\"未完成任务点击原 markNote 动作后\",\"fact\":11,\"property\":\"visible\",\"expected\":\"true\"},{\"source\":1,\"sourceQuote\":\"已完成任务仍不可执行\",\"fact\":9,\"property\":\"state\",\"expected\":\"done\"},{\"source\":1,\"sourceQuote\":\"已完成任务仍不可执行\",\"fact\":9,\"property\":\"visible\",\"expected\":\"false\"},{\"source\":1,\"sourceQuote\":\"原动作及贡献ID不变\",\"fact\":10,\"property\":\"action\",\"expected\":\"markNote\"},{\"source\":1,\"sourceQuote\":\"原动作及贡献ID不变\",\"fact\":10,\"property\":\"contribution\",\"expected\":\"note-panel\"},{\"source\":1,\"sourceQuote\":\"详情原 note-panel 的 noteMark 字段显示保存值\",\"fact\":13,\"property\":\"field\",\"expected\":\"noteMark\"},{\"source\":1,\"sourceQuote\":\"详情原 note-panel 的 noteMark 字段显示保存值\",\"fact\":13,\"property\":\"contribution\",\"expected\":\"note-panel\"}]}"
+    },
+    {
+      "id": "admission-explicit-empty-disabled",
+      "text": "{\"presentations\":[{\"source\":1,\"sourceQuote\":\"尚未填写时显示空白\",\"field\":\"noteMark\",\"meaning\":{\"kind\":\"visible\",\"value\":\"空白\",\"valueRole\":\"literal\",\"conditionQuote\":\"尚未填写时\",\"effectQuote\":\"显示空白\"}}],\"questions\":[],\"facts\":[]}"
+    },
+    {
+      "id": "review-after-action-disabled",
+      "text": "{\"decisions\":[{\"claim\":1,\"source\":1,\"sourceQuote\":\"将 noteMark 写入值从 ok 改为 reviewed\",\"detail\":\"该引文描述的是点击原 markNote 动作后的写入值从 ok 改为 reviewed，属于动作后的保存/写入效果，而不是未赋值字段的初始呈现内容。因此把 noteMark 解释为初始缺失字段显示 reviewed 并不被来源要求。\",\"meaning\":{\"kind\":\"absent\",\"conditionQuote\":\"未完成任务点击原 markNote 动作后\",\"effectQuote\":\"将 noteMark 写入值从 ok 改为 reviewed\"}}]}"
+    }
+  ]
+}

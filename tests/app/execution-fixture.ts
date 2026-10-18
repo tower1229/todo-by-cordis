@@ -27,10 +27,6 @@ export class ExecutionDriver implements Driver {
         ...toolReply(name, args),
         history: request.history,
       });
-      const content = JSON.stringify(request.history);
-      if (!content.includes("read_contract")) return reply("read_contract", {});
-      if (!content.includes("read_current_source"))
-        return reply("read_current_source", {});
       return reply("submit_candidate", {
         source: source(this.pluginId, this.name, this.minimum),
         ...(this.members.length ? { members: this.members } : {}),
