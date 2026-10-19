@@ -50,6 +50,40 @@ async function settle(e: Evolution): Promise<AssistantRun> {
   throw new Error(`timeout: ${JSON.stringify((await e.observe()).run)}`);
 }
 
+test("不能增加计数是业务约束：隐藏或可见拒绝均通过，可见且实际增加必须失败", async t => {
+  const w = await workspace(t);
+  const base = w.activeVersion();
+  const before = JSON.stringify({ composition: w.composition(), tasks: w.query() });
+  for (const variant of ["hidden", "reject", "increments"] as const) {
+    const code = `export default {
+      contribute() { return {
+        fields:[{key:'count',label:'计数',type:'text'}],
+        commands:[{id:'increment',label:'加一',from:${variant === "hidden" ? "['open']" : "['open','done']"}}],
+        uiSlots:[{id:'count-detail',slot:'task.detail',title:'计数',fields:[{key:'count',label:'计数'}],actions:[{commandId:'increment',label:'加一'}]}]
+      }; },
+      decide({task,action}) {
+        if(action!=='increment' ${variant === "increments" ? "" : "||task.state!=='open'"}) return {kind:'reject',message:'不可用'};
+        return {kind:'commit',state:task.state,fields:{...task.fields,count:String(Number(task.fields.count??'0')+1)}};
+      }
+    };`;
+    const member = w.release.record({ pluginId: "counter", name: "计数", service: "plugin:counter", contractVersion: "extensions/1", source: code, code, definition: {}, evidence: { passed: true, origin: "model-stub-counterexample" } });
+    const candidate = w.release.record({ pluginId: base.pluginId, name: base.name, service: base.service, contractVersion: base.contractVersion, source: base.source, code: base.code, definition: base.definition, parentId: base.id, evidence: { passed: false }, members: [
+      { pluginId: base.pluginId, role: "workflow", enabled: true },
+      { pluginId: "counter", role: "auxiliary", enabled: true, versionId: member.id },
+    ] });
+    const cases: BrowserCase[] = [{ id: "counter-prohibition", task: "new", steps: [
+      { kind: "action", member: "counter", action: "increment" },
+      { kind: "field", member: "counter", field: "count", value: "1" },
+      { kind: "action", member: "workflow", action: "complete" },
+      { kind: "action-blocked", member: "counter", action: "increment" },
+    ] }];
+    const verify = () => verifyBrowser(w, candidate, base, cases, [], hash(cases), new AbortController().signal);
+    if (variant === "increments") await assert.rejects(verify(), /禁止动作改变了任务/);
+    else assert((await verify()).results.every(r => r.status === "passed"));
+    assert.equal(JSON.stringify({ composition: w.composition(), tasks: w.query() }), before);
+  }
+});
+
 test("宿主编译的表单矩阵通过真实 Chromium：原生必填、空白、Unicode长度及重新打开（模型桩）",async(t)=>{
  const w=await workspace(t);const before={tasks:w.query(),composition:w.composition()};
  const planning=new PlanningDriver({workflowRules:[{key:"reflection",label:"复盘",required:true,minLength:2,maxLength:5000}]});

@@ -292,6 +292,20 @@ export function stabilityDriverFor(
   scenarioId: string,
   scenario?: StabilityScenario,
 ): Driver {
+  if (scenario?.oracle?.kind === "block" && scenario.oracle.reason === "offline-delivery")
+    return { async generate(request) {
+      const input = JSON.parse(request.message ?? "{}");
+      const value = input.kind === "request-admission/2" ? {
+        effects: [
+          { source: 1, sourceQuote: "向外部推送通知", effect: "external-delivery" },
+          { source: 1, sourceQuote: "离线时仍保证送达", effect: "offline-delivery" },
+        ], initials: [], questions: [],
+      } : input.kind === "admission-source-review/2" ? { decisions: input.claims.map((c: {sourceQuote:string}, i:number) => ({
+        claim: i + 1, source: 1, sourceQuote: c.sourceQuote, layer: "capability", verdict: "entailed", detail: "合成需求明确要求宿主不支持的外部和离线交付",
+      })) } : undefined;
+      if (!value) throw new Error("交付边界模型桩不得进入业务规划或生成");
+      return { text: JSON.stringify(value), calls: [], history: [], usage: null, raw: {fixture:"current-delivery-boundary"} };
+    } };
   if (scenario?.oracle && scenarioId === "due-auto-expire")
     return dueCurrentStubDriver();
   if (scenarioId === "clarification-reflection") {
@@ -322,9 +336,9 @@ export function stabilityDriverFor(
           claims?: { sourceQuote: string }[];
         };
         let value: unknown;
-        if (input.kind === "request-admission/1")
+        if (input.kind === "request-admission/2")
           value = {
-            presentations: [
+            effects: [], initials: [
               {
                 source: 1,
                 sourceQuote: "尚未填写时显示空白",
@@ -338,13 +352,13 @@ export function stabilityDriverFor(
             ],
             questions: [],
           };
-        else if (input.kind === "admission-source-review/1")
+        else if (input.kind === "admission-source-review/2")
           value = {
             decisions: input.claims!.map((c, i) => ({
               claim: i + 1,
               source: 1,
               sourceQuote: c.sourceQuote,
-              verdict: "entailed",
+              layer: "initial-display", verdict: "entailed",
               detail: "合成需求明确要求尚未填写显示空白",
             })),
           };
@@ -409,6 +423,16 @@ function dueCurrentStubDriver(): Driver {
         action: "expire",
         input: { scheduledAt: at },
         expected: { kind: "reject" },
+      },
+      {
+        name: "修改已过期截止清除标记", member: "due", state: "open",
+        fields: { dueAt: "2030-01-01T00:00:00Z", expired: "true" }, action: "setDue", input: { dueAt: at },
+        expected: { kind: "commit", state: "open", fields: { dueAt: at } },
+      },
+      {
+        name: "清除已过期截止与标记", member: "due", state: "open",
+        fields: { dueAt: at, expired: "true" }, action: "setDue", input: { dueAt: "" },
+        expected: { kind: "commit", state: "open", fields: {} },
       },
     ],
     capabilityChanges: [

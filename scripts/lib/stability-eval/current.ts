@@ -34,10 +34,11 @@ export function currentManifest(productCommit: string): StabilityEvalManifest {
         };
         break;
       case "due-auto-expire":
-        scenario.request += "过期标记的保存值为 true，任务详情显示保存值。";
+        scenario.request += "过期标记的保存值为 true，任务详情显示保存值。修改或清除截止时清除原过期标记；允许设置过去时间，未完成任务在宿主在线时自动补标过期；已经过期再完成时保留过期标记；提前完成后重新打开时截止已过则自动标记过期。未设置截止或尚未到点时不要求额外的默认保存值或初始显示。";
         scenario.oracle = {
           kind: "due",
           expiredValue: "true",
+          lifecyclePolicy: "reset-on-edit-preserve-on-complete",
           sources: [scenario.request],
         };
         break;
@@ -93,7 +94,7 @@ export function currentManifest(productCommit: string): StabilityEvalManifest {
   });
   return {
     ...previous,
-    evaluation: "current/1",
+    evaluation: "current/2",
     title: "当前版本稳定性发现批次",
     scenarios,
     model: {

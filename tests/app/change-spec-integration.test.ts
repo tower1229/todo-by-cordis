@@ -320,7 +320,7 @@ test("澄清直接等待用户，回答沿同一运行和预算复用已验证�
   assert.ok(
     continuationMaterials.some((d) => d.ref === "guide/command.register"),
   );
-  assert.equal(fixture.requests.filter((r) => r.schema && JSON.parse(r.message!).kind !== "clarification-review/1").length, 1);
+  assert.equal(fixture.requests.filter((r) => r.schema && JSON.parse(r.message!).kind !== "clarification-review/2").length, 1);
 });
 
 test("正式差异协议：辅助新增files为空，精确继承旧主工作流，浏览器通过后才待应用（模型桩）", async (t) => {

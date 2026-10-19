@@ -69,7 +69,7 @@ export function fieldReviewSchema(
       },
     },
     description:
-      "逐个 fieldReviewTargets 独立解释用户来源的初始呈现要求；没有要求时必须明确 unspecified，只有用户存在未决业务选择时才用 undetermined。target/source 均为各目录的一基序号。不能从计划中的初始值反推用户要求。宿主比较该解释与可执行义务，issues=[]不能替代这些判断。",
+      "逐个 fieldReviewTargets 独立解释用户来源的初始呈现要求；state 只表示业务逻辑初始值，由宿主视为没有额外初始呈现要求；没有要求时用 unspecified，只有真实未决业务选择才用 undetermined。target/source 为各目录一基序号，不能从计划初始值反推用户要求。宿主比较该解释与可执行义务，issues=[]不能替代这些判断。",
   };
 }
 function row(v: unknown): Record<string, unknown> {

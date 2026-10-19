@@ -191,7 +191,15 @@ export type RequirementGate = {
   coverage: { requirementId: string; reasons: string[] }[];
   seal: string;
 };
+export type RunStop = {
+  kind: "clarification" | "capability" | "semantic" | "planning-gate" | "budget" | "protocol" | "output-budget" | "transport" | "environment" | "model-blocker" | "protection";
+  phase: string;
+  code: string;
+  evidence: string[];
+};
 type Run = {
+  /** Current stopping condition; recovered incidents remain in their own ledgers. */
+  stop?: RunStop;
   resourceFailures?: {phase:string;call:number;kind:"output-budget";requestHash:string;responseHash:string;finishReason:"length";usage:unknown}[];
   requestAdmissions?: import("../evolution/request-admission.js").RequestAdmission[];
   protocolFailures?: {phase: string;call: number;requestHash: string;responseHash: string;problems: string[]}[];

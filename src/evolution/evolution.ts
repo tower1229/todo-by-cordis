@@ -7,9 +7,10 @@ import { InvestigationStore } from "./investigation.js";
 import { compileSpec } from "./specification.js";
 import { recordReview } from "./review.js";
 import { requirementReviewInput } from "./review-input.js";
-import { clarificationSchema, parseClarificationDecision } from "./clarification-review.js";
+import { clarificationRequest, parseClarificationReview, clarificationBlockers } from "./clarification-review.js";
 import { admissionRequest, admissionKey, parseAdmission, admissionQuestionState, questionReviewKey, admissionReviewRequest, adjudicateAdmission, admissionResolved } from "./request-admission.js";
 import { ModelProtocolError, ModelResourceError, replyProblems } from "./model-protocol.js";
+import { stopForError } from "./run-stop.js";
 import {
   adjudicateTechnicalReview,
   reviewQuestion,
@@ -1011,7 +1012,7 @@ export class Evolution {
               }
             : error instanceof ModelTransportError && error.httpStatus === 400 ? {
                 ...this.base(record),status:"blocked",...describeBlockers(["维护者模型契约被供应商拒绝（HTTP 400），停止业务规划并保留传输证据：" + message]),
-              } : error instanceof BudgetExhaustedError || error instanceof ModelProtocolError ? {
+              } : error instanceof BudgetExhaustedError && error.resource === "calls" || error instanceof ModelProtocolError ? {
                 ...this.base(record), status: "blocked", ...describeBlockers([message]),
               } : {
                 ...this.base(record),
@@ -1022,6 +1023,14 @@ export class Evolution {
                 ),
               };
           this.save(record);
+          const lastCall = this.db.prepare("SELECT body FROM evolution_calls WHERE runId=? ORDER BY id DESC LIMIT 1").get(record.run.id);
+          const phase = (error instanceof ModelProtocolError || error instanceof ModelTransportError) && lastCall ?
+            (JSON.parse(String(lastCall.body)) as {phase:string}).phase : kind === "execute" ? "execution" : kind === "apply" ? "apply" : "planning";
+          const stop = stopForError(error, phase, record.calls, controller.signal);
+          if (stop) {
+            record.run.stop = stop;
+            this.save(record);
+          }
         }
       } finally {
         clearTimeout(timer);
@@ -1077,7 +1086,7 @@ export class Evolution {
     signal.throwIfAborted();
     this.scheduler.admit(r.calls, phase);
     if (r.calls >= this.limits.calls)
-      throw new Error(`已达到 ${this.limits.calls} 次模型调用上限`);
+      throw new BudgetExhaustedError(`已达到 ${this.limits.calls} 次模型调用上限`);
     r.calls++;
     if (phase !== "review" && phase !== "admission" && r.investigation && r.pendingMaterials?.length) {
       this.materials.delivered(r.investigation, phase, r.calls, r.pendingMaterials);
@@ -1228,36 +1237,26 @@ export class Evolution {
     });
     this.save(r);
   }
-  private async auditQuestion(r: RecordRun, question: string, sources: RequirementGate["sources"], facts: ReturnType<typeof technicalFacts>, signal: AbortSignal) {
+  private async auditQuestions(r: RecordRun, questions: string[], sources: RequirementGate["sources"], facts: ReturnType<typeof technicalFacts>, signal: AbortSignal) {
     if (!this.scheduler.canAuditQuestion(r.calls)) throw new BudgetExhaustedError("剩余预算不足以审查问题并完成修正后的规划复核与候选执行");
-    const key=questionReviewKey(question,sources,facts);
-    if(r.run.clarificationReviews?.some(a=>a.key===key)) throw new ModelProtocolError("相同澄清已审查且没有新证据，保留原预算并停止");
-    const history=r.history;
-    let decision: ReturnType<typeof parseClarificationDecision>;
+    if (questions.some(question => r.run.clarificationReviews?.some(a => a.key === questionReviewKey(question,sources,facts))))
+      throw new ModelProtocolError("相同澄清已审查且没有新证据，保留原预算并停止");
+    const history = r.history;
     try {
-      const reviewed=await this.call(r,{history:[],instruction:"独立审查拟提问是否必要，只返回 schema JSON，禁止工具。business-ambiguity 仅用于原始 sources 尚未决定的业务选择；unnecessary 用于用户已明确或根本未要求的细节；scope-reduction 用于请求用户接受降级或替换明确要求；technical 只声明精确 facts 目录序号、property 与用户需要的 expected，由宿主比较实际值。能力缺口不能冒充业务歧义。来源和事实使用一基序号。",schema:clarificationSchema(),message:JSON.stringify({kind:"clarification-review/1",question,sources,facts})},signal,"review",reply=>parseClarificationDecision(reply.text,sources,facts));
+      const request = clarificationRequest(questions,sources,facts);
+      const parse = (text:string) => parseClarificationReview(text,questions,sources,facts);
+      const reply = await this.call(r,request,signal,"review",reply => parse(reply.text));
       signal.throwIfAborted();
-      decision=parseClarificationDecision(reviewed.text,sources,facts);
-      (r.run.clarificationReviews??=[]).push({key,question,call:r.calls,decision});
-    } finally {r.history=history;}
-    this.save(r);
-    return decision;
+      const decisions = parse(reply.text);
+      for (const {question,decision} of decisions)
+        (r.run.clarificationReviews ??= []).push({key:questionReviewKey(question,sources,facts),question,call:r.calls,decision});
+      r.history = history;
+      this.save(r);
+      return decisions;
+    } finally { r.history = history; }
   }
-  private async auditAdmissionQuestions(r:RecordRun,questions:string[],sources:RequirementGate["sources"],facts:ReturnType<typeof technicalFacts>,signal:AbortSignal) {
-    if(!this.scheduler.canAuditQuestion(r.calls))throw new BudgetExhaustedError("剩余预算不足以审查需求预检问题并保留候选执行");
-    const schema={type:"object",additionalProperties:false,required:["decisions"],properties:{decisions:{type:"array",minItems:questions.length,maxItems:questions.length,items:{type:"object",additionalProperties:false,required:["index","decision"],properties:{index:{type:"integer",enum:questions.map((_,i)=>i+1)},decision:clarificationSchema()}}}}};
-    const parse=(text:string)=>{
-      const value=JSON.parse(text) as {decisions:{index:number;decision:unknown}[]};
-      if(new Set(value.decisions.map(d=>d.index)).size!==questions.length)throw new Error("需求预检澄清裁决必须逐项完整且不可重复");
-      return value.decisions.map(d=>({question:questions[d.index-1],decision:parseClarificationDecision(JSON.stringify(d.decision),sources,facts)}));
-    };
-    const history=r.history;
-    try {
-      const reply=await this.call(r,{history:[],schema,instruction:"独立逐项审查 questions 的必要性。business-ambiguity 仅用于 sources 尚未决定的业务选择；unnecessary 用于已明确或未要求的细节；scope-reduction 表示请求接受降级；technical 必须引用宿主 facts。只返回逐项决策 JSON，禁止工具。index 为 questions 一基序号，来源和事实为一基序号。",message:JSON.stringify({kind:"admission-clarification-review/1",questions,sources,facts})},signal,"review",reply=>parse(reply.text));
-      signal.throwIfAborted();
-      for(const {question,decision}of parse(reply.text))(r.run.clarificationReviews??=[]).push({key:questionReviewKey(question,sources,facts),question,call:r.calls,decision});
-    } finally {r.history=history;}
-    this.save(r);
+  private async auditQuestion(r: RecordRun, question: string, sources: RequirementGate["sources"], facts: ReturnType<typeof technicalFacts>, signal: AbortSignal) {
+    return (await this.auditQuestions(r,[question],sources,facts,signal))[0].decision;
   }
   private async plan(r: RecordRun, signal: AbortSignal) {
     const context = this.domain.context();
@@ -1287,7 +1286,7 @@ export class Evolution {
     const admissionContext = this.domain.admission?.(context);
     if (admissionContext) {
       if (admissionContext.missing.length) {
-        r.run = {...this.base(r),status:"blocked",...describeBlockers(admissionContext.missing.map(s=>"规划预检缺少依赖或检查器："+s))};
+        r.run = {...this.base(r),status:"blocked",stop:{kind:"environment",phase:"admission",code:"missing-dependency-or-checker",evidence:["inspect_application.environment"]},...describeBlockers(admissionContext.missing.map(s=>"规划预检缺少依赖或检查器："+s))};
         this.save(r); return;
       }
       const key = admissionKey(context.versionId,sourceCatalog,admissionContext.facts);
@@ -1309,19 +1308,20 @@ export class Evolution {
         this.save(r);
       }
       if (admitted.blockers.length) {
-        r.run={...this.base(r),status:"blocked",...describeBlockers(admitted.blockers)};
+        const capability = admitted.capabilityChecks.some(c => c.outcome === "unsupported" && admitted.claims.some(claim => claim.interpretation.effect === c.effect && admitted!.semanticReview?.decisions.some(d => d.claimId === claim.id && d.verdict === "entailed")));
+        r.run={...this.base(r),status:"blocked",stop:{kind:capability?"capability":"semantic",phase:"admission",code:capability?"unsupported-host-effect":admitted.semanticReview?.decisions.some(d=>d.verdict==="uncertain")?"source-undecided":"unsupported-initial-presentation",evidence:["run.requestAdmissions"]},...describeBlockers(admitted.blockers)};
         this.save(r);return;
       }
       if (admitted.questions.length) {
         const pending=admissionQuestionState(admitted,sourceCatalog,admissionContext.facts,r.run.clarificationReviews??[]).pending;
         if(pending.length===1) await this.auditQuestion(r,pending[0],sourceCatalog,admissionContext.facts,signal);
-        else if(pending.length>1) await this.auditAdmissionQuestions(r,pending,sourceCatalog,admissionContext.facts,signal);
+        else if(pending.length>1) await this.auditQuestions(r,pending,sourceCatalog,admissionContext.facts,signal);
         const state=admissionQuestionState(admitted,sourceCatalog,admissionContext.facts,r.run.clarificationReviews??[]);
         if(state.pending.length)throw new ModelProtocolError("需求预检澄清缺少完整裁决");
-        if(state.blockers.length){r.run={...this.base(r),status:"blocked",...describeBlockers(state.blockers)};this.save(r);return;}
+        if(state.blockers.length){const capability = r.run.clarificationReviews?.some(a=>a.decision.effects?.checks.some(c=>c.verdict==="required"&&c.outcome==="unsupported"));r.run={...this.base(r),status:"blocked",stop:{kind:capability?"capability":"semantic",phase:"admission",code:capability?"unsupported-host-effect":"clarification-boundary",evidence:["run.clarificationReviews"]},...describeBlockers(state.blockers)};this.save(r);return;}
         if(state.questions.length){
         if (!this.scheduler.canClarify(r.calls,true)) throw new BudgetExhaustedError("剩余预算不足以容纳回答后的需求预检、规划复核和候选执行，保留原运行");
-        r.run={...this.base(r),status:"awaiting-input",question:state.questions.join("\n")};
+        r.run={...this.base(r),status:"awaiting-input",stop:{kind:"clarification",phase:"admission",code:"business-answer-required",evidence:["run.question","run.clarificationReviews"]},question:state.questions.join("\n")};
         this.save(r);return;
         }
       }
@@ -1356,7 +1356,7 @@ export class Evolution {
       instruction: string,
     ) => {
       if (r.calls >= this.limits.calls)
-        throw new Error(`已达到 ${this.limits.calls} 次模型调用上限`);
+        throw new BudgetExhaustedError(`已达到 ${this.limits.calls} 次模型调用上限`);
       if (!response.calls.length) {
         message = JSON.stringify({
           error,
@@ -1444,7 +1444,7 @@ export class Evolution {
               message: this.resultText(call.args.message),
             };
           } else if (call.name === "report_blocker") {
-            r.run = {...this.base(r), status: "blocked", ...describeBlockers([this.resultText(call.args.reason)])};
+            r.run = {...this.base(r), status: "blocked",stop:{kind:"model-blocker",phase:"planning",code:"model-reported-blocker",evidence:[`model-call:${r.calls}`]}, ...describeBlockers([this.resultText(call.args.reason)])};
           } else if (call.name === "request_clarification") {
             if (!r.run.evidence?.some((e) => e.ref === "inspect_application")) {
               retryProtocol(
@@ -1456,14 +1456,14 @@ export class Evolution {
             }
             const question = this.resultText(call.args.question);
             const decision = await this.auditQuestion(r,question,sourceCatalog,admissionContext?.facts??technicalFacts({workflowRules:[],binding:undefined}),signal);
-            if (decision.kind === "scope-reduction" || (decision.kind === "technical" && decision.fact!.expected !== decision.fact!.actual)) {
-              r.run = {...this.base(r), status: "blocked", ...describeBlockers([`澄清审查确认需要维护者处理的能力缺口或范围降低：${decision.detail}`])};
+            if (clarificationBlockers(decision).length) {
+              r.run = {...this.base(r), status: "blocked", stop:{kind:decision.effects?.checks.some(c=>c.verdict==="required"&&c.outcome==="unsupported")?"capability":"semantic",phase:"planning",code:"clarification-boundary",evidence:["run.clarificationReviews"]}, ...describeBlockers(clarificationBlockers(decision))};
             } else if (decision.kind !== "business-ambiguity") {
               retryProtocol(response, "宿主已裁决该问题无需用户澄清：" + JSON.stringify(decision), "保持原始要求，在同一预算内纠正规格或报告阻断，不以替代要求发起用户确认。");
               continue investigation;
             } else {
               if (!this.scheduler.canClarify(r.calls,!!admissionContext)) throw new BudgetExhaustedError("剩余预算不足以容纳回答后的需求预检、规划复核及候选执行");
-              r.run = {...this.base(r),status:"awaiting-input",question};
+              r.run = {...this.base(r),status:"awaiting-input",stop:{kind:"clarification",phase:"planning",code:"business-answer-required",evidence:["run.question","run.clarificationReviews"]},question};
             }
           } else {
             let parsed: ReturnType<Domain["parse"]>;
@@ -1482,6 +1482,7 @@ export class Evolution {
                 r.run = {
                   ...this.base(r),
                   status: "blocked",
+                  stop: {kind:"planning-gate",phase:"planning",code:"plan-compilation",evidence:[`model-call:${r.calls}`,"run.evidence"]},
                   ...describeBlockers([diagnostic]),
                 };
                 this.save(r);
@@ -1653,11 +1654,11 @@ export class Evolution {
                 }
                 if (question && !technicalBlock) {
                   const decision=await this.auditQuestion(r,question,sources,technicalFacts(plan),signal);
-                  if(decision.kind === "business-ambiguity") {
+                  if(decision.kind === "business-ambiguity" && !clarificationBlockers(decision).length) {
                     if(!this.scheduler.canClarify(r.calls,!!admissionContext)) throw new BudgetExhaustedError("剩余预算不足以容纳回答后的需求预检、规划复核及候选执行");
-                    r.run={...this.base(r),status:"awaiting-input",question};this.save(r);return;
+                    r.run={...this.base(r),status:"awaiting-input",stop:{kind:"clarification",phase:"review",code:"business-answer-required",evidence:["run.question","run.clarificationReviews"]},question};this.save(r);return;
                   }
-                  if(decision.kind === "scope-reduction" || decision.kind === "technical" && decision.fact!.expected !== decision.fact!.actual) parsed.retryable=false;
+                  if(clarificationBlockers(decision).length) {parsed.retryable=false;parsed.blockers.push(...clarificationBlockers(decision));}
                   parsed.blockers.push("复核问题已由统一澄清审查裁决，保留原意见并纠正规格或停止："+JSON.stringify(decision));
                 }
                 plan.questionAdjudications=structuredClone(r.run.clarificationReviews ?? []);
@@ -1769,6 +1770,7 @@ export class Evolution {
               ? {
                   ...base,
                   status: "blocked",
+                  stop: {kind:"planning-gate",phase:"planning",code:"plan-gate",evidence:["run.plans","run.reviewLedger"]},
                   ...describeBlockers(parsed.blockers),
                   plan,
                 }
@@ -1983,6 +1985,7 @@ export class Evolution {
               ...this.base(r),
               status: "blocked",
               plan,
+              stop: {kind:"model-blocker",phase:"generation",code:"model-reported-blocker",evidence:[`model-call:${r.calls}`]},
               ...describeBlockers([reason]),
             };
             this.save(r);
@@ -2206,6 +2209,7 @@ export class Evolution {
                   ...this.base(r),
                   status: "blocked",
                   plan,
+                  stop: {kind:error instanceof BrowserEnvironmentError?"environment":error instanceof ProtectedCandidateError?"protection":"planning-gate",phase:"execution",code:error instanceof BrowserEnvironmentError?"browser-environment":error instanceof ProtectedCandidateError?"protected-candidate":"plan-stale",evidence:[`candidate:${candidate.id}`]},
                   ...describeBlockers([diagnostic]),
                 };
                 this.save(r);
@@ -2247,8 +2251,9 @@ export class Evolution {
         this.save(r);
       }
     }
-    throw new Error(
+    throw new BudgetExhaustedError(
       `${this.limits.candidates} 个候选均未通过验证，当前版本保持不变`,
+      "candidates",
     );
   }
   async close() {

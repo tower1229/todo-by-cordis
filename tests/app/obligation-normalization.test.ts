@@ -713,7 +713,7 @@ test("规划器虚构的初始ok经来源复核退回规格修正，不能误报
         }
         if (
           request.schema &&
-          JSON.parse(request.message!).kind !== "clarification-review/1"
+          JSON.parse(request.message!).kind !== "clarification-review/2"
         ) {
           const r = JSON.parse(reply.text);
           r.fieldDecisions[0].initial = { kind: "unspecified" };

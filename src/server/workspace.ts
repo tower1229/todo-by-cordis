@@ -465,6 +465,11 @@ export class Workspace {
     this.extensions.clear();
     this.diagnosticsNotes = [];
   }
+  private scheduleActionAllowed(commandId: string, state: string): boolean {
+    const workflow = this.release.get(this.current().versionId).definition as WorkflowDefinition;
+    return this.extensions.commands().some(command => command.id === commandId && (!command.from || command.from.includes(state))) ||
+      workflow.actions.some(action => action.id === commandId && action.from.includes(state));
+  }
   private expandScheduleJobs(): ScheduledJob[] {
     const jobs: ScheduledJob[] = [];
     const hostCompositionRevision = this.current().revision;
@@ -483,7 +488,7 @@ export class Workspace {
       for (const row of rows) {
         const task = this.decode(row);
         const value = task.fields[fieldKey];
-        if (!value) continue;
+        if (!value || !this.scheduleActionAllowed(schedule.onFire.commandId, task.state)) continue;
         jobs.push({
           ...schedule,
           at: value,
@@ -552,19 +557,7 @@ export class Workspace {
         return record("skipped", "截止时间已变化");
       if (this.operation(identity))
         return record("skipped", "已执行过相同截止动作");
-      const allowed =
-        this.extensions
-          .commands()
-          .some(
-            (command) =>
-              command.id === job.onFire.commandId &&
-              (!command.from || command.from.includes(task.state)),
-          ) ||
-        this.composition().workflow.actions.some(
-          (action) =>
-            action.id === job.onFire.commandId &&
-            action.from.includes(task.state),
-        );
+      const allowed = this.scheduleActionAllowed(job.onFire.commandId, task.state);
       if (!allowed) return record("skipped", "当前状态不允许到期动作");
       const result = await this.scheduledCommand({
         type: "action",

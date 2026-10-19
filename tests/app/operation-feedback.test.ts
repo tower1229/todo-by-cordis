@@ -385,8 +385,8 @@ for (const required of [false, true])
       {
         async generate(request) {
           const input = JSON.parse(request.message ?? "{}");
-          if (input.kind === "request-admission/1")
-            return reply({ presentations: [], questions: [] });
+          if (input.kind === "request-admission/2")
+            return reply({ effects: [], initials: [], questions: [] });
           if (request.schema) {
             reviews++;
             assert.deepEqual(request.history, []);

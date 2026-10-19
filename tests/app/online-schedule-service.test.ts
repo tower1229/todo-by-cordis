@@ -47,6 +47,34 @@ test("controllable clock advances timers without wall sleep", async () => {
   assert.deepEqual(fired, [1_200, 1_500]);
 });
 
+test("不符合动作状态的任务不消耗定时身份，重新打开后按 run-once 补执行且不重复", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-schedule-eligibility-"));
+  const clock = createControllableClock(Date.parse("2030-01-01T00:00:00Z"));
+  const w = await Workspace.open(join(directory, "tasks.db"), {clock});
+  t.after(async () => { await w.close(); await rm(directory,{recursive:true,force:true}); });
+  const workflowCode = await readFile(new URL("../fixtures/aux-workflow.mjs", import.meta.url),"utf8");
+  const member = w.release.record({pluginId:"due",name:"截止",service:"plugin:due",contractVersion:"extensions/1",source:dueAutoExpireSource,code:dueAutoExpireSource,definition:{},evidence:{passed:true,origin:"model-stub-regression"}});
+  const composition = w.release.record({pluginId:"aux-workflow",name:"工作流",service:"workflow",contractVersion:"workflow/1",source:workflowCode,code:workflowCode,definition:dualWorkflowDefinition,evidence:{passed:true,origin:"model-stub-regression"},members:[
+    {pluginId:"aux-workflow",role:"workflow",enabled:true}, {pluginId:"due",role:"auxiliary",enabled:true,versionId:member.id},
+  ]});
+  await w.activate({versionId:composition.id,compositionRevision:w.composition().revision,operationId:randomUUID()},()=>undefined);
+  const created = await w.command({type:"create",title:"截止前完成再重新打开",compositionRevision:w.composition().revision,operationId:randomUUID()});
+  const id = created.task!.id;
+  const action = (actionId:string,input:Record<string,string>={}) => w.command({type:"action",taskId:id,actionId,input,expectedRevision:w.read(id).revision,compositionRevision:w.composition().revision,operationId:randomUUID()});
+  await action("setDue",{dueAt:new Date(clock.now()+5000).toISOString()});
+  await action("complete");
+  assert.equal(w.schedulerState().armed,0,"状态不允许的动作不得进入调度器");
+  await clock.advance(5000);
+  assert.equal(w.read(id).fields.expired,undefined);
+  await action("reopen");
+  await w.whenSchedulesIdle();
+  assert.equal(w.read(id).fields.expired,"true");
+  const revision=w.read(id).revision;
+  await w.restart();await w.whenSchedulesIdle();
+  assert.equal(w.read(id).revision,revision);
+  assert.equal(w.scheduleExecutions().filter(e=>e.taskId===id&&e.outcome==="succeeded").length,1);
+});
+
 test("online schedule service lifecycle is host-owned and distinct from members", async () => {
   const clock = createControllableClock(0);
   const service = new OnlineScheduleService(clock);

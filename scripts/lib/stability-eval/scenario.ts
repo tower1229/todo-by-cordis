@@ -38,6 +38,7 @@ import {
   type ObservedOutcomeClass,
   type ScenarioRunRecord,
   failureFromEvidence,
+  runIncidents,
   type CallEvidence,
 } from "./metrics.js";
 import { runStabilityBrowserPath, type BrowserPathResult } from "./browser.js";
@@ -49,6 +50,7 @@ import { stabilityDriverFor } from "./driver-fixture.js";
 import {
   checkIndependentPlan,
   checkIndependentBlock,
+  checkDuePolicy,
   checkIndependentBrowser,
   independentBrowserCases,
   oracleCheck,
@@ -703,6 +705,10 @@ async function runScenarioInEnvironment(
         oracle.checks = oracle.checks.map((c) =>
           c.id === id ? oracleCheck(id, true, value) : c,
         );
+      if (options.scenario.oracle?.kind === "due" && options.scenario.oracle.lifecyclePolicy) {
+        const check = checkDuePolicy(browserResult.duePolicyChecks ?? []);
+        oracle.checks = oracle.checks.map(c => c.id === check.id ? check : c);
+      }
       if (options.scenario.clarification)
         oracle.checks = oracle.checks.map((c) =>
           c.id === "path:clarification"
@@ -766,8 +772,9 @@ async function runScenarioInEnvironment(
     ["planning", "executing"].includes(beforeShutdown.run?.status ?? "");
   const failure =
     options.manifest.evaluation && !matchesExpectation
-      ? failureFromEvidence({
+      ? evaluatorStoppedLiveRun ? {classification:"evaluator" as const,phase:"browser",code:"evaluation-stopped-live-run",evidence:["before-shutdown","browser-result"]} : failureFromEvidence({
           calls: callEvidence,
+          run: beforeShutdown.run ?? undefined,
           protocolFailures: beforeShutdown.run?.protocolFailures,
           resourceFailures: beforeShutdown.run?.resourceFailures,
           oracle,
@@ -797,6 +804,8 @@ async function runScenarioInEnvironment(
     candidatePassed: (beforeShutdown.candidates ?? []).some((c) => c.passed),
     ...(oracle ? { oracle } : {}),
     ...(failure ? { failure } : {}),
+    ...(beforeShutdown.run ? { terminal: { status: beforeShutdown.run.status, ...(beforeShutdown.run.stop ? { stop: beforeShutdown.run.stop } : {}) } } : {}),
+    incidents: runIncidents(callEvidence, beforeShutdown.run?.protocolFailures, beforeShutdown.run?.resourceFailures),
     ...(resources ? { resources } : {}),
     scenarioId: options.scenario.id,
     evidenceKind: options.evidenceKind,

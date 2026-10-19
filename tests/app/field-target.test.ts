@@ -36,7 +36,7 @@ const facts = [
   ...fieldFacts([identity]),
 ];
 const payload = (target: unknown) => ({
-  presentations: [
+  effects: [], initials: [
     {
       source: 1,
       sourceQuote: sources[0].text,
@@ -65,7 +65,7 @@ test("已有字段以宿主目标绑定，不支持的初始要求仍在预检�
           claim: 1,
           source: 1,
           sourceQuote: sources[0].text,
-          verdict: "entailed",
+          layer: "initial-display", verdict: "entailed",
           detail: "明确要求空白",
         },
       ],
@@ -94,7 +94,7 @@ test("旧自由字段写入契约被拒绝，不继续接收 panel.noteMark 字�
   };
   assert.throws(() =>
     parseAdmission(
-      JSON.stringify({ presentations: [old], questions: [] }),
+      JSON.stringify({ effects: [], initials: [old], questions: [] }),
       "base",
       sources,
       facts,
@@ -143,10 +143,10 @@ test("同一来源中的同名字段各有独立命题及裁决，不能借一�
     ...fieldFacts(identities),
   ];
   const raw = {
-    presentations: identities.map(
+    effects: [], initials: identities.map(
       (i) =>
         payload({ kind: "existing", targetId: fieldTargetId(i) })
-          .presentations[0],
+          .initials[0],
     ),
     questions: [],
   };
@@ -158,7 +158,7 @@ test("同一来源中的同名字段各有独立命题及裁决，不能借一�
         claim: index + 1,
         source: 1,
         sourceQuote: sources[0].text,
-        verdict:
+        layer: "initial-display", verdict:
           c.interpretation.member === "panel" ? "not-requested" : "entailed",
         detail: "各自裁决",
       })),
@@ -283,7 +283,7 @@ test("未知归属不代表技术上可支持：两类渲染器都不支持空�
           claim: 1,
           source: 1,
           sourceQuote: sources[0].text,
-          verdict: "entailed",
+          layer: "initial-display", verdict: "entailed",
           detail: "来源明确",
         },
       ],
@@ -295,7 +295,7 @@ test("未知归属不代表技术上可支持：两类渲染器都不支持空�
   assert.equal(reviewed.blockers.length, 1);
   // A renderer match or missing technical facts cannot fabricate a unique supported owner.
   const hidden = payload({ kind: "new", name: "brandNew" });
-  hidden.presentations[0].meaning.kind = "hidden";
+  hidden.initials[0].meaning.kind = "hidden";
   const deferred = parseAdmission(
     JSON.stringify(hidden),
     "base",

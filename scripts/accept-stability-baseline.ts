@@ -318,7 +318,7 @@ if (!child) {
     }
     const summaryHash = writeVerifiedJson(join(root, "summary.json"), {
       schema: current
-        ? "cordis.stability-eval-current/1"
+        ? "cordis.stability-eval-current/2"
         : postchange
           ? "cordis.stability-eval-postchange/1"
           : "cordis.stability-eval-baseline/2",

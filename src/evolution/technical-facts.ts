@@ -8,6 +8,7 @@ import { readOnlyFieldText } from "../shared/field-presentation.js";
 import {isInheritedAvailability,availabilityFacts,type ActionAvailability} from "./action-availability.js";
 import {fieldFacts,type FieldIdentity} from "./field-identity.js";
 import { workflowCheckerRules } from "./checker-rules.js";
+import { capabilityFacts } from "./capability-admission.js";
 
 export type TechnicalFact = {
   id: string;
@@ -140,7 +141,7 @@ export function reviewQuestion(
   return question;
 }
 export function technicalFacts(
-  plan: Pick<InvestigatedPlan, "workflowRules" | "binding"> & Partial<Pick<InvestigatedPlan,"requirements">> & {actionAvailability?:ActionAvailability;fieldIdentities?:FieldIdentity[]},
+  plan: Pick<InvestigatedPlan, "workflowRules" | "binding"> & Partial<Pick<InvestigatedPlan,"requirements" | "requestAdmission">> & {actionAvailability?:ActionAvailability;fieldIdentities?:FieldIdentity[]; capabilities?: import("../server/planning.js").Investigation["capabilities"]},
 ): TechnicalFact[] {
   const facts: Omit<TechnicalFact, "evidenceHash">[] = [
     {
@@ -174,6 +175,14 @@ export function technicalFacts(
         workflowMissingField: "absent",
         auxiliaryMissingField: readOnlyFieldText(undefined),
         origin: "host-protection-not-business-requirement",
+      },
+    },
+    {
+      id: "host-fact:field-interaction",
+      properties: {
+        detail: "read-only-display",
+        editing: "explicit-action-input-form",
+        source: "TaskEditor-and-TaskDetailContributions-and-ActionForm",
       },
     },
     {
@@ -225,7 +234,7 @@ export function technicalFacts(
       checkers: plan.binding?.checkers ?? [],
       rules: plan.workflowRules,
     }),
-  })),...availabilityFacts(plan.binding?.actionAvailability??plan.actionAvailability),...fieldFacts(plan.binding?.fieldIdentities??plan.fieldIdentities??[])];
+  })),...availabilityFacts(plan.binding?.actionAvailability??plan.actionAvailability),...fieldFacts(plan.binding?.fieldIdentities??plan.fieldIdentities??[]),...(plan.capabilities ? capabilityFacts(plan.capabilities) : plan.requestAdmission?.factsSnapshot.filter(f => f.id.startsWith("host-fact:effect:")) ?? capabilityFacts())];
 }
 
 /** The host binds each property once; reviewers cannot construct fact/property pairs. */

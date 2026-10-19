@@ -11,7 +11,14 @@ import type {
 import { browserViewports } from "../../../src/server/browser-acceptance.js";
 import { workflowBrowserCases } from "../../../src/shared/workflow-browser.js";
 import type { ExperienceBindings } from "./browser.js";
-import type { RequestAdmission } from "../../../src/evolution/request-admission.js";
+import {
+  admissionResolved,
+  type RequestAdmission,
+} from "../../../src/evolution/request-admission.js";
+import {
+  capabilityFacts,
+  effectReviewResolved,
+} from "../../../src/evolution/capability-admission.js";
 import type { Investigation } from "../../../src/server/planning.js";
 
 export type OracleCheck = {
@@ -27,6 +34,33 @@ export type OracleEvidence = {
   checks: OracleCheck[];
   binding?: OracleBinding;
 };
+export const duePolicyCheckIds = [
+  "past-due",
+  "complete-retains-expired",
+  "modify-clears-expired",
+  "clear-removes-deadline-and-expired",
+  "complete-before-due",
+  "reopen-past-due",
+] as const;
+export function checkDuePolicy(checks: OracleCheck[]): OracleCheck {
+  return oracleCheck(
+    "path:due-policy",
+    { checks: [...duePolicyCheckIds].sort(), failures: 0 },
+    {
+      checks: checks
+        .filter(
+          (c) =>
+            c.status === "passed" && isDeepStrictEqual(c.expected, c.actual),
+        )
+        .map((c) => c.id)
+        .sort(),
+      failures: checks.filter(
+        (c) =>
+          c.status !== "passed" || !isDeepStrictEqual(c.expected, c.actual),
+      ).length,
+    },
+  );
+}
 export const oracleDefinitionHash = (
   scenario: StabilityScenario,
   binding?: OracleBinding,
@@ -206,8 +240,61 @@ export function checkIndependentPlan(
           ),
       ),
     );
+    if (oracle.lifecyclePolicy)
+      checks.push(
+        oracleCheck(
+          "plan:due-policy",
+          true,
+          hasDeadlineResetCases(plan, expiryActions),
+        ),
+      );
   }
   return checks;
+}
+
+function hasDeadlineResetCases(
+  plan: Partial<InvestigatedPlan>,
+  expiryActions: Set<string>,
+): boolean {
+  const cases = plan.memberCases ?? [];
+  for (const fired of cases) {
+    if (!expiryActions.has(fired.action) || fired.expected.kind !== "commit")
+      continue;
+    for (const [expired, value] of Object.entries(fired.expected.fields)) {
+      if (value !== "true" || fired.fields[expired] === value) continue;
+      const deadline = Object.keys(fired.fields).find(
+        (key) => fired.fields[key] === fired.input.scheduledAt,
+      );
+      if (!deadline) continue;
+      const resets = cases.filter(
+        (c) =>
+          c.member === fired.member &&
+          c.state === "open" &&
+          c.fields[expired] === "true" &&
+          !!c.fields[deadline] &&
+          Object.hasOwn(c.input, deadline) &&
+          c.expected.kind === "commit" &&
+          c.expected.fields[expired] !== "true",
+      );
+      if (
+        resets.some(
+          (c) =>
+            c.input[deadline] === "" &&
+            c.expected.kind === "commit" &&
+            !c.expected.fields[deadline],
+        ) &&
+        resets.some(
+          (c) =>
+            !!c.input[deadline] &&
+            c.input[deadline] !== c.fields[deadline] &&
+            c.expected.kind === "commit" &&
+            c.expected.fields[deadline] === c.input[deadline],
+        )
+      )
+        return true;
+    }
+  }
+  return false;
 }
 
 export function requiredOracleChecks(scenario: StabilityScenario): string[] {
@@ -220,6 +307,9 @@ export function requiredOracleChecks(scenario: StabilityScenario): string[] {
     "path:experience",
     "path:apply",
     ...(scenario.clarification ? ["path:clarification"] : []),
+    ...(scenario.oracle.kind === "due" && scenario.oracle.lifecyclePolicy
+      ? ["plan:due-policy", "path:due-policy"]
+      : []),
   ];
 }
 
@@ -330,13 +420,6 @@ export function independentBrowserCases(
   )
     ? member
     : "workflow";
-  const actionSurface = composition.uiContributions.some(
-    (c) =>
-      c.providerId === member &&
-      c.actions.some((a) => a.commandId === actions[0].id),
-  )
-    ? member
-    : "workflow";
   const action = (input?: Record<string, string>): BrowserStep => ({
     kind: "action",
     member,
@@ -381,10 +464,9 @@ export function independentBrowserCases(
         ...persist("1"),
         { kind: "action", member: "workflow", action: "complete" },
         {
-          kind: "action-visible",
-          member: actionSurface,
+          kind: "action-blocked",
+          member,
           action: actions[0].id,
-          visible: false,
         },
         { kind: "action", member: "workflow", action: "reopen" },
         action(),
@@ -394,12 +476,7 @@ export function independentBrowserCases(
   } else {
     const at = new Date(Date.now() + 3_600_000).toISOString();
     scenarios = [
-      [
-        action({ [fieldKey]: at }),
-        ...persist(at),
-        action({ [fieldKey]: "" }),
-        field("（空）"),
-      ],
+      [action({ [fieldKey]: at }), ...persist(at), action({ [fieldKey]: "" })],
     ];
   }
   return scenarios.flatMap((steps, i) =>
@@ -419,6 +496,10 @@ export function checkIndependentBlock(
     requestAdmissions?: RequestAdmission[];
     protocolFailures?: unknown[];
     resourceFailures?: unknown[];
+    stop?: import("../../../src/shared/assistant.js").RunStop;
+    clarificationReviews?: {
+      decision: import("../../../src/evolution/clarification-review.js").ClarificationDecision;
+    }[];
   },
   context: Pick<Investigation, "environment" | "capabilities">,
 ): OracleCheck {
@@ -428,38 +509,80 @@ export function checkIndependentBlock(
     oracle?.kind === "block" &&
     run.status === "blocked" &&
     run.blockReason === "maintainer-capability" &&
-    !run.protocolFailures?.length &&
-    !run.resourceFailures?.length
+    !["protocol", "output-budget", "transport", "environment"].includes(
+      run.stop?.kind ?? "",
+    )
   ) {
     if (oracle.reason === "blank-presentation")
-      proven = (run.requestAdmissions ?? []).some((admission) =>
-        admission.technicalChecks.some(
-          (check) =>
-            check.factId === "host-fact:initial-field-presentation" &&
-            check.outcome === "unsupported" &&
-            check.expected.kind === "visible" &&
-            check.expected.value === "" &&
-            oracle.sources.some((q) => check.sourceQuote.includes(q)) &&
-            admission.claims.some(
-              (claim) =>
-                claim.sourceRevision === check.sourceRevision &&
-                claim.sourceQuote === check.sourceQuote &&
-                admission.semanticReview?.decisions.some(
-                  (d) => d.claimId === claim.id && d.verdict === "entailed",
-                ),
-            ),
-        ),
-      );
+      proven = (run.requestAdmissions ?? [])
+        .filter(admissionResolved)
+        .some((admission) =>
+          admission.technicalChecks.some(
+            (check) =>
+              check.factId === "host-fact:initial-field-presentation" &&
+              check.outcome === "unsupported" &&
+              check.expected.kind === "visible" &&
+              check.expected.value === "" &&
+              oracle.sources.some((q) => check.sourceQuote.includes(q)) &&
+              admission.claims.some(
+                (claim) =>
+                  claim.sourceRevision === check.sourceRevision &&
+                  claim.sourceQuote === check.sourceQuote &&
+                  admission.semanticReview?.decisions.some(
+                    (d) =>
+                      d.claimId === claim.id &&
+                      d.verdict === "entailed" &&
+                      d.layer === "initial-display",
+                  ),
+              ),
+          ),
+        );
     else
       proven =
         context.environment.missing.length === 0 &&
-        !context.capabilities.some((c) =>
-          [
-            "notification.deliver",
-            "notification.send",
-            "offline.delivery",
-          ].includes(c.interfaceId),
-        );
+        !context.environment.browser?.missing.length &&
+        (run.requestAdmissions ?? []).filter(admissionResolved).some((a) => {
+          const checks = [
+            ...a.capabilityChecks.filter((c) =>
+              a.claims.some(
+                (claim) =>
+                  claim.interpretation.effect === c.effect &&
+                  a.semanticReview?.decisions.some(
+                    (d) =>
+                      d.claimId === claim.id &&
+                      d.layer === "capability" &&
+                      d.verdict === "entailed",
+                  ),
+              ),
+            ),
+            ...(run.clarificationReviews ?? []).flatMap((r) =>
+              effectReviewResolved(
+                r.decision.effects,
+                a.sources,
+                a.factsSnapshot,
+              )
+                ? r.decision.effects!.checks.filter(
+                    (c) => c.verdict === "required",
+                  )
+                : [],
+            ),
+          ];
+          return (
+            a.sources.some((s) => s.text === scenario.request) &&
+            checks.some(
+              (c) =>
+                ["external-delivery", "offline-delivery"].includes(c.effect) &&
+                c.outcome === "unsupported" &&
+                capabilityFacts(context.capabilities).some(
+                  (f) =>
+                    f.id === c.factId &&
+                    f.evidenceHash === c.factHash &&
+                    f.properties.availability === "unsupported",
+                ) &&
+                scenario.request.includes(c.sourceQuote),
+            )
+          );
+        });
   }
   return oracleCheck("block:reason", true, proven);
 }

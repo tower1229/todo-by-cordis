@@ -4,6 +4,7 @@ import {
   computeStabilityMetrics,
   classifyFailure,
   failureFromEvidence,
+  runIncidents,
   type ScenarioRunRecord,
 } from "../../scripts/lib/stability-eval/metrics.js";
 
@@ -45,6 +46,33 @@ test("当前失败按调用证据定位阶段；未知原因不因出现宿主�
   assert.equal(failure.phase, "review");
   assert.equal(failure.code, "transport:timeout");
   assert.deepEqual(failure.evidence, ["model-call:1"]);
+});
+
+test("最终等待回答不被已经恢复的协议错误覆盖；事件与终因分开", () => {
+  const failure = failureFromEvidence({
+    calls: [{ phase: "admission", status: "returned" }, { phase: "review", status: "returned" }, { phase: "review", status: "returned" }],
+    protocolFailures: [{ phase: "review", call: 2 }],
+    run: { status: "awaiting-input", stop: { kind: "clarification", phase: "admission", code: "business-answer-required", evidence: ["run.question", "run.clarificationReviews"] } },
+  });
+  assert.equal(failure.classification, "unknown");
+  assert.equal(failure.code, "business-answer-required");
+  assert.deepEqual(failure.evidence, ["run.question", "run.clarificationReviews"]);
+});
+
+test("活动时间耗尽、未收敛协议与不完整归档按宿主最终事实归因", () => {
+  const calls = [{ phase: "generation", status: "returned" }];
+  const budget = { status: "failed", stop: { kind: "budget" as const, phase: "execution", code: "active-time-budget", evidence: ["run.budget"] } };
+  assert.equal(failureFromEvidence({ calls, run: budget }).code, "active-time-budget");
+  assert.equal(failureFromEvidence({ calls, run: budget, archiveComplete: false }).classification, "evaluator");
+  assert.equal(failureFromEvidence({ calls, protocolFailures: [{ phase: "generation", call: 1 }], run: { status: "blocked", stop: { kind: "protocol", phase: "generation", code: "invalid-model-protocol", evidence: ["model-call:1"] } } }).classification, "tool-protocol");
+  assert.equal(failureFromEvidence({ calls, protocolFailures: [{ phase: "generation", call: 1 }], run: { status: "awaiting-input" } }).code, "business-answer-required", "旧记录亦按最终状态解释，不能将历史事件冒充终因");
+});
+
+test("HTTP已返回不代表协议已恢复，只有同阶段后续有效响应才计为恢复事件", () => {
+  const calls = [{phase:"review",status:"returned"},{phase:"review",status:"returned"}];
+  assert.deepEqual(runIncidents(calls,[{phase:"review",call:1},{phase:"review",call:2}]).map(i=>i.recovered),[false,false]);
+  assert.deepEqual(runIncidents([...calls,{phase:"review",status:"returned"}],[{phase:"review",call:1},{phase:"review",call:2}]).map(i=>i.recovered),[true,true]);
+  assert.equal(failureFromEvidence({calls,protocolFailures:[{phase:"review",call:1}]}).classification,"unknown");
 });
 
 test("指标列出分母并区分能力选择、错误阻塞、首个计划/候选、完整路径与预算内纠错", () => {

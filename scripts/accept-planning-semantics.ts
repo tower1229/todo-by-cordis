@@ -101,7 +101,7 @@ try {
     effectQuote: "将 noteMark 写入值从 ok 改为 reviewed",
   };
   const payload = (quote: string, m: unknown) => ({
-    presentations: [
+    effects: [], initials: [
       {
         source: 1,
         sourceQuote: quote,
@@ -143,7 +143,7 @@ try {
         claim: 1,
         source: 1,
         sourceQuote,
-        verdict,
+        layer: "initial-display", verdict,
         detail: "固定资格样本的结构化来源判定",
       },
     ],
@@ -159,7 +159,7 @@ try {
     {
       id: "admission-after-action",
       request: input(afterSources),
-      valid: { presentations: [], questions: [] },
+      valid: { effects: [], initials: [], questions: [] },
       invalid: mistaken,
       grade: (text) => {
         const r = parseAdmission(text, base.id, afterSources, facts);
@@ -175,7 +175,7 @@ try {
       id: "admission-explicit-empty",
       request: input(emptySources),
       valid: requested,
-      invalid: { presentations: [], questions: [] },
+      invalid: { effects: [], initials: [], questions: [] },
       grade: (text) => {
         const r = parseAdmission(text, base.id, emptySources, facts);
         return (

@@ -1,6 +1,19 @@
 import type { TechnicalFact } from "./technical-facts.js";
+import {
+  effectReviewSchema,
+  parseEffectReview,
+  effectBlockers,
+  type EffectReview,
+} from "./capability-admission.js";
+import { schemaProblems } from "./model-protocol.js";
 export type ClarificationDecision = {
-  kind: "business-ambiguity" | "unnecessary" | "scope-reduction" | "technical";
+  effects?: EffectReview;
+  kind:
+    | "business-ambiguity"
+    | "unnecessary"
+    | "scope-reduction"
+    | "technical"
+    | "implementation";
   sourceRevision: string;
   sourceQuote: string;
   detail: string;
@@ -12,6 +25,74 @@ export type ClarificationDecision = {
     actual: string;
   };
 };
+export function clarificationBlockers(
+  decision: ClarificationDecision,
+): string[] {
+  const blockers = effectBlockers(decision.effects);
+  if (
+    decision.kind === "scope-reduction" ||
+    (decision.kind === "technical" &&
+      decision.fact?.expected !== decision.fact?.actual)
+  )
+    blockers.push(`澄清审查确认需要维护者处理：${decision.detail}`);
+  return blockers;
+}
+function clarificationReviewSchema(count: number) {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["effects", "decisions"],
+    properties: {
+      effects: effectReviewSchema,
+      decisions: {
+        type: "array",
+        minItems: count,
+        maxItems: count,
+        items: clarificationSchema(),
+      },
+    },
+  };
+}
+export function clarificationRequest(
+  questions: string[],
+  sources: { id: string; text: string }[],
+  facts: TechnicalFact[],
+): import("./driver.js").ModelRequest {
+  return {
+    history: [],
+    schema: clarificationReviewSchema(questions.length),
+    instruction:
+      "独立审查完整 sources 和 questions，空历史且禁止工具。先独立核对 effects 中每项宿主效果是否 required、not-requested 或 uncertain，完整覆盖目录一次，不依赖规划者是否提到；offline-delivery 指宿主离线仍保证交付，关闭浏览器不等于宿主离线。支持性由宿主绑定，不能把能力缺口转为渠道、收件人或降级问题。然后按 questions 顺序逐项返回 decisions，不维护索引。business-ambiguity 只用于影响业务结果且来源仍未决定的选择；unnecessary 用于已明确或未要求的细节；implementation 只用于未要求改变的宿主 field-interaction，引用 fact/property，由宿主绑定实际行为；scope-reduction 表示请求降级；technical 引用 facts 序号、property、expected，由宿主裁决。来源和事实使用一基序号。",
+    message: JSON.stringify({
+      kind: "clarification-review/2",
+      questions,
+      sources,
+      facts,
+    }),
+  };
+}
+export function parseClarificationReview(
+  text: string,
+  questions: string[],
+  sources: { id: string; text: string }[],
+  facts: TechnicalFact[],
+) {
+  const raw: unknown = JSON.parse(text);
+  const problems = schemaProblems(
+    raw,
+    clarificationReviewSchema(questions.length),
+  );
+  if (problems.length) throw new Error(problems.join("；"));
+  const value = raw as { effects: unknown; decisions: unknown[] };
+  const effects = parseEffectReview(value.effects, sources, facts);
+  return value.decisions.map((v, i) => ({
+    question: questions[i],
+    decision: {
+      ...parseClarificationDecision(JSON.stringify(v), sources, facts),
+      effects,
+    },
+  }));
+}
 const text = { type: "string" };
 export function clarificationSchema() {
   const common = {
@@ -22,6 +103,17 @@ export function clarificationSchema() {
   return {
     type: "object",
     anyOf: [
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", ...Object.keys(common), "fact", "property"],
+        properties: {
+          kind: { type: "string", enum: ["implementation"] },
+          ...common,
+          fact: { type: "integer", minimum: 1 },
+          property: { type: "string", enum: ["detail", "editing"] },
+        },
+      },
       {
         type: "object",
         additionalProperties: false,
@@ -69,7 +161,11 @@ export function parseClarificationDecision(
     "source",
     "sourceQuote",
     "detail",
-    ...(v.kind === "technical" ? ["fact", "property", "expected"] : []),
+    ...(v.kind === "technical"
+      ? ["fact", "property", "expected"]
+      : v.kind === "implementation"
+        ? ["fact", "property"]
+        : []),
   ];
   if (Object.keys(v).some((k) => !keys.includes(k)))
     throw new Error("澄清审查包含宿主派生字段");
@@ -88,6 +184,7 @@ export function parseClarificationDecision(
       "unnecessary",
       "scope-reduction",
       "technical",
+      "implementation",
     ].includes(String(v.kind))
   )
     throw new Error("澄清审查缺少可靠来源解释");
@@ -97,21 +194,27 @@ export function parseClarificationDecision(
     sourceQuote: v.sourceQuote,
     detail: v.detail,
   };
-  if (v.kind === "technical") {
+  if (v.kind === "technical" || v.kind === "implementation") {
     const fact = facts[Number(v.fact) - 1];
     if (
       !Number.isInteger(v.fact) ||
       !fact ||
       typeof v.property !== "string" ||
       !Object.hasOwn(fact.properties, v.property) ||
-      typeof v.expected !== "string"
+      (v.kind === "technical" && typeof v.expected !== "string") ||
+      (v.kind === "implementation" &&
+        (fact.id !== "host-fact:field-interaction" ||
+          !["detail", "editing"].includes(String(v.property))))
     )
       throw new Error("澄清技术事实引用不支持");
     decision.fact = {
       id: fact.id,
       hash: fact.evidenceHash,
       property: v.property,
-      expected: v.expected,
+      expected:
+        v.kind === "implementation"
+          ? fact.properties[v.property]
+          : String(v.expected),
       actual: fact.properties[v.property],
     };
   }

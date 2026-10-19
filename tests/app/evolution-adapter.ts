@@ -27,7 +27,7 @@ export class DeltaFixture implements Driver {
       if (input.sources) this.sources = input.sources;
     }
     const reply = await this.fixture.generate(request, signal);
-    if (request.schema && reply.text && JSON.parse(request.message ?? "{}").kind !== "clarification-review/1") {
+    if (request.schema && reply.text && JSON.parse(request.message ?? "{}").kind !== "clarification-review/2") {
       const review = JSON.parse(reply.text) as {
         issues?: Record<string, unknown>[];
         fieldDecisions?: unknown[];

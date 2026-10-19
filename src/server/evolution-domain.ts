@@ -287,7 +287,7 @@ export class EvolutionDomain implements Domain {
     return capture(this.workspace);
   }
   admission(context: Investigation) {
-    return {facts: technicalFacts({workflowRules: [],binding: undefined,actionAvailability:context.actionAvailability,fieldIdentities:baselineFields(context)}),missing:[...context.environment.missing,...(context.environment.browser?.missing ?? [])]};
+    return {facts: technicalFacts({workflowRules: [],binding: undefined,actionAvailability:context.actionAvailability,fieldIdentities:baselineFields(context),capabilities:context.capabilities}),missing:[...context.environment.missing,...(context.environment.browser?.missing ?? [])]};
   }
   planningInstruction = planningInstruction;
   planningTools = planningTools;

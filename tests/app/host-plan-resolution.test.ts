@@ -538,7 +538,7 @@ test("原生模型参数的空集合经过实际 Adapter 和同一宿主编译�
 test("来源预检中的字段标签不能仅凭一次模型解释变成已裁决的初始值阻塞", () => {
   const admission = parseAdmission(
     JSON.stringify({
-      presentations: [
+      effects: [], initials: [
         {
           source: 1,
           sourceQuote: "完成前填写复盘",

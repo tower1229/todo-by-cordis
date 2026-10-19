@@ -3,27 +3,32 @@ import type { AcceptanceObligation } from "../../src/shared/acceptance-obligatio
 import { parseAdmission } from "../../src/evolution/request-admission.js";
 import { technicalFacts } from "../../src/evolution/technical-facts.js";
 import {baselineFields} from "../../src/evolution/field-identity.js";
+import { hostEffectIds } from "../../src/evolution/capability-admission.js";
+export const noEffectsFixture = () => hostEffectIds.map(effect => ({effect,verdict:"not-requested"}));
+export function clarificationPayloadFixture(decisions:unknown|unknown[]) {
+  return {effects:noEffectsFixture(),decisions:Array.isArray(decisions)?decisions:[decisions]};
+}
 /** Authored model-stub receipt for manually seeded lifecycle candidates; never real-model evidence. */
 export function admissionReceiptFixture(
   context: import("../../src/server/planning.js").Investigation,
   sources: { id: string; text: string }[],
 ) {
   return parseAdmission(
-    JSON.stringify({ presentations: [], questions: [] }),
+    JSON.stringify({ effects: [], initials: [], questions: [] }),
     context.versionId,
     sources,
-    technicalFacts({ workflowRules: [], binding: undefined,actionAvailability:context.actionAvailability,fieldIdentities:baselineFields(context) }),
+    technicalFacts({ workflowRules: [], binding: undefined,actionAvailability:context.actionAvailability,fieldIdentities:baselineFields(context),capabilities:context.capabilities }),
   );
 }
 /** Legacy control-flow fixtures have no source-intake semantics; dedicated intake tests supply them. */
 export function admissionFixture(request: ModelRequest) {
   if (
     !request.schema ||
-    JSON.parse(request.message ?? "{}").kind !== "request-admission/1"
+    JSON.parse(request.message ?? "{}").kind !== "request-admission/2"
   )
     return;
   return {
-    text: JSON.stringify({ presentations: [], questions: [] }),
+    text: JSON.stringify({ effects: [], initials: [], questions: [] }),
     history: [],
     calls: [],
     usage: { fixture: true },
@@ -83,16 +88,16 @@ export class PlanningDriver implements Driver {
     if (admission) return admission;
     if (
       request.schema &&
-      JSON.parse(request.message ?? "{}").kind === "clarification-review/1"
+      JSON.parse(request.message ?? "{}").kind === "clarification-review/2"
     ) {
       const input = JSON.parse(request.message!);
       return {
-        text: JSON.stringify({
+        text: JSON.stringify(clarificationPayloadFixture(input.questions.map(() => ({
           kind: "business-ambiguity",
           source: input.sources.length,
           sourceQuote: input.sources.at(-1).text,
           detail: "模型桩确认必要业务歧义",
-        }),
+        })))),
         history: [],
         calls: [],
         usage: { fixture: true },

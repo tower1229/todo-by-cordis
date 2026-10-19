@@ -14,6 +14,7 @@ import { join } from "node:path";
 import type { createApp } from "../../../src/server/app.js";
 import type { CommandResult } from "../../../src/shared/contracts.js";
 import type { StabilityScenario } from "./manifest.js";
+import { oracleCheck, type OracleCheck } from "./oracle.js";
 
 export type ExperienceBindings = {
   tags?: {
@@ -55,6 +56,7 @@ export type BrowserPathResult = {
   };
   applied?: boolean;
   formalDueLifecyclePassed?: boolean;
+  duePolicyChecks?: OracleCheck[];
   recoveryEntryVisible: boolean;
   screenshot: string;
   pageErrors: string[];
@@ -318,6 +320,7 @@ export async function runStabilityBrowserPath(input: {
           browser,
           bindings: bindings.due,
           restartHost: input.restartHost,
+          ...(input.scenario.oracle?.kind === "due" && input.scenario.oracle.lifecyclePolicy ? {policyChecks: result.duePolicyChecks = []} : {}),
           pageChanged: (next) => {
             page = next;
             next.on("pageerror", (error) => errors.push(error.message));
@@ -607,6 +610,7 @@ async function exerciseFormalDueLifecycle(input: {
   bindings: NonNullable<ExperienceBindings["due"]>;
   restartHost: () => Promise<void>;
   pageChanged: (page: Page) => void;
+  policyChecks?: OracleCheck[];
 }): Promise<{ page: Page }> {
   let { page } = input;
   const title = "后测截止时间任务";
@@ -645,7 +649,7 @@ async function exerciseFormalDueLifecycle(input: {
   };
   await setDue(new Date(Date.now() + 60_000).toISOString());
   await setDue("");
-  const firingAt = new Date(Date.now() + 7_000).toISOString();
+  let firingAt = new Date(Date.now() + 7_000).toISOString();
   await setDue(firingAt);
   const url = page.url();
   await page.close();
@@ -661,6 +665,9 @@ async function exerciseFormalDueLifecycle(input: {
     page.getByText(input.bindings.expiredLabel, { exact: true }).locator(".."),
   ).toContainText(input.bindings.expiredExpected);
   await page.keyboard.press("Escape");
+  if (input.policyChecks) {
+    firingAt = await exerciseDuePolicy(page, title, input.bindings, setDue, input.policyChecks);
+  }
   await page.getByRole("button", { name: "更多选项", exact: true }).click();
   await page.getByRole("menuitem", { name: "工作区设置" }).click();
   await page
@@ -697,6 +704,102 @@ async function exerciseFormalDueLifecycle(input: {
     input.bindings.expiredExpected,
   );
   return { page };
+}
+
+/** Fixed synthetic business policy. All writes go through the real page. */
+async function exerciseDuePolicy(
+  page: Page,
+  title: string,
+  binding: NonNullable<ExperienceBindings["due"]>,
+  setDue: (value: string) => Promise<void>,
+  checks: OracleCheck[],
+): Promise<string> {
+  const read = async () => {
+    const list = (await (
+      await page.request.get(
+        new URL("/api/tasks?category=all", page.url()).toString(),
+      )
+    ).json()) as {
+      tasks: { title: string; state: string; fields: Record<string, string> }[];
+    };
+    const task = list.tasks.find((t) => t.title === title);
+    if (!task) throw new Error("计时策略验收任务不存在");
+    return task;
+  };
+  const expired = async () =>
+    (await read()).fields[binding.expiredKey] === binding.expiredExpected;
+  const record = (id: string, expected: unknown, actual: unknown) => {
+    const check = oracleCheck(id, expected, actual);
+    checks.push(check);
+    assert.deepEqual(actual, expected, id);
+  };
+  const workflow = async (action: "complete" | "reopen") => {
+    await page.locator('[data-filter="all"]').filter({ visible: true }).click();
+    const row = page
+      .locator("[data-task-id]")
+      .filter({
+        has: page.getByRole("button", { name: `编辑 ${title}`, exact: true }),
+      });
+    const response = await responseForAction(
+      page,
+      (r) =>
+        new URL(r.url()).pathname === "/api/commands" &&
+        r.request().method() === "POST" &&
+        r.request().postDataJSON()?.actionId === action,
+      () => row.locator(`[data-action-id="${action}"]`).click(),
+    );
+    const body = (await response.json()) as CommandResult;
+    assert.equal(body.decision?.kind, "commit");
+  };
+  await setDue(new Date(Date.now() - 3000).toISOString());
+  await expect.poll(expired, { timeout: 10000 }).toBe(true);
+  record("past-due", true, await expired());
+  await workflow("complete");
+  record(
+    "complete-retains-expired",
+    { state: "done", expired: true },
+    { state: (await read()).state, expired: await expired() },
+  );
+  await workflow("reopen");
+  await setDue(new Date(Date.now() + 60000).toISOString());
+  record("modify-clears-expired", false, await expired());
+  await setDue(new Date(Date.now() - 3000).toISOString());
+  await expect.poll(expired, { timeout: 10000 }).toBe(true);
+  await setDue("");
+  record(
+    "clear-removes-deadline-and-expired",
+    { cleared: true, expired: false },
+    {
+      cleared: !(await read()).fields[binding.inputKey],
+      expired: await expired(),
+    },
+  );
+  const at = new Date(Date.now() + 3000).toISOString();
+  await setDue(at);
+  await workflow("complete");
+  await expect
+    .poll(() => Date.now() > Date.parse(at), { timeout: 10000 })
+    .toBe(true);
+  record(
+    "complete-before-due",
+    { state: "done", expired: false },
+    { state: (await read()).state, expired: await expired() },
+  );
+  await workflow("reopen");
+  await expect.poll(expired, { timeout: 10000 }).toBe(true);
+  await page
+    .getByRole("button", { name: `编辑 ${title}`, exact: true })
+    .click();
+  await expect(
+    page.getByText(binding.expiredLabel, { exact: true }).locator(".."),
+  ).toContainText(binding.expiredExpected);
+  await page.keyboard.press("Escape");
+  record(
+    "reopen-past-due",
+    { state: "open", expired: true },
+    { state: (await read()).state, expired: await expired() },
+  );
+  return at;
 }
 
 async function openRecoveryEntry(

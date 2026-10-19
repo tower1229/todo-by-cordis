@@ -43,7 +43,7 @@ test("DeepSeek 实际本机 HTTP：精确 JSON 契约、授权工具、原生回
                 ? {
                     role: "assistant",
                     content:
-                      '{"result":{"presentations":[],"questions":[]}}',
+                      '{"result":{"initials":[],"effects":[],"questions":[]}}',
                   }
                 : assistant,
             finish_reason: "stop",
@@ -68,7 +68,7 @@ test("DeepSeek 实际本机 HTTP：精确 JSON 契约、授权工具、原生回
       signal,
     );
     assert.deepEqual(JSON.parse(review.text), {
-      presentations: [],
+      effects: [], initials: [],
       questions: [],
     });
     assert.equal(review.transport?.actualModel, "deepseek-flash");

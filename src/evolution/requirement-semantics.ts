@@ -20,7 +20,7 @@ export type InitialMeaning =
   | { kind: "undetermined"; questionQuote: string }
   | { kind: "blank" | "hidden"; conditionQuote: string; effectQuote: string }
   | {
-      kind: "literal";
+      kind: "literal" | "state";
       value: string;
       conditionQuote: string;
       effectQuote: string;
@@ -51,14 +51,14 @@ export const initialMeaningSchema = {
       }),
     ),
     variant({
-      kind: { type: "string", enum: ["literal"] },
+      kind: { type: "string", enum: ["literal", "state"] },
       value: text,
       conditionQuote: text,
       effectQuote: text,
     }),
   ],
   description:
-    "只解释字段未赋值时的呈现：unspecified=来源未要求；undetermined=真实未决选择；blank=显示空白，宿主编译空字符串；hidden=不显示字段；literal=显示指定的非空文字。显示文字‘空白’属于 literal，显示空白属于 blank。字段名、必填性及动作后值不是初始呈现。明确要求分别引用条件与效果原文。",
+    "分层解释字段初始语义：state=业务初始逻辑值，不承诺字段存储或页面如何显示；literal=初始显示指定非空文字；blank=显示空白；hidden=不显示字段；unspecified=没有初始要求；undetermined=真实未决选择。字段名、必填性及动作后值不是初始呈现。明确要求分别引用条件与效果原文。",
 };
 export function parseInitialMeaning(
   value: unknown,
@@ -83,7 +83,7 @@ export function parseInitialMeaning(
         ? { kind: "absent" }
         : meaning.kind === "literal"
           ? { kind: "visible", value: meaning.value }
-          : { kind: meaning.kind };
+          : meaning.kind === "state" ? { kind: "unspecified" } : { kind: meaning.kind };
   return { meaning, initial };
 }
 export type SemanticEntry = {
@@ -94,6 +94,7 @@ export type SemanticEntry = {
       | "label"
       | "required"
       | "initial-display"
+      | "initial-state"
       | "post-action-value"
       | "preservation"
       | "action-availability"
@@ -158,14 +159,19 @@ export function compileSemantics(
   for (const interpretation of plan.requestAdmission?.initialMeanings ?? []) {
     const claim = plan.requestAdmission?.claims.find(
       (c) =>
-        c.sourceRevision === interpretation.sourceRevision &&
-        c.sourceQuote === interpretation.sourceQuote &&
-        c.interpretation.targetId === (interpretation.target?.targetId ?? "") &&
-        c.interpretation.field === interpretation.field,
+        c.interpretation.intentId === interpretation.id,
     );
     const judgment = plan.requestAdmission?.semanticReview?.decisions.find(
       (d) => d.claimId === claim?.id,
     );
+    if (judgment?.verdict === "entailed" && judgment.layer === "initial-state") {
+      const value = interpretation.meaning;
+      if (value.kind !== "literal" && value.kind !== "state")
+        throw new Error("业务初始状态缺少逻辑值");
+      add({ subject: interpretation.target?.targetId ?? `source:${interpretation.field}`, aspect: "initial-state" }, "specified", "requirement", value.value,
+        [{ sourceRevision: interpretation.sourceRevision, sourceQuote: interpretation.sourceQuote }]);
+      continue;
+    }
     let initial: InitialDecision =
       judgment?.verdict === "not-requested"
         ? { kind: "unspecified" }
@@ -178,7 +184,7 @@ export function compileSemantics(
       );
       if (
         plan.questionAdjudications?.some(
-          (d) => d.key === key && d.decision.kind === "unnecessary",
+          (d) => d.key === key && (d.decision.kind === "unnecessary" || d.decision.kind === "implementation"),
         )
       )
         initial = { kind: "unspecified" };
@@ -228,7 +234,7 @@ export function compileSemantics(
     )?.decision;
     add(
       { subject: hash(q.question), aspect: "choice" },
-      judgment?.kind === "unnecessary"
+      judgment?.kind === "unnecessary" || judgment?.kind === "implementation"
         ? "unspecified"
         : judgment?.kind === "business-ambiguity"
           ? "undetermined"

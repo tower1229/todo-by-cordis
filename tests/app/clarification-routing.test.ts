@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { Workspace } from "../../src/server/workspace.js";
 import { AdmissionEvolution as Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
-import { PlanningDriver, toolReply } from "./planning-fixture.js";
+import { PlanningDriver, toolReply, clarificationPayloadFixture } from "./planning-fixture.js";
 import { compileReferences } from "../../src/evolution/references.js";
 import {
   businessChoices,
@@ -41,7 +41,7 @@ async function settle(e: Evolution) {
 const auditInput = (request: ModelRequest) =>
   request.schema &&
   request.message &&
-  JSON.parse(request.message).kind === "clarification-review/1"
+  JSON.parse(request.message).kind === "clarification-review/2"
     ? JSON.parse(request.message)
     : undefined;
 const auditReply = (
@@ -49,13 +49,13 @@ const auditReply = (
   kind: string,
   extra: Record<string, unknown> = {},
 ) => ({
-  text: JSON.stringify({
+  text: JSON.stringify(clarificationPayloadFixture({
     kind,
     source: 1,
     sourceQuote: input.sources[0].text,
     detail: "模型桩独立来源审查",
     ...extra,
-  }),
+  })),
   history: [],
   calls: [],
   usage: { fixture: true },

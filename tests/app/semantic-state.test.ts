@@ -48,7 +48,7 @@ test("宿主派生字段和已确定必填性不自行生成待澄清项", () =>
 test("整体认可不能替代完整规划中的逐字段初始来源解释", async () => {
   const {parseFieldDecisions} = await import("../../src/evolution/field-review.js");
   const p={requirements:[{id:"r",sourceRevision:"s:1",sourceQuote:"复盘必填",obligations:[{id:"f",kind:"field",field:"review",initialOrigin:"host",initial:{kind:"absent"}}]}]} as unknown as InvestigatedPlan;
-  assert.throws(()=>parseFieldDecisions([{target:1,source:1,sourceQuote:"复盘必填",verdict:"entailed"}],p,[{id:"s:1",text:"复盘必填"}]),/宿主派生|完整|初始/);
+  assert.throws(()=>parseFieldDecisions([{target:1,source:1,sourceQuote:"复盘必填",layer: "initial-display", verdict:"entailed"}],p,[{id:"s:1",text:"复盘必填"}]),/宿主派生|完整|初始/);
 });
 
 test("同一契约将字段名称与字面初始内容分开，不能伪造条件和效果引用", async () => {
@@ -76,7 +76,7 @@ test("同一契约将字段名称与字面初始内容分开，不能伪造条�
   );
   const admission = parseAdmission(
     JSON.stringify({
-      presentations: [
+      effects: [], initials: [
         {
           source: 1,
           sourceQuote: source,
@@ -102,7 +102,7 @@ test("宿主只复用来源未变的具体裁决，不复用旧门禁收据", as
   const sources = [{ id: "s:1", text: "复盘必填" }];
   const admission = parseAdmission(
     JSON.stringify({
-      presentations: [
+      effects: [], initials: [
         {
           source: 1,
           sourceQuote: sources[0].text,
@@ -127,7 +127,7 @@ test("宿主只复用来源未变的具体裁决，不复用旧门禁收据", as
           claim: 1,
           source: 1,
           sourceQuote: sources[0].text,
-          verdict: "not-requested",
+          layer: "initial-display", verdict: "not-requested",
           detail: "字段名不是初始内容",
         },
       ],

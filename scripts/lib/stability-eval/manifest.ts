@@ -26,7 +26,7 @@ export type StabilityScenario = {
     | { kind: "tags"; normalization: "trim" | "lowercase" }
     | { kind: "reflection"; minLength: number; maxLength: number }
     | { kind: "counter" }
-    | { kind: "due"; expiredValue: "true" }
+    | { kind: "due"; expiredValue: "true"; lifecyclePolicy?: "reset-on-edit-preserve-on-complete" }
     | { kind: "block"; reason: "offline-delivery" | "blank-presentation" }
   );
   /** Exact user request text frozen before any run. */
@@ -82,7 +82,7 @@ export type StabilityEvalManifest = {
     failureClasses: readonly string[];
   };
   scenarios: readonly StabilityScenario[];
-  evaluation?: "current/1";
+  evaluation?: "current/1" | "current/2";
 };
 
 export type FrozenManifest = StabilityEvalManifest & {

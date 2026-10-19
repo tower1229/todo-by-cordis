@@ -100,6 +100,8 @@ export function requirementReviewInput(
           claims: plan.requestAdmission.claims,
           semanticReview: plan.requestAdmission.semanticReview,
           technicalChecks: plan.requestAdmission.technicalChecks,
+          capabilityChecks: plan.requestAdmission.capabilityChecks,
+          initialStates: plan.requestAdmission.initialStates,
           blockers: plan.requestAdmission.blockers,
         }
       : undefined,

@@ -64,3 +64,13 @@ test("缺少独立判定、无原文引用或放大预算的当前清单不能�
       /当前|原文|预算|独立/,
     );
 });
+
+test("新批次预先确定计时业务边界，历史批次身份不能被覆盖", () => {
+  const next = currentManifest("a".repeat(40));
+  assert.equal(next.evaluation, "current/2");
+  const due = next.scenarios.find(s => s.id === "due-auto-expire")!;
+  for (const clause of ["修改或清除截止时清除原过期标记", "允许设置过去时间", "已经过期再完成时保留过期标记", "重新打开时截止已过则自动标记过期"])
+    assert(due.request.includes(clause), clause);
+  assert(due.oracle?.kind === "due" && due.oracle.lifecyclePolicy === "reset-on-edit-preserve-on-complete");
+  assert(!next.scenarios.find(s => s.id === "counter-add")!.request.includes("显示0"), "初始逻辑值不补造成界面要求");
+});

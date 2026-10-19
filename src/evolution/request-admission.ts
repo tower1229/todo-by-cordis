@@ -5,9 +5,18 @@ import {
   type InitialMeaning,
 } from "./requirement-semantics.js";
 import type { TechnicalFact } from "./technical-facts.js";
+import {
+  capabilityFactId,
+  hostEffectIds,
+  effectReviewResolved,
+  type HostEffect,
+} from "./capability-admission.js";
 import { hash } from "../release/storage.js";
 import { schemaProblems } from "./model-protocol.js";
-import type { ClarificationDecision } from "./clarification-review.js";
+import {
+  clarificationBlockers,
+  type ClarificationDecision,
+} from "./clarification-review.js";
 import {
   fieldTargets,
   fieldReferenceSchema,
@@ -25,6 +34,7 @@ type AdmissionClaim = Citation & {
 };
 type AdmissionDecision = Citation & {
   claimId: string;
+  layer: "initial-display" | "initial-state" | "capability";
   verdict: "entailed" | "not-requested" | "uncertain";
   detail: string;
 };
@@ -55,13 +65,16 @@ export function admissionQuestionState(
       pending.push(q.question);
       continue;
     }
+    if (!effectReviewResolved(decision.effects, sources, facts)) {
+      blockers.push("澄清审查缺少来源及宿主能力的完整裁决");
+      continue;
+    }
+    const blocked = clarificationBlockers(decision);
+    if (blocked.length) {
+      blockers.push(...blocked);
+      continue;
+    }
     if (decision.kind === "business-ambiguity") questions.push(q.question);
-    else if (
-      decision.kind === "scope-reduction" ||
-      (decision.kind === "technical" &&
-        decision.fact?.expected !== decision.fact?.actual)
-    )
-      blockers.push(`澄清审查确认需要维护者处理：${decision.detail}`);
   }
   return {
     pending: [...new Set(pending)],
@@ -70,7 +83,8 @@ export function admissionQuestionState(
   };
 }
 type AdmissionIntent = {
-  presentations: {
+  effects: { source: number; sourceQuote: string; effect: HostEffect }[];
+  initials: {
     source: number;
     sourceQuote: string;
     target: FieldReference;
@@ -79,6 +93,7 @@ type AdmissionIntent = {
   questions: { source: number; sourceQuote: string; question: string }[];
 };
 type PresentationCheck = Citation & {
+  intentId: string;
   field: string;
   target?: FieldTarget;
   factId: string;
@@ -86,13 +101,19 @@ type PresentationCheck = Citation & {
   expected: import("../shared/acceptance-obligations.js").FieldExpectation;
   actual?: import("../shared/acceptance-obligations.js").FieldExpectation;
   possible?: import("../shared/acceptance-obligations.js").FieldExpectation[];
-  outcome: "supported" | "unsupported" | "deferred";
+  outcome: "supported" | "unsupported" | "deferred" | "not-applicable";
 };
 export type RequestAdmission = {
-  contract: "host-admission/6";
+  contract: "host-admission/7";
   intents: AdmissionIntent;
   factsSnapshot: TechnicalFact[];
   technicalChecks: PresentationCheck[];
+  capabilityChecks: (Citation & {
+    effect: HostEffect;
+    factId: string;
+    factHash: string;
+    outcome: "supported" | "unsupported" | "deferred";
+  })[];
   key: string;
   baseVersion: string;
   sources: Source[];
@@ -100,6 +121,7 @@ export type RequestAdmission = {
   factsHash: string;
   fieldCatalog: FieldTarget[];
   initialMeanings: (Citation & {
+    id: string;
     surface: "workflow" | "auxiliary" | "unbound";
     field: string;
     target?: FieldTarget;
@@ -107,8 +129,15 @@ export type RequestAdmission = {
     initial: import("./requirement-semantics.js").InitialDecision;
   })[];
   presentations: (Citation & {
+    intentId: string;
     surface: "workflow" | "auxiliary" | "unbound";
     kind: "visible" | "absent";
+    value: string;
+  })[];
+  initialStates: (Citation & {
+    intentId: string;
+    field: string;
+    target?: FieldTarget;
     value: string;
   })[];
   questions: (Citation & { question: string })[];
@@ -137,9 +166,13 @@ export function admissionSchema(facts: TechnicalFact[] = []) {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["presentations", "questions"],
+    required: ["initials", "effects", "questions"],
     properties: {
-      presentations: list({
+      effects: list({
+        ...citation,
+        effect: { type: "string", enum: hostEffectIds },
+      }),
+      initials: list({
         ...citation,
         target: fieldReferenceSchema(catalog),
         meaning: initialMeaningSchema,
@@ -152,7 +185,7 @@ export function admissionSchema(facts: TechnicalFact[] = []) {
   };
 }
 export const admissionInstruction =
-  "独立解释原始需求和回答，输出需求意图 JSON，空历史且禁止工具。presentations 只列明确的初始呈现要求或真实未决初始选择；没有要求则为空。meaning 使用规定的互斥类型，字段名称、必填性、动作后保存值不属于初始呈现。每项引用连续原文；明确呈现分别引用条件与效果。questions 集中列出影响实现且原文仍未决定的业务选择；技术条件和不支持的能力不得转为降级问题。target 按契约引用 fieldTargets 中的已有 targetId；尚未安装的新字段用 new/name 表达，身份由宿主在计划编译后绑定。facts 仅为只读宿主上下文，技术事实、属性、期望及字段归属由宿主绑定，禁止在输出中重述。此预检不替代完整规划和独立需求复核。";
+  "独立解释原始需求和回答，输出需求意图 JSON，空历史且禁止工具。initials 分层列出业务初始逻辑值(state)、明确的初始呈现要求或真实未决初始选择；没有要求则为空。字段名称、必填性、动作后保存值不属于初始呈现。每项引用连续原文；明确语义分别引用条件与效果。effects 提取需要外部交付、宿主离线交付、在线调度的要求，业务动作可实现的普通逻辑不属于宿主能力缺口；支持性由宿主判断。questions 集中列出影响业务结果且原文仍未决定的业务选择；实现自由度、技术条件和不支持的能力不得转为问题。target 引用 fieldTargets 的 targetId，新字段用 new/name。facts 是只读宿主上下文，禁止在输出中重述派生事实。此预检不替代完整规划和独立需求复核。";
 
 /** Both production and qualification use the exact same native request contract. */
 export function admissionRequest(
@@ -166,7 +199,7 @@ export function admissionRequest(
     instruction: admissionInstruction,
     schema: admissionSchema(facts),
     message: JSON.stringify({
-      kind: "request-admission/1",
+      kind: "request-admission/2",
       sources,
       facts,
       fieldTargets: fieldTargets(facts),
@@ -185,7 +218,7 @@ export function admissionReviewRequest(
     instruction: admissionReviewInstruction,
     schema: admissionReviewSchema(admission),
     message: JSON.stringify({
-      kind: "admission-source-review/1",
+      kind: "admission-source-review/2",
       sources,
       claims: admission.claims.map(
         ({ sourceRevision, sourceQuote, interpretation }) => ({
@@ -204,7 +237,7 @@ export function admissionKey(
   sources: Source[],
   facts: TechnicalFact[],
 ) {
-  return hash({ contract: "host-admission/6", baseVersion, sources, facts });
+  return hash({ contract: "host-admission/7", baseVersion, sources, facts });
 }
 export function parseAdmission(
   text: string,
@@ -237,16 +270,38 @@ export function parseAdmission(
       id: hash({ citation, interpretation }),
     });
   }
-  const initialMeanings = raw.presentations.map((v) => ({
-    ...bind(v),
-    ...bindFieldReference(v.target, fieldCatalog),
-    ...parseInitialMeaning(v.meaning, sources[v.source - 1]?.text ?? ""),
-  }));
+  const boundInitials = raw.initials.map((v) => {
+    const bound = {
+      ...bind(v),
+      ...bindFieldReference(v.target, fieldCatalog),
+      ...parseInitialMeaning(v.meaning, sources[v.source - 1]?.text ?? ""),
+    };
+    return { ...bound, id: "initial-" + hash(bound).slice(0, 24) };
+  });
+  const initialMeanings = [
+    ...new Map(boundInitials.map((v) => [v.id, v])).values(),
+  ];
   const presentations = initialMeanings.flatMap((v) => {
     const citation = {
       sourceRevision: v.sourceRevision,
       sourceQuote: v.sourceQuote,
     };
+    if (v.meaning.kind === "state") {
+      claim(
+        citation,
+        {
+          intentId: v.id,
+          layer: "initial-state",
+          meaningKind: "state",
+          targetId: v.target?.targetId ?? "",
+          field: v.field,
+          value: v.meaning.value,
+          outcome: "supported",
+        },
+        "业务初始逻辑值须由冻结业务案例验证，不由渲染器裁决",
+      );
+      return [];
+    }
     if (v.initial.kind !== "visible" && v.initial.kind !== "absent") return [];
     const kind = v.initial.kind;
     const value = v.initial.kind === "visible" ? v.initial.value : "";
@@ -290,6 +345,7 @@ export function parseAdmission(
           : "unsupported";
     technicalChecks.push({
       ...citation,
+      intentId: v.id,
       field: v.field,
       ...(v.target ? { target: v.target } : {}),
       factId: "host-fact:initial-field-presentation",
@@ -299,30 +355,68 @@ export function parseAdmission(
       ...(possible ? { possible } : {}),
       outcome,
     });
-    const supported = outcome === "supported";
-    if (!supported)
-      claim(
-        citation,
-        {
-          surface: v.surface,
-          outcome,
-          targetId: v.target?.targetId ?? "",
-          member: v.target?.member ?? "",
-          contribution: v.target?.contribution ?? "",
-          field: v.field,
-          condition: "initial-missing-field",
-          kind,
-          value,
-        },
-        `需求原文 ${JSON.stringify(v.sourceQuote)} 要求的 ${v.surface} 初始呈现 ${kind}:${JSON.stringify(value)} 无法由当前受保护渲染器表达，需要维护者扩展；不能替换期望或询问降级`,
-      );
-    return [{ ...citation, surface: v.surface, kind, value }];
+    claim(
+      citation,
+      {
+        layer: "initial-display",
+        intentId: v.id,
+        meaningKind: v.meaning.kind,
+        surface: v.surface,
+        outcome,
+        targetId: v.target?.targetId ?? "",
+        member: v.target?.member ?? "",
+        contribution: v.target?.contribution ?? "",
+        field: v.field,
+        condition: "initial-missing-field",
+        kind,
+        value,
+      },
+      `需求原文 ${JSON.stringify(v.sourceQuote)} 要求的 ${v.surface} 初始呈现 ${kind}:${JSON.stringify(value)} 无法由当前受保护渲染器表达，需要维护者扩展；不能替换期望或询问降级`,
+    );
+    return [{ ...citation, intentId: v.id, surface: v.surface, kind, value }];
+  });
+  const capabilityChecks = [
+    ...new Map(raw.effects.map((v) => [hash(v), v])).values(),
+  ].map((v) => {
+    const citation = bind(v);
+    const factId = capabilityFactId(v.effect);
+    const fact = facts.find((f) => f.id === factId);
+    if (
+      !fact ||
+      !["supported", "unsupported", "deferred"].includes(
+        fact.properties.availability,
+      )
+    )
+      throw new Error("需求能力检查缺少可信宿主边界事实");
+    const outcome = fact.properties.availability as
+      | "supported"
+      | "unsupported"
+      | "deferred";
+    claim(
+      citation,
+      {
+        layer: "capability",
+        effect: v.effect,
+        outcome,
+        factId,
+        factHash: fact.evidenceHash,
+      },
+      `需求原文 ${JSON.stringify(v.sourceQuote)} 需要 ${v.effect}，宿主服务及检查器不支持，须维护者扩展；不向用户询问渠道或接受降级`,
+    );
+    return {
+      ...citation,
+      effect: v.effect,
+      factId,
+      factHash: fact.evidenceHash,
+      outcome,
+    };
   });
   return {
-    contract: "host-admission/6",
+    contract: "host-admission/7",
     intents: structuredClone(raw),
     factsSnapshot: structuredClone(facts),
     technicalChecks,
+    capabilityChecks,
     key: admissionKey(baseVersion, sources, facts),
     baseVersion,
     sources: structuredClone(sources),
@@ -330,6 +424,7 @@ export function parseAdmission(
     factsHash: hash(facts),
     fieldCatalog,
     presentations,
+    initialStates: [],
     initialMeanings,
     questions: [
       ...raw.questions.map((v) => ({
@@ -351,7 +446,7 @@ export function parseAdmission(
 
 /** Only source entailment is reviewed here; supported capabilities are still host facts. */
 export const admissionReviewInstruction =
-  "独立裁决每个 claims 原子命题是否由完整 sources 要求，空历史且禁止工具。只返回 verdict：entailed=原文明确或必然要求；not-requested=原文未要求该命题，包括把标签、必填性或动作后值误作初始呈现；uncertain=来源不足或存在真实冲突。不得依据宿主能力改变原意。逐项引用连续原文并说明判断，不重写 meaning、不改期望。priorSemantics 仅复用来源仍一致的具体历史判断，此裁决不替代完整需求及逐字段遗漏复核。";
+  "独立裁决 claims 是否由完整 sources 要求，空历史且禁止工具。每项同时给出 layer 与 verdict。layer=initial-state 仅表示业务初始逻辑值，不推出字段存储或界面显示；initial-display 表示明确的初始显示；capability 表示受保护宿主效果。不能从逻辑值推出页面文字。verdict=entailed 为原文明确或必然要求；not-requested 为原文未要求，包括标签、必填性或动作后值误作初始语义；uncertain 为来源不足或冲突。不得依据宿主能力改变原意。逐项引用原文，不重写值或期望。此裁决不替代完整需求及逐字段遗漏复核。";
 export function admissionReviewSchema(admission: RequestAdmission) {
   return {
     type: "object",
@@ -365,7 +460,14 @@ export function admissionReviewSchema(admission: RequestAdmission) {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["claim", "source", "sourceQuote", "verdict", "detail"],
+          required: [
+            "claim",
+            "source",
+            "sourceQuote",
+            "layer",
+            "verdict",
+            "detail",
+          ],
           properties: {
             claim: {
               type: "integer",
@@ -373,6 +475,10 @@ export function admissionReviewSchema(admission: RequestAdmission) {
               maximum: Math.max(1, admission.claims.length),
             },
             ...citation,
+            layer: {
+              type: "string",
+              enum: ["initial-display", "initial-state", "capability"],
+            },
             verdict: {
               type: "string",
               enum: ["entailed", "not-requested", "uncertain"],
@@ -390,7 +496,8 @@ function decisionBlockers(admission: RequestAdmission) {
     return !claim
       ? ["来源语义裁决引用不存在"]
       : d.verdict === "entailed"
-        ? claim.interpretation.outcome === "deferred"
+        ? d.layer === "initial-state" ||
+          claim.interpretation.outcome !== "unsupported"
           ? []
           : [claim.diagnostic]
         : d.verdict === "uncertain"
@@ -412,6 +519,7 @@ export function adjudicateAdmission(
       source: number;
       sourceQuote: string;
       verdict: AdmissionDecision["verdict"];
+      layer: AdmissionDecision["layer"];
       detail: string;
     }[];
   };
@@ -428,16 +536,61 @@ export function adjudicateAdmission(
     )
       throw new Error("来源语义裁决遗漏、重复或引用无效");
     seen.add(c.id);
+    if (
+      (c.interpretation.layer === "capability") !==
+        (d.layer === "capability") ||
+      (d.layer === "initial-state" &&
+        !["literal", "state"].includes(c.interpretation.meaningKind)) ||
+      (c.interpretation.layer === "initial-state" &&
+        d.layer === "initial-display")
+    )
+      throw new Error("来源分层不能改写命题的业务值或宿主能力目标");
     return {
       claimId: c.id,
+      layer: d.layer,
       sourceRevision: s.id,
       sourceQuote: d.sourceQuote,
       verdict: d.verdict,
       detail: d.detail,
     };
   });
+  const decisionFor = (intentId: string) =>
+    decisions.find((d) =>
+      admission.claims.some(
+        (c) => c.id === d.claimId && c.interpretation.intentId === intentId,
+      ),
+    );
+  const initialStates = admission.initialMeanings.flatMap((m) => {
+    const decision = decisionFor(m.id);
+    return decision?.layer === "initial-state" &&
+      decision.verdict === "entailed" &&
+      (m.meaning.kind === "literal" || m.meaning.kind === "state")
+      ? [
+          {
+            intentId: m.id,
+            sourceRevision: m.sourceRevision,
+            sourceQuote: m.sourceQuote,
+            field: m.field,
+            ...(m.target ? { target: m.target } : {}),
+            value: m.meaning.value,
+          },
+        ]
+      : [];
+  });
   const resolved = {
     ...admission,
+    presentations: admission.presentations.filter(
+      (p) =>
+        decisionFor(p.intentId)?.layer === "initial-display" &&
+        decisionFor(p.intentId)?.verdict === "entailed",
+    ),
+    initialStates,
+    technicalChecks: admission.technicalChecks.map((check) =>
+      decisionFor(check.intentId)?.layer === "initial-state" &&
+      decisionFor(check.intentId)?.verdict === "entailed"
+        ? { ...check, outcome: "not-applicable" as const }
+        : check,
+    ),
     semanticReview: { claimsHash: hash(admission.claims), decisions },
   };
   return { ...resolved, blockers: decisionBlockers(resolved) };
@@ -446,7 +599,7 @@ export function admissionResolved(admission: RequestAdmission): boolean {
   // Canonical host replay verifies every derived reference and check; old pending evidence is never upgraded.
   try {
     if (
-      admission.contract !== "host-admission/6" ||
+      admission.contract !== "host-admission/7" ||
       !Array.isArray(admission.factsSnapshot)
     )
       return false;
@@ -465,6 +618,7 @@ export function admissionResolved(admission: RequestAdmission): boolean {
       source: canonical.sources.findIndex((s) => s.id === d.sourceRevision) + 1,
       sourceQuote: d.sourceQuote,
       verdict: d.verdict,
+      layer: d.layer,
       detail: d.detail,
     }));
     return (

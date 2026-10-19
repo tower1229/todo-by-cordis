@@ -593,6 +593,27 @@ export async function verifyBrowser(
                 throw new Error("标题或备注不符合预期");
             } else if (step.kind === "action") {
               await runAction(step, taskId);
+            } else if (step.kind === "action-blocked") {
+              const composition = isolated!.composition();
+              const action = composition.workflow.actions.find(a => a.id === step.action);
+              const workflow = composition.members.find(m => m.role === "workflow")!.pluginId;
+              const owner = action?.providerId ?? workflow;
+              if (!action || owner !== step.member && !(step.member === "workflow" && owner === workflow))
+                throw new Error("禁止动作引用不存在或不属于目标成员");
+              const detailButton = editor.locator(attr("provider", owner)).locator(attr("action-id", step.action));
+              const button = await detailButton.count() ? detailButton : page.locator(attr("task-id", taskId)).locator(attr("action-id", step.action));
+              if (await button.count() > 1) throw new Error("禁止动作身份不唯一");
+              const before = isolated!.read(taskId);
+              if (await button.isVisible() && await button.isEnabled()) {
+                await runAction({ ...step, kind: "action" }, taskId);
+                if (await page.locator("[data-action-form]").isVisible())
+                  throw new Error("禁止动作仍请求未定义的输入，未证明不可执行");
+              }
+              const after = isolated!.read(taskId);
+              actual = JSON.stringify({ state: after.state, fields: after.fields });
+              if (hash({ state: before.state, fields: before.fields }) !== hash({ state: after.state, fields: after.fields }))
+                throw new Error("禁止动作改变了任务");
+              await open();
             } else if (step.kind === "form-invalid") {
               await runAction({kind:"action",member:step.member,action:step.action},taskId);
               const form=page.locator("[data-action-form]");
@@ -724,7 +745,7 @@ export async function verifyBrowser(
               actual = await alert.innerText();
               if (!actual.includes(step.text))
                 throw new Error("错误信息不符合预期");
-            }
+            } else throw new BrowserEnvironmentError("browser/1 收到未实现的宿主步骤");
           }
           if (pageErrors.length)
             throw new Error(`页面异常：${pageErrors.join("；")}`);

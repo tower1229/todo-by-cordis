@@ -396,7 +396,7 @@ test("预检不再接收模型的字段归属，未安装字段经来源复核�
   const source = "任务详情显示备注，尚未填写时显示空白";
   const sources = [{ id: "request:1", text: source }];
   const value = {
-    presentations: [
+    effects: [], initials: [
       {
         source: 1,
         sourceQuote: source,
@@ -416,7 +416,7 @@ test("预检不再接收模型的字段归属，未安装字段经来源复核�
       parseAdmission(
         JSON.stringify({
           ...value,
-          presentations: [{ ...value.presentations[0], surface: "workflow" }],
+          effects: [], initials: [{ ...value.initials[0], surface: "workflow" }],
         }),
         "base",
         sources,
@@ -438,7 +438,7 @@ test("预检不再接收模型的字段归属，未安装字段经来源复核�
           claim: 1,
           source: 1,
           sourceQuote: source,
-          verdict: "entailed",
+          layer: "initial-display", verdict: "entailed",
           detail: "明确要求空白",
         },
       ],

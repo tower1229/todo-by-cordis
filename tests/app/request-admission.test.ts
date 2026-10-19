@@ -8,7 +8,8 @@ import { Workspace } from "../../src/server/workspace.js";
 import { Evolution } from "../../src/evolution/evolution.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
-import { PlanningDriver } from "./planning-fixture.js";
+import { PlanningDriver, clarificationPayloadFixture, noEffectsFixture } from "./planning-fixture.js";
+import { parseEffectReview, effectReviewResolved } from "../../src/evolution/capability-admission.js";
 import {
   responseSchema,
   schemaProblems,
@@ -28,6 +29,8 @@ import { ModelTransportError } from "../../src/evolution/driver.js";
 import { DeepSeek } from "../../src/evolution/deepseek.js";
 import {fieldFacts} from "../../src/evolution/field-identity.js";
 import {memberUiReleaseInput} from "../fixtures/member-ui.js";
+import { compileSemantics } from "../../src/evolution/requirement-semantics.js";
+import type { InvestigatedPlan } from "../../src/shared/assistant.js";
 
 const reply = (value: unknown) => ({
   text: JSON.stringify(value),
@@ -36,21 +39,128 @@ const reply = (value: unknown) => ({
   raw: { fixture: value },
   usage: { totalTokenCount: 7 },
 });
-const empty = () => ({ presentations: [], questions: [] });
+const empty = () => ({ effects: [], initials: [], questions: [] });
 const input = (r: ModelRequest) => JSON.parse(r.message ?? "{}");
+test("业务初始值经独立分层后不接受渲染器裁决，显式初始显示仍受同一门禁保护", () => {
+  const sources = [{ id: "s:1", text: "计数初始为零，未完成任务可以加一" }];
+  const facts = technicalFacts({ workflowRules: [], binding: undefined });
+  const proposed = parseAdmission(JSON.stringify({
+    ...empty(), effects: [], initials: [{
+      source: 1, sourceQuote: "计数初始为零", target: { kind: "new", name: "计数" },
+      meaning: { kind: "literal", value: "0", conditionQuote: "初始", effectQuote: "为零" },
+    }],
+  }), "base", sources, facts);
+  const admitted = adjudicateAdmission(JSON.stringify({ decisions: [{
+    claim: 1, source: 1, sourceQuote: "计数初始为零", verdict: "entailed",
+    layer: "initial-state", detail: "规定业务计数的初始逻辑值，没有规定未赋值字段如何显示",
+  }] }), proposed, sources);
+  assert.deepEqual(admitted.blockers, []);
+  assert.ok(admissionResolved(admitted));
+  assert.equal(admitted.technicalChecks[0].outcome, "not-applicable");
+  const semantics = compileSemantics({ requirements: [], workflowRules: [], requestAdmission: admitted } as Pick<InvestigatedPlan, "requirements" | "workflowRules" | "requestAdmission">, sources);
+  assert(semantics.entries.some(e => e.target.aspect === "initial-state" && e.value === "0"));
+  assert(!semantics.entries.some(e => e.target.aspect === "initial-display" && e.status === "specified"));
+  const displaySources = [{ id: "s:2", text: "未填写时初始显示0" }];
+  const display = parseAdmission(JSON.stringify({ ...empty(), effects: [], initials: [{
+    source: 1, sourceQuote: displaySources[0].text, target: { kind: "new", name: "计数" },
+    meaning: { kind: "literal", value: "0", conditionQuote: "未填写时", effectQuote: "显示0" },
+  }] }), "base", displaySources, facts);
+  const blocked = adjudicateAdmission(JSON.stringify({ decisions: [{ claim: 1, source: 1,
+    sourceQuote: displaySources[0].text, layer: "initial-display", verdict: "entailed", detail: "明确要求显示0",
+  }] }), display, displaySources);
+  assert.equal(blocked.blockers.length, 1);
+  assert.equal(admissionResolved({ ...admitted, semanticReview: blocked.semanticReview }), false);
+});
+test("同一来源同一字段的业务值和显示值具有独立宿主身份，不能串用裁决", () => {
+  const sources=[{id:"s:1",text:"逻辑初始为零，同时要求初始显示0"}],facts=technicalFacts({workflowRules:[],binding:undefined});
+  const item={source:1,sourceQuote:sources[0].text,target:{kind:"new",name:"计数"},meaning:{kind:"state",value:"0",conditionQuote:"初始",effectQuote:"为零"}};
+  const p=parseAdmission(JSON.stringify({...empty(),initials:[item,item,{...item,meaning:{...item.meaning,kind:"literal",effectQuote:"显示0"}}]}),"base",sources,facts);
+  assert.equal(p.claims.length,2,"相同输入由宿主去重，不要求模型维护引用");
+  const a=adjudicateAdmission(JSON.stringify({decisions:p.claims.map((c,i)=>({claim:i+1,source:1,sourceQuote:sources[0].text,layer:c.interpretation.layer,verdict:"entailed",detail:"两个分层命题均明确"}))}),p,sources);
+  assert.equal(a.initialStates.length,1);assert.equal(a.presentations.length,1);
+  assert.equal(a.technicalChecks[0].outcome,"unsupported");assert.equal(a.blockers.length,1);
+  assert.notEqual(a.initialStates[0].intentId,a.presentations[0].intentId);
+});
+test("澄清的能力矩阵不能遗漏、重复、伪造来源或篡改宿主事实", () => {
+  const sources=[{id:"s:1",text:"外部通知"}],facts=technicalFacts({workflowRules:[],binding:undefined});
+  const matrix=noEffectsFixture();
+  for(const value of [[],matrix.slice(1),[matrix[0],matrix[0],matrix[2]],[{effect:"external-delivery",verdict:"required",source:1,sourceQuote:"假来源"},...matrix.slice(1)]])
+    assert.throws(()=>parseEffectReview(value,sources,facts),/矩阵|来源/);
+  const receipt=parseEffectReview(matrix,sources,facts);assert(effectReviewResolved(receipt,sources,facts));
+  assert(!effectReviewResolved({...receipt,checks:[{effect:"external-delivery",verdict:"required",sourceRevision:"s:1",sourceQuote:"外部通知",factId:"fake",factHash:"fake",outcome:"supported"}]},sources,facts));
+  assert.throws(()=>parseAdmission(JSON.stringify({presentations:[],effects:[],questions:[]}),"base",sources,facts),/initials|未授权/);
+});
+test("已证实的外部和离线交付缺口先于渠道澄清，在原预算内阻塞且无候选", async t => {
+  const { e } = await setup(t, { async generate(request) {
+    const v = input(request);
+    if (v.kind === "request-admission/2") return reply({ ...empty(), effects: [
+      { source: 1, sourceQuote: "向外部推送通知", effect: "external-delivery" },
+      { source: 1, sourceQuote: "离线时仍保证送达", effect: "offline-delivery" },
+    ], questions: [{ source: 1, sourceQuote: "邮件或短信", question: "选择邮件还是短信，接收人是谁？" }] });
+    assert.equal(v.kind, "admission-source-review/2", "不能先审查渠道或进入业务规划");
+    return reply({ decisions: v.claims.map((c: { sourceQuote: string }, i: number) => ({
+      claim: i + 1, source: 1, sourceQuote: c.sourceQuote, layer: "capability", verdict: "entailed", detail: "用户明确要求外部交付和离线保证",
+    })) });
+  } });
+  await e.command({ type: "request", text: "任务到期时向外部推送通知（邮件或短信），离线时仍保证送达", operationId: "request" });
+  const run = await settle(e);
+  assert.equal(run.status, "blocked");
+  assert.equal(run.budget?.callsUsed, 2);
+  assert.equal(run.budget?.callsRemaining, 10);
+  assert.equal(run.clarificationReviews?.length ?? 0, 0);
+  assert.equal((await e.observe()).candidates?.length, 0);
+  assert.equal(run.requestAdmissions?.[0].capabilityChecks.length, 2);
+  assert.equal(run.stop?.code, "unsupported-host-effect");
+});
+test("预检遗漏能力也不能通过澄清绕过：独立来源能力矩阵先裁决再决定提问", async t => {
+  const { e } = await setup(t, { async generate(request) {
+    const v = input(request);
+    if (v.kind === "request-admission/2") return reply({ ...empty(), questions: [{source:1,sourceQuote:"邮件或短信",question:"选择邮件还是短信？"}] });
+    assert.equal(v.kind,"clarification-review/2");
+    return reply({ decisions:[{kind:"business-ambiguity",source:1,sourceQuote:"邮件或短信",detail:"渠道还未选择"}], effects:[
+      {effect:"external-delivery",verdict:"required",source:1,sourceQuote:"向外部推送通知"},
+      {effect:"offline-delivery",verdict:"required",source:1,sourceQuote:"离线时仍保证送达"},
+      {effect:"online-schedule",verdict:"not-requested"},
+    ] });
+  } });
+  await e.command({type:"request",text:"任务到期时向外部推送通知（邮件或短信），离线时仍保证送达",operationId:"request"});
+  const run=await settle(e);
+  assert.equal(run.status,"blocked");
+  assert.equal(run.stop?.kind,"capability");
+  assert.equal(run.budget?.callsUsed,2);
+});
+
+test("宿主已有只读详情和显式动作表单不再交给用户选择，真正业务歧义仍保留", async t => {
+  const fixture = new PlanningDriver();
+  const { e } = await setup(t, { async generate(request, signal) {
+    const v = input(request);
+    if (v.kind === "request-admission/2") return reply({ ...empty(), questions: [{ source: 1,
+      sourceQuote: "重新打开保留复盘", question: "重新打开后保留的复盘是只读展示还是直接编辑？" }] });
+    if (v.kind === "clarification-review/2") return reply(clarificationPayloadFixture({ kind: "implementation", source: 1,
+      sourceQuote: "重新打开保留复盘", detail: "只规定保留数据，未要求改变宿主详情与输入交互",
+      fact: v.facts.findIndex((f: {id:string}) => f.id === "host-fact:field-interaction") + 1, property: "detail" }));
+    return fixture.generate(request, signal);
+  } });
+  await e.command({ type: "request", text: "完成前必填复盘，重新打开保留复盘，其他行为不变", operationId: "request" });
+  const run = await settle(e);
+  assert.equal(run.status, "ready");
+  assert.equal(run.stop, undefined);
+  assert.equal(run.budget?.callsUsed, 4);
+  assert.equal(run.clarificationReviews?.[0].decision.fact?.actual, "read-only-display");
+});
 test("来源标签误判经独立裁决后继续必要澄清，完整原文及争议随同一运行和预算保留", async (t) => {
   const fixture = new PlanningDriver();
   const { e, w } = await setup(t, { async generate(r, signal) {
     const v = input(r);
-    if (v.kind === "request-admission/1") return reply(v.sources.length === 1 ? {
+    if (v.kind === "request-admission/2") return reply(v.sources.length === 1 ? {
       ...empty(),
-      presentations: [{ source: 1, sourceQuote: "完成前填写复盘", target: {kind:"new",name:"复盘"}, meaning:{kind:"literal",value:"复盘",conditionQuote:"完成前填写复盘",effectQuote:"完成前填写复盘"} }],
+      effects: [], initials: [{ source: 1, sourceQuote: "完成前填写复盘", target: {kind:"new",name:"复盘"}, meaning:{kind:"literal",value:"复盘",conditionQuote:"完成前填写复盘",effectQuote:"完成前填写复盘"} }],
       questions: [{ source: 1, sourceQuote: "是否必填尚未决定", question: "复盘是否必填？" }],
     } : empty());
-    if (v.kind === "admission-source-review/1") {
+    if (v.kind === "admission-source-review/2") {
       assert.deepEqual(r.history, []); assert.equal(r.tools, undefined);
       assert.equal(v.claims[0].interpretation.condition, "initial-missing-field");
-      return reply({ decisions: [{ claim: 1, source: 1, sourceQuote: "完成前填写复盘", verdict:"not-requested", detail: "复盘是待填写的字段，原文没有要求该字样作为初始值" }] });
+      return reply({ decisions: [{ claim: 1, source: 1, sourceQuote: "完成前填写复盘", layer: "initial-display", verdict:"not-requested", detail: "复盘是待填写的字段，原文没有要求该字样作为初始值" }] });
     }
     return fixture.generate(r, signal);
   } });
@@ -68,16 +178,16 @@ test("来源标签误判经独立裁决后继续必要澄清，完整原文及�
 
 test("来源裁决不能漏项、重复、伪造原文或将未裁决争议标为已解决", () => {
   const sources = [{ id: "source:1", text: "完成前填写复盘" }];
-  const proposed = parseAdmission(JSON.stringify({ ...empty(), presentations: [{ source: 1, sourceQuote: sources[0].text, target: {kind:"new",name:"复盘"}, meaning:{kind:"literal",value:"复盘",conditionQuote:"完成前填写复盘",effectQuote:"完成前填写复盘"} }] }), "base", sources, technicalFacts({ workflowRules: [], binding: undefined }));
+  const proposed = parseAdmission(JSON.stringify({ ...empty(), effects: [], initials: [{ source: 1, sourceQuote: sources[0].text, target: {kind:"new",name:"复盘"}, meaning:{kind:"literal",value:"复盘",conditionQuote:"完成前填写复盘",effectQuote:"完成前填写复盘"} }] }), "base", sources, technicalFacts({ workflowRules: [], binding: undefined }));
   assert.equal(admissionResolved(proposed), false);
-  const decision = { claim: 1, source: 1, sourceQuote: sources[0].text, verdict:"not-requested", detail: "只是字段标签" };
+  const decision = { claim: 1, source: 1, sourceQuote: sources[0].text, layer: "initial-display", verdict:"not-requested", detail: "只是字段标签" };
   for (const decisions of [[], [decision, decision], [{ ...decision, sourceQuote: "未填写时显示复盘" }], [{ ...decision, claim: 2 }]]) assert.throws(() => adjudicateAdmission(JSON.stringify({ decisions }), proposed, sources));
   const resolved = adjudicateAdmission(JSON.stringify({ decisions: [decision] }), proposed, sources);
   assert.ok(admissionResolved(resolved));
   assert.equal(admissionResolved({...resolved,initialMeanings:[]}),false);
   assert.equal(admissionResolved({ ...resolved, claims: [{ ...resolved.claims[0], interpretation: { value: "篡改" } }] }), false);
   assert.equal(admissionResolved({ ...resolved, semanticReview: undefined }), false);
-  const uncertain = adjudicateAdmission(JSON.stringify({ decisions: [{ ...decision, verdict:"uncertain" }] }), proposed, sources);
+  const uncertain = adjudicateAdmission(JSON.stringify({ decisions: [{ ...decision, layer: "initial-display", verdict:"uncertain" }] }), proposed, sources);
   assert.match(uncertain.blockers[0], /尚未裁决/);
   assert.equal(admissionResolved({ ...uncertain, blockers: [] }), false);
 });
@@ -86,8 +196,8 @@ test("需求预检的额外问题必须独立审查；不必要问题不打断�
  const fixture=new PlanningDriver();
  const {w,e}=await setup(t,{async generate(r,s){
    const value=input(r);
-   if(value.kind==="request-admission/1")return reply({...empty(),questions:[{source:1,sourceQuote:"已有数据不自动更改",question:"显式完成动作能否更新已有值？"}]});
-   if(value.kind==="clarification-review/1")return reply({kind:"unnecessary",source:1,sourceQuote:"已有数据不自动更改",detail:"自动迁移与显式完成动作属于不同作用范围，未要求改变既有动作规则"});
+   if(value.kind==="request-admission/2")return reply({...empty(),questions:[{source:1,sourceQuote:"已有数据不自动更改",question:"显式完成动作能否更新已有值？"}]});
+   if(value.kind==="clarification-review/2")return reply(clarificationPayloadFixture({kind:"unnecessary",source:1,sourceQuote:"已有数据不自动更改",detail:"自动迁移与显式完成动作属于不同作用范围，未要求改变既有动作规则"}));
    return fixture.generate(r,s);
  }});
  await e.command({type:"request",text:"完成前必须填写复盘，已有数据不自动更改",operationId:"request"});
@@ -100,9 +210,9 @@ test("需求预检的额外问题必须独立审查；不必要问题不打断�
 
 test("多项预检问题一次合批审查，只向用户展示仍未决定的业务问题",async(t)=>{
  const {e}=await setup(t,{async generate(r){const v=input(r);
-   if(v.kind==="request-admission/1")return reply({...empty(),questions:[{source:1,sourceQuote:"必填尚未决定",question:"复盘是否必填？"},{source:1,sourceQuote:"其他行为不变",question:"是否修改其他行为？"}]});
-   assert.equal(v.kind,"admission-clarification-review/1");assert.deepEqual(r.history,[]);assert.equal(r.tools,undefined);
-   return reply({decisions:[{index:1,decision:{kind:"business-ambiguity",source:1,sourceQuote:"必填尚未决定",detail:"尚未决定"}},{index:2,decision:{kind:"unnecessary",source:1,sourceQuote:"其他行为不变",detail:"用户已明确"}}]});
+   if(v.kind==="request-admission/2")return reply({...empty(),questions:[{source:1,sourceQuote:"必填尚未决定",question:"复盘是否必填？"},{source:1,sourceQuote:"其他行为不变",question:"是否修改其他行为？"}]});
+   assert.equal(v.kind,"clarification-review/2");assert.deepEqual(r.history,[]);assert.equal(r.tools,undefined);
+   return reply(clarificationPayloadFixture([{kind:"business-ambiguity",source:1,sourceQuote:"必填尚未决定",detail:"尚未决定"},{kind:"unnecessary",source:1,sourceQuote:"其他行为不变",detail:"用户已明确"}]));
  }});
  await e.command({type:"request",text:"必填尚未决定，其他行为不变",operationId:"request"});
  const run=await settle(e);assert.equal(run.status,"awaiting-input");if(run.status==="awaiting-input")assert.equal(run.question,"复盘是否必填？");
@@ -112,7 +222,7 @@ test("多项预检问题一次合批审查，只向用户展示仍未决定的�
 test("预检问题的裁决绑定精确来源与事实；伪造键、旧来源及冲突裁决不能清除待审问题",()=>{
  const sources=[{id:"s:1",text:"必填未决定"}],facts=technicalFacts({workflowRules:[],binding:undefined});
  const admission=parseAdmission(JSON.stringify({...empty(),questions:[{source:1,sourceQuote:"必填未决定",question:"是否必填？"}]}),"base",sources,facts);
- const decision={kind:"unnecessary" as const,sourceRevision:"s:1",sourceQuote:"必填未决定",detail:"测试裁决"};
+ const decision={kind:"unnecessary" as const,sourceRevision:"s:1",sourceQuote:"必填未决定",detail:"测试裁决",effects:parseEffectReview(noEffectsFixture(),sources,facts)};
  const review={key:questionReviewKey("是否必填？",sources,facts),decision};
  assert.deepEqual(admissionQuestionState(admission,sources,facts,[review]),{pending:[],questions:[],blockers:[]});
  assert.equal(admissionQuestionState(admission,[{...sources[0],id:"s:2"}],facts,[review]).pending.length,1);
@@ -132,13 +242,13 @@ test("删除宿主输入义务并同步删案例与映射仍不能通过开始�
  await assert.rejects(e.command({type:"start",runId:ready.id,planId:plan.id,operationId:"start"}),/冻结|需求|验收|规格/);
  assert.deepEqual(w.composition(),before);assert.equal((await e.observe()).candidates?.length,0);
 });
-async function setup(t: test.TestContext, driver: Driver, calls = 12) {
+async function setup(t: test.TestContext, driver: Driver, calls = 12, milliseconds = 600000) {
   const dir = await mkdtemp(join(tmpdir(), "cordis-admission-"));
   const w = await Workspace.open(join(dir, "workspace.db"));
   const e = new Evolution(w.db, driver, new EvolutionDomain(w), {
     calls,
     candidates: 3,
-    milliseconds: 600000,
+    milliseconds,
   });
   t.after(async () => {
     await e.close();
@@ -147,6 +257,18 @@ async function setup(t: test.TestContext, driver: Driver, calls = 12) {
   });
   return { w, e };
 }
+test("活动时间截止由宿主记录最终预算原因，迟到模型结果不能恢复运行", async t => {
+  const { e } = await setup(t, { generate(_request, signal) {
+    return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), {once:true}));
+  } }, 12, 30);
+  await e.command({type:"request",text:"增加标签",operationId:"request"});
+  const run = await settle(e);
+  assert.equal(run.status,"failed");
+  assert.equal(run.stop?.kind,"budget");
+  assert.equal(run.stop?.code,"active-time-budget");
+  assert.equal(run.budget?.callsUsed,1);
+  assert.equal(run.budget?.millisecondsRemaining,0);
+});
 async function settle(e: Evolution) {
   for (let i = 0; i < 1000; i++) {
     const r = (await e.observe()).run!;
@@ -251,14 +373,14 @@ test("预检不存在状态只提交kind，空值由宿主派生；禁止混入�
     meaning:{kind:"hidden",conditionQuote:sources[0].text,effectQuote:sources[0].text},
   };
   const admitted = parseAdmission(
-    JSON.stringify({ ...empty(), presentations: [presentation] }),
+    JSON.stringify({ ...empty(), effects: [], initials: [presentation] }),
     "base",
     sources,
     facts,
   );
   assert.equal(admitted.presentations[0].value, "");
   assert.equal(admissionResolved(admitted), false);
-  const reviewed = adjudicateAdmission(JSON.stringify({ decisions: [{ claim: 1, source: 1, sourceQuote: sources[0].text, verdict:"entailed", detail: "原文明确要求未填写呈现" }] }), admitted, sources);
+  const reviewed = adjudicateAdmission(JSON.stringify({ decisions: [{ claim: 1, source: 1, sourceQuote: sources[0].text, layer: "initial-display", verdict:"entailed", detail: "原文明确要求未填写呈现" }] }), admitted, sources);
   assert.ok(reviewed.blockers.length);
   assert.ok(admissionResolved(reviewed));
   assert.throws(
@@ -266,7 +388,7 @@ test("预检不存在状态只提交kind，空值由宿主派生；禁止混入�
       parseAdmission(
         JSON.stringify({
           ...empty(),
-          presentations: [{ ...presentation, value: "（空）" }],
+          effects: [], initials: [{ ...presentation, value: "（空）" }],
         }),
         "base",
         sources,
@@ -281,7 +403,7 @@ test("JSON合法但来源绑定非法时也在同一交换内有界纠正，不�
   let attempts = 0;
   const { w, e } = await setup(t, {
     async generate(request, signal) {
-      if (input(request).kind === "request-admission/1") {
+      if (input(request).kind === "request-admission/2") {
         if (++attempts === 1)
           return reply({
             ...empty(),
@@ -380,7 +502,7 @@ for (const twice of [false, true])
     let intake = 0;
     const { w, e } = await setup(t, {
       async generate(r, s) {
-        if (input(r).kind === "request-admission/1") {
+        if (input(r).kind === "request-admission/2") {
           intake++;
           assert.deepEqual(r.history, []);
           assert.equal(r.tools, undefined);
@@ -417,7 +539,7 @@ for (const malformed of ["empty", "unknown-tool"])
     let failed = false;
     const { e } = await setup(t, {
       async generate(r, s) {
-        if (input(r).kind === "request-admission/1") return reply(empty());
+        if (input(r).kind === "request-admission/2") return reply(empty());
         if (r.tools && !failed) {
           failed = true;
           return {
@@ -447,15 +569,15 @@ test("已知字段明确但无法支持的空白初始呈现在源码调查前�
   const { w, e } = await setup(t, {
     async generate(r) {
       const v = input(r);
-      if (v.kind === "admission-source-review/1") {
+      if (v.kind === "admission-source-review/2") {
         assert.deepEqual(r.history, []);
         assert.equal(r.tools, undefined);
-        return reply({ decisions: [{ claim: 1, source: 1, sourceQuote: "尚未填写时显示空白", verdict:"entailed", detail: "原文明确指定未填写时的空白显示" }] });
+        return reply({ decisions: [{ claim: 1, source: 1, sourceQuote: "尚未填写时显示空白", layer: "initial-display", verdict:"entailed", detail: "原文明确指定未填写时的空白显示" }] });
       }
-      assert.equal(v.kind, "request-admission/1");
+      assert.equal(v.kind, "request-admission/2");
       assert.equal(v.materials, undefined);
       return reply({
-        presentations: [
+        effects: [], initials: [
           {
             source: 1,
             sourceQuote: "尚未填写时显示空白",
@@ -508,7 +630,7 @@ test("必要澄清经过独立审查，回答使旧预检失效，同一运行5�
     async generate(r, s) {
       seen.push(r);
       const v = input(r);
-      if (v.kind === "request-admission/1")
+      if (v.kind === "request-admission/2")
         return reply({
           ...empty(),
           questions:
@@ -550,7 +672,7 @@ test("必要澄清经过独立审查，回答使旧预检失效，同一运行5�
   );
   assert.deepEqual(
     seen
-      .filter((r) => input(r).kind === "request-admission/1")
+      .filter((r) => input(r).kind === "request-admission/2")
       .map((r) => r.history),
     [[], []],
   );
@@ -659,14 +781,14 @@ test("回答只修改必填性，重复标签误读通过同一语义契约纠�
   let reused=0;
   const {w,e}=await setup(t,{async generate(request,signal){
     const v=input(request);
-    if(v.kind==="request-admission/1"){
+    if(v.kind==="request-admission/2"){
       const source=v.sources.length,quote=source===1?"完成前填写复盘":"复盘必填";
       if(source===2){assert.equal(v.priorSemantics.length,1);assert.equal(v.priorSemantics[0].target.field,"复盘");reused++;}
-      return reply({presentations:[{source,sourceQuote:quote,target: {kind:"new",name:"复盘"},meaning:{kind:"literal",value:"复盘",conditionQuote:quote,effectQuote:quote}}],questions:source===1?[{source:1,sourceQuote:"是否必填尚未决定",question:"复盘是否必填？"}]:[]});
+      return reply({effects: [], initials:[{source,sourceQuote:quote,target: {kind:"new",name:"复盘"},meaning:{kind:"literal",value:"复盘",conditionQuote:quote,effectQuote:quote}}],questions:source===1?[{source:1,sourceQuote:"是否必填尚未决定",question:"复盘是否必填？"}]:[]});
     }
-    if(v.kind==="admission-source-review/1"){
+    if(v.kind==="admission-source-review/2"){
       const source=v.sources.length,quote=source===1?"完成前填写复盘":"复盘必填";
-      return reply({decisions:[{claim:1,source,sourceQuote:quote,verdict:"not-requested",detail:"填写对象或必填字段名称，不是初始内容"}]});
+      return reply({decisions:[{claim:1,source,sourceQuote:quote,layer: "initial-display", verdict:"not-requested",detail:"填写对象或必填字段名称，不是初始内容"}]});
     }
     return fixture.generate(request,signal);
   }});

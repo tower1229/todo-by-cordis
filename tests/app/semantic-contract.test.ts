@@ -55,7 +55,7 @@ const meaning = (kind: string) => ({
   effectQuote: "显示空白",
 });
 const payload = (m: unknown) => ({
-  presentations: [
+  effects: [], initials: [
     {
       source: 1,
       sourceQuote: quote,
@@ -81,7 +81,7 @@ const judgment = (verdict: string) =>
         claim: 1,
         source: 1,
         sourceQuote: quote,
-        verdict,
+        layer: "initial-display", verdict,
         detail: "独立来源裁决",
       },
     ],
@@ -263,7 +263,7 @@ test("真实阶段评测复用生产请求，协议错误、业务错误及完�
     false,
   );
   const response: ModelReply = {
-    text: JSON.stringify({ presentations: [], questions: [] }),
+    text: JSON.stringify({ effects: [], initials: [], questions: [] }),
     calls: [],
     history: [],
     raw: {},

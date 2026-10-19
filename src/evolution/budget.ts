@@ -1,4 +1,6 @@
-export class BudgetExhaustedError extends Error {}
+export class BudgetExhaustedError extends Error {
+  constructor(message: string, readonly resource: "calls" | "candidates" = "calls") { super(message); }
+}
 export type BudgetLimits = {
   calls: number;
   candidates: number;

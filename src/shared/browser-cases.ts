@@ -2,6 +2,7 @@ export type WorkflowUiIdentity = { id: string; fields: {key:string}[]; actions: 
 
 /** Data interpreted by the trusted host; never executable model code or selectors. */
 export type BrowserStep =
+  | {kind:"action-blocked";member:string;action:string;input?:Record<string,string>}
   | {kind:"form-invalid";member:"workflow";action:"complete";field:string;input:Record<string,string>}
   | {
       kind: "ui-identity";

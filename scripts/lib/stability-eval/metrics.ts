@@ -21,19 +21,105 @@ export type CallEvidence = {
   status?: string;
   transport?: import("../../../src/evolution/driver.js").ModelReply["transport"];
 };
+export type RunIncident = {
+  kind: "protocol" | "output-budget" | "transport";
+  phase: string;
+  call: number;
+  recovered: boolean;
+};
+export function runIncidents(
+  calls: CallEvidence[],
+  protocol: { phase: string; call: number }[] = [],
+  resources: { phase: string; call: number }[] = [],
+): RunIncident[] {
+  const invalid = new Set([...protocol, ...resources].map((p) => p.call));
+  return [
+    ...protocol.map((p) => ({
+      kind: "protocol" as const,
+      phase: p.phase,
+      call: p.call,
+      recovered: calls.some(
+        (c, i) =>
+          i + 1 > p.call &&
+          c.phase === p.phase &&
+          c.status === "returned" &&
+          !invalid.has(i + 1),
+      ),
+    })),
+    ...resources.map((p) => ({
+      kind: "output-budget" as const,
+      phase: p.phase,
+      call: p.call,
+      recovered: false,
+    })),
+    ...calls.flatMap((c, i) =>
+      c.transport?.failure
+        ? [
+            {
+              kind: "transport" as const,
+              phase: c.phase ?? "unknown",
+              call: i + 1,
+              recovered: false,
+            },
+          ]
+        : [],
+    ),
+  ];
+}
 
 /** Current evaluations use facts from the host, leaving causal attribution unknown otherwise. */
 export function failureFromEvidence(input: {
   calls: CallEvidence[];
+  run?: {
+    status: string;
+    stop?: import("../../../src/shared/assistant.js").RunStop;
+  };
   protocolFailures?: { phase: string; call: number }[];
   resourceFailures?: { phase: string; call: number }[];
   oracle?: import("./oracle.js").OracleEvidence;
   archiveComplete?: boolean;
 }): FailureEvidence {
-  const transport = input.calls.findIndex(
-    (c) => c.status === "failed" && c.transport?.failure,
-  );
-  if (transport >= 0)
+  if (input.archiveComplete === false)
+    return {
+      classification: "evaluator",
+      phase: "archive",
+      code: "incomplete-evidence",
+      evidence: ["events.jsonl"],
+    };
+  const stop = input.run?.stop;
+  if (stop)
+    return {
+      classification:
+        stop.kind === "protocol"
+          ? "tool-protocol"
+          : stop.kind === "transport"
+            ? "transport"
+            : "unknown",
+      phase: stop.phase,
+      code: stop.code,
+      evidence: stop.evidence,
+    };
+  // Older records have no structured stop. An unanswered question is still a
+  // terminal fact; preceding protocol incidents are not its cause.
+  if (input.run?.status === "awaiting-input")
+    return {
+      classification: "unknown",
+      phase: "planning",
+      code: "business-answer-required",
+      evidence: ["run.question"],
+    };
+  if (
+    ["cancelled", "interrupted", "dismissed"].includes(input.run?.status ?? "")
+  )
+    return {
+      classification: "unknown",
+      phase: "unknown",
+      code: input.run!.status,
+      evidence: ["run.status"],
+    };
+  const transport = input.calls.length - 1;
+  const last = input.calls[transport];
+  if (last?.status === "failed" && last.transport?.failure)
     return {
       classification: "transport",
       phase: input.calls[transport].phase ?? "unknown",
@@ -41,7 +127,7 @@ export function failureFromEvidence(input: {
       evidence: [`model-call:${transport + 1}`],
     };
   const resource = input.resourceFailures?.at(-1);
-  if (resource)
+  if (resource && resource.call === input.calls.length)
     return {
       classification: "unknown",
       phase: resource.phase,
@@ -49,19 +135,12 @@ export function failureFromEvidence(input: {
       evidence: [`model-call:${resource.call}`],
     };
   const protocol = input.protocolFailures?.at(-1);
-  if (protocol)
+  if (protocol && protocol.call === input.calls.length)
     return {
       classification: "tool-protocol",
       phase: protocol.phase,
       code: "invalid-model-protocol",
       evidence: [`model-call:${protocol.call}`],
-    };
-  if (input.archiveComplete === false)
-    return {
-      classification: "evaluator",
-      phase: "archive",
-      code: "incomplete-evidence",
-      evidence: ["events.jsonl"],
     };
   const oracle = input.oracle?.checks.find((c) => c.status === "failed");
   if (oracle)
@@ -89,6 +168,11 @@ export type ScenarioRunRecord = {
   candidatePassed?: boolean;
   oracle?: import("./oracle.js").OracleEvidence;
   failure?: FailureEvidence;
+  terminal?: {
+    status: string;
+    stop?: import("../../../src/shared/assistant.js").RunStop;
+  };
+  incidents?: RunIncident[];
   resources?: {
     calls: number;
     recordedCalls: number;

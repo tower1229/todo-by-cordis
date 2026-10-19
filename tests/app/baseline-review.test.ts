@@ -537,8 +537,8 @@ test("归档可见性误判离线重放：原有效目标现在由可信基线�
     {
       async generate(request) {
         const input = JSON.parse(request.message ?? "{}");
-        if (input.kind === "request-admission/1")
-          return reply({ presentations: [], questions: [] });
+        if (input.kind === "request-admission/2")
+          return reply({ effects: [], initials: [], questions: [] });
         if (request.schema) {
           assert.equal(input.kind, "requirement-review/2", "不能增加用户澄清审查调用");
           assert.deepEqual(request.history, []);
