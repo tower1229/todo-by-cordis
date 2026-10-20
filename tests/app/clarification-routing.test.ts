@@ -13,6 +13,8 @@ import {
   reviewQuestion,
 } from "../../src/evolution/technical-facts.js";
 import { parseClarificationDecision } from "../../src/evolution/clarification-review.js";
+import { captureAvailability } from "../../src/evolution/action-availability.js";
+import { technicalFacts } from "../../src/evolution/technical-facts.js";
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
 import type {
   InvestigatedPlan,
@@ -60,6 +62,23 @@ const auditReply = (
   calls: [],
   usage: { fixture: true },
   raw: { fixture: "clarification-audit" },
+});
+
+test("新增计数动作不能借用完成动作事实或自然语言期望伪造技术能力缺口", () => {
+  const snapshot = captureAvailability({
+    baseVersion: "base", revision: 1, rendererHash: "renderer", initialState: "open",
+    states: ["open", "done"], workflowProvider: "default",
+    members: [{ pluginId: "default", versionId: "base", enabled: true }],
+    actions: [{ id: "complete", from: ["open"] }], contributions: [],
+  });
+  const facts = technicalFacts({ workflowRules: [], actionAvailability: snapshot });
+  const fact = facts.findIndex(f => f.properties.action === "complete" && f.properties.state === "open") + 1;
+  const sources = [{ id: "run:1", text: "未完成任务可以将计数加一，已完成任务不能增加。" }];
+  for (const expected of ["未完成（open）任务显示 increment 动作；已完成（done）任务不显示该动作。", "false"])
+    assert.throws(() => parseClarificationDecision(JSON.stringify({
+      kind: "technical", source: 1, sourceQuote: sources[0].text,
+      detail: "新增动作不能冒用基础动作身份", fact, property: "visible", expected,
+    }), sources, facts), /技术.*期望|技术.*绑定/);
 });
 
 test("已知计数事实不问用户：审查和规划共享12次预算，原运行纠正后ready", async (t) => {
@@ -432,4 +451,35 @@ test("统一澄清审查取消后迟到回复不能恢复planning或提出问题
   await e.command({type:"cancel",runId:run.id,operationId:"cancel"});release();
   await new Promise(r=>setTimeout(r,30));
   assert.equal((await e.observe()).run?.status,"cancelled");
+});
+
+test("独立来源审查在同一复核中消解派生未决选择，不重做规划且必填断言保持（模型桩）",async t=>{
+  const fixture=new PlanningDriver();let reviews=0,audits=0;
+  const e=await setup(t,{async generate(request,signal){
+    const audit=auditInput(request);
+    if(audit){audits++;return auditReply(audit,"unnecessary");}
+    const reply=await fixture.generate(request,signal);
+    if(request.schema){
+      reviews++;
+      const input=JSON.parse(request.message!) as {sources:{id:string;text:string}[]};
+      const schema=request.schema as {properties:{unresolvedChoices:{items:{properties:{targetId:{enum:string[]}}}}}};
+      const targetId=schema.properties.unresolvedChoices.items.properties.targetId.enum.find(id=>id.startsWith("business-choice:input-required:"));
+      assert.ok(targetId);
+      const result=JSON.parse(reply.text) as Record<string,unknown>;
+      result.unresolvedChoices=[{targetId,sourceRevision:input.sources[0].id,sourceQuote:input.sources[0].text}];
+      reply.text=JSON.stringify(result);
+    }
+    return reply;
+  }});
+  await e.command({type:"request",text:"完成前复盘必填，其他行为不变",operationId:"request"});
+  const ready=await settle(e);
+  assert.equal(ready.status,"ready");assert.equal(reviews,1);assert.equal(audits,1);assert.equal(ready.budget?.callsUsed,4);
+  assert.equal(ready.revisions!.length,1);
+  assert.equal(ready.reviewLedger!.attempts.length,1);
+  if(ready.status==="ready"){
+    assert.equal(ready.plan.workflowRules[0].required,true);
+    assert.equal(ready.plan.requirementGate!.review.choiceAdjudications?.length,1);
+    assert.deepEqual(ready.plan.requirementGate!.review.issues,[]);
+    assert.ok(ready.plan.requirementGate!.coverage.every(c=>!c.reasons.length));
+  }
 });

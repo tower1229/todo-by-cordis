@@ -1,5 +1,6 @@
 import type { BrowserCase, BrowserStep } from "./browser-cases.js";
 import { workflowBrowserCases } from "./workflow-browser.js";
+import type { SchedulePolicy } from "./schedule-policy.js";
 
 export type FieldExpectation =
   | { kind: "visible"; value: string }
@@ -22,6 +23,7 @@ export type RejectionReference = {
 };
 export type AcceptanceObligation = Identity &
   (
+    | SchedulePolicy
     | {
         kind: "backend-rejection";
         action: Extract<BrowserStep, { kind: "action" }>;
@@ -83,7 +85,7 @@ export type AcceptanceObligation = Identity &
 export function obligationCases(
   obligation: AcceptanceObligation,
 ): BrowserCase[] {
-  if (obligation.kind === "backend" || obligation.kind === "backend-rejection")
+  if (obligation.kind === "backend" || obligation.kind === "backend-rejection" || obligation.kind === "schedule-policy")
     return [];
   if (obligation.kind === "workflow-input")
     return workflowBrowserCases(obligation.id, obligation.rules);

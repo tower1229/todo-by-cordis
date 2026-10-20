@@ -69,16 +69,30 @@ function assertMemberEnabledArgs(pluginId: unknown, enabled: unknown) {
 }
 
 export type WorkspaceOpenOptions = {
+  /** Maintenance-selected experiment factor; never writable through model or HTTP commands. */
+  workflowProtocolOwner?: import("../shared/workflow-protocol.js").WorkflowProtocolOwner;
   launch?: (version: LaunchTarget) => Promise<RuntimeLike>;
   checkpoint?: (stage: string) => void;
   beforeOpenWrites?: () => Promise<void>;
   /** When true, activateForAcceptance may publish without evidence.passed. */
   acceptanceProbe?: boolean;
+  /** Host-only observation/counterfactual control. Never exposed to candidate or HTTP tools. */
+  acceptanceBeforeCommit?: {
+    skipProvider?: string;
+    observed?: (invocation: BeforeCommitInvocation) => void;
+  };
   /**
    * Host startup clock. Production uses the real clock; tests may inject a
    * controllable clock. Not exposed to ordinary page/candidate/LLM tools.
    */
   clock?: HostClock;
+};
+
+export type BeforeCommitInvocation = {
+  providerId: string;
+  taskId: string;
+  action: string;
+  result: "ok" | "reject";
 };
 
 type ScheduledJob = ScheduleRegistration & {
@@ -185,9 +199,17 @@ export class Workspace {
     }
   }
   static async open(filename: string, options: WorkspaceOpenOptions = {}) {
+    if (options.workflowProtocolOwner !== undefined &&
+        options.workflowProtocolOwner !== "host" && options.workflowProtocolOwner !== "model")
+      throw new AppError("INVALID_INPUT", "工作流协议职责配置无效");
+    if (options.acceptanceBeforeCommit && !options.acceptanceProbe)
+      throw new AppError("FORBIDDEN", "仅隔离验收探针可观察或跳过 beforeCommit", 403);
     const workspace = new Workspace(filename, options);
     await workspace.restart();
     return workspace;
+  }
+  workflowProtocolOwner() {
+    return this.options.workflowProtocolOwner ?? "model";
   }
   private buildHash(id: WorkflowId) {
     const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
@@ -639,6 +661,7 @@ export class Workspace {
     decision: Extract<WorkflowDecision, { kind: "commit" }>,
   ) {
     for (const pluginId of this.extensions.beforeCommitProviders()) {
+      if (this.options.acceptanceBeforeCommit?.skipProvider === pluginId) continue;
       const result = await this.invokeOptional<BeforeCommitResult>(
         runtime,
         "beforeCommit",
@@ -650,8 +673,10 @@ export class Workspace {
           "INVALID_EXTENSION",
           "已声明 beforeCommit 但未实现方法",
         );
-      if (result.kind === "reject")
+      if (result.kind === "reject") {
+        this.options.acceptanceBeforeCommit?.observed?.({ providerId: pluginId, taskId: task.id, action, result: "reject" });
         throw new AppError("ACTION_REJECTED", result.message);
+      }
       if (result.kind !== "ok")
         throw new AppError("INVALID_EXTENSION", "beforeCommit 返回无效结果");
       this.recordAnnotations(result);
@@ -665,6 +690,7 @@ export class Workspace {
           throw new AppError("INVALID_EXTENSION", "beforeCommit 状态无效");
         draft.state = result.state;
       }
+      this.options.acceptanceBeforeCommit?.observed?.({ providerId: pluginId, taskId: task.id, action, result: "ok" });
     }
   }
   private async dispatchTaskEvent(
@@ -1166,6 +1192,15 @@ export class Workspace {
       .run(state, JSON.stringify(fields), revision, now, taskId);
     return this.read(taskId);
   }
+  /** Exact Given replay for paired host probes; never an ordinary write entry. */
+  replicateAcceptanceTask(task: Task) {
+    if (!this.options.acceptanceProbe)
+      throw new AppError("FORBIDDEN", "仅隔离验收探针可复制任务快照", 403);
+    if (this.db.prepare("SELECT id FROM tasks WHERE id=?").get(task.id))
+      throw new AppError("INVALID_INPUT", "隔离探针不能覆盖已有任务");
+    this.save(structuredClone(task));
+    return this.read(task.id);
+  }
   /**
    * Record a forward composition version that only flips one member's enabled
    * flag. Shared by Workspace public setMemberEnabled and self-iteration apply
@@ -1222,6 +1257,7 @@ export class Workspace {
       source: active.source,
       code: active.code,
       definition: active.definition,
+      ...(active.workflowProtocol ? {workflowProtocol:active.workflowProtocol} : {}),
       evidence: options?.pendingAcceptance
         ? { ...(active.evidence as Record<string, unknown>), passed: false }
         : active.evidence,

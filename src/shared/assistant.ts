@@ -46,6 +46,10 @@ export type WorkflowRule = {
 };
 export type PlanEvidence = { ref: string; hash: string };
 export type PlanBinding = {
+  workflowProtocol?: {
+    owner: import("./workflow-protocol.js").WorkflowProtocolOwner;
+    implementationHash: string;
+  };
   actionAvailability?: import("../evolution/action-availability.js").ActionAvailability;
   fieldIdentities?: import("../evolution/field-identity.js").FieldIdentity[];
   browser?: { frontendHash: string; checkerHash: string; executable: string };
@@ -104,6 +108,7 @@ export type InvestigatedPlan = AssistantPlan & {
     change: string;
   }[];
   requiredCapabilities?: {
+    verification?: "candidate";
     interfaceId: string;
     providerId: string;
     contractVersion?: string;
@@ -158,6 +163,8 @@ export type Requirement = {
   obligations?: import("./acceptance-obligations.js").AcceptanceObligation[];
 };
 export type RequirementReview = {
+  /** Host-only consumption of a source/fact-bound clarification receipt. */
+  choiceAdjudications?: {targetId:string;receiptKey:string}[];
   unresolvedChoices?: {targetId:string;sourceRevision:string;sourceQuote:string}[];
   reviewedIds: string[];
   issues: {
@@ -203,7 +210,7 @@ type Run = {
   resourceFailures?: {phase:string;call:number;kind:"output-budget";requestHash:string;responseHash:string;finishReason:"length";usage:unknown}[];
   requestAdmissions?: import("../evolution/request-admission.js").RequestAdmission[];
   protocolFailures?: {phase: string;call: number;requestHash: string;responseHash: string;problems: string[]}[];
-  clarificationReviews?: {key: string; question: string; call: number; decision: import("../evolution/clarification-review.js").ClarificationDecision}[];
+  clarificationReviews?: {key: string; question: string; call: number; choice?:{id:string;hash:string}; decision: import("../evolution/clarification-review.js").ClarificationDecision}[];
   reviewLedger?: ReviewLedger;
   staleReason?: string;
   historicalPlan?: AssistantPlan;

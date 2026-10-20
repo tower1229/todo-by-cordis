@@ -7,7 +7,10 @@ import {
 } from "./archive.js";
 import { dependencyFault } from "./environment.js";
 import { resolveExperienceBindings } from "./bindings.js";
-import type { InvestigatedPlan } from "../../../src/shared/assistant.js";
+import type {
+  InvestigatedPlan,
+  PlanBinding,
+} from "../../../src/shared/assistant.js";
 import type { WorkspaceCaseEvidence } from "../../../src/server/workspace-acceptance.js";
 import {
   mkdirSync,
@@ -42,6 +45,14 @@ import {
   type CallEvidence,
 } from "./metrics.js";
 import { runStabilityBrowserPath, type BrowserPathResult } from "./browser.js";
+import { frozenClarificationReceiptMatches } from "./clarification.js";
+import {
+  selectResponsibilityTrial,
+  observeResponsibility,
+  type FrozenResponsibilityExperiment,
+  type ResponsibilityObservation,
+} from "./responsibility.js";
+import type { WorkflowProtocolOwner } from "../../../src/shared/workflow-protocol.js";
 import {
   scoreCapabilityAndBlocking,
   type SettledPlanEvidence,
@@ -74,6 +85,7 @@ export type StabilityRunOptions = {
   archive?: typeof archiveWorkspace;
   resumeExistingCandidate?: boolean;
   trialId?: string;
+  responsibilityExperiment?: FrozenResponsibilityExperiment;
 };
 
 export type StabilityScenarioResult = {
@@ -96,8 +108,11 @@ function clarificationFor(scenario: StabilityScenario): string | undefined {
 async function prepareWorkspace(
   scenario: StabilityScenario,
   directory: string,
+  owner: WorkflowProtocolOwner = "model",
 ) {
-  const w = await Workspace.open(join(directory, "workspace.db"));
+  const w = await Workspace.open(join(directory, "workspace.db"), {
+    workflowProtocolOwner: owner,
+  });
   if (scenario.id === "member-upgrade-tags" || scenario.baseline === "dual")
     await activateDual(w);
   await w.command({
@@ -201,6 +216,16 @@ async function runScenarioInEnvironment(
   fault?: ReturnType<typeof dependencyFault>,
 ): Promise<StabilityScenarioResult> {
   assertManifestFrozen(options.manifest);
+  const responsibility = options.responsibilityExperiment
+    ? selectResponsibilityTrial(
+        options.responsibilityExperiment,
+        options.trialId,
+        options.scenario.id,
+        options.manifest,
+      )
+    : undefined;
+  if (responsibility && options.resumeExistingCandidate)
+    throw new Error("职责实验禁止续跑旧候选或重置预注册运行");
   if (
     options.manifest.evaluation &&
     options.clarificationAnswer &&
@@ -263,6 +288,7 @@ async function runScenarioInEnvironment(
     contentHash: options.manifest.contentHash,
     budget: options.manifest.budget,
     retry: options.manifest.retry,
+    ...(responsibility ? { responsibility } : {}),
     model:
       options.evidenceKind === "model-stub"
         ? options.manifest.model.stubKind
@@ -272,7 +298,11 @@ async function runScenarioInEnvironment(
   if (fault) recordEvent({ type: "environment-fault", ...fault.evidence });
   const w = options.resumeExistingCandidate
     ? await Workspace.open(join(options.directory, "workspace.db"))
-    : await prepareWorkspace(options.scenario, options.directory);
+    : await prepareWorkspace(
+        options.scenario,
+        options.directory,
+        responsibility?.owner,
+      );
   const sessions = new ExperienceSessionHost(w);
   const planningReplies: unknown[] = [];
   const observedDriver: Driver = {
@@ -327,12 +357,16 @@ async function runScenarioInEnvironment(
   let firstCandidatePassed: boolean | null = null;
   let repairedInOriginalBudget = false;
   let failureMessage: string | undefined;
+  let processingFailure: string | undefined;
   let usage: ScenarioRunRecord["usage"] = null;
   let callEvidence: CallEvidence[] = [];
   let resources: ScenarioRunRecord["resources"];
   let blockReason: string | undefined;
   let settledMessage: string | undefined;
   let planEvidence: SettledPlanEvidence | null = null;
+  let plannedProtocol: PlanBinding["workflowProtocol"];
+  let responsibilityObservation: ResponsibilityObservation | undefined;
+  let responsibilityMismatch = false;
 
   let archiveComplete = false;
   let firstPlanPassed: boolean | null = null;
@@ -350,10 +384,20 @@ async function runScenarioInEnvironment(
           ? undefined
           : clarificationFor(options.scenario)),
       validatePlan: async () => {
-        if (!oracle) return;
+        if (!oracle && !responsibility) return;
         const snapshot = await evolution.observe();
         if (!snapshot.run || !("plan" in snapshot.run) || !snapshot.run.plan)
           throw new Error("独立判定缺少待执行计划");
+        plannedProtocol = snapshot.run.plan.binding?.workflowProtocol;
+        if (
+          responsibility &&
+          (plannedProtocol?.owner !== responsibility.owner ||
+            plannedProtocol?.implementationHash !== responsibility.kernelHash)
+        ) {
+          responsibilityMismatch = true;
+          throw new Error("职责实验计划偏离冻结分组或执行内核");
+        }
+        if (!oracle) return;
         const baseline = JSON.parse(
           initialContext!.files["active-acceptance"].content,
         ) as {
@@ -476,6 +520,7 @@ async function runScenarioInEnvironment(
         ? String(snapshot.run.message ?? "")
         : undefined;
     if (snapshot.run && "plan" in snapshot.run && snapshot.run.plan) {
+      plannedProtocol = snapshot.run.plan.binding?.workflowProtocol;
       planEvidence = {
         memberCases: snapshot.run.plan.memberCases,
         workflowRules: snapshot.run.plan.workflowRules,
@@ -495,9 +540,10 @@ async function runScenarioInEnvironment(
         .get() as { body: string } | undefined;
       if (row) {
         const stored = JSON.parse(row.body) as {
-          plan?: SettledPlanEvidence;
+          plan?: SettledPlanEvidence & { binding?: PlanBinding };
         };
         if (stored.plan) {
+          plannedProtocol = stored.plan.binding?.workflowProtocol;
           planEvidence = {
             memberCases: stored.plan.memberCases,
             workflowRules: stored.plan.workflowRules,
@@ -544,6 +590,29 @@ async function runScenarioInEnvironment(
     });
 
     const candidates = snapshot.candidates ?? [];
+    if (responsibility) {
+      responsibilityObservation = observeResponsibility(
+        responsibility,
+        plannedProtocol,
+        candidates,
+        (id) => w.release.get(id),
+      );
+      writeVerifiedJson(
+        join(options.directory, "responsibility-evidence.json"),
+        responsibilityObservation,
+      );
+      recordEvent({
+        type: "responsibility-evidence",
+        observation: responsibilityObservation,
+      });
+      if (!responsibilityObservation.consistent) {
+        responsibilityMismatch = true;
+        failureMessage =
+          "职责实验身份不一致：" +
+          responsibilityObservation.issues.map((i) => i.detail).join("；");
+        if (browserResult) browserResult.status = "failed";
+      }
+    }
     if (options.manifest.evaluation)
       for (const candidate of candidates) {
         if (candidate.browser)
@@ -626,7 +695,8 @@ async function runScenarioInEnvironment(
       note: "只读补充证据；不得用 API 成功替代浏览器用户路径。",
     });
   } catch (error) {
-    failureMessage ??= error instanceof Error ? error.message : String(error);
+    processingFailure = error instanceof Error ? error.message : String(error);
+    failureMessage ??= processingFailure;
     recordEvent({
       type: "failure",
       message: failureMessage,
@@ -641,6 +711,7 @@ async function runScenarioInEnvironment(
       pageErrors: [],
       message: failureMessage,
     };
+    browserResult.status = "failed";
   } finally {
     try {
       const evidenceHash = (options.archive ?? archiveWorkspace)(
@@ -661,6 +732,7 @@ async function runScenarioInEnvironment(
           errors: browserResult.cleanupErrors,
         });
     } catch (error) {
+      archiveComplete = false;
       failureMessage ??= `Archive verification: ${String(error)}`;
       recordEvent({
         type: "archive-error",
@@ -687,6 +759,7 @@ async function runScenarioInEnvironment(
     message: failureMessage,
   };
   failureMessage ??= browserResult.message;
+  if (processingFailure) archiveComplete = false;
   if (!archiveComplete) browserResult.status = "failed";
 
   if (oracle) {
@@ -705,9 +778,14 @@ async function runScenarioInEnvironment(
         oracle.checks = oracle.checks.map((c) =>
           c.id === id ? oracleCheck(id, true, value) : c,
         );
-      if (options.scenario.oracle?.kind === "due" && options.scenario.oracle.lifecyclePolicy) {
+      if (
+        options.scenario.oracle?.kind === "due" &&
+        options.scenario.oracle.lifecyclePolicy
+      ) {
         const check = checkDuePolicy(browserResult.duePolicyChecks ?? []);
-        oracle.checks = oracle.checks.map(c => c.id === check.id ? check : c);
+        oracle.checks = oracle.checks.map((c) =>
+          c.id === check.id ? check : c,
+        );
       }
       if (options.scenario.clarification)
         oracle.checks = oracle.checks.map((c) =>
@@ -715,9 +793,11 @@ async function runScenarioInEnvironment(
             ? oracleCheck(
                 c.id,
                 true,
-                !!browserResult.answeredClarification &&
-                  browserResult.answeredClarification.answer ===
-                    options.scenario.clarification!.answer,
+                frozenClarificationReceiptMatches(
+                  options.scenario,
+                  beforeShutdown.run,
+                  browserResult.answeredClarification,
+                ),
               )
             : c,
         );
@@ -770,17 +850,41 @@ async function runScenarioInEnvironment(
   const evaluatorStoppedLiveRun =
     browserResult.status === "failed" &&
     ["planning", "executing"].includes(beforeShutdown.run?.status ?? "");
-  const failure =
-    options.manifest.evaluation && !matchesExpectation
-      ? evaluatorStoppedLiveRun ? {classification:"evaluator" as const,phase:"browser",code:"evaluation-stopped-live-run",evidence:["before-shutdown","browser-result"]} : failureFromEvidence({
-          calls: callEvidence,
-          run: beforeShutdown.run ?? undefined,
-          protocolFailures: beforeShutdown.run?.protocolFailures,
-          resourceFailures: beforeShutdown.run?.resourceFailures,
-          oracle,
-          archiveComplete,
-        })
-      : undefined;
+  const failure = processingFailure
+    ? {
+        classification: "evaluator" as const,
+        phase: "evidence",
+        code: "evidence-processing-failed",
+        evidence: ["events.jsonl", "before-shutdown"],
+      }
+    : responsibilityMismatch
+      ? {
+          classification: responsibilityObservation?.issues.some(
+            (i) => i.classification === "host-defect",
+          )
+            ? ("host-defect" as const)
+            : ("evaluator" as const),
+          phase: "experiment",
+          code: "responsibility-identity",
+          evidence: ["responsibility-evidence.json", "before-shutdown"],
+        }
+      : options.manifest.evaluation && !matchesExpectation
+        ? evaluatorStoppedLiveRun
+          ? {
+              classification: "evaluator" as const,
+              phase: "browser",
+              code: "evaluation-stopped-live-run",
+              evidence: ["before-shutdown", "browser-result"],
+            }
+          : failureFromEvidence({
+              calls: callEvidence,
+              run: beforeShutdown.run ?? undefined,
+              protocolFailures: beforeShutdown.run?.protocolFailures,
+              resourceFailures: beforeShutdown.run?.resourceFailures,
+              oracle,
+              archiveComplete,
+            })
+        : undefined;
   const failureClass =
     failure?.classification ??
     (evaluatorStoppedLiveRun
@@ -801,11 +905,27 @@ async function runScenarioInEnvironment(
 
   const record: ScenarioRunRecord = {
     trialId: options.trialId,
+    ...(responsibilityObservation
+      ? { responsibility: responsibilityObservation }
+      : {}),
     candidatePassed: (beforeShutdown.candidates ?? []).some((c) => c.passed),
     ...(oracle ? { oracle } : {}),
     ...(failure ? { failure } : {}),
-    ...(beforeShutdown.run ? { terminal: { status: beforeShutdown.run.status, ...(beforeShutdown.run.stop ? { stop: beforeShutdown.run.stop } : {}) } } : {}),
-    incidents: runIncidents(callEvidence, beforeShutdown.run?.protocolFailures, beforeShutdown.run?.resourceFailures),
+    ...(beforeShutdown.run
+      ? {
+          terminal: {
+            status: beforeShutdown.run.status,
+            ...(beforeShutdown.run.stop
+              ? { stop: beforeShutdown.run.stop }
+              : {}),
+          },
+        }
+      : {}),
+    incidents: runIncidents(
+      callEvidence,
+      beforeShutdown.run?.protocolFailures,
+      beforeShutdown.run?.resourceFailures,
+    ),
     ...(resources ? { resources } : {}),
     scenarioId: options.scenario.id,
     evidenceKind: options.evidenceKind,
@@ -884,11 +1004,24 @@ export async function runFrozenBaselineSuite(input: {
   scenarioFilter?: string[];
   harnessCommit?: string;
   continuationRoot?: string;
+  responsibilityExperiment?: FrozenResponsibilityExperiment;
+  browserRun?: StabilityRunOptions["browserRun"];
 }): Promise<{
   runs: StabilityScenarioResult[];
   records: ScenarioRunRecord[];
 }> {
   assertManifestFrozen(input.manifest);
+  const experiment = input.responsibilityExperiment;
+  if (experiment) {
+    if (input.scenarioFilter || input.continuationRoot)
+      throw new Error("配对实验禁止筛选场景、外层续跑或复用候选");
+    selectResponsibilityTrial(
+      experiment,
+      experiment.trials[0]?.trialId,
+      experiment.trials[0]?.scenarioId,
+      input.manifest,
+    );
+  }
   if (input.manifest.evaluation && input.continuationRoot)
     throw new Error("当前评测不接受外层续跑或复用历史模型运行");
   mkdirSync(input.root, { recursive: true });
@@ -905,6 +1038,36 @@ export async function runFrozenBaselineSuite(input: {
     { flag: "wx", mode: 0o600 },
   );
   const runs: StabilityScenarioResult[] = [];
+  if (experiment) {
+    writeVerifiedJson(
+      join(input.root, "responsibility.frozen.json"),
+      experiment,
+    );
+    for (const trial of experiment.trials) {
+      const scenario = input.manifest.scenarios.find(
+        (s) => s.id === trial.scenarioId,
+      )!;
+      const directory = join(
+        input.root,
+        "runs",
+        `${trial.trialId}-${randomUUID().slice(0, 8)}`,
+      );
+      mkdirSync(directory, { recursive: true });
+      runs.push(
+        await runStabilityScenario({
+          directory,
+          scenario,
+          manifest: input.manifest,
+          evidenceKind: input.evidenceKind,
+          trialId: trial.trialId,
+          responsibilityExperiment: experiment,
+          browserRun: input.browserRun,
+          driver: input.driverFactory?.(scenario.id),
+        }),
+      );
+    }
+    return { runs, records: runs.map((r) => r.record) };
+  }
   let priorDirectory: string | undefined;
   if (input.continuationRoot) {
     const identity = JSON.parse(
@@ -994,6 +1157,7 @@ export async function runFrozenBaselineSuite(input: {
               },
             }
           : input.driverFactory?.(scenario.id),
+        browserRun: input.browserRun,
       });
       runs.push(result);
       if (resume && !result.record.recoveredBrowserSucceeded)

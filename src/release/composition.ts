@@ -221,6 +221,7 @@ export function resolveRuntimePlugins(
       service: target.service,
       bundle,
       role: member.role,
+      ...(target.workflowProtocol ? {workflowProtocol:target.workflowProtocol} : {}),
       // Generated members require modules; native import only for fixtures/builtins.
       allowNativeImport: !generated,
     });
@@ -252,6 +253,7 @@ export function compositionBuildHash(
       role: member.role,
       code: target.code,
       lockHash: target.bundle?.lockHash ?? null,
+      ...(target.workflowProtocol ? {workflowProtocol:hash(target.workflowProtocol)} : {}),
     };
   });
   return hash(entries);

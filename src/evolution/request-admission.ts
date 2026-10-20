@@ -14,6 +14,10 @@ import {
 import { hash } from "../release/storage.js";
 import { schemaProblems } from "./model-protocol.js";
 import {
+  clarificationChoiceQuestion,
+  type ClarificationChoice,
+} from "../shared/clarification-choice.js";
+import {
   clarificationBlockers,
   type ClarificationDecision,
 } from "./clarification-review.js";
@@ -47,14 +51,14 @@ export function admissionQuestionState(
   admission: RequestAdmission,
   sources: Source[],
   facts: TechnicalFact[],
-  reviews: { key: string; decision: ClarificationDecision }[],
+  reviews: { key: string; choice?:{id:string;hash:string}; decision: ClarificationDecision }[],
 ) {
   const pending: string[] = [],
     questions: string[] = [],
     blockers: string[] = [];
   for (const q of admission.questions) {
     const matches = reviews.filter(
-      (r) => r.key === questionReviewKey(q.question, sources, facts),
+      (r) => !r.choice && r.key === questionReviewKey(q.question, sources, facts),
     );
     if (new Set(matches.map((r) => hash(r.decision))).size > 1) {
       blockers.push("同一澄清裁决冲突，须重新调查");
@@ -90,7 +94,8 @@ type AdmissionIntent = {
     target: FieldReference;
     meaning: InitialMeaning;
   }[];
-  questions: { source: number; sourceQuote: string; question: string }[];
+  questions: ({ source: number; sourceQuote: string } &
+    ({ question: string } | { choice: ClarificationChoice }))[];
 };
 type PresentationCheck = Citation & {
   intentId: string;
@@ -104,7 +109,7 @@ type PresentationCheck = Citation & {
   outcome: "supported" | "unsupported" | "deferred" | "not-applicable";
 };
 export type RequestAdmission = {
-  contract: "host-admission/7";
+  contract: "host-admission/8";
   intents: AdmissionIntent;
   factsSnapshot: TechnicalFact[];
   technicalChecks: PresentationCheck[];
@@ -140,7 +145,10 @@ export type RequestAdmission = {
     target?: FieldTarget;
     value: string;
   })[];
-  questions: (Citation & { question: string })[];
+  questions: (Citation & {
+    question: string;
+    choice?: ClarificationChoice & { id: string };
+  })[];
   claims: AdmissionClaim[];
   semanticReview?: { claimsHash: string; decisions: AdmissionDecision[] };
   blockers: string[];
@@ -177,10 +185,37 @@ export function admissionSchema(facts: TechnicalFact[] = []) {
         target: fieldReferenceSchema(catalog),
         meaning: initialMeaningSchema,
       }),
-      questions: list({
-        ...citation,
-        question: { ...text, minLength: 1, maxLength: 3000 },
-      }),
+      questions: {
+        type: "array",
+        maxItems: 20,
+        items: {
+          type: "object",
+          anyOf: [
+            list({
+              ...citation,
+              choice: {
+                type: "object",
+                additionalProperties: false,
+                description: "字段是否必填的业务选择；只提交主题原文，宿主生成问句。",
+                required: ["kind", "subjectQuote"],
+                properties: {
+                  kind: { type: "string", enum: ["field-required"] },
+                  subjectQuote: { ...text, minLength: 1, maxLength: 100 },
+                },
+              },
+            }).items,
+            list({
+              ...citation,
+              question: {
+                ...text,
+                minLength: 1,
+                maxLength: 3000,
+                description: "仅用于结构化选择尚不能表达的其他业务歧义。",
+              },
+            }).items,
+          ],
+        },
+      },
     },
   };
 }
@@ -237,7 +272,7 @@ export function admissionKey(
   sources: Source[],
   facts: TechnicalFact[],
 ) {
-  return hash({ contract: "host-admission/7", baseVersion, sources, facts });
+  return hash({ contract: "host-admission/8", baseVersion, sources, facts });
 }
 export function parseAdmission(
   text: string,
@@ -412,7 +447,7 @@ export function parseAdmission(
     };
   });
   return {
-    contract: "host-admission/7",
+    contract: "host-admission/8",
     intents: structuredClone(raw),
     factsSnapshot: structuredClone(facts),
     technicalChecks,
@@ -427,10 +462,24 @@ export function parseAdmission(
     initialStates: [],
     initialMeanings,
     questions: [
-      ...raw.questions.map((v) => ({
-        ...bind(v),
-        question: v.question.trim(),
-      })),
+      ...raw.questions.map((v) => {
+        const citation = bind(v);
+        if ("question" in v) return { ...citation, question: v.question.trim() };
+        if (
+          v.choice.subjectQuote !== v.choice.subjectQuote.trim() ||
+          !v.choice.subjectQuote.trim() ||
+          !v.sourceQuote.includes(v.choice.subjectQuote)
+        )
+          throw new Error("结构化澄清的主题必须引用该未决项中的连续原文");
+        return {
+          ...citation,
+          question: clarificationChoiceQuestion(v.choice),
+          choice: {
+            ...v.choice,
+            id: "choice-" + hash({ citation, choice: v.choice }).slice(0, 24),
+          },
+        };
+      }),
       ...initialMeanings
         .filter((v) => v.initial.kind === "undetermined")
         .map((v) => ({
@@ -599,7 +648,7 @@ export function admissionResolved(admission: RequestAdmission): boolean {
   // Canonical host replay verifies every derived reference and check; old pending evidence is never upgraded.
   try {
     if (
-      admission.contract !== "host-admission/7" ||
+      admission.contract !== "host-admission/8" ||
       !Array.isArray(admission.factsSnapshot)
     )
       return false;

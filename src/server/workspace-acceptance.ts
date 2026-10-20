@@ -1,17 +1,20 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { BusinessAssertionError } from "./business-verification.js";
-import { Workspace } from "./workspace.js";
+import { Workspace, type BeforeCommitInvocation } from "./workspace.js";
 import { AppError } from "../shared/contracts.js";
 import { hash } from "../release/storage.js";
+import { workflowProtocolKernelHash, workflowProtocolProgram } from "../release/workflow-protocol.js";
 import {
   compositionMembers,
   resolveVersionMembers,
 } from "../release/composition.js";
 import type { Version } from "../release/types.js";
 import type { Task } from "./business/contracts.js";
+import { createControllableClock } from "./host/clock.js";
 
 import type { AcceptanceExpected } from "../shared/acceptance-cases.js";
 import type { AffectedAcceptance } from "./affected-acceptance.js";
@@ -53,6 +56,18 @@ export type WorkspaceCaseEvidence = {
   input: Record<string, string>;
   expected: AcceptanceExpected | FormExpected;
   requiredFields?: string[];
+  beforeCommit?: {
+    checkerVersion: string;
+    providerId: string;
+    providerVersionId: string;
+    /** Final immutable member artifact; providerVersionId retains the actually invoked draft. */
+    finalProviderVersionId?: string;
+    invoked: boolean;
+    witness: boolean;
+    given: Task;
+    control?: BeforeCommitCounterfactual;
+    counterfactual?: BeforeCommitCounterfactual;
+  };
   actual: {
     registeredFields?: string[];
     state?: string;
@@ -72,6 +87,65 @@ export type WorkspaceCaseEvidence = {
   status: "passed" | "failed";
   diagnostic: string;
 };
+
+export function beforeCommitCheckerVersion() {
+  return hash({id:"beforeCommit/1",source:readFileSync(resolve("src/server/workspace-acceptance.ts"),"utf8"),runtime:readFileSync(resolve("src/server/workspace.ts"),"utf8"),clock:readFileSync(resolve("src/server/host/clock.ts"),"utf8"),protocolKernel:workflowProtocolKernelHash()});
+}
+
+export function beforeCommitArtifactHash(version: Version) {
+  return hash({pluginId:version.pluginId,contractVersion:version.contractVersion,source:version.source,code:version.code,outputs:version.bundle?.outputs,...(version.workflowProtocol?{workflowProtocol:workflowProtocolProgram(version.workflowProtocol)}:{})});
+}
+
+type BeforeCommitCounterfactual = {
+  invoked: boolean;
+  decision: string;
+  state: string;
+  fields: Record<string, string>;
+  matches: boolean;
+};
+
+/** Same candidate, same Given/When; only the named hook is suppressed by the host. */
+async function beforeCommitProbe(
+  formal: Workspace, candidate: Version, c: WorkspaceExecutionCase, given: Task, provider: string, skip: boolean, signal: AbortSignal,
+): Promise<BeforeCommitCounterfactual> {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-hook-counterfactual-"));
+  let isolated: Workspace | undefined;
+  let invoked = false;
+  try {
+    signal.throwIfAborted();
+    isolated = await Workspace.open(join(directory, "workspace.db"), {
+      acceptanceProbe: true,
+      clock: createControllableClock(Date.parse(given.updatedAt)),
+      acceptanceBeforeCommit: {
+        ...(skip ? { skipProvider: provider } : {}),
+        observed: i => { if (i.providerId === provider && i.taskId === given.id && i.action === c.action) invoked = true; },
+      },
+    });
+    importCompositionVersions(formal, isolated, candidate);
+    await isolated.activateForAcceptance(candidate.id, signal);
+    const member = isolated.composition().members.find(m => m.pluginId === provider);
+    if (!member) throw new BusinessAssertionError(`beforeCommit 反事实缺少成员 ${provider}`);
+    if (!member.enabled) await isolated.setMemberEnabled({ operationId:randomUUID(), compositionRevision:isolated.composition().revision, versionId:isolated.composition().versionId, pluginId:provider, enabled:true });
+    const task = isolated.replicateAcceptanceTask(given);
+    let decision = "commit";
+    try {
+      const result = await isolated.command({type:"action",taskId:task.id,actionId:c.action,input:c.input,expectedRevision:task.revision,compositionRevision:isolated.composition().revision,operationId:randomUUID()});
+      decision = result.decision?.kind ?? "commit";
+    } catch (error) {
+      if (!(error instanceof AppError) || !["ACTION_REJECTED", "INVALID_ACTION"].includes(error.code)) throw error;
+      decision = "reject";
+    }
+    signal.throwIfAborted();
+    const actual = isolated.read(task.id);
+    const matches = c.expected.kind === "commit"
+      ? decision === "commit" && actual.state === c.expected.state && hash(actual.fields) === hash(c.expected.fields)
+      : c.expected.kind === "reject" && ["reject","input-required"].includes(decision) && actual.revision === task.revision && actual.state === task.state && hash(actual.fields) === hash(task.fields);
+    return {invoked,decision, state:actual.state, fields:{...actual.fields}, matches};
+  } finally {
+    await isolated?.close().catch(() => undefined);
+    await rm(directory, {recursive:true,force:true});
+  }
+}
 
 export function importCompositionVersions(
   formal: Workspace,
@@ -161,6 +235,7 @@ export async function verifyViaIsolatedWorkspace(
   signal: AbortSignal,
   recordCase?: (evidence: WorkspaceCaseEvidence) => void,
   fieldRequirements: { member: string; fields: string[] }[] = [],
+  beforeCommitProviders: string[] = [],
 ): Promise<string[]> {
   if (!cases.length)
     throw new BusinessAssertionError("缺少隔离 Workspace 业务验收用例");
@@ -169,16 +244,36 @@ export async function verifyViaIsolatedWorkspace(
       throw new BusinessAssertionError(
         `字段注册 ${required.member} 缺少可执行验收绑定`,
       );
+  signal.throwIfAborted();
   const directory = await mkdtemp(join(tmpdir(), "cordis-accept-isolated-"));
+  const invocations: BeforeCommitInvocation[] = [];
   const isolated = await Workspace.open(join(directory, "workspace.db"), {
     acceptanceProbe: true,
+    acceptanceBeforeCommit: { observed: invocation => invocations.push(invocation) },
+  }).catch(async error => {
+    await rm(directory, {recursive:true,force:true});
+    throw error;
   });
+  const witnessed = new Set<string>();
+  const hookCheckerVersion = beforeCommitProviders.length ? beforeCommitCheckerVersion() : "";
   const checks: string[] = [];
   let receipt: WorkspaceCaseEvidence;
-  const recordCasePass = (
+  const recordCasePass = async (
     c: WorkspaceExecutionCase,
     memberVersionId: string | undefined,
+    task: Task,
   ) => {
+    if (!c.protectionOf && c.member && beforeCommitProviders.includes(c.member) &&
+        isolated.composition().workflow.actions.some(a => a.id === c.action && a.providerId !== c.member)) {
+      const invoked = invocations.some(i => i.providerId === c.member && i.taskId === task.id && i.action === c.action);
+      const control = invoked ? await beforeCommitProbe(formal,candidate,c,task,c.member,false,signal) : undefined;
+      const counterfactual = control?.invoked && control.matches ? await beforeCommitProbe(formal,candidate,c,task,c.member,true,signal) : undefined;
+      const witness = !!counterfactual && !counterfactual.matches;
+      receipt.beforeCommit = {checkerVersion:hookCheckerVersion,providerId:c.member,providerVersionId:memberVersionId!,invoked,witness,given:structuredClone(task),...(control ? {control} : {}),...(counterfactual ? {counterfactual} : {})};
+      if (control && !control.matches)
+        throw new BusinessAssertionError(`beforeCommit / ${c.member} 冻结案例在全新隔离上下文中不能复现`);
+      if (witness) witnessed.add(c.member);
+    }
     receipt.status = "passed";
     receipt.diagnostic =
       c.expected.kind === "input-required"
@@ -326,7 +421,11 @@ export async function verifyViaIsolatedWorkspace(
           const command = registry
             .commands()
             .find((item) => item.id === c.action);
-          if (command?.providerId !== c.member)
+          const hookAction = beforeCommitProviders.includes(c.member) &&
+            registry.beforeCommitProviders().includes(c.member) &&
+            isolated.composition().workflow.actions.some(a => a.id === c.action &&
+              (!a.providerId || a.providerId === candidate.pluginId));
+          if (command?.providerId !== c.member && !hookAction)
             throw new BusinessAssertionError(
               `业务验收失败：${c.name}；动作 ${c.action} 不是成员 ${c.member} 的贡献`,
             );
@@ -481,13 +580,13 @@ export async function verifyViaIsolatedWorkspace(
                 throw new BusinessAssertionError(
                   `系统验收失败：${c.name}；表单可收集的冻结输入不能完成动作，缺少必要输入字段`,
                 );
-              recordCasePass(c, memberVersionId);
+              await recordCasePass(c, memberVersionId, task);
               continue;
             }
             if (c.expected.kind === "reject") {
               if (result.decision?.kind === "input-required") {
                 assertTaskUnchanged(isolated, task.id, task, c.name);
-                recordCasePass(c, memberVersionId);
+                await recordCasePass(c, memberVersionId, task);
                 continue;
               }
               throw new BusinessAssertionError(
@@ -506,7 +605,7 @@ export async function verifyViaIsolatedWorkspace(
               throw new BusinessAssertionError(
                 `业务验收失败：${c.name}；预期 ${JSON.stringify(c.expected)}；查询 ${JSON.stringify({ state: listed.state, fields: listed.fields })}`,
               );
-            recordCasePass(c, memberVersionId);
+            await recordCasePass(c, memberVersionId, task);
           } catch (error) {
             receipt.actual.error =
               error instanceof Error ? error.message : String(error);
@@ -517,7 +616,7 @@ export async function verifyViaIsolatedWorkspace(
                 error.code === "INVALID_ACTION")
             ) {
               assertTaskUnchanged(isolated, task.id, task, c.name);
-              recordCasePass(c, memberVersionId);
+              await recordCasePass(c, memberVersionId, task);
               continue;
             }
             if (
@@ -560,6 +659,12 @@ export async function verifyViaIsolatedWorkspace(
         }
         recordCase?.(structuredClone(receipt));
       }
+    }
+    for (const provider of beforeCommitProviders) {
+      if (!witnessed.has(provider))
+        throw new BusinessAssertionError(`beforeCommit / ${provider} 缺少真实调用且可观察差异的冻结主工作流案例`);
+      const member = members.find(m => m.pluginId === provider)!;
+      checks.push(`beforeCommit/1:${provider}@${member.versionId}`);
     }
     return checks;
   } finally {

@@ -9,6 +9,9 @@ import { importCompositionVersions } from "./workspace-acceptance.js";
 import type { Version } from "../release/types.js";
 import type { MemberAcceptanceCase } from "../shared/acceptance-cases.js";
 import { hash } from "../release/storage.js";
+import { scheduleCheckId } from "../shared/checker-semantics.js";
+import { schedulePolicyChecks, schedulePolicySemantics, type SchedulePolicy, type SchedulePolicyCheck, type SchedulePolicyEvidence } from "../shared/schedule-policy.js";
+import type { Task } from "./business/contracts.js";
 
 /** Host-owned timing oracle. Action cases alone cannot prove timer dispatch. */
 export async function verifyScheduleViaIsolatedWorkspace(
@@ -16,6 +19,8 @@ export async function verifyScheduleViaIsolatedWorkspace(
   candidate: Version,
   cases: MemberAcceptanceCase[],
   signal: AbortSignal,
+  policies: SchedulePolicy[] = [],
+  recordPolicy?: (evidence: SchedulePolicyEvidence) => void,
 ): Promise<string[]> {
   const directory = await mkdtemp(join(tmpdir(), "cordis-schedule-accept-"));
   const clock = createControllableClock(Date.parse("2030-01-01T00:00:00.000Z"));
@@ -24,6 +29,7 @@ export async function verifyScheduleViaIsolatedWorkspace(
     clock,
   });
   const checks: string[] = [];
+  const matchedPolicies=new Set<string>();
   try {
     signal.throwIfAborted();
     importCompositionVersions(formal, isolated, candidate);
@@ -70,6 +76,15 @@ export async function verifyScheduleViaIsolatedWorkspace(
         throw new BusinessAssertionError(
           `定时验收失败：${schedule.id} 缺少设置截止与到期动作的冻结正例，普通动作案例不能代替时间验证`,
         );
+      const requestedPolicies=policies.filter(p=>p.action.member===schedule.providerId&&p.action.action===schedule.onFire.commandId);
+      const firedState=fired.expected.state;
+      for (const policy of requestedPolicies) {
+        if (policy.version!==1 || !policy.checks.length || new Set(policy.checks).size!==policy.checks.length ||
+            policy.checks.some(c=>!Object.hasOwn(schedulePolicySemantics,c)) ||
+            policy.fireCase.caseId!==`member:${fired.member}:${fired.name}` || policy.fireCase.definitionHash!==hash(fired))
+          throw new BusinessAssertionError(`定时验收失败：${policy.id} 与冻结的到期案例不一致`);
+        matchedPolicies.add(policy.id);
+      }
       const expectedField = Object.entries(fired.expected.fields).find(
         ([key, value]) => key !== schedule.at && fired.fields[key] !== value,
       );
@@ -78,6 +93,32 @@ export async function verifyScheduleViaIsolatedWorkspace(
           `定时验收失败：${schedule.id} 到期正例没有可观察的状态或字段变化`,
         );
       const revision = () => isolated.composition().revision;
+      const effects=Object.fromEntries(Object.entries(fired.expected.fields).filter(([key,value])=>key!==schedule.at&&fired.fields[key]!==value));
+      if (requestedPolicies.length && !Object.keys(effects).length)
+        throw new BusinessAssertionError(`定时策略 ${schedule.id} 缺少冻结的字段型到期效果`);
+      const hasEffects=(task:Task)=>Object.entries(effects).every(([key,value])=>task.fields[key]===value);
+      const policyEvidence=new Map<SchedulePolicyCheck,SchedulePolicyEvidence>();
+      const policyCheck=async(policy:SchedulePolicy,check:SchedulePolicyCheck,state:string,run:(step:(operation:string,task:Task)=>void)=>Promise<void>)=>{
+        const caseId=schedulePolicyChecks(policy).find(ref=>ref.caseId.endsWith(`:${check}`))!.caseId;
+        const cached=policyEvidence.get(check);
+        if (cached) {
+          recordPolicy?.({...structuredClone(cached),caseId,policyId:policy.id,policyHash:hash(policy),sourceCase:structuredClone(policy.fireCase)});
+          checks.push(caseId);
+          return;
+        }
+        const receipt:SchedulePolicyEvidence={checker:"schedule/1",caseId,policyId:policy.id,policyHash:hash(policy),candidateVersionId:candidate.id,member:schedule.providerId,memberVersionId:isolated.composition().members.find(m=>m.pluginId===schedule.providerId)!.versionId,sourceCase:structuredClone(policy.fireCase),expected:{state,fields:{...effects}},steps:[],status:"failed",diagnostic:"时序策略尚未完成"};
+        try {
+          signal.throwIfAborted();
+          await run((operation,task)=>receipt.steps.push({operation,at:new Date(clock.now()).toISOString(),state:task.state,fields:{...task.fields},revision:task.revision}));
+          signal.throwIfAborted();
+          receipt.status="passed"; receipt.diagnostic="真实调度和工作流操作链通过冻结业务策略";
+          policyEvidence.set(check,structuredClone(receipt));
+          checks.push(caseId);
+        } catch(error) {
+          receipt.diagnostic=error instanceof Error?error.message:String(error);
+          throw error;
+        } finally { recordPolicy?.(structuredClone(receipt)); }
+      };
       const create = async () => {
         const created = await isolated.command({
           type: "create",
@@ -134,7 +175,15 @@ export async function verifyScheduleViaIsolatedWorkspace(
         throw new BusinessAssertionError(
           `定时验收失败：${schedule.id} 到点未通过真实调度提交预期事实`,
         );
-      checks.push(`schedule/1:${schedule.id}:on-time`);
+      checks.push(scheduleCheckId(schedule.id, "on-time"));
+      for (const policy of requestedPolicies.filter(p=>p.checks.includes("complete-retains-effect")))
+        await policyCheck(policy,"complete-retains-effect","done",async step=>{
+          const expired=isolated.read(task.id); step("scheduled-effect",expired);
+          await isolated.command({type:"action",taskId:expired.id,actionId:"complete",input:{},expectedRevision:expired.revision,operationId:randomUUID(),compositionRevision:revision()});
+          const completed=isolated.read(task.id); step("complete",completed);
+          if (completed.state!=="done" || !hasEffects(completed))
+            throw new BusinessAssertionError(`定时策略 ${policy.id} 完成后未保留到期效果；实际 ${JSON.stringify({state:completed.state,fields:completed.fields})}`);
+        });
 
       const doneTask = await create();
       await isolated.command({
@@ -178,7 +227,17 @@ export async function verifyScheduleViaIsolatedWorkspace(
         throw new BusinessAssertionError(
           `定时验收失败：${schedule.id} 误标已完成任务`,
         );
-      checks.push(`schedule/1:${schedule.id}:completed-safe`);
+      checks.push(scheduleCheckId(schedule.id, "completed-safe"));
+      for (const policy of requestedPolicies.filter(p=>p.checks.includes("reopen-after-due")))
+        await policyCheck(policy,"reopen-after-due",firedState,async step=>{
+          step("complete-before-due",completed); step("past-due-while-completed",retained);
+          await isolated.command({type:"action",taskId:retained.id,actionId:"reopen",input:{},expectedRevision:retained.revision,operationId:randomUUID(),compositionRevision:revision()});
+          step("reopen",isolated.read(retained.id));
+          await clock.advance(0); await isolated.whenSchedulesIdle();
+          const reopened=isolated.read(retained.id); step("scheduled-catch-up",reopened);
+          if (reopened.state!==firedState || !hasEffects(reopened))
+            throw new BusinessAssertionError(`定时策略 ${policy.id} 截止后重开未由真实调度补执行；实际 ${JSON.stringify({state:reopened.state,fields:reopened.fields})}`);
+        });
 
       const changeTask = await create();
       const oldAt = new Date(clock.now() + 60_000).toISOString();
@@ -226,7 +285,7 @@ export async function verifyScheduleViaIsolatedWorkspace(
         throw new BusinessAssertionError(
           `定时验收失败：${schedule.id} 重复触发`,
         );
-      checks.push(`schedule/1:${schedule.id}:updated-once`);
+      checks.push(scheduleCheckId(schedule.id, "updated-once"));
 
       const clearedTask = await create();
       const clearAt = new Date(clock.now() + 60_000).toISOString();
@@ -254,7 +313,7 @@ export async function verifyScheduleViaIsolatedWorkspace(
         throw new BusinessAssertionError(
           `定时验收失败：${schedule.id} 清除后仍触发`,
         );
-      checks.push(`schedule/1:${schedule.id}:cleared`);
+      checks.push(scheduleCheckId(schedule.id, "cleared"));
 
       const deleteTask = await create();
       const deleteAt = new Date(clock.now() + 60_000).toISOString();
@@ -284,7 +343,7 @@ export async function verifyScheduleViaIsolatedWorkspace(
         throw new BusinessAssertionError(
           `定时验收失败：${schedule.id} 删除后仍触发或恢复`,
         );
-      checks.push(`schedule/1:${schedule.id}:deleted`);
+      checks.push(scheduleCheckId(schedule.id, "deleted"));
 
       const missedTask = await create();
       const missedAt = new Date(clock.now() + 60_000).toISOString();
@@ -320,8 +379,10 @@ export async function verifyScheduleViaIsolatedWorkspace(
           `定时验收失败：${schedule.id} skip 策略误补执行`,
         );
       }
-      checks.push(`schedule/1:${schedule.id}:recovery-${schedule.missPolicy}`);
+      checks.push(scheduleCheckId(schedule.id, `recovery-${schedule.missPolicy}`));
     }
+    if (policies.some(policy=>!matchedPolicies.has(policy.id)))
+      throw new BusinessAssertionError("定时策略没有绑定候选实际登记的调度，不能跳过冻结义务");
     return checks;
   } finally {
     await isolated.close().catch(() => undefined);

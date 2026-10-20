@@ -200,7 +200,13 @@ export function assembleCandidate(
   }
   if (allowed.some((id) => members[id] === undefined))
     throw new Error("新增或升级成员缺少完整源码");
-  if (paths.has("business/entry.ts")) {
+  // A frozen host protocol can change its fields while inheriting the business
+  // entry verbatim. Its view is still a host projection, never a model receipt.
+  const hostProjection =
+    plan.binding?.workflowProtocol?.owner === "host" &&
+    artifact.files !== undefined &&
+    plan.writableScope.includes("business/entry.ts");
+  if (paths.has("business/entry.ts") || hostProjection) {
     const fields = plan.changeSpec.workflowDefinition?.fields;
     if (!fields) throw new ProtectedCandidateError("完整候选缺少宿主字段定义");
     for (const path of [

@@ -15,6 +15,7 @@ import type { createApp } from "../../../src/server/app.js";
 import type { CommandResult } from "../../../src/shared/contracts.js";
 import type { StabilityScenario } from "./manifest.js";
 import { oracleCheck, type OracleCheck } from "./oracle.js";
+import { frozenClarificationAnswer, type FrozenClarificationReceipt } from "./clarification.js";
 
 export type ExperienceBindings = {
   tags?: {
@@ -44,7 +45,7 @@ export type BrowserPathResult = {
   resumedExistingCandidate?: boolean;
   confirmedPlan?: boolean;
   confirmedAcceptance?: boolean;
-  answeredClarification?: { runId: string; question: string; answer: string };
+  answeredClarification?: FrozenClarificationReceipt;
   experienced?: boolean;
   experienceActions?: {
     tagSet?: string;
@@ -189,15 +190,14 @@ export async function runStabilityBrowserPath(input: {
           const awaiting = readRun();
           const question =
             awaiting && "question" in awaiting ? awaiting.question : "";
-          if (
-            !question.includes("复盘") ||
-            !["必填", "选填", "可选"].some((word) => question.includes(word))
-          )
-            throw new Error("评测没有该问题的冻结答案，不能临时编造澄清");
+          const frozen = frozenClarificationAnswer(input.scenario, awaiting);
+          if (frozen.answer !== input.clarificationAnswer)
+            throw new Error("澄清输入与冻结答案不一致");
           result.answeredClarification = {
             runId: awaiting!.id,
             question,
             answer: input.clarificationAnswer,
+            binding: frozen.binding,
           };
         }
         await page

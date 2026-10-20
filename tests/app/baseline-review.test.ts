@@ -235,6 +235,11 @@ function fixturePlan(visible = false): InvestigatedPlan {
   }));
   return plan;
 }
+test("宿主已证明的可见性保护不能伪装成额外业务限制，明确改变可见性的异议仍保留", () => {
+  const wire={reviewedIds:["r"],fieldDecisions:[],issues:[{kind:"extra-constraint",sourceRevision:"run:1",sourceQuote:sources[0].text,detail:"来源未要求固定可见性",target:{subject:"r",aspect:"availability"},stance:"forbidden"}]};
+  assert.throws(()=>parseReview(JSON.stringify(wire),fixturePlan(),sources),/宿主.*保护|业务限制/);
+  assert.equal(parseReview(JSON.stringify(wire),fixturePlan(true),sources).issues.length,1);
+});
 test("基线来源进入语义、技术事实及系统保护证据，伪造业务澄清不能绕过目录", () => {
   const p = fixturePlan();
   assert.deepEqual(semanticChoiceTargets(p), []);
@@ -450,6 +455,12 @@ import { readFile } from "node:fs/promises";
 test("归档可见性误判离线重放：原有效目标现在由可信基线裁决，不转交用户", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "availability-replay-"));
   const w = await Workspace.open(join(directory, "workspace.db"));
+  let evolution: Evolution | undefined;
+  t.after(async () => {
+    await evolution?.close();
+    await w.close();
+    await rm(directory, { recursive: true, force: true });
+  });
   const archive = JSON.parse(
     await readFile(
       new URL("../fixtures/upgrade-availability-review.json", import.meta.url),
@@ -498,7 +509,8 @@ test("归档可见性误判离线重放：原有效目标现在由可信基线�
     )
     .map((o) => o.id);
   assert.equal(ids.length, 2);
-  for (const choice of archive.review.unresolvedChoices)
+  const replay = {...archive.review, unresolvedChoices: archive.review.unresolvedChoices.map((choice: {targetId:string}, index:number)=>({...choice,targetId:"business-choice:action-availability:"+ids[index]}))};
+  for (const choice of replay.unresolvedChoices)
     assert.ok(
       ids.includes(
         choice.targetId.replace("business-choice:action-availability:", ""),
@@ -515,7 +527,7 @@ test("归档可见性误判离线重放：原有效目标现在由可信基线�
     () =>
       parseReview(
         JSON.stringify({
-          ...archive.review,
+          ...replay,
           reviewedIds: parsed.plan.requirements!.map((r) => r.id),
         }),
         parsed.plan,
@@ -602,11 +614,7 @@ test("归档可见性误判离线重放：原有效目标现在由可信基线�
     },
     new EvolutionDomain(w),
   );
-  t.after(async () => {
-    await e.close();
-    await w.close();
-    await rm(directory, { recursive: true, force: true });
-  });
+  evolution = e;
   const before = JSON.stringify({
     composition: w.composition(),
     tasks: w.query(),

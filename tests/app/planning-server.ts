@@ -56,10 +56,11 @@ const evolution = new Evolution(
       }
       if (request.message) {
         const input = JSON.parse(request.message) as {
-          revisions: unknown[];
+          requestSourceIds?: string[];
           parentRunId?: string;
         };
-        clarify = input.revisions.length === 1 && !input.parentRunId;
+        if (!input.requestSourceIds) return planning.generate(request);
+        clarify = input.requestSourceIds.length === 1 && !input.parentRunId;
         planning.finish = input.parentRunId
           ? {
               workflowRules: [

@@ -70,6 +70,51 @@ const rule = {
   maxLength: 100,
 };
 
+test("不可执行接口先报告授权与运行支持，已实现但无检查器的接口保留验证缺口归因", () => {
+  const declared={id:"query.filter:panel",interfaceId:"query.filter",providerId:"panel",status:"declared" as const,count:0,ready:false,artifactVersion:"panel-base",providerVersion:"panel-base",contractVersion:"extensions/1",installed:true,enabled:true,healthy:true,inUse:false,authorized:false,dependencies:[],checkerCoverage:[],purpose:"查询占位",limitations:""};
+  const use=(feature:string)=>({...base,uses:[{member:"panel",feature}]});
+  assert.throws(()=>compilePlanInput(use("filter"),{...context,capabilities:[declared]},sources),/未授权/);
+  assert.throws(()=>compilePlanInput(use("filter"),{...context,capabilities:[{...declared,status:"stub"}]},sources),/宿主尚不支持执行该接口/);
+  assert.throws(()=>compilePlanInput(use("events"),context,sources),/尚无可信业务检查器/);
+});
+
+test("钩子缺少主工作流冻结案例时在规格编译入口明确拒绝，自有命令不能冒充钩子覆盖", () => {
+  assert.throws(
+    () => compilePlanInput({
+      ...base,
+      changes: [{ target: "panel", features: ["beforeCommit"], cases: [
+        { state: "open", fields: {}, action: "markNote", input: {}, expected: { kind: "reject" } },
+      ] }],
+      uses: [{ member: "panel", feature: "beforeCommit" }],
+    }, context, sources),
+    /task\.beforeCommit.*主工作流.*冻结案例/,
+  );
+});
+
+test("宿主从钩子特征及主工作流冻结案例生成检查器绑定，不虚构辅助命令或要求模型维护 uses", () => {
+  const compiled=compilePlanInput({...base,changes:[{target:"panel",features:["beforeCommit"],cases:[
+    {state:"open",fields:{},action:"complete",input:{},expected:{kind:"commit",state:"done",fields:{reviewed:"yes"}}},
+    {state:"done",fields:{},action:"complete",input:{},expected:{kind:"reject"}},
+  ]}]},context,sources);
+  assert.ok(compiled.requiredCapabilities.some(c=>c.interfaceId==="task.beforeCommit"&&c.providerId==="panel"&&c.verification==="candidate"&&c.checker==="beforeCommit/1"));
+  assert.equal(compiled.capabilityChanges.some(c=>c.capability==="command.register"),false);
+});
+
+test("主工作流案例不能被宿主擅自解释为新增钩子，跨提供者方案不明确时在规划入口拒绝", () => {
+  assert.throws(()=>compilePlanInput({...base,changes:[{target:"panel",features:["schedules"],cases:[
+    {state:"open",fields:{},action:"complete",input:{},expected:{kind:"commit",state:"done",fields:{}}},
+  ]}]},context,sources),/跨提供者.*钩子/);
+});
+
+test("升级目标的自身能力由候选验收证明，不能误作已有覆盖充分的外部依赖", () => {
+  const live={...context,capabilities:[{id:"command.register:panel",interfaceId:"command.register",providerId:"panel",status:"active" as const,count:1,ready:true,artifactVersion:"panel-base",providerVersion:"panel-base",contractVersion:"extensions/1",installed:true,enabled:true,healthy:true,inUse:true,authorized:true,dependencies:[],checkerCoverage:[],purpose:"动作",limitations:""}]};
+  const input={...base,changes:[{target:"panel",cases:[{state:"open",fields:{},action:"markNote",input:{},expected:{kind:"reject"}}]}],uses:[{member:"panel",feature:"commands"}]};
+  const compiled=compilePlanInput(input,live,sources);
+  assert.ok(compiled.requiredCapabilities.some(c=>c.providerId==="panel"&&c.verification==="candidate"&&c.checker==="workspace/1"));
+  assert.ok(compiled.capabilityChanges.some(c=>c.provider==="member:panel"&&c.capability==="command.register"));
+  assert.throws(()=>compilePlanInput({...input,changes:[{target:"workflow",fields:[rule]}]},live,sources),/缺少可靠业务验收检查器/);
+});
+
 test("候选即使通过字段写入案例，删除被冻结的字段注册仍必须被 Workspace 检查器拒绝", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "host-field-registration-"));
   const w = await Workspace.open(join(directory, "workspace.db"));

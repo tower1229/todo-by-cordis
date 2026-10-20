@@ -23,9 +23,9 @@ export function stopForError(
   if (error instanceof BudgetExhaustedError)
     return {
       kind: "budget",
-      phase,
+      phase: error.phase ?? phase,
       code:
-        error.resource === "candidates" ? "candidate-budget" : "call-reserve",
+        error.resource === "milliseconds" ? "phase-time-reserve" : error.resource === "candidates" ? "candidate-budget" : "call-reserve",
       evidence: ["run.budget"],
     };
   const evidence = [`model-call:${call}`];

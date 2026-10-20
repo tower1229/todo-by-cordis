@@ -2,6 +2,7 @@ import {
   compositionMemberRoles,
   type CompositionMemberRole,
 } from "../shared/contracts.js";
+import type { WorkflowProtocolProfile } from "../shared/workflow-protocol.js";
 
 export type BusinessBundle = {
   files: Record<string, string>;
@@ -22,6 +23,7 @@ export type VersionMember = {
 };
 
 export type Version = {
+  workflowProtocol?: WorkflowProtocolProfile;
   bundle?: BusinessBundle;
   id: string;
   pluginId: string;
@@ -46,6 +48,7 @@ export type Version = {
 };
 
 export type RuntimePluginTarget = {
+  workflowProtocol?: WorkflowProtocolProfile;
   pluginId: string;
   entry: string;
   service: string;
@@ -56,6 +59,7 @@ export type RuntimePluginTarget = {
 };
 
 export type RuntimeTarget = {
+  workflowProtocol?: WorkflowProtocolProfile;
   bundle?: BusinessBundle;
   entry: string;
   service: string;

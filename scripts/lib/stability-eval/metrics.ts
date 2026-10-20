@@ -165,6 +165,7 @@ export type ScenarioRunRecord = {
   evidenceKind: "model-stub" | "real-model";
   evidenceComplete?: boolean;
   trialId?: string;
+  responsibility?: import("./responsibility.js").ResponsibilityObservation;
   candidatePassed?: boolean;
   oracle?: import("./oracle.js").OracleEvidence;
   failure?: FailureEvidence;

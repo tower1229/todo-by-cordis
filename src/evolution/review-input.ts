@@ -73,7 +73,13 @@ export function requirementReviewInput(
     },
     sources,
     requirementOrigins: spec.requirementOrigins,
+    validationOrigins: spec.validationOrigins,
+    baseline: {
+      fields: spec.definition.binding?.fieldIdentities ?? [],
+      actions: spec.definition.binding?.actionAvailability?.actions.map(({member,contribution,action,from})=>({member,contribution,action,from})) ?? [],
+    },
     hostInvariants: spec.invariants,
+    hostFacts: spec.hostFacts,
     hostRules: spec.hostRules.map(
       ({ factId, property, value: _value, ...rule }) => ({
         ...rule,

@@ -3,6 +3,7 @@ import { Evolution } from "../evolution/evolution.js";
 import { DeepSeek } from "../evolution/deepseek.js";
 import { EvolutionDomain } from "./evolution-domain.js";
 import { startHost } from "./host/bootstrap.js";
+import { evolutionBudget } from "./evolution-budget.js";
 
 if (existsSync(".env")) process.loadEnvFile(".env");
 
@@ -18,6 +19,7 @@ await startHost({
       new DeepSeek(process.env.DEEPSEEK_API_KEY),
       new EvolutionDomain(workspace),
       sessions,
+      evolutionBudget(process.env),
     );
   },
 });

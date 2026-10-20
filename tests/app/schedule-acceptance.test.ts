@@ -8,6 +8,8 @@ import { verifyScheduleViaIsolatedWorkspace } from "../../src/server/schedule-ac
 import { dueAutoExpireSource } from "../../src/server/capability-guides.js";
 import { dualWorkflowDefinition } from "./dual-composition-fixture.js";
 import type { MemberAcceptanceCase } from "../../src/shared/acceptance-cases.js";
+import { hash } from "../../src/release/storage.js";
+import type { SchedulePolicy, SchedulePolicyEvidence } from "../../src/shared/schedule-policy.js";
 
 const at = "2030-01-01T00:01:00.000Z";
 const cases: MemberAcceptanceCase[] = [
@@ -48,7 +50,7 @@ test("schedule/1 uses real timer dispatch and rejects missing or ineffective sch
     new URL("../fixtures/aux-workflow.mjs", import.meta.url),
     "utf8",
   );
-  async function candidate(source: string) {
+  async function candidate(source: string, workflowSource=workflowCode) {
     const member = formal.release.record({
       pluginId: "due",
       name: "截止",
@@ -64,8 +66,8 @@ test("schedule/1 uses real timer dispatch and rejects missing or ineffective sch
       name: "工作流",
       service: "workflow",
       contractVersion: "workflow/1",
-      source: workflowCode,
-      code: workflowCode,
+      source: workflowSource,
+      code: workflowSource,
       definition: dualWorkflowDefinition,
       evidence: { passed: true, origin: "test" },
       members: [
@@ -92,6 +94,26 @@ test("schedule/1 uses real timer dispatch and rejects missing or ineffective sch
       "schedule/1:due-expire:recovery-run-once",
     ],
   );
+  const policy:SchedulePolicy={version:1,id:"due-lifecycle",kind:"schedule-policy",action:{kind:"action",member:"due",action:"expire"},fireCase:{caseId:"member:due:expire",definitionHash:hash(cases[1])},checks:["complete-retains-effect","reopen-after-due"]};
+  const lifecycleChecks=await verifyScheduleViaIsolatedWorkspace(formal,good,cases,signal,[policy]);
+  assert.ok(lifecycleChecks.includes("schedule-policy:due-lifecycle:complete-retains-effect"));
+  assert.ok(lifecycleChecks.includes("schedule-policy:due-lifecycle:reopen-after-due"));
+  const duplicatePolicyChecks=await verifyScheduleViaIsolatedWorkspace(formal,good,cases,signal,[policy,{...policy,id:"same-business-second-source"}]);
+  assert.ok(duplicatePolicyChecks.includes("schedule-policy:same-business-second-source:complete-retains-effect"));
+  for (const [workflowSource,check,message] of [
+    [workflowCode.replace('state: "done", fields: task.fields','state: "done", fields: Object.fromEntries(Object.entries(task.fields).filter(([key]) => key !== "expired"))'),"complete-retains-effect","完成后未保留"],
+    [workflowCode.replace('state: "open", fields: task.fields','state: "open", fields: Object.fromEntries(Object.entries(task.fields).filter(([key]) => key !== "dueAt"))'),"reopen-after-due","重开未由真实调度"],
+  ] as const) {
+    assert.notEqual(workflowSource,workflowCode);
+    const mutant=await candidate(dueAutoExpireSource,workflowSource);
+    await verifyScheduleViaIsolatedWorkspace(formal,mutant,cases,signal);
+    const receipts:SchedulePolicyEvidence[]=[];
+    await assert.rejects(verifyScheduleViaIsolatedWorkspace(formal,mutant,cases,signal,[{...policy,checks:[check]}],r=>receipts.push(r)),new RegExp(message));
+    assert.equal(receipts.at(-1)?.status,"failed");
+    assert.ok(receipts.at(-1)!.steps.length>=2);
+  }
+  await assert.rejects(verifyScheduleViaIsolatedWorkspace(formal,good,cases,signal,[{...policy,fireCase:{...policy.fireCase,definitionHash:"forged"}}]),/冻结的到期案例不一致/);
+  await assert.rejects(verifyScheduleViaIsolatedWorkspace(formal,good,cases,signal,[{...policy,action:{...policy.action,member:"wrong-provider"}}]),/没有绑定候选实际登记/);
   const skip = await candidate(
     dueAutoExpireSource.replace('missPolicy: "run-once"', 'missPolicy: "skip"'),
   );

@@ -1,5 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { currentManifest } from "../../scripts/lib/stability-eval/current.js";
+import { stabilityDriverFor } from "../../scripts/lib/stability-eval/driver-fixture.js";
+
+test("当前澄清模型桩在来源预检阶段提出已冻结的未决项，回答后不再次提问", async () => {
+  const scenario = currentManifest("a".repeat(40)).scenarios.find(s => s.id === "clarification-reflection")!;
+  const driver = stabilityDriverFor(scenario.id, scenario);
+  const request = (answered: boolean) => ({ history: [], schema: {},
+    message: JSON.stringify({ kind: "request-admission/2", sources: [
+      { id: "run:1", text: scenario.request },
+      ...(answered ? [{ id: "run:2", text: scenario.clarification!.answer }] : []),
+    ] }),
+  });
+  const first = await driver.generate(request(false), new AbortController().signal);
+  assert.equal(JSON.parse(first.text!).questions[0]?.sourceQuote, "复盘是否必填尚未决定");
+  assert.deepEqual(JSON.parse(first.text!).questions[0]?.choice,{kind:"field-required",subjectQuote:"复盘"});
+  assert.equal(JSON.parse(first.text!).questions[0]?.question,undefined);
+  const second = await driver.generate(request(true), new AbortController().signal);
+  assert.deepEqual(JSON.parse(second.text!).questions, []);
+});
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,8 +26,6 @@ import {
   STABILITY_EVAL_MANIFEST,
   freezeManifest,
 } from "../../scripts/lib/stability-eval/manifest.js";
-import { stabilityDriverFor } from "../../scripts/lib/stability-eval/driver-fixture.js";
-
 test("桩层截止时间场景记录现有阻塞且不生成候选实现", async () => {
   // Browser path needs dist/web; this unit seam exercises driver+workspace only via a dry header freeze check.
   const scenario = STABILITY_EVAL_MANIFEST.scenarios.find(

@@ -14,6 +14,7 @@ import { PlanningDriver, toolReply } from "./planning-fixture.js";
 import { activateDual } from "./dual-composition-fixture.js";
 import { capture, readInvestigation } from "../../src/server/planning.js";
 import { tagsMemberCases } from "./member-case-fixtures.js";
+import { hash } from "../../src/release/storage.js";
 
 // Seam: Evolution investigation → inspect_application externally visible content.
 // Asserts live composition members + extension registry facts, not private assemblers.
@@ -69,6 +70,14 @@ type InspectContent = {
 
 function inspectFromHistory(requests: ModelRequest[]): InspectContent {
   for (const request of requests) {
+    if (request.message) {
+      const input=JSON.parse(request.message) as {materials?:{documents?:{ref:string;hash:string;content:InspectContent}[]}};
+      const document=input.materials?.documents?.find(d=>d.ref==="inspect_application");
+      if (document) {
+        assert.equal(hash(document.content),document.hash,"首次目录正文必须绑定实际交付摘要");
+        return document.content;
+      }
+    }
     for (const message of request.history as {
       parts?: {
         functionResponse?: {
@@ -123,7 +132,7 @@ function capturingInspectDriver(bag: {
       const content = JSON.stringify(request.history);
       if (!content.includes("inspect_application"))
         return toolReply("inspect_application", {});
-      bag.inspect = inspectFromHistory([request]);
+      bag.inspect = inspectFromHistory(bag.requests);
       return toolReply("redirect_request", {
         message: "调查完成，本回合仅验证能力目录。",
       });

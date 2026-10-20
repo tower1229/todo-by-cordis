@@ -26,6 +26,7 @@ import { hash } from "../release/storage.js";
 import { Workspace } from "./workspace.js";
 import { createApp } from "./app.js";
 import { importCompositionVersions } from "./workspace-acceptance.js";
+import { workflowProtocolProgram } from "../release/workflow-protocol.js";
 
 export class BrowserEnvironmentError extends Error {
   constructor(
@@ -35,6 +36,10 @@ export class BrowserEnvironmentError extends Error {
   ) {
     super(message);
   }
+}
+/** A frozen public-page step cannot execute an authoritative internal schedule channel. */
+export class BrowserDefinitionError extends BrowserEnvironmentError {
+  override name = "BrowserDefinitionError";
 }
 export class BrowserAssertionError extends Error {
   constructor(
@@ -67,6 +72,7 @@ export function candidateProgramHash(workspace: Workspace, version: Version) {
         enabled: m.enabled,
         code: v.code,
         bundle: v.bundle,
+        ...(v.workflowProtocol ? {workflowProtocol:workflowProtocolProgram(v.workflowProtocol)} : {}),
       };
     }),
   });
@@ -418,6 +424,11 @@ export async function verifyBrowser(
           !(step.member === "workflow" && owner === workflowId)
         )
           throw new Error("动作不属于冻结的目标成员");
+        const registry = isolated!.extensionRegistry();
+        const registered = registry.commands().find(c => c.id === step.action && c.providerId === owner);
+        const schedule = registry.schedules().find(s => s.providerId === owner && s.onFire.type === "action" && s.onFire.commandId === step.action);
+        if (registered?.internalOnly && schedule)
+          throw new BrowserDefinitionError(`冻结页面动作 ${owner}:${step.action} 实际属于内部定时通道 ${schedule.id}；须重新编译验收路径，不能要求业务候选开放内部入口`);
         await browserAction(
           page,
           step,
@@ -751,6 +762,18 @@ export async function verifyBrowser(
             throw new Error(`页面异常：${pageErrors.join("；")}`);
         } catch (error) {
           signal.throwIfAborted();
+          if (error instanceof BrowserDefinitionError) {
+            result.status = "failed";
+            result.expected = expected;
+            result.actual = "internal-schedule-channel";
+            result.diagnostic = error.message;
+            result.screenshot = join(directory, `${viewportIndex}-${index}-definition-failed.png`);
+            await page.screenshot({path:result.screenshot,fullPage:true});
+            evidence.results.push(result);
+            await writeFile(join(directory,"evidence.json"),JSON.stringify(evidence,null,2));
+            error.message = `browser/1 冻结案例 ${c.id}（需求 ${result.requirementIds.join(",")}）不可执行：${error.message}`;
+            throw error;
+          }
           if (error instanceof BrowserEnvironmentError) throw error;
           if (c.id.startsWith("host:basic-") || !browser.isConnected())
             throw new BrowserEnvironmentError(
@@ -803,6 +826,10 @@ export async function verifyBrowser(
     );
     if (signal.aborted)
       throw new BrowserCancelledError(signal.reason, evidence);
+    if (error instanceof BrowserDefinitionError) {
+      error.evidence = evidence;
+      throw error;
+    }
     if (error instanceof BrowserAssertionError) throw error;
     throw new BrowserEnvironmentError(
       error instanceof Error ? error.message : String(error),

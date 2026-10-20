@@ -97,6 +97,68 @@ const sources = [
   },
 ];
 
+test("规划说明由宿主绑定来源，模型自由描述不能另立初值、错误提示或动作限制", () => {
+  const input = structuredClone(archive.proposals.workflow);
+  const first = compilePlanInput(input, context, sources);
+  input.summary = "额外规定初始显示0并隐藏所有动作";
+  for (const r of input.requirements) r.description = "额外规定超过长度必须显示指定错误提示";
+  const second = compilePlanInput(input, context, sources);
+  assert.deepEqual(second, first);
+  for (const r of first.requirements) assert.equal(r.description, r.sourceQuote);
+});
+
+test("新字段的非空前置案例由宿主从冻结候选动作推导，不能把第二次增加误编译为第一次", () => {
+  const source="新增计数，详情展示计数，其他行为不变";
+  const cases=[
+    {name:"first",state:"open",fields:{},action:"increment",input:{},expected:{kind:"commit",state:"open",fields:{count:"1"}}},
+    {name:"second",state:"open",fields:{count:"1",retained:"历史字段"},action:"increment",input:{},expected:{kind:"commit",state:"open",fields:{count:"2",retained:"历史字段"}}},
+  ];
+  const input={requirements:[{quote:source,type:"interface",expectations:[{kind:"field",field:"count"}]}],changes:[{target:"counter",features:["commands","fields","detail"],cases}]};
+  const draft=compilePlanInput(input,context,[{id:"request:1",text:source}]);
+  const field=draft.requirements[0].obligations.find(o=>o.kind==="field")!;
+  assert.deepEqual((field.scenarios as {steps:unknown[];value:string}[]).map(s=>[s.value,s.steps.length]),[["1",1],["2",2]]);
+  const advisory = structuredClone(input);
+  Object.assign(advisory.requirements[0].expectations[0], {examples:["9"]});
+  assert.deepEqual(compilePlanInput(advisory,context,[{id:"request:1",text:source}]),draft,"辅助字段样例不能筛除已冻结的成功案例或另立期望来源");
+  assert.throws(()=>compilePlanInput({...input,changes:[{...input.changes[0],cases:[cases[1]]}]},context,[{id:"request:1",text:source}]),/前置|可达|冻结.*路径/);
+  assert.throws(()=>compilePlanInput({...input,changes:[{...input.changes[0],cases:[cases[0],{...cases[0],expected:{kind:"commit",state:"open",fields:{count:"9"}}}]}]},context,[{id:"request:1",text:source}]),/不唯一|冲突/);
+});
+
+test("计划已声明界面能力时，宿主从冻结计数案例生成连续浏览器义务", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "compiler-counter-ui-"));
+  const w = await Workspace.open(join(directory, "workspace.db"));
+  t.after(async () => {
+    await w.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  await activateWorkflowOnly(w);
+  const context = capture(w);
+  const source = "增加计数功能，在任务详情显示计数，其他行为不变";
+  const proposal = {
+    requirements: [{quote: source, type: "interface", expectations: [{kind: "behavior"}]}],
+    changes: [{target: "counter", features: ["commands", "fields", "detail"], cases: [
+      {name: "first", state: "open", fields: {}, action: "increment", input: {}, expected: {kind: "commit", state: "open", fields: {count: "1"}}},
+      {name: "second", state: "open", fields: {count: "1"}, action: "increment", input: {}, expected: {kind: "commit", state: "open", fields: {count: "2"}}},
+      {name: "done", state: "done", fields: {}, action: "increment", input: {}, expected: {kind: "reject"}},
+    ]}],
+  };
+  const parsed = compilePlanDraft(proposal, context,
+    Object.entries(context.files).map(([ref, f]) => ({ref, hash: f.hash})),
+    [{id: "request:1", text: source}]);
+  const fields = parsed.plan.requirements?.flatMap(r => r.obligations ?? []).filter(o => o.kind === "field" && o.member === "counter" && o.field === "count");
+  assert.ok(fields?.length);
+  assert.deepEqual(fields[0].scenarios.map(s => [s.value, s.steps.length]), [["1", 1], ["2", 2]]);
+  assert.ok(parsed.plan.browserCases?.some(c => c.steps.some(s => s.kind === "field" && s.member === "counter" && s.field === "count" && s.value === "2")));
+  assert.ok(!parsed.blockers.some(b => /界面|browser|可执行.*义务/.test(b)), parsed.blockers.join("；"));
+  const backendOnly = compilePlanDraft({...proposal, requirements: [{quote: source, type: "behavior", expectations: [{kind: "behavior"}]}], changes: [{...proposal.changes[0], features: ["commands", "fields"]}]}, context,
+    Object.entries(context.files).map(([ref, f]) => ({ref, hash: f.hash})), [{id: "request:1", text: source}]);
+  assert.ok(!backendOnly.plan.requirements?.some(r => r.obligations?.some(o => o.kind === "field" && o.member === "counter")));
+  const behaviorSource = "增加计数功能，其他行为不变";
+  const incidentalUi = compilePlanDraft({...proposal, requirements: [{quote: behaviorSource, type: "behavior", expectations: [{kind: "behavior"}]}]}, context,
+    Object.entries(context.files).map(([ref, f]) => ({ref, hash: f.hash})), [{id: "request:1", text: behaviorSource}]);
+  assert.ok(!incidentalUi.plan.requirements?.some(r => r.obligations?.some(o => o.kind === "field" && o.member === "counter")), "实现选择的界面能力不能给行为要求新增跨新旧任务的字段断言");
+});
+
 test("归档原流程案例进入原动作验收，不要求模型虚构扩展动作；原拒绝义务绑定必填表单", () => {
   const draft = compilePlanInput(archive.proposals.workflow, context, sources);
   const parsed = parseExtensions(
@@ -687,4 +749,49 @@ test("语义评估可注入宿主思考模式，输出额度仍由宿主按阶�
   assert.equal(body.max_tokens, 131072);
   assert.equal(reply.transport?.outputPolicy?.thinking, "disabled");
   assert.equal(modelPolicy("review").thinking, "enabled");
+});
+
+test("预检已裁决逻辑初值时宿主纠正重复声明的界面初值，显式界面要求仍保留", () => {
+  const source = "新增文本标签，默认逻辑值为零；详情显示标签，其他行为不变";
+  const sources = [{ id: "request:1", text: source }];
+  const facts = technicalFacts({ workflowRules: [] });
+  const raw = parseAdmission(JSON.stringify({ effects: [], initials: [{ source: 1, sourceQuote: source, target: { kind: "new", name: "tags" }, meaning: { kind: "state", value: "0", conditionQuote: "默认", effectQuote: "逻辑值为零" } }], questions: [] }), "base", sources, facts);
+  const admission = adjudicateAdmission(JSON.stringify({ decisions: [{ claim: 1, source: 1, sourceQuote: source, layer: "initial-state", verdict: "entailed", detail: "初始逻辑值不规定未赋值显示" }] }), raw, sources);
+  const input = structuredClone(archive.proposals.addition);
+  input.requirements.forEach(r => { r.quote = source; for (const e of r.expectations) if (e.kind === "field") e.initial = { kind: "visible", value: "0" }; });
+  const without = compilePlanInput(input, context, sources);
+  const compiled = compilePlanInput(input, context, sources, admission);
+  const fields = (draft: typeof compiled) => draft.requirements.flatMap(r => r.obligations).filter(o => o.kind === "field");
+  assert.ok(fields(without).some(o => o.initial && (o.initial as {kind:string}).kind === "visible"));
+  assert.ok(fields(compiled).every(o => (o.initial as {kind:string}).kind === "baseline"));
+  assert.throws(() => compilePlanInput(input, context, sources, { ...admission, factsHash: "forged" }), /预检.*绑定|预检.*失效/);
+  const displaySource = source + "；未填写时显示（空）";
+  const displaySources = [{id:"request:1",text:displaySource}];
+  const proposal = parseAdmission(JSON.stringify({ effects:[], questions:[], initials:[
+    {...raw.intents.initials[0], sourceQuote:displaySource},
+    {source:1,sourceQuote:displaySource,target:{kind:"new",name:"tags"},meaning:{kind:"literal",value:"（空）",conditionQuote:"未填写时",effectQuote:"显示（空）"}},
+  ]}),"base",displaySources,facts);
+  const display = adjudicateAdmission(JSON.stringify({decisions:[
+    {claim:1,source:1,sourceQuote:displaySource,layer:"initial-state",verdict:"entailed",detail:"逻辑初值"},
+    {claim:2,source:1,sourceQuote:displaySource,layer:"initial-display",verdict:"entailed",detail:"另外明确要求未填写呈现"},
+  ]}),proposal,displaySources);
+  input.requirements.forEach(r=>{r.quote=displaySource;for(const e of r.expectations)if(e.kind==="field")e.initial={kind:"visible",value:"（空）"};});
+  assert.ok(fields(compilePlanInput(input,context,displaySources,display)).every(o=>(o.initial as {kind:string;value:string}).value === "（空）"));
+
+});
+
+test("同一新字段跨要求复用来源绑定，中文名称与字段键不同不能只纠正一条义务", () => {
+  const source = "新增文本评审备注，默认逻辑值为零；详情显示备注，其他行为不变";
+  const sources = [{id:"request:1",text:source}];
+  const proposed = parseAdmission(JSON.stringify({effects:[],questions:[],initials:[{
+    source:1,sourceQuote:"默认逻辑值为零",target:{kind:"new",name:"评审备注"},
+    meaning:{kind:"state",value:"0",conditionQuote:"默认",effectQuote:"逻辑值为零"},
+  }]}),"base",sources,technicalFacts({workflowRules:[]}));
+  const admission = adjudicateAdmission(JSON.stringify({decisions:[{claim:1,source:1,sourceQuote:"默认逻辑值为零",layer:"initial-state",verdict:"entailed",detail:"逻辑初值不推出页面文字"}]}),proposed,sources);
+  const input = structuredClone(archive.proposals.addition);
+  input.requirements = ["默认逻辑值为零","详情显示备注"].map(quote=>({description:quote,quote,type:"interface",expectations:[{kind:"field",field:"reviewNote",initial:{kind:"visible",value:"0"}}]}));
+  const compiled=compilePlanInput(input,context,sources,admission);
+  const fields=compiled.requirements.flatMap(r=>r.obligations).filter(o=>o.kind==="field");
+  assert.equal(fields.length,2);
+  assert.ok(fields.every(o=>(o.initial as {kind:string}).kind==="baseline"));
 });

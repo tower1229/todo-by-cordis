@@ -34,6 +34,7 @@ export class Runtime {
             entry: target.entry,
             service: target.service,
             bundle: target.bundle,
+            workflowProtocol: target.workflowProtocol,
             role: "workflow" as const,
           },
         ];
@@ -51,6 +52,7 @@ export class Runtime {
                 ? target.bundle?.outputs
                 : undefined),
             role: plugin.role,
+            workflowProtocol: plugin.workflowProtocol,
             allowNativeImport: plugin.allowNativeImport === true,
           })),
         }),

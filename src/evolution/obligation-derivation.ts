@@ -12,7 +12,117 @@ type Ui = {
   actions: { commandId: string }[];
 };
 type Rule = { key: string; minLength?: number };
+type OperationCase = Omit<MemberAcceptanceCase, "member" | "name"> & {
+  member?: string;
+  name?: string;
+};
+type PreparedAction = {
+  kind: "action";
+  action: string;
+  input: Record<string, string>;
+};
+
+/** Candidate actions prepare candidate assertions; they never certify baseline history. */
+export function operationPreparation(
+  cases: OperationCase[],
+  target: OperationCase,
+  initialState = "open",
+  field?: string,
+): PreparedAction[] {
+  if (cases.length > 256) throw new Error("冻结操作目录超过有界准备上限");
+  const ordered = (fields: Record<string, string>) =>
+    Object.entries(fields).sort(([a], [b]) => a.localeCompare(b));
+  const stateKey = (state: string, fields: Record<string, string>) =>
+    hash([state, ordered(fields)]);
+  const commits = cases
+    .filter((c) => c.member === target.member && c.expected.kind === "commit")
+    .sort((a, b) => hash(a).localeCompare(hash(b)));
+  const transitions = new Map<string, string>();
+  for (const c of commits) {
+    if (c.expected.kind !== "commit") continue;
+    const action = hash([
+      stateKey(c.state, c.fields),
+      c.action,
+      ordered(c.input),
+    ]);
+    const result = stateKey(c.expected.state, c.expected.fields);
+    if (transitions.has(action) && transitions.get(action) !== result)
+      throw new Error(
+        "冻结操作在同一前置和输入下期望不唯一，不能选择性生成浏览器断言",
+      );
+    transitions.set(action, result);
+  }
+  // A new-field probe starts empty when only unrelated historical fields were
+  // supplied by the backend case. Preserve that independent browser assertion.
+  if (field && !Object.hasOwn(target.fields, field)) return [];
+  const projected = (fields: Record<string, string>) =>
+    field
+      ? Object.fromEntries(
+          Object.entries(fields).filter(([key]) => key === field),
+        )
+      : fields;
+  const wanted = stateKey(target.state, projected(target.fields));
+  const queue: {
+    state: string;
+    fields: Record<string, string>;
+    steps: PreparedAction[];
+  }[] = [{ state: initialState, fields: {}, steps: [] }];
+  const seen = new Set([stateKey(initialState, {})]);
+  for (let index = 0; index < queue.length; index++) {
+    const node = queue[index],
+      key = stateKey(node.state, node.fields);
+    if (key === wanted) return structuredClone(node.steps);
+    if (node.steps.length >= 8) continue;
+    for (const c of commits) {
+      if (
+        c.expected.kind !== "commit" ||
+        stateKey(c.state, projected(c.fields)) !== key
+      )
+        continue;
+      const fields = projected(c.expected.fields);
+      const next = stateKey(c.expected.state, fields);
+      if (seen.has(next)) continue;
+      seen.add(next);
+      queue.push({
+        state: c.expected.state,
+        fields,
+        steps: [
+          ...node.steps,
+          { kind: "action", action: c.action, input: c.input },
+        ],
+      });
+    }
+  }
+  // An explicit setter case with a unique output for this input remains an
+  // independent fresh-task probe. Its seeded backend assertion is still run.
+  // Stateful operations with different outputs for the same input need a path.
+  if (
+    field &&
+    commits.some(
+      (c) =>
+        c.action === target.action &&
+        c.state === initialState &&
+        !Object.hasOwn(c.fields, field),
+    ) &&
+    new Set(
+      commits
+        .filter(
+          (c) =>
+            c.action === target.action &&
+            hash(ordered(c.input)) === hash(ordered(target.input)),
+        )
+        .map((c) =>
+          c.expected.kind === "commit" ? c.expected.fields[field] : undefined,
+        ),
+    ).size === 1
+  )
+    return [];
+  throw new Error(
+    "字段断言的前置状态无法从冻结候选操作唯一确定可达路径，不能注入字段或伪造历史准备",
+  );
+}
 export type ObligationBaseline = {
+  fieldIdentities?: { member: string; field: string }[];
   uiContributions?: Ui[];
   memberCases?: MemberAcceptanceCase[];
   requirements?: Requirement[];
@@ -47,6 +157,8 @@ export function fieldLifecycle(
   workflowFields: { key: string }[] = [],
 ) {
   const fields = new Set(workflowFields.map((f) => `workflow:${f.key}`));
+  for (const f of baseline.fieldIdentities ?? [])
+    fields.add(`${f.member}:${f.field}`);
   for (const ui of baseline.uiContributions ?? [])
     for (const f of ui.fields) fields.add(`${ui.providerId}:${f.key}`);
   for (const c of baseline.memberCases ?? [])
@@ -93,6 +205,7 @@ export function deriveFieldObligations(
     checker: "workflow/1" | "workspace/1";
     caseKey: string;
     seeded: boolean;
+    operation?: OperationCase;
   }[] = [];
   for (const c of memberCases) {
     if (
@@ -114,6 +227,7 @@ export function deriveFieldObligations(
         checker: "workspace/1",
         caseKey: c.name,
         seeded: Object.keys(c.fields).length > 0,
+        operation: c,
         steps: [{ kind: "action", action: c.action, input: c.input }],
       });
   }
@@ -198,7 +312,12 @@ export function deriveFieldObligations(
         scenarios: [],
         derivation: { checker: p.checker },
       } satisfies Extract<AcceptanceObligation, { kind: "field" }>);
-    const steps = bind(p.steps);
+    const steps = bind([
+      ...(p.operation
+        ? operationPreparation(memberCases, p.operation, "open", p.field)
+        : []),
+      ...p.steps,
+    ]);
     const scenario = {
       id: hash({
         checker: p.checker,

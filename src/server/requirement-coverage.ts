@@ -1,5 +1,6 @@
-import { compileSemantics } from "../evolution/requirement-semantics.js";
-import {availabilityFailure} from "../evolution/action-availability.js";
+import { compileSemantics, semanticQuestionKey } from "../evolution/requirement-semantics.js";
+import { clarificationBlockers } from "../evolution/clarification-review.js";
+import {availabilityFailure,isInheritedAvailability} from "../evolution/action-availability.js";
 import {
   errorReviewSchema,
   errorReviewTargets,
@@ -21,11 +22,14 @@ import { browserSteps } from "../shared/browser-contract.js";
 import { specificationFailure } from "../evolution/specification.js";
 import { obligationFailure } from "../evolution/acceptance-obligations.js";
 import { fieldCaseObligation } from "../evolution/historical-preparation.js";
+import { schedulePolicyChecks } from "../shared/schedule-policy.js";
 import {
   businessChoices,
   semanticChoiceTargets,
+  semanticChoiceProof,
   technicalFacts,
   technicalReviewTargets,
+  assertTechnicalExpectation,
 } from "../evolution/technical-facts.js";
 import {
   fieldReviewSchema,
@@ -278,11 +282,12 @@ export function parseBrowserCases(value: unknown): BrowserCase[] {
 export function caseCatalog(
   plan: Pick<
     InvestigatedPlan,
-    "cases" | "memberCases" | "browserCases" | "extensions"
+    "cases" | "memberCases" | "browserCases" | "extensions" | "requirements"
   >,
 ) {
   const counts = new Map<string, number>();
   return [
+    ...(plan.requirements??[]).flatMap(r=>(r.obligations??[]).flatMap(o=>o.kind==="schedule-policy" ? schedulePolicyChecks(o).map((ref,index)=>({...ref,definition:{kind:"schedule-policy",obligationId:o.id,check:o.checks[index]}})) : [])),
     ...plan.cases.map((c) => {
       const index = (counts.get(c.checker) ?? 0) + 1;
       counts.set(c.checker, index);
@@ -541,6 +546,9 @@ export function boundReviewSchema(
     enum: sourceIds,
   });
   const technicalTargets = technicalReviewTargets(plan);
+  Object.assign(schema.properties.issues.items.properties.technical, {
+    anyOf: technicalTargets.map(t=>({properties:{target:{enum:[t.target]},expected:{enum:t.expectedValues}}})),
+  });
   const choices = businessChoices(plan);
   Object.assign(schema.properties.issues.items.properties.clarificationChoice, {
     enum: choices.length ? choices.map((c) => c.id) : ["unavailable"],
@@ -671,6 +679,7 @@ export function parseReview(
         !target
       )
         throw new Error("技术复核必须引用宿主属性目标，事实和属性由宿主绑定");
+      assertTechnicalExpectation(technicalFacts(plan).find(f => f.id === target.factId), target.property, claim.expected);
       i = {
         ...wire,
         technical: { factId: target.factId, property: target.property, expected: boundedText(claim.expected) },
@@ -708,6 +717,12 @@ export function parseReview(
       )
         throw new Error("独立复核目标无效");
       const subject = boundedText(t.subject);
+      if (i.technical === undefined && i.kind === "extra-constraint" && ["availability","visibility"].includes(String(t.aspect))) {
+        const protectedTargets=plan.requirements?.find(r=>r.id===subject)?.obligations?.filter(o=>
+          o.kind==="ui-identity" || o.kind==="assertion"&&o.expected.kind==="action-visible" || t.aspect==="visibility"&&o.kind==="field") ?? [];
+        if (protectedTargets.length && protectedTargets.every(o=>o.kind==="ui-identity"||isInheritedAvailability(o,plan.binding?.actionAvailability)))
+          throw new Error("该目标属于已绑定的宿主基线保护，不能声明为额外业务限制；原始异议保留，须按来源和真实目标纠正复核");
+      }
       if (
         !(plan.requirements ?? []).some((r) => r.id === subject) &&
         !sources.some((s) => s.id === subject) &&
@@ -766,9 +781,11 @@ export function parseReview(
             throw new Error("复核问题消解缺少有效来源引用");
           return resolution;
         });
+  const seenChoices=new Set<string>();
+  const choiceAdjudications:NonNullable<RequirementReview["choiceAdjudications"]>=[];
   const unresolvedChoices = (
     v.unresolvedChoices === undefined ? [] : array(v.unresolvedChoices)
-  ).map((value) => {
+  ).flatMap((value) => {
     const c = record(value);
     if (
       Object.keys(c).some(
@@ -792,6 +809,18 @@ export function parseReview(
       )
     )
       throw new Error("未决语义缺少真实目标或来源");
+    if(seenChoices.has(choice.targetId))throw new Error("未决语义目标重复");
+    seenChoices.add(choice.targetId);
+    const receipt=plan.questionAdjudications?.find(a=>
+      a.question===target.question &&
+      a.choice?.id===target.id && a.choice.hash===semanticChoiceProof(plan,target.id).proof.hash &&
+      a.key===semanticQuestionKey(target.question,hash(sources),hash(technicalFacts(plan))) &&
+      a.decision.kind==="unnecessary" && !clarificationBlockers(a.decision).length &&
+      sources.some(s=>s.id===a.decision.sourceRevision && !!a.decision.sourceQuote.trim() && s.text.includes(a.decision.sourceQuote)));
+    if(receipt){
+      choiceAdjudications.push({targetId:choice.targetId,receiptKey:receipt.key});
+      return [];
+    }
     issues.push({
       kind: "unverifiable",
       sourceRevision: choice.sourceRevision,
@@ -804,7 +833,7 @@ export function parseReview(
       detail: "独立复核发现未决业务选择：" + target.subject,
       clarificationChoice: choice.targetId,
     });
-    return choice;
+    return [choice];
   });
   if (
     new Set(unresolvedChoices.map((c) => c.targetId)).size !==
@@ -816,6 +845,7 @@ export function parseReview(
   return {
     reviewedIds,
     unresolvedChoices,
+    ...(choiceAdjudications.length?{choiceAdjudications}:{}),
     issues: [...issues, ...fields.issues, ...errors.issues],
     resolutions,
     fieldDecisions: fields.decisions,
@@ -843,6 +873,9 @@ function gateVersion() {
       "src/evolution/technical-facts.ts",
       "src/evolution/checker-rules.ts",
       "src/evolution/review-input.ts",
+      "src/evolution/validation-origins.ts",
+      "src/evolution/model-input.ts",
+      "src/evolution/budget.ts",
       "src/shared/checker-semantics.ts",
       "src/shared/field-presentation.ts",
       "src/evolution/field-review.ts",

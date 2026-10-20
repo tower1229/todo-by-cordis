@@ -807,3 +807,29 @@ test("回答只修改必填性，重复标签误读通过同一语义契约纠�
   await assert.rejects(e.command({type:"start",runId:ready.id,planId:plan.id,operationId:"start"}),/语义|冻结|规格/);
   assert.deepEqual(w.composition(),before);assert.equal((await e.observe()).candidates?.length,0);
 });
+
+test("阶段时间窗口取消仍只计一次付费调用，迟到响应不能恢复规划（模型桩）", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(),"phase-time-window-"));
+  const w = await Workspace.open(join(directory,"workspace.db"));
+  let started = false;
+  let signal: AbortSignal | undefined;
+  let late!: (value: ReturnType<typeof reply>) => void;
+  const e = new Evolution(w.db,{generate(_request,s) { started = true; signal = s; return new Promise(resolve=>{late=resolve;}); }},new EvolutionDomain(w),{milliseconds:10000});
+  t.after(async()=>{t.mock.timers.reset(); await e.close(); await w.close(); await rm(directory,{recursive:true,force:true});});
+  t.mock.timers.enable({apis:["setTimeout"]});
+  await e.command({type:"request",text:"增加标签",operationId:"request"});
+  for (let i=0;i<1000&&!started;i++) await new Promise<void>(resolve=>setImmediate(resolve));
+  assert.ok(started);
+  t.mock.timers.tick(8001);
+  for (let i=0;i<1000&&(await e.observe()).run?.status==="planning";i++) await new Promise<void>(resolve=>setImmediate(resolve));
+  const stopped = (await e.observe()).run!;
+  assert.equal(stopped.status,"blocked");
+  assert.equal(stopped.stop?.kind,"budget");
+  assert.equal(stopped.stop?.code,"phase-time-reserve");
+  assert.equal(stopped.budget?.callsUsed,1);
+  assert.equal(signal?.aborted,true);
+  late(reply(empty()));
+  await new Promise<void>(resolve=>setImmediate(resolve));
+  assert.equal((await e.observe()).run?.status,"blocked");
+  assert.equal((await e.observe()).candidates?.length??0,0);
+});

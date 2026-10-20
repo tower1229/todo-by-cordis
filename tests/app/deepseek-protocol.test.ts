@@ -319,6 +319,9 @@ for (const mode of [
     );
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("缺少端口");
+    // Leaves room for real preflight while retaining the whole-run deadline as
+    // the sole timer (this short budget cannot allocate whole-second reserves).
+    const runMilliseconds = 6_000;
     const evolution = new Evolution(
       workspace.db,
       new DeepSeek(
@@ -327,7 +330,7 @@ for (const mode of [
         `http://127.0.0.1:${address.port}/chat/completions`,
       ),
       new EvolutionDomain(workspace),
-      { calls: 12, candidates: 3, milliseconds: 1500 },
+      { calls: 12, candidates: 3, milliseconds: runMilliseconds },
     );
     t.after(async () => {
       await evolution.close();
@@ -345,7 +348,20 @@ for (const mode of [
       text: "合成完成流程改进",
       operationId: "request",
     });
-    await headers;
+    let headerTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        headers,
+        new Promise<never>((_, reject) => {
+          headerTimer = setTimeout(
+            () => reject(new Error("合成 HTTP 端点未收到请求；不能把请求前超时当作响应阶段测试")),
+            runMilliseconds + 1000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(headerTimer);
+    }
     if (mode === "waiting-cancel") {
       // Wait for the adapter to read the actual HTTP chunk before cancellation.
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -355,7 +371,7 @@ for (const mode of [
         operationId: "cancel",
       });
     }
-    const deadline = Date.now() + 4000;
+    const deadline = Date.now() + runMilliseconds + 1000;
     while (
       (await evolution.observe()).run?.status === "planning" &&
       Date.now() < deadline

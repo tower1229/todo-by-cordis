@@ -66,6 +66,13 @@ test("规划已用九次调用时，首轮精确资料支持直接修正，十�
       if (generation === 1) {
         const input = JSON.parse(request.message!) as GenerationInput;
         assert.ok(input.materials);
+        const view = JSON.parse(request.message!);
+        assert.equal(view.kind, "candidate-task/1");
+        assert.equal(view.plan.changeSpec, undefined);
+        assert.equal(view.target.payload, undefined);
+        assert.equal(view.frozenAcceptance, undefined);
+        assert.ok(!view.materials.documents.some((d: {ref:string})=>d.ref.startsWith("src/")));
+        assert.ok(view.materials.catalog.length >= view.materials.documents.length);
         assert.equal(input.materials.baseVersion, base.id);
         assert.equal(
           input.materials.compositionRevision,

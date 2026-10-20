@@ -110,7 +110,7 @@ export function bindFieldReference(
   return { field: name, surface: "unbound" as const };
 }
 export function baselineFields(
-  context: Pick<Investigation, "files" | "pluginId" | "uiContributions">,
+  context: Pick<Investigation, "files" | "pluginId" | "uiContributions" | "registeredFields">,
 ): FieldIdentity[] {
   const workflow = JSON.parse(context.files["active-contract"].content) as {
     fields?: { key: string; label: string; providerId?: string }[];
@@ -119,6 +119,9 @@ export function baselineFields(
     ...(workflow.fields ?? [])
       .filter((f) => !f.providerId || f.providerId === context.pluginId)
       .map((f) => ({ member: "workflow", field: f.key, label: f.label })),
+    ...(context.registeredFields ?? [])
+      .filter(f=>f.providerId!==context.pluginId && !(context.uiContributions??[]).some(c=>c.providerId===f.providerId && c.fields.some(field=>field.key===f.key)))
+      .map(f=>({member:f.providerId,field:f.key,label:f.label})),
     ...(context.uiContributions ?? []).flatMap((c) =>
       c.fields.map((f) => ({
         member: c.providerId,
@@ -141,6 +144,18 @@ export function fieldFacts(fields: FieldIdentity[]) {
     };
     return { ...fact, evidenceHash: hash(fact) };
   });
+}
+/** Shared source resolution before and after obligation compilation. A display name
+ * may bind through its cited requirement, but multiple actual fields remain ambiguous. */
+export function sourceFieldCandidates<T extends {
+  requirement: {sourceRevision:string;sourceQuote:string};
+  field: {field:string};
+}>(fields:T[], source:{field:string;sourceRevision:string;sourceQuote:string}, rules:{key:string;label:string}[]) {
+  const keys = new Set([source.field, ...rules.filter(f=>f.label===source.field).map(f=>f.key)]);
+  const named = fields.filter(({field:f})=>keys.has(f.field));
+  return named.length ? named : fields.filter(({requirement:r})=>
+    r.sourceRevision === source.sourceRevision &&
+    (r.sourceQuote.includes(source.sourceQuote)||source.sourceQuote.includes(r.sourceQuote)));
 }
 /** Existing targets cannot drift; new targets must bind uniquely to an actually new compiled field. */
 export function admissionFieldTargets(
@@ -169,21 +184,7 @@ export function admissionFieldTargets(
           .map(({ field: f }) => fieldIdentityKey(f)),
       ),
     ];
-  const keys = new Set([
-    source.field,
-    ...plan.workflowRules
-      .filter((f) => f.label === source.field)
-      .map((f) => f.key),
-  ]);
-  const named = fields.filter(({ field: f }) => keys.has(f.field));
-  const matches = named.length
-    ? named
-    : fields.filter(
-        ({ requirement: r }) =>
-          r.sourceRevision === source.sourceRevision &&
-          (r.sourceQuote.includes(source.sourceQuote) ||
-            source.sourceQuote.includes(r.sourceQuote)),
-      );
+  const matches = sourceFieldCandidates(fields, source, plan.workflowRules);
   if (
     matches.some(({ field: f }) =>
       catalog.some((t) => t.member === f.member && t.field === f.field),

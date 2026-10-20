@@ -41,6 +41,7 @@ export class ModelTransportError extends Error {
   }
 }
 export type ModelRequest = {
+  resourceWindow?: { remainingMilliseconds: number; reservedMilliseconds: number; modelMilliseconds: number };
   phase?: import("./budget.js").ModelPhase;
   instruction: string;
   history: unknown[];

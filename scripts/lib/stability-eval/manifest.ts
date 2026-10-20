@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { modelPolicy } from "../../../src/evolution/model-policy.js";
+import type { ClarificationChoice } from "../../../src/shared/clarification-choice.js";
 
 /** Outcome class expected for scoring; due-date records current host blocker, not a hand-built success. */
 export const outcomeClasses = [
@@ -20,7 +21,7 @@ export type StabilityScenario = {
     | "missing-capability"
     | "temporarily-unavailable";
   baseline?: "dual";
-  clarification?: { question: string; answer: string };
+  clarification?: { question: string; answer: string; sourceQuote?: string; choice?: ClarificationChoice };
   /** Evaluator-owned business truth. Never delivered as a solution to the model. */
   oracle?: { sources: string[] } & (
     | { kind: "tags"; normalization: "trim" | "lowercase" }
@@ -82,7 +83,8 @@ export type StabilityEvalManifest = {
     failureClasses: readonly string[];
   };
   scenarios: readonly StabilityScenario[];
-  evaluation?: "current/1" | "current/2";
+  evaluation?: "current/1" | "current/2" | "current/3" | "current/4";
+  resourceProfile?: "extended-time/1";
 };
 
 export type FrozenManifest = StabilityEvalManifest & {
@@ -244,6 +246,7 @@ const hashable = (manifest: StabilityEvalManifest) => ({
   scoring: manifest.scoring,
   scenarios: manifest.scenarios,
   ...(manifest.evaluation ? { evaluation: manifest.evaluation } : {}),
+  ...(manifest.resourceProfile ? { resourceProfile: manifest.resourceProfile } : {}),
 });
 
 export function manifestContentHash(
@@ -273,17 +276,19 @@ export function assertManifestFrozen(manifest: FrozenManifest): void {
     throw new Error(
       "评估清单 contentHash 与正文不一致：禁止在执行后选择性修改需求、预算、评分或重试规则",
     );
+  if (manifest.resourceProfile !== undefined && (manifest.resourceProfile !== "extended-time/1" || !["current/2", "current/3", "current/4"].includes(manifest.evaluation ?? "")))
+    throw new Error("未知资源预算配置或评测版本不匹配");
   if (manifest.evaluation) {
     if (
       manifest.budget.calls !== 12 ||
       manifest.budget.candidates !== 3 ||
-      manifest.budget.milliseconds !== 600000 ||
+      manifest.budget.milliseconds !== (manifest.resourceProfile === "extended-time/1" ? 1800000 : 600000) ||
       manifest.retry.externalRetries !== 0 ||
       manifest.retry.resetBudgetOnFailure ||
       manifest.retry.handEditCandidates ||
       manifest.retry.supplyCorrectImplementationToModel
     )
-      throw new Error("当前评测不得改变原运行预算、门禁或无外层重试约束");
+      throw new Error("当前评测不得改变冻结资源配置的预算、门禁或无外层重试约束");
     for (const phase of [
       "admission",
       "planning",
@@ -304,6 +309,14 @@ export function assertManifestFrozen(manifest: FrozenManifest): void {
     )
       throw new Error("当前运行清单身份或次数无效");
     for (const scenario of manifest.scenarios) {
+      if (["current/3", "current/4"].includes(manifest.evaluation ?? "") && scenario.clarification && (!scenario.clarification.sourceQuote?.trim() ||
+          !scenario.request.includes(scenario.clarification.sourceQuote)))
+        throw new Error("冻结澄清必须绑定需求原文中的未决项");
+      if (manifest.evaluation === "current/4" && scenario.clarification &&
+          (scenario.clarification.choice?.kind !== "field-required" ||
+           !scenario.clarification.choice.subjectQuote.trim() ||
+           !scenario.clarification.sourceQuote!.includes(scenario.clarification.choice.subjectQuote)))
+        throw new Error("冻结澄清必须绑定结构化选择及其主题原文");
       if (
         !scenario.oracle ||
         !scenario.oracle.sources.length ||

@@ -310,20 +310,26 @@ export function stabilityDriverFor(
     return dueCurrentStubDriver();
   if (scenarioId === "clarification-reflection") {
     const original = stabilityStubDriver("rule-revision-reflection");
-    let asked = false;
     return {
       async generate(request, signal, onTransport) {
-        const reply = await original.generate(request, signal, onTransport);
-        if (!asked && reply.calls.some((c) => c.name === "propose_plan")) {
-          asked = true;
-          return {
-            ...toolReply("request_clarification", {
-              question: "复盘必填还是选填？",
-            }),
-            history: request.history,
-          };
+        const input = JSON.parse(request.message ?? "{}") as {
+          kind?: string; sources?: { text: string }[]; questions?: string[];
+        };
+        const quote = scenario?.clarification?.sourceQuote ?? "复盘是否必填尚未决定";
+        const value = input.kind === "request-admission/2" ? {
+          initials: [], effects: [],
+          questions: input.sources?.some(s => s.text === scenario?.clarification?.answer) ? [] :
+            [{ source: 1, sourceQuote: quote, choice: {kind:"field-required",subjectQuote:"复盘"} }],
+        } : input.kind === "clarification-review/2" ? {
+          effects: ["external-delivery", "offline-delivery", "online-schedule"].map(effect => ({ effect, verdict: "not-requested" })),
+          decisions: (input.questions ?? []).map(() => ({ kind: "business-ambiguity", source: 1,
+            sourceQuote: quote, detail: "模型桩仅审查需求明确未决定的复盘必填性" })),
+        } : undefined;
+        if (value) {
+          return { text: JSON.stringify(value), calls: [], history: [], usage: null,
+            raw: { fixture: "source-bound-clarification" } };
         }
-        return reply;
+        return original.generate(request, signal, onTransport);
       },
     };
   }

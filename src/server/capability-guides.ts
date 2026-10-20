@@ -47,7 +47,7 @@ export const dueAutoExpireSource = `export default {
         { key: "expired", label: "已过期", type: "text" },
       ],
       commands: [
-        { id: "setDue", label: "设截止", from: ["open"] },
+        { id: "setDue", label: "设截止", from: ["open", "done"] },
         { id: "expire", label: "标为过期", from: ["open"], internalOnly: true },
       ],
       schedules: [{
@@ -59,7 +59,6 @@ export const dueAutoExpireSource = `export default {
   },
   decide({ task, action, input }) {
     if (action === "setDue") {
-      if (task.state !== "open") return { kind: "reject", message: "仅未完成任务可设置截止" };
       if (!Object.hasOwn(input, "dueAt")) return { kind: "input-required", fields: [{ key: "dueAt", label: "截止时间", type: "text", required: false }] };
       const dueAt = String(input.dueAt).trim();
       const format = /^\\d{4}-\\d{2}-\\d{2}T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,3})?(?:Z|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$/i;

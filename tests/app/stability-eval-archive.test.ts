@@ -23,6 +23,74 @@ import {
 } from "../../scripts/lib/stability-eval/manifest.js";
 import { dependencyFault } from "../../scripts/lib/stability-eval/environment.js";
 import { execFileSync } from "node:child_process";
+import { currentManifest } from "../../scripts/lib/stability-eval/current.js";
+
+test("证据处理异常覆盖已观察到的正确阻塞，保留原始终态且不得记为完整通过", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "cordis-evidence-processing-"));
+  const manifest = freezeManifest(currentManifest("a".repeat(40)));
+  const scenario = manifest.scenarios.find(
+    (s) => s.id === "missing-capability-push",
+  )!;
+  try {
+    let reads = 0;
+    const result = await runStabilityScenario({
+      directory,
+      scenario,
+      manifest,
+      evidenceKind: "model-stub",
+      browserRun: async ({ app }) => {
+        await app.request("/api/assistant/commands", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "request",
+            operationId: crypto.randomUUID(),
+            text: scenario.request,
+          }),
+        });
+        let status: string | undefined;
+        for (let i = 0; i < 1000; i++) {
+          status = (await (await app.request("/api/assistant")).json()).run
+            ?.status;
+          if (status === "blocked") break;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        assert.equal(status, "blocked");
+        const observed = {
+          status: "blocked-observed" as const,
+          viewport: { width: 390, height: 844 },
+          openedImprovePanel: true,
+          recoveryEntryVisible: true,
+          screenshot: "",
+          pageErrors: [],
+          observedRunStatus: "blocked",
+        };
+        // Fault at the public browser-result interface, during evidence projection.
+        Object.defineProperty(observed, "confirmedPlan", {
+          get() {
+            if (++reads === 1)
+              throw new Error("injected evidence processing failure");
+            return false;
+          },
+        });
+        return observed;
+      },
+    });
+    assert.equal(result.record.observedOutcomeClass, "failed");
+    assert.equal(result.record.evidenceComplete, false);
+    assert.equal(result.record.failureClass, "evaluator");
+    assert.equal(result.record.failure?.code, "evidence-processing-failed");
+    assert.equal(result.record.terminal?.status, "blocked");
+    assert.equal(result.record.fullPathSucceeded, false);
+    assert.ok(existsSync(join(directory, "workspace.db")));
+    assert.match(
+      readFileSync(result.eventsPath, "utf8"),
+      /injected evidence processing failure/,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test("归档封存后替换通过记录、删除证据或追加文件都会破坏身份", () => {
   const root = mkdtempSync(join(tmpdir(), "cordis-seal-"));

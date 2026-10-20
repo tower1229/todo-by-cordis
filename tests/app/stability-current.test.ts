@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { currentManifest } from "../../scripts/lib/stability-eval/current.js";
+import { extendedTimeManifest } from "../../scripts/lib/stability-eval/resources.js";
 import {
   freezeManifest,
   assertManifestFrozen,
@@ -67,10 +68,43 @@ test("缺少独立判定、无原文引用或放大预算的当前清单不能�
 
 test("新批次预先确定计时业务边界，历史批次身份不能被覆盖", () => {
   const next = currentManifest("a".repeat(40));
-  assert.equal(next.evaluation, "current/2");
+  assert.equal(next.evaluation, "current/4");
   const due = next.scenarios.find(s => s.id === "due-auto-expire")!;
   for (const clause of ["修改或清除截止时清除原过期标记", "允许设置过去时间", "已经过期再完成时保留过期标记", "重新打开时截止已过则自动标记过期"])
     assert(due.request.includes(clause), clause);
   assert(due.oracle?.kind === "due" && due.oracle.lifecyclePolicy === "reset-on-edit-preserve-on-complete");
   assert(!next.scenarios.find(s => s.id === "counter-add")!.request.includes("显示0"), "初始逻辑值不补造成界面要求");
+});
+
+test("新版澄清验收冻结来源未决项，缺失或伪造绑定不能用于新采样", () => {
+  const current = currentManifest("a".repeat(40));
+  for (const sourceQuote of [undefined, "", "原文不存在的未决项"])
+    assert.throws(() => assertManifestFrozen(freezeManifest({ ...current,
+      scenarios: current.scenarios.map(s => s.clarification ?
+        { ...s, clarification: { ...s.clarification, sourceQuote } } : s),
+    })), /澄清.*原文/);
+  for (const choice of [undefined,{kind:"field-required" as const,subjectQuote:"标签"}])
+    assert.throws(()=>assertManifestFrozen(freezeManifest({...current,
+      scenarios:current.scenarios.map(s=>s.clarification?{...s,clarification:{...s.clarification,choice}}:s),
+    })),/结构化|主题/);
+});
+
+test("宽时间诊断单独冻结资源身份，只放宽时间且不能篡改旧清单或重试约束", () => {
+  const normal = currentManifest("a".repeat(40));
+  const extended = extendedTimeManifest("a".repeat(40));
+  assert.equal(extended.resourceProfile, "extended-time/1");
+  assert.deepEqual(extended.budget, { calls: 12, candidates: 3, milliseconds: 1800000 });
+  assert.deepEqual(extended.scenarios, normal.scenarios);
+  assert.deepEqual(extended.model, normal.model);
+  assert.deepEqual(extended.retry, normal.retry);
+  assertManifestFrozen(freezeManifest(extended));
+  assert.throws(() => assertManifestFrozen(freezeManifest({ ...normal, budget: extended.budget })), /预算/);
+  for (const changed of [
+    { ...extended, budget: { ...extended.budget, calls: 24 } },
+    { ...extended, budget: { ...extended.budget, milliseconds: 3600000 } },
+    { ...extended, retry: { ...extended.retry, externalRetries: 1 } },
+  ]) assert.throws(() => assertManifestFrozen(freezeManifest(changed)), /预算|重试/);
+  const frozen = freezeManifest(extended);
+  assert.notEqual(frozen.contentHash, freezeManifest(normal).contentHash);
+  assert.throws(() => assertManifestFrozen({ ...frozen, resourceProfile: undefined }), /contentHash/);
 });

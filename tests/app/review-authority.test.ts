@@ -28,7 +28,7 @@ import type {
   RequirementReview,
 } from "../../src/shared/assistant.js";
 import type { ReviewLedger } from "../../src/shared/change-spec.js";
-import { recordReview } from "../../src/evolution/review.js";
+import { recordReview, reviewEvidence } from "../../src/evolution/review.js";
 import { hash } from "../../src/release/storage.js";
 import { schemaProblems } from "../../src/evolution/model-protocol.js";
 
@@ -107,6 +107,61 @@ function review(p: InvestigatedPlan, issues: unknown[]) {
     fieldDecisions: [],
   });
 }
+
+test("只读宿主事实随统一规格冻结；收窄复核选项不能丢失真实交互与执行事实", () => {
+  const p = plan();
+  const input = requirementReviewInput(p, sources);
+  assert.ok(Array.isArray(input.hostFacts), "复核仍须收到只读宿主事实");
+  assert.deepEqual(input.hostFacts, p.changeSpec!.hostFacts);
+  assert.ok(input.hostFacts.some(f => f.id === "host-fact:field-interaction" && f.properties.detail === "read-only-display"));
+  assert.ok(!input.technicalTargets.some(t => t.factId === "host-fact:field-interaction"));
+  const fact = p.changeSpec!.hostFacts.find(f => f.id === "host-fact:field-interaction")!;
+  fact.properties.detail = "任意改写事实";
+  assert.match(specificationFailure(p) ?? "", /冻结|规格.*不一致/);
+});
+
+test("定时检查器真实覆盖范围以宿主事实绑定，不能被误认为已通过或仅手动动作", () => {
+  const p = plan();
+  p.binding!.checkers.push({id: "schedule/1", version: "schedule-checker-hash"});
+  p.changeSpec = compileSpec(p, "run", "source-hash");
+  const input = requirementReviewInput(p, sources);
+  const fact = input.hostFacts.find(f => f.id === "host-fact:checker:schedule/1")!;
+  assert.ok(fact);
+  assert.equal(fact.properties.checkerHash, "schedule-checker-hash");
+  assert.equal(fact.properties.stage, "candidate-verification-required");
+  assert.match(fact.properties.execution, /controlled-clock/);
+  assert.match(fact.properties["assert:on-time"], /提前|到点/);
+  assert.match(fact.properties.limits, /重新打开|页面/);
+  const target = technicalReviewTargets(p).find(t => t.factId === fact.id && t.property === "execution")!;
+  const parsed = parseReview(review(p, [{kind:"unverifiable",sourceRevision:sources[0].id,sourceQuote:sources[0].text,detail:"误认为没有真实定时检查器",technical:{target:target.target,expected:"manual-action-only"}}]),p,sources);
+  const result = adjudicateTechnicalReview(parsed,technicalFacts(p));
+  assert.equal(result.issues.length,1);
+  assert.equal(result.technicalDecisions[0].outcome,"conflict");
+  const supported = parseReview(review(p, [{kind:"unverifiable",sourceRevision:sources[0].id,sourceQuote:sources[0].text,detail:"要求真实受控时钟执行",technical:{target:target.target,expected:fact.properties.execution}}]),p,sources);
+  assert.equal(adjudicateTechnicalReview(supported,technicalFacts(p)).issues.length,0);
+});
+
+test("修改无关要求不能重置复核问题的无进展保护，实际修正目标才提供新证据", () => {
+  const p=plan();
+  p.requirements!.push({...structuredClone(p.requirements![0]),id:"unrelated"});
+  const issue:RequirementReview["issues"][number]={kind:"extra-constraint",sourceRevision:sources[0].id,sourceQuote:sources[0].text,detail:"保存语义",target:{subject:"requirement",aspect:"persistence"},stance:"forbidden"};
+  const result={reviewedIds:["requirement","unrelated"],issues:[issue]};
+  const ledger:ReviewLedger={version:2,findings:[],attempts:[]};
+  recordReview(ledger,result,1,hash(p),i=>reviewEvidence(p,sources,i));
+  p.requirements![1].description="只改变无关要求";
+  assert.equal(recordReview(ledger,result,1,hash(p),i=>reviewEvidence(p,sources,i)).halt,true);
+  const before=reviewEvidence(p,sources,issue);
+  p.requirements![0].sourceQuote="去掉首尾空白";
+  assert.notEqual(reviewEvidence(p,sources,issue),before);
+});
+
+test("复核技术目标只包含可比较语义，身份摘要和只读诊断不再成为模型裁决选项", () => {
+  const p=plan();
+  const targets=technicalReviewTargets(p);
+  assert.ok(targets.length>0);
+  assert.ok(targets.every(t=>t.expectedValues.length>1));
+  assert.ok(!targets.some(t=>["baselineHash","origin","failureCodes","definition"].includes(t.property)));
+});
 
 test("同一检查器的校验、保存规则有独立宿主来源、作用域与精确检查器绑定", () => {
   const p = plan();
@@ -379,6 +434,14 @@ test("真实规划调用交付唯一的复核规格投影，保持义务、来�
         Object.hasOwn(input.requestAdmission ?? {}, "factsSnapshot"),
         false,
       );
+      const planning = driver.requests.find(r=>r.phase === "planning" && JSON.parse(r.message??"{}").sources)!;
+      const preparation = JSON.parse(planning.message!);
+      assert.equal(preparation.request,undefined);
+      assert.equal(preparation.revisions,undefined);
+      assert.equal(preparation.previousPlans,undefined);
+      assert.equal(preparation.baselineFacts,undefined);
+      assert.ok(preparation.materials.documents.some((d:{ref:string})=>d.ref==="guide/workflow.provide"));
+      assert.ok(!preparation.materials.documents.some((d:{ref:string})=>d.ref==="guide/command.register"));
       assert.deepEqual(review.history, []);
       assert.equal(review.tools, undefined);
       assert.ok(input.acceptance.length);
@@ -404,4 +467,22 @@ test("max 输出资源按阶段分配，不再让复杂复核沿用 32768 上限
     assert.equal(modelPolicy(phase).reasoningEffort, "max");
     assert.equal(modelPolicy(phase).truncation, "block");
   }
+});
+
+test("复核来源按验收作用域冻结：动作拒绝不提升为全局必填，观察不提升为错误文案要求", () => {
+  const p = plan();
+  p.requirements![0].obligations = [
+    {version:1,id:"input",kind:"workflow-input",rules:p.workflowRules},
+    { version: 1, id: "reject", kind: "backend-rejection", action: {kind:"action", member:"tags", action:"setTags", input:{tags:"   "}}, cases:[] },
+    { version: 1, id: "feedback", kind: "feedback", action:{kind:"action",member:"tags",action:"setTags"}, text:"", resolution:"not-requested", scenarios:[], unavailable:[] },
+    { version: 1, id: "field", kind: "field", member:"tags",field:"tags",initial:{kind:"visible",value:"（空）"},initialOrigin:"host",scenarios:[] },
+  ];
+  p.changeSpec = compileSpec(p,"run","base-hash");
+  const input = requirementReviewInput(p,sources);
+  assert.deepEqual(input.validationOrigins.find(o=>o.obligationId==="reject")?.scope,{kind:"action",member:"tags",action:"setTags"});
+  assert.equal(input.validationOrigins.find(o=>o.obligationId==="feedback")?.origin,"observation");
+  assert.equal(input.validationOrigins.find(o=>o.obligationId==="field"&&o.aspect==="initial-display")?.origin,"host");
+  assert.equal(input.validationOrigins.find(o=>o.obligationId==="input"&&o.aspect==="required-and-length")?.origin,"requirement");
+  p.changeSpec.validationOrigins.find(o=>o.obligationId==="reject")!.origin = "host";
+  assert.match(specificationFailure(p)!, /来源|规格/);
 });

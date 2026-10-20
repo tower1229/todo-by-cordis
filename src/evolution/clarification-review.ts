@@ -1,4 +1,5 @@
 import type { TechnicalFact } from "./technical-facts.js";
+import { assertTechnicalExpectation, technicalExpectationValues } from "./technical-facts.js";
 import {
   effectReviewSchema,
   parseEffectReview,
@@ -37,7 +38,7 @@ export function clarificationBlockers(
     blockers.push(`澄清审查确认需要维护者处理：${decision.detail}`);
   return blockers;
 }
-function clarificationReviewSchema(count: number) {
+function clarificationReviewSchema(count: number, facts?: TechnicalFact[]) {
   return {
     type: "object",
     additionalProperties: false,
@@ -48,7 +49,7 @@ function clarificationReviewSchema(count: number) {
         type: "array",
         minItems: count,
         maxItems: count,
-        items: clarificationSchema(),
+        items: clarificationSchema(facts),
       },
     },
   };
@@ -57,10 +58,12 @@ export function clarificationRequest(
   questions: string[],
   sources: { id: string; text: string }[],
   facts: TechnicalFact[],
+  questionTargets?: ReturnType<typeof import("./technical-facts.js").semanticChoiceProof>[],
 ): import("./driver.js").ModelRequest {
+  if(questionTargets && questionTargets.length!==questions.length)throw new Error("澄清问题与宿主目标数量不一致");
   return {
     history: [],
-    schema: clarificationReviewSchema(questions.length),
+    schema: clarificationReviewSchema(questions.length, facts),
     instruction:
       "独立审查完整 sources 和 questions，空历史且禁止工具。先独立核对 effects 中每项宿主效果是否 required、not-requested 或 uncertain，完整覆盖目录一次，不依赖规划者是否提到；offline-delivery 指宿主离线仍保证交付，关闭浏览器不等于宿主离线。支持性由宿主绑定，不能把能力缺口转为渠道、收件人或降级问题。然后按 questions 顺序逐项返回 decisions，不维护索引。business-ambiguity 只用于影响业务结果且来源仍未决定的选择；unnecessary 用于已明确或未要求的细节；implementation 只用于未要求改变的宿主 field-interaction，引用 fact/property，由宿主绑定实际行为；scope-reduction 表示请求降级；technical 引用 facts 序号、property、expected，由宿主裁决。来源和事实使用一基序号。",
     message: JSON.stringify({
@@ -68,6 +71,10 @@ export function clarificationRequest(
       questions,
       sources,
       facts,
+      ...(questionTargets?{
+        questionTargets:questionTargets.map(({proof,requirement,aspect,subject})=>({...proof,requirementId:requirement.id,aspect,subject})),
+        requirements:[...new Map(questionTargets.map(t=>[t.requirement.id,t.requirement])).values()],
+      }:{}),
     }),
   };
 }
@@ -80,7 +87,7 @@ export function parseClarificationReview(
   const raw: unknown = JSON.parse(text);
   const problems = schemaProblems(
     raw,
-    clarificationReviewSchema(questions.length),
+    clarificationReviewSchema(questions.length, facts),
   );
   if (problems.length) throw new Error(problems.join("；"));
   const value = raw as { effects: unknown; decisions: unknown[] };
@@ -94,7 +101,7 @@ export function parseClarificationReview(
   }));
 }
 const text = { type: "string" };
-export function clarificationSchema() {
+export function clarificationSchema(facts?: TechnicalFact[]) {
   const common = {
     source: { type: "integer", minimum: 1 },
     sourceQuote: text,
@@ -136,6 +143,9 @@ export function clarificationSchema() {
           "property",
           "expected",
         ],
+        ...(facts ? {anyOf: facts.flatMap((fact,index)=>Object.keys(fact.properties).map(property=>({
+          properties:{fact:{enum:[index+1]},property:{enum:[property]},expected:{enum:technicalExpectationValues(fact,property)}},
+        })))}:{}),
         properties: {
           kind: { type: "string", enum: ["technical"] },
           ...common,
@@ -207,6 +217,7 @@ export function parseClarificationDecision(
           !["detail", "editing"].includes(String(v.property))))
     )
       throw new Error("澄清技术事实引用不支持");
+    if (v.kind === "technical") assertTechnicalExpectation(fact, v.property, v.expected);
     decision.fact = {
       id: fact.id,
       hash: fact.evidenceHash,

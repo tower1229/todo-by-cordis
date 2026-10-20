@@ -1,0 +1,196 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  frozenClarificationAnswer,
+  frozenClarificationReceiptMatches,
+} from "../../scripts/lib/stability-eval/clarification.js";
+import { currentManifest } from "../../scripts/lib/stability-eval/current.js";
+import {
+  parseAdmission,
+  questionReviewKey,
+} from "../../src/evolution/request-admission.js";
+import { parseClarificationReview } from "../../src/evolution/clarification-review.js";
+import { technicalFacts } from "../../src/evolution/technical-facts.js";
+import { hostEffectIds } from "../../src/evolution/capability-admission.js";
+
+const scenario = currentManifest("a".repeat(40)).scenarios.find(
+  (s) => s.id === "clarification-reflection",
+)!;
+const undecided = "复盘是否必填尚未决定";
+function awaiting(freeQuestion?: string) {
+  const sources = [{ id: "run:1", text: scenario.request }];
+  const facts = technicalFacts({ workflowRules: [] });
+  const admission = parseAdmission(
+    JSON.stringify({
+      initials: [],
+      effects: [],
+      questions: [
+        {
+          source: 1,
+          sourceQuote: undecided,
+          ...(freeQuestion
+            ? { question: freeQuestion }
+            : { choice: { kind: "field-required", subjectQuote: "复盘" } }),
+        },
+      ],
+    }),
+    "base",
+    sources,
+    facts,
+  );
+  const question = admission.questions[0].question;
+  const [{ decision }] = parseClarificationReview(
+    JSON.stringify({
+      effects: hostEffectIds.map((effect) => ({
+        effect,
+        verdict: "not-requested",
+      })),
+      decisions: [
+        {
+          kind: "business-ambiguity",
+          source: 1,
+          sourceQuote: undecided,
+          detail: "来源明确只将复盘必填性留待用户决定",
+        },
+      ],
+    }),
+    [question],
+    sources,
+    facts,
+  );
+  return {
+    id: "run",
+    status: "awaiting-input",
+    question,
+    requestAdmissions: [admission],
+    clarificationReviews: [
+      {
+        key: questionReviewKey(question, sources, facts),
+        question,
+        call: 2,
+        decision,
+      },
+    ],
+  };
+}
+
+test("冻结答案绑定宿主生成的结构化选择及独立审查，不分析模型自由问法", () => {
+  const run = awaiting();
+  assert.equal(run.question, "“复盘”是否必须填写？");
+  const result = frozenClarificationAnswer(scenario, run);
+  assert.equal(result.answer, scenario.clarification!.answer);
+  assert.equal(result.binding.sourceRevision, "run:1");
+  assert.equal(result.binding.sourceQuote, undecided);
+  assert.equal(
+    result.binding.choiceId,
+    run.requestAdmissions[0].questions[0].choice!.id,
+  );
+  for (const question of [
+    "完成前填写的复盘是否必须填写？",
+    "复盘是必填还是可选？",
+  ])
+    assert.throws(
+      () => frozenClarificationAnswer(scenario, awaiting(question)),
+      /结构化/,
+    );
+});
+
+test("无独立审查、错来源、过期运行或未授权的澄清不能得到冻结答案", () => {
+  const noAudit = awaiting();
+  noAudit.clarificationReviews = [];
+  const wrongSource = awaiting();
+  wrongSource.clarificationReviews[0].decision.sourceQuote =
+    "其他行为沿用现有工作流";
+  const stale = awaiting();
+  stale.id = "another-run";
+  const corrupted = awaiting();
+  corrupted.clarificationReviews[0].decision.effects!.sourceHash = "fabricated";
+  for (const run of [noAudit, wrongSource, stale, corrupted])
+    assert.throws(
+      () => frozenClarificationAnswer(scenario, run),
+      /冻结|审查|来源/,
+    );
+  assert.throws(
+    () =>
+      frozenClarificationAnswer(
+        { ...scenario, clarification: undefined },
+        awaiting(),
+      ),
+    /冻结/,
+  );
+});
+
+test("同一段自由问题即使审查通过并引用正确，也不能领取结构化未决项的冻结答案", () => {
+  const run = awaiting("复盘是否必须填写？另外，所有任务是否必须设置标签？");
+  assert.throws(
+    () => frozenClarificationAnswer(scenario, run),
+    /结构化|冻结|未决项/,
+  );
+});
+
+test("结构化选择不能夹带自由问题、伪造主题或修改宿主生成问句", () => {
+  const sources = [{ id: "run:1", text: scenario.request }],
+    facts = technicalFacts({ workflowRules: [] });
+  for (const item of [
+    {
+      source: 1,
+      sourceQuote: undecided,
+      choice: { kind: "field-required", subjectQuote: "复盘" },
+      question: "另外，标签是否必填？",
+    },
+    {
+      source: 1,
+      sourceQuote: undecided,
+      choice: { kind: "field-required", subjectQuote: "标签" },
+    },
+  ])
+    assert.throws(() =>
+      parseAdmission(
+        JSON.stringify({ initials: [], effects: [], questions: [item] }),
+        "base",
+        sources,
+        facts,
+      ),
+    );
+  const tampered = awaiting();
+  tampered.requestAdmissions[0].questions[0].question +=
+    "另外，所有任务是否必须设置标签？";
+  assert.throws(
+    () => frozenClarificationAnswer(scenario, tampered),
+    /预检|冻结/,
+  );
+  const wrongChoice = {
+    ...scenario,
+    clarification: {
+      ...scenario.clarification!,
+      choice: { kind: "field-required" as const, subjectQuote: "标签" },
+    },
+  };
+  assert.throws(
+    () => frozenClarificationAnswer(wrongChoice, awaiting()),
+    /结构化/,
+  );
+});
+
+test("独立判定重放来源审查，不接受仅声称提交过正确答案的回执", () => {
+  const run = awaiting();
+  const proof = frozenClarificationAnswer(scenario, run);
+  const receipt = { runId: run.id, question: run.question, ...proof };
+  assert.equal(
+    frozenClarificationReceiptMatches(
+      scenario,
+      { ...run, status: "succeeded" },
+      receipt,
+    ),
+    true,
+  );
+  for (const bad of [
+    { ...receipt, binding: undefined },
+    { ...receipt, answer: "临时编造答案" },
+    { ...receipt, runId: "other" },
+    { ...receipt, binding: { ...receipt.binding, auditKey: "fabricated" } },
+    { ...receipt, binding: { ...receipt.binding, choiceId: "another-choice" } },
+    { ...receipt, binding: { ...receipt.binding, choiceHash: "fabricated" } },
+  ])
+    assert.equal(frozenClarificationReceiptMatches(scenario, run, bad), false);
+});

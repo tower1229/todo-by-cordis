@@ -171,6 +171,22 @@ test("investigation separates online scheduler health, registration, use and che
   );
 });
 
+test("重复资料由宿主交付回执复用，无需模型维护knownHashes，未交付或旧摘要仍返回正文", async (t) => {
+  const dir=mkdtempSync(join(tmpdir(),"cordis-material-reuse-"));
+  const w=await Workspace.open(join(dir,"workspace.db"));
+  t.after(async()=>{await w.close();rmSync(dir,{recursive:true,force:true});});
+  const context=capture(w);
+  const first=readInvestigation("inspect_application",{},context);
+  assert.ok("documents" in first);
+  const delivered=[first,...(first.documents??[])].map(({ref,hash})=>({ref,hash}));
+  const repeat=readInvestigation("inspect_application",{},context,delivered);
+  assert.ok("content" in repeat && repeat.content===null && repeat.reused);
+  const cached=readInvestigation("read_source",{ref:"active-source"},context,delivered);
+  assert.ok("content" in cached && cached.content===null && cached.reused);
+  const unearned=readInvestigation("read_source",{ref:"active-source"},context,[{ref:"active-source",hash:"forged"}]);
+  assert.ok("content" in unearned && unearned.content!==null);
+});
+
 test("capability guides are delivered on demand and only delivered hashes count as evidence", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "cordis-guides-"));
   const w = await Workspace.open(join(dir, "workspace.db"));
@@ -1362,7 +1378,7 @@ test("inspection supplies exact baseline documents within the existing budget an
       const planning: Driver = {
         async generate(request) {
           if (request.schema) return fixture.generate(request);
-          if (request.message) initialMessage = request.message;
+          if (request.message && JSON.parse(request.message).materials?.documents) initialMessage = request.message;
           const messages = request.history as {
             parts?: {
               functionResponse?: {
@@ -1387,14 +1403,22 @@ test("inspection supplies exact baseline documents within the existing budget an
             .flatMap((p) =>
               p.functionResponse ? [p.functionResponse.response.result] : [],
             );
-          const inspection = results.find(
+          const receipt = results.find(
             (r) => r.ref === "inspect_application",
           );
-          if (!inspection)
+          if (!receipt)
             return {
               ...reply("inspect_application", {}),
               history: request.history,
             };
+          const original=JSON.parse(initialMessage!).materials.documents as {ref:string;hash:string;content:unknown}[];
+          const resolve=(document:{ref:string;hash:string;content:unknown})=>{
+            if(document.content!==null)return document;
+            const delivered=original.find(d=>d.ref===document.ref&&d.hash===document.hash);
+            assert.ok(delivered,"复用必须能追溯到已实际交付的相同正文摘要");
+            return delivered;
+          };
+          const inspection={...receipt,content:resolve(receipt).content as typeof receipt.content,documents:receipt.documents?.map(resolve)};
           assert.ok(
             inspection.documents?.length,
             "inspection must deliver actual documents, not just their names",
@@ -1485,7 +1509,7 @@ test("inspection supplies exact baseline documents within the existing budget an
       )
         await new Promise((resolve) => setTimeout(resolve, 10));
       const ready = (await e.observe()).run!;
-      assert.equal(ready.status, forgeUnread ? "blocked" : "ready");
+      assert.equal(ready.status, forgeUnread ? "blocked" : "ready", "message" in ready ? ready.message : ready.status);
       if (ready.status !== "ready") return;
       assert.equal(ready.budget?.callsUsed, 5);
       await e.command({

@@ -27,12 +27,19 @@ import { linkDependencies } from "./lib/stability-eval/environment.js";
 import { assertRealModelAuthorization } from "./lib/stability-eval/authorization.js";
 import { postchangeManifest } from "./lib/stability-eval/postchange.js";
 import { currentManifest } from "./lib/stability-eval/current.js";
-import { evaluateSuite } from "./lib/stability-eval/report.js";
+import { extendedTimeManifest } from "./lib/stability-eval/resources.js";
+import {
+  evaluateSuite,
+  evaluateResponsibilityExperiment,
+} from "./lib/stability-eval/report.js";
+import { freezeResponsibilityExperiment } from "./lib/stability-eval/responsibility.js";
 import { browserEnvironment } from "../src/server/browser-acceptance.js";
 import { createRequire } from "node:module";
 
 const postchange = process.argv.includes("--postchange");
 const current = process.argv.includes("--current");
+const extendedTime = process.argv.includes("--extended-time");
+const responsibility = process.argv.includes("--responsibility");
 const prepare = process.argv.includes("--prepare-only");
 const real =
   process.argv.includes("--authorize-real-model") &&
@@ -47,6 +54,13 @@ if (process.argv.some((arg) => arg.startsWith("--allow-dirty")))
 if (real) assertRealModelAuthorization(process.argv);
 if (prepare && !current) throw new Error("--prepare-only 只用于当前版本清单");
 if (current && postchange) throw new Error("当前版本与历史后测不能混用");
+if (extendedTime && !current)
+  throw new Error("宽时间诊断必须使用当前版本独立清单");
+if (
+  responsibility &&
+  (!current || !extendedTime || process.env.STABILITY_CONTINUATION_ROOT)
+)
+  throw new Error("职责实验必须使用当前宽时间清单，禁止外层续跑");
 if (prepare && real) throw new Error("准备模式禁止真实模型授权标记");
 const digest = (data: string | Buffer) =>
   createHash("sha256").update(data).digest("hex");
@@ -166,6 +180,8 @@ if (!child) {
         "--isolated-baseline",
         ...(postchange ? ["--postchange"] : []),
         ...(current ? ["--current"] : []),
+        ...(extendedTime ? ["--extended-time"] : []),
+        ...(responsibility ? ["--responsibility"] : []),
         ...(prepare ? ["--prepare-only"] : []),
         real ? "--authorize-real-model" : "--stub",
       ],
@@ -234,11 +250,16 @@ if (!child) {
   const { DeepSeek } = await import("../src/evolution/deepseek.js");
   const manifest = freezeManifest(
     current
-      ? currentManifest(identity.productCommit)
+      ? (extendedTime ? extendedTimeManifest : currentManifest)(
+          identity.productCommit,
+        )
       : postchange
         ? postchangeManifest(identity.productCommit)
         : STABILITY_EVAL_MANIFEST,
   );
+  const experiment = responsibility
+    ? freezeResponsibilityExperiment(manifest, "workflow-protocol-owner/1")
+    : undefined;
   if (current) {
     const environment = browserEnvironment();
     if (environment.missing.length)
@@ -268,10 +289,13 @@ if (!child) {
   }
   if (prepare) {
     writeVerifiedJson(join(root, "manifest.frozen.json"), manifest);
+    if (experiment)
+      writeVerifiedJson(join(root, "responsibility.frozen.json"), experiment);
     writeVerifiedJson(join(root, "prepared.json"), {
       status: "prepared",
       apiCalls: 0,
       expectedTrials:
+        experiment?.trials.length ??
         manifest.scenarios.length * manifest.runs.independentRunsPerScenario,
       executionComplete: false,
       acceptancePassed: null,
@@ -289,11 +313,14 @@ if (!child) {
       evidenceKind,
       harnessCommit: identity.harnessCommit,
       continuationRoot: process.env.STABILITY_CONTINUATION_ROOT,
+      responsibilityExperiment: experiment,
       driverFactory: real
         ? () => new DeepSeek(process.env.DEEPSEEK_API_KEY!)
         : undefined,
     });
-    const verdict = evaluateSuite(manifest, records);
+    const verdict = experiment
+      ? evaluateResponsibilityExperiment(experiment, records)
+      : evaluateSuite(manifest, records);
     const integrity = {
       productUnchanged:
         identity.productTreeHash === digest(JSON.stringify(treeHashes("src"))),
@@ -317,14 +344,17 @@ if (!child) {
       );
     }
     const summaryHash = writeVerifiedJson(join(root, "summary.json"), {
-      schema: current
-        ? "cordis.stability-eval-current/2"
-        : postchange
-          ? "cordis.stability-eval-postchange/1"
-          : "cordis.stability-eval-baseline/2",
+      schema: experiment
+        ? "cordis.responsibility-eval/1"
+        : current
+          ? "cordis.stability-eval-current/4"
+          : postchange
+            ? "cordis.stability-eval-postchange/1"
+            : "cordis.stability-eval-baseline/2",
       evidenceKind,
       ...identity,
       contentHash: manifest.contentHash,
+      ...(experiment ? { experimentHash: experiment.contentHash } : {}),
       records,
       metrics: computeStabilityMetrics(records),
       verdict,

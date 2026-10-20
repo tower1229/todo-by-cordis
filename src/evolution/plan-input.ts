@@ -7,7 +7,11 @@ import type { RequirementGate, WorkflowRule } from "../shared/assistant.js";
 import type { MemberAcceptanceCase } from "../shared/acceptance-cases.js";
 import type { BusinessExtensions } from "../server/business-verification.js";
 import type { WorkflowDefinition } from "../server/business/contracts.js";
+import { sourceFieldCandidates } from "./field-identity.js";
+import { admissionResolved, type RequestAdmission } from "./request-admission.js";
 import { compilePrimaryOperations } from "./planning-operations.js";
+import { operationPreparation } from "./obligation-derivation.js";
+import { schedulePolicySemantics, type SchedulePolicyCheck } from "../shared/schedule-policy.js";
 
 const text = { type: "string" };
 const list = <T extends Record<string, unknown>>(items: T, maxItems = 50) => ({
@@ -74,6 +78,7 @@ export const businessExpectationsSchema = list(
   {
     anyOf: [
       object({ kind: kind("behavior", "preserve-ui") }),
+      object({kind:kind("schedule-policy"),action:text,policies:{...list(kind(...Object.keys(schedulePolicySemantics)),2),minItems:1}}),
       object(
         { kind: kind("field"), field: text, initial, examples: list(text, 8) },
         ["kind", "field"],
@@ -184,7 +189,7 @@ export function planSchemaFor(
           quote: text,
           type: kind("behavior", "interface", "compatibility", "constraint"),
           expectations: businessExpectationsSchema,
-        }),
+        }, ["quote", "type", "expectations"]),
         50,
       ),
       uses: optionalList(
@@ -193,7 +198,7 @@ export function planSchemaFor(
       intent: kind("improve", "repair"),
       acceptanceReason: text,
     },
-    ["summary", "requirements"],
+    ["requirements"],
   );
 }
 export const planInputSchema = planSchemaFor();
@@ -203,6 +208,7 @@ type CaseInput = Omit<MemberAcceptanceCase, "member" | "name"> & {
 };
 type Expectation =
   | { kind: "behavior" | "preserve-ui" }
+  | {kind:"schedule-policy";action:string;policies:SchedulePolicyCheck[]}
   | {
       kind: "field";
       field: string;
@@ -249,8 +255,11 @@ type NormalizedInput = {
 };
 export type PlanInput = Omit<
   NormalizedInput,
-  "workflow" | "members" | "uses"
+  "workflow" | "members" | "uses" | "summary" | "requirements"
 > & {
+  /** Optional model annotations are never specification authority. */
+  summary?: string;
+  requirements: (Omit<NormalizedInput["requirements"][number], "description"> & { description?: string })[];
   changes?:
     | {
         target: string;
@@ -287,9 +296,13 @@ function normalizeInput(
   value: PlanInput,
   context: PlanContext,
 ): NormalizedInput {
-  const { changes, uses, ...business } = value;
+  const { changes, uses, summary: _annotation, requirements: claims, ...business } = value;
   const input: NormalizedInput = {
     ...business,
+    summary: [...new Set(claims.map(r => r.quote))].join("；").slice(0, 5000),
+    requirements: claims
+      .filter((r,i)=>claims.findIndex(other=>hash({quote:other.quote,type:other.type,expectations:other.expectations})===hash({quote:r.quote,type:r.type,expectations:r.expectations}))===i)
+      .map(r => ({ ...r, description: r.quote })),
     workflow: null,
     members: [],
     uses: (uses ?? []).map((need) => ({
@@ -376,7 +389,10 @@ export function compilePlanInput(
   value: unknown,
   context: PlanContext,
   sources: RequirementGate["sources"],
+  admission?: RequestAdmission,
 ) {
+  if (admission && (!admissionResolved(admission) || hash(admission.sources) !== hash(sources) || ("versionId" in context && admission.baseVersion !== context.versionId)))
+    throw new Error("需求预检绑定失效，不能复用来源裁决");
   const errors = schemaProblems(value, planSchemaFor(context));
   if (errors.length) throw new Error("业务计划契约：" + errors.join("；"));
   const input = normalizeInput(value as PlanInput, context);
@@ -400,6 +416,18 @@ export function compilePlanInput(
   const workflow = JSON.parse(context.files["active-contract"].content) as WorkflowDefinition;
   const rules = input.workflow?.fields ?? previous.rules ?? [];
   const existingFields=new Set([...(workflow.fields??[]).map(f=>f.key),...context.capabilities.flatMap(c=>c.registeredFields??[])]);
+  const fieldCandidates = input.requirements.flatMap(r => sources
+    .filter(s=>r.quote.trim() && s.text.includes(r.quote))
+    .flatMap(s=>r.expectations.flatMap(e=>e.kind === "field" ? [{
+      requirement:{sourceRevision:s.id,sourceQuote:r.quote}, field:{field:e.field},
+    }]:[])));
+  const resolveInitialField = (m:RequestAdmission["initialStates"][number] | RequestAdmission["initialMeanings"][number]) => {
+    if (m.target) return fieldCandidates.some(c=>c.field.field===m.target!.field) ? m.target.field : undefined;
+    const keys = new Set(sourceFieldCandidates(fieldCandidates,m,rules).map(c=>c.field.field));
+    return keys.size===1 && !existingFields.has([...keys][0]) ? [...keys][0] : undefined;
+  };
+  const logicalFields = new Set(admission?.initialStates.map(resolveInitialField).filter((f):f is string=>f!==undefined));
+  const displayFields = new Set(admission?.initialMeanings.filter(m=>admission.presentations.some(p=>p.intentId===m.id)).map(resolveInitialField));
   if (rules.some((r) => r.minLength > r.maxLength))
     throw new Error("字段长度规则无效");
   const scope: string[] = [];
@@ -476,6 +504,9 @@ export function compilePlanInput(
     for (const c of member.cases)
       memberCases.push(named(c, member.pluginId) as MemberAcceptanceCase);
     const selected = new Set(member.features ?? []);
+    for (const need of input.uses ?? [])
+      if (need.member===member.pluginId && Object.hasOwn(features,need.feature))
+        selected.add(need.feature as keyof typeof features);
     if (member.operation === "upgrade")
       for (const feature of Object.keys(features) as (keyof typeof features)[])
         if (
@@ -488,7 +519,12 @@ export function compilePlanInput(
           )
         )
           selected.add(feature);
-    if (member.cases.length) selected.add("commands");
+    const primaryActions = new Set(workflow.actions.map(a => a.id));
+    if (member.cases.some(c => !primaryActions.has(c.action))) selected.add("commands");
+    if (member.cases.some(c => primaryActions.has(c.action)) && !selected.has("beforeCommit"))
+      throw new Error(`跨提供者案例 ${member.pluginId} 不能擅自推导钩子方案；应明确声明 beforeCommit，或使用主工作流及受支持的时序义务`);
+    if (selected.has("beforeCommit") && ![...member.cases,...(previous.memberCases ?? []).filter(c => c.member === member.pluginId)].some(c => primaryActions.has(c.action)))
+      throw new Error(`task.beforeCommit / ${member.pluginId} 缺少主工作流动作的冻结案例；成员自有命令不能证明钩子义务`);
     for (const feature of selected)
       changes.push({
         capability: features[feature],
@@ -539,13 +575,26 @@ export function compilePlanInput(
       providerId: context.pluginId,
       checker: "workflow/1",
     },
-    ...(input.uses ?? []).map((need) => {
+    ...[...(input.uses ?? []), ...changes.filter(c => c.capability === "task.beforeCommit")
+      .filter(c => !input.uses?.some(need => need.member === c.provider.slice(7) && need.feature === "beforeCommit"))
+      .map(c => ({member:c.provider.slice(7),feature:"beforeCommit" as const}))].map((need) => {
       const interfaceId = usedFeatures[need.feature];
       const current = context.capabilities.find(
         (c) => c.providerId === need.member && c.interfaceId === interfaceId,
       );
       const checker = capabilityChecker(interfaceId);
+      if (!checker && !executableMemberInterfaces.some(id => id === interfaceId))
+        throw new Error([
+          ...(current?.authorized === false ? [`所需能力未授权：${interfaceId} / ${need.member}`] : []),
+          `宿主尚不支持执行该接口：${interfaceId} / ${need.member}`,
+        ].join("；"));
+      if (!checker)
+        throw new Error(
+          `${interfaceId} / ${need.member}：运行时接口尚无可信业务检查器，不能编译为可验收依赖`,
+        );
+      const candidate=Object.hasOwn(features,need.feature)&&input.members.some(m=>m.pluginId===need.member&&(m.operation==="add"||m.operation==="upgrade"));
       if (
+        !candidate &&
         current?.ready &&
         (!checker || !current.checkerCoverage.includes(checker))
       )
@@ -555,10 +604,11 @@ export function compilePlanInput(
       return {
         interfaceId,
         providerId: need.member,
+        ...(candidate?{verification:"candidate" as const}:{}),
         ...(current?.contractVersion
           ? { contractVersion: current.contractVersion }
           : {}),
-        ...(checker && current?.checkerCoverage.includes(checker)
+        ...(checker && (candidate || current?.checkerCoverage.includes(checker))
           ? { checker }
           : {}),
       };
@@ -593,7 +643,7 @@ export function compilePlanInput(
         hash({
           quote: r.quote,
           type: r.type,
-          description: r.description,
+          subjects: r.expectations.map(e => ({kind:e.kind,...("field" in e?{field:e.field}:{}),...("action" in e?{action:e.action}:{}),...("state" in e?{state:e.state}:{})})),
         }).slice(0, 24);
     const obligations: Row[] = [];
     for (const e of r.expectations.filter(
@@ -601,6 +651,10 @@ export function compilePlanInput(
     )) {
       if (e.kind === "behavior") {
         obligations.push({ kind: "backend" });
+        continue;
+      }
+      if (e.kind === "schedule-policy") {
+        obligations.push(e);
         continue;
       }
       if (e.kind === "preserve-ui" || e.kind === "history") {
@@ -635,12 +689,10 @@ export function compilePlanInput(
                 c.state === workflow.initialState &&
                 (!Object.keys(c.fields).length||!existingFields.has(e.field)) &&
                 Object.hasOwn(c.expected.fields, e.field) &&
-                c.expected.fields[e.field] !== c.fields[e.field] &&
-                (!e.examples ||
-                  e.examples.includes(c.expected.fields[e.field])),
+                c.expected.fields[e.field] !== c.fields[e.field],
             )
             .map((c) => ({
-              steps: [{ kind: "action", action: c.action, input: c.input }],
+              steps: [...operationPreparation(operations,c,workflow.initialState,e.field),{ kind: "action", action: c.action, input: c.input }],
               value:
                 c.expected.kind === "commit" ? c.expected.fields[e.field] : "",
             }));
@@ -651,7 +703,10 @@ export function compilePlanInput(
         obligations.push({
           kind: "field",
           field: e.field,
-          initial: e.initial ?? { kind: "baseline" },
+          // One source-bound field decision applies to every occurrence of that identity.
+          // Independent full-source display review still guards omitted explicit UI requirements.
+          initial: logicalFields.has(e.field) && !displayFields.has(e.field)
+            ? {kind:"baseline"} : e.initial ?? {kind:"baseline"},
           scenarios,
         });
         continue;

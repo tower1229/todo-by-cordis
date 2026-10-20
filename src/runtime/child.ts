@@ -3,6 +3,7 @@ import { posix } from "node:path";
 import { Context, FiberState } from "cordis";
 import { pathToFileURL } from "node:url";
 import type { RuntimePluginTarget } from "../release/types.js";
+import { hostWorkflowService } from "./workflow-protocol.js";
 
 type ChildPlugin = RuntimePluginTarget & {
   modules?: Record<string, string>;
@@ -111,7 +112,13 @@ for (const plugin of plugins) {
   const loaded = await loadPlugin(plugin);
   if (!loaded || typeof loaded !== "object")
     throw new Error("Invalid service export");
-  loadedServices.set(plugin.pluginId, loaded as Record<string, unknown>);
+  if (plugin.workflowProtocol && plugin.role !== "workflow")
+    throw new Error("辅助成员不能接管宿主工作流协议");
+  if (plugin.workflowProtocol && plugin.workflowProtocol.definition.id !== plugin.pluginId)
+    throw new Error("宿主工作流协议不属于当前提供者");
+  loadedServices.set(plugin.pluginId, plugin.workflowProtocol
+    ? hostWorkflowService(loaded as Record<string, unknown>, plugin.workflowProtocol)
+    : loaded as Record<string, unknown>);
 }
 
 const ctx = new Context();

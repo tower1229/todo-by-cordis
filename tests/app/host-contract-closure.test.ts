@@ -171,7 +171,7 @@ for (const corrupted of [false, true])
             const input = JSON.parse(request.message!);
             for (const bound of input.plan.binding.materials)
               assert.ok(
-                input.materials.documents.some(
+                input.materials.catalog.some(
                   (doc: { ref: string; hash: string }) =>
                     doc.ref === bound.ref && doc.hash === bound.hash,
                 ),

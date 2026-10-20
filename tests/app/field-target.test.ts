@@ -6,6 +6,7 @@ import {
   fieldFacts,
   fieldTargetId,
   fieldTargets,
+  baselineFields,
 } from "../../src/evolution/field-identity.js";
 import { technicalFacts } from "../../src/evolution/technical-facts.js";
 import {
@@ -52,6 +53,18 @@ const payload = (target: unknown) => ({
 });
 const parse = (target: unknown) =>
   parseAdmission(JSON.stringify(payload(target)), "base", sources, facts);
+
+test("已注册数据字段没有UI贡献时仍有宿主身份，有贡献时保留精确界面身份", () => {
+  const context = {pluginId:"primary", files:{"active-contract":{content:JSON.stringify({fields:[]}),hash:"base"}},
+    registeredFields:[{providerId:"tags",key:"tags",label:"标签"},{providerId:"due",key:"dueAt",label:"截止时间"}],uiContributions:[]};
+  const fields = baselineFields(context);
+  assert.deepEqual(fields,[{member:"tags",field:"tags",label:"标签"},{member:"due",field:"dueAt",label:"截止时间"}]);
+  assert.equal(fieldTargets(fieldFacts(fields)).length,2);
+  assert.deepEqual(baselineFields({...context,uiContributions:[{id:"tags-detail",providerId:"tags",fields:[{key:"tags",label:"标签"}],actions:[]}]}),[
+    {member:"due",field:"dueAt",label:"截止时间"},
+    {member:"tags",contribution:"tags-detail",field:"tags",label:"标签"},
+  ]);
+});
 
 test("已有字段以宿主目标绑定，不支持的初始要求仍在预检裁决后阻塞", () => {
   const a = parse({ kind: "existing", targetId });

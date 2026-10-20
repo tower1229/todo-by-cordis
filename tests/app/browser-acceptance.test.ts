@@ -8,6 +8,7 @@ import { verifyViaIsolatedWorkspace } from "../../src/server/workspace-acceptanc
 import {
   BrowserAssertionError,
   BrowserEnvironmentError,
+  BrowserDefinitionError,
   browserEnvironment,
   verifyBrowser,
 } from "../../src/server/browser-acceptance.js";
@@ -29,6 +30,7 @@ import {
 import { compileReferences } from "../../src/evolution/references.js";
 import { ExecutionDriver } from "./execution-fixture.js";
 import { hash } from "../../src/release/storage.js";
+import { dueAutoExpireSource } from "../../src/server/capability-guides.js";
 
 async function workspace(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), "browser-gate-"));
@@ -49,6 +51,30 @@ async function settle(e: Evolution): Promise<AssistantRun> {
   }
   throw new Error(`timeout: ${JSON.stringify((await e.observe()).run)}`);
 }
+
+test("冻结页面步骤不能触发内部定时命令：保留定义故障与截图，不能要求候选开放内部入口", async t => {
+  const w = await workspace(t);
+  const base = w.activeVersion();
+  const before = {tasks:w.query(),composition:w.composition()};
+  const member = w.release.record({pluginId:"due",name:"截止",service:"plugin:due",contractVersion:"extensions/1",source:dueAutoExpireSource,code:dueAutoExpireSource,definition:{},evidence:{passed:true,origin:"model-stub-contract-regression"}});
+  const candidate = w.release.record({pluginId:base.pluginId,name:base.name,service:base.service,contractVersion:base.contractVersion,source:base.source,code:base.code,definition:base.definition,parentId:base.id,evidence:{passed:false},members:[
+    {pluginId:base.pluginId,role:"workflow",enabled:true},
+    {pluginId:member.pluginId,role:"auxiliary",enabled:true,versionId:member.id},
+  ]});
+  const cases:BrowserCase[]=[{id:"frozen-internal-action",task:"new",steps:[{kind:"action",member:"due",action:"expire",input:{scheduledAt:"2030-01-01T00:00:00.000Z"}}]}];
+  const requirement:Requirement={id:"scheduled-ui",description:"到期页面状态",sourceRevision:"request:1",sourceQuote:"到期页面状态",type:"interface",checks:[{checker:"browser/1",caseId:cases[0].id}]};
+  const error = await verifyBrowser(w,candidate,base,cases,[requirement],hash(cases),new AbortController().signal).then(()=>undefined,error=>error as unknown);
+  assert.ok(error instanceof Error);
+  assert.equal(error.name,"BrowserDefinitionError");
+  assert.ok(error instanceof BrowserEnvironmentError && error.evidence);
+  const failed=error.evidence.results.find(r=>r.caseId===cases[0].id)!;
+  assert.equal(failed.status,"failed");
+  assert.deepEqual(failed.requirementIds,[requirement.id]);
+  assert.match(failed.diagnostic ?? "",/内部|定时|通道/);
+  assert.ok(failed.screenshot);await access(failed.screenshot);
+  assert.deepEqual(JSON.parse(await readFile(join(error.evidence.directory,"cleanup.json"),"utf8")),{browserClosed:true,serviceClosed:true,workspaceClosed:true,aborted:false});
+  assert.deepEqual({tasks:w.query(),composition:w.composition()},before);
+});
 
 test("不能增加计数是业务约束：隐藏或可见拒绝均通过，可见且实际增加必须失败", async t => {
   const w = await workspace(t);
@@ -697,12 +723,13 @@ test("取消真实浏览器检查会释放浏览器、隔离服务和工作区�
   assert.equal(w.query().total, 0);
 });
 
-test("检查器故障单独阻塞，不让模型修业务源码或重置候选预算（故障桩）", async (t) => {
+for (const kind of ["environment", "definition"] as const)
+test(`${kind === "definition" ? "冻结案例定义" : "检查器环境"}故障单独阻塞，不让模型修业务源码或重置候选预算（故障桩）`, async (t) => {
   const w = await workspace(t);
   const before = { tasks: w.query(), composition: w.composition() };
   class FaultDomain extends EvolutionDomain {
     override async candidate() {
-      throw new BrowserEnvironmentError("browser/1 检查器故障桩");
+      throw kind === "definition" ? new BrowserDefinitionError("browser/1 冻结定义故障桩") : new BrowserEnvironmentError("browser/1 检查器故障桩");
     }
   }
   const e = new Evolution(
@@ -727,11 +754,13 @@ test("检查器故障单独阻塞，不让模型修业务源码或重置候选�
   });
   const finished = await settle(e);
   assert.equal(finished.status, "blocked");
+  assert.equal(finished.stop?.kind, kind === "definition" ? "planning-gate" : "environment");
+  assert.equal(finished.stop?.code, kind === "definition" ? "browser-definition" : "browser-environment");
   assert.equal(finished.budget?.candidatesRemaining, 2);
   const candidates = (await e.observe()).candidates!;
   assert.equal(candidates.length, 1);
   assert.equal(candidates[0].passed, false);
-  assert.match(candidates[0].diagnostic!, /检查器故障桩/);
+  assert.match(candidates[0].diagnostic!, /故障桩/);
   assert.deepEqual({ tasks: w.query(), composition: w.composition() }, before);
 });
 

@@ -1,6 +1,16 @@
-import type { RequirementReview } from "../shared/assistant.js";
+import type { RequirementReview, InvestigatedPlan } from "../shared/assistant.js";
 import type { ReviewLedger } from "../shared/change-spec.js";
 import { hash } from "../release/storage.js";
+import { technicalFacts } from "./technical-facts.js";
+
+/** Progress is evidence for this claim, never an unrelated edit to the whole plan. */
+export function reviewEvidence(plan:InvestigatedPlan,sources:{id:string;text:string}[],issue:RequirementReview["issues"][number]) {
+  const subject=issue.target?.subject;
+  const requirement=plan.requirements?.find(r=>r.id===subject);
+  const fact=technicalFacts(plan).find(f=>f.id===subject);
+  return hash({source:sources.find(s=>s.id===issue.sourceRevision),target:issue.target,baseVersion:plan.baseVersion,
+    ...(fact?{fact}:requirement?{requirement,workflowRules:plan.workflowRules,cases:plan.cases,memberCases:plan.memberCases,extensions:plan.extensions}:{requirements:plan.requirements,workflowRules:plan.workflowRules})});
+}
 
 /** The host tracks claims; it never decides which contradictory business claim is true. */
 export function recordReview(
@@ -8,6 +18,7 @@ export function recordReview(
   review: RequirementReview,
   revision: number,
   definitionHash: string,
+  evidenceFor?: (issue:RequirementReview["issues"][number])=>string,
 ) {
   const blockers: string[] = [];
   const previousAttempts = structuredClone(ledger.findings);
@@ -20,6 +31,7 @@ export function recordReview(
     else finding.status = "resolved";
   }
   for (const issue of review.issues) {
+    const evidenceHash=evidenceFor?.(issue);
     const key = hash({
       source: issue.sourceRevision,
       target: issue.target ?? { quote: issue.sourceQuote, kind: issue.kind },
@@ -40,7 +52,7 @@ export function recordReview(
     }
     const repeated = previousAttempts.filter(f => f.key === key).find(
       (f) =>
-        f.definitionHash === definitionHash &&
+        (evidenceHash && f.evidenceHash ? f.evidenceHash === evidenceHash : f.definitionHash === definitionHash) &&
         f.revision === revision &&
         f.issue.kind === issue.kind &&
         f.issue.stance === issue.stance,
@@ -57,6 +69,7 @@ export function recordReview(
         key,
         revision,
         definitionHash,
+        ...(evidenceHash?{evidenceHash}:{}),
         issue,
         status:
           opposite ||

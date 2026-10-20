@@ -9,6 +9,8 @@ import {
   browserViewports,
 } from "./browser-acceptance.js";
 import { workflowTextVector } from "../shared/checker-semantics.js";
+import type { WorkflowProtocolOwner, WorkflowProtocolProfile } from "../shared/workflow-protocol.js";
+import { workflowProtocolKernelHash } from "../release/workflow-protocol.js";
 import { obligationFailure } from "../evolution/acceptance-obligations.js";
 import { technicalFacts } from "../evolution/technical-facts.js";
 import {
@@ -23,11 +25,13 @@ import {
 } from "./affected-acceptance.js";
 import {
   assertWorkspaceCaseCoverage,
+  beforeCommitArtifactHash,
   requireAffectedAcceptanceForMemberChange,
   verifyViaIsolatedWorkspace,
   type WorkspaceAcceptanceCase,
   type WorkspaceCaseEvidence,
 } from "./workspace-acceptance.js";
+import { schedulePolicyChecks, type SchedulePolicyEvidence } from "../shared/schedule-policy.js";
 import {
   capture,
   planBindingFailure,
@@ -277,8 +281,9 @@ export type Plugin = {
   onTaskEvent?(data:TaskEvent):void|HookAnnotations;
 };
 `;
-function workflowContract(spec?: import("../shared/change-spec.js").ChangeSpec) {
-  return contract + (spec?.workflowDefinition ? `\nexport const frozenWorkflow: WorkflowDefinition = ${JSON.stringify(spec.workflowDefinition)};` : "");
+function workflowContract(spec?: import("../shared/change-spec.js").ChangeSpec, owner:WorkflowProtocolOwner="model") {
+  return contract + (spec?.workflowDefinition ? `\nexport const frozenWorkflow: WorkflowDefinition = ${JSON.stringify(spec.workflowDefinition)};` : "") +
+    (owner === "host" ? '\nexport type WorkflowBusiness = Omit<Plugin,"describe"|"decide"> & {decide?: (data:Parameters<Plugin["decide"]>[0])=>WorkflowDecision|undefined};' : "");
 }
 
 export class EvolutionDomain implements Domain {
@@ -299,8 +304,8 @@ export class EvolutionDomain implements Domain {
   ) {
     return readInvestigation(name, args, context, delivered);
   }
-  parse(value: unknown, context: Investigation, seen: PlanEvidence[], sources: import("../shared/assistant.js").RequirementGate["sources"] = []) {
-    const parsed = compilePlanDraft(value, context, seen, sources);
+  parse(value: unknown, context: Investigation, seen: PlanEvidence[], sources: import("../shared/assistant.js").RequirementGate["sources"] = [], admission?: import("../evolution/request-admission.js").RequestAdmission) {
+    const parsed = compilePlanDraft(value, context, seen, sources, admission);
     if (
       this.workspace.composition().revision !== context.revision ||
       this.workspace.activeVersion().id !== context.versionId
@@ -474,12 +479,40 @@ export class EvolutionDomain implements Domain {
   }
   verifyAcceptance(versionId: string, plan: InvestigatedPlan) {
     const version = this.workspace.release.get(versionId);
+    const protocol=plan.binding?.workflowProtocol;
+    if (!protocol || protocol.implementationHash !== workflowProtocolKernelHash())
+      throw new AppError("CANDIDATE_MISMATCH","工作流协议执行内核与冻结计划不一致，请重新规划",409);
+    const primary=(composition:Version)=>{
+      const member=resolveVersionMembers(composition).find(m=>m.enabled&&m.role==="workflow");
+      if (!member) throw new AppError("CANDIDATE_MISMATCH","候选缺少冻结主工作流成员",409);
+      return member.versionId && member.versionId!==composition.id ? this.workspace.release.get(member.versionId) : composition;
+    };
+    const actualPrimary=primary(version), basePrimary=primary(this.workspace.release.get(plan.baseVersion!));
+    const unchanged=actualPrimary.id===basePrimary.id;
+    if (!unchanged && protocol.owner==="host" && !plan.changeSpec?.workflowDefinition)
+      throw new AppError("CANDIDATE_MISMATCH","宿主协议缺少冻结定义，请重新规划",409);
+    const expectedProfile=unchanged ? basePrimary.workflowProtocol : protocol.owner==="host" ? {
+      version:"host-workflow/1",definition:plan.changeSpec!.workflowDefinition,rules:plan.workflowRules,
+    } : undefined;
+    if (hash(actualPrimary.workflowProtocol)!==hash(expectedProfile))
+      throw new AppError("CANDIDATE_MISMATCH","候选工作流协议配置与冻结要求不一致，不能只重算证据摘要",409);
     const evidence = version.evidence as {
       passed?: boolean;
       requirementGate?: InvestigatedPlan["requirementGate"];
       browser?: import("../shared/browser-cases.js").BrowserEvidence;
+      checks?: string[];
+      scheduleCases?: SchedulePolicyEvidence[];
     };
     const browser = evidence.browser;
+    const policies=(plan.requirements??[]).flatMap(r=>(r.obligations??[]).filter(o=>o.kind==="schedule-policy"));
+    const policyRefs=policies.flatMap(schedulePolicyChecks);
+    const timingChecker=plan.binding?.checkers.find(c=>c.id==="schedule/1")?.version;
+    const programHash=candidateProgramHash(this.workspace,version);
+    if (hash(policyRefs.map(c=>c.caseId).sort())!==hash((evidence.scheduleCases??[]).map(c=>c.caseId).sort()) ||
+        policies.some(policy=>schedulePolicyChecks(policy).some(ref=>!evidence.checks?.includes(ref.caseId)||
+          !evidence.scheduleCases?.some(receipt=>receipt.caseId===ref.caseId&&receipt.status==="passed"&&receipt.policyHash===hash(policy)&&
+            receipt.checkerVersion===timingChecker&&!!timingChecker&&receipt.candidateProgramHash===programHash))))
+      throw new AppError("CANDIDATE_MISMATCH","候选缺少与冻结时序策略及精确产物绑定的验收证据，请重新验证",409);
     const env = browserEnvironment();
     const expectedCases = [
       "host:basic-existing",
@@ -565,11 +598,14 @@ export class EvolutionDomain implements Domain {
   generation(target: Target) {
     const base = this.workspace.release.get(target.baseVersion);
     const goal = target.payload as Goal;
+    const owner=goal.binding?.workflowProtocol?.owner ?? "model";
     return {
-      contract: workflowContract(goal.changeSpec),
+      contract: workflowContract(goal.changeSpec,owner),
       source: base.source,
       scaffold: {
-        workflowTemplate: `import { frozenWorkflow } from './contract.js';
+        workflowTemplate: owner === "host" ? `import type { WorkflowBusiness } from './contract.js';
+const business: WorkflowBusiness = {};
+export default business;` : `import { frozenWorkflow } from './contract.js';
 import type { Plugin } from './contract.js';
 const plugin: Plugin = {
   describe() { return frozenWorkflow; },
@@ -598,7 +634,7 @@ export default plugin;`,
           "宿主仅向已授权的主工作流 business/* 构建注入 business/contract.ts；成员源码不接受契约注入",
       },
       instruction: `实现冻结 change/3 规格。submit_candidate 只提交 files:[{path,content}] 与 members:[{pluginId,source}] 的实际业务改动；无改动用 []。宿主选择当前失败候选为修正基础、继承未改文件并计算全部身份与差异摘要。不得提交 baseVersion/baseHash/requirementSeal/parentCandidateId/before 或验证报告。
-主工作流严格 TypeScript，从 ./contract.js 导入 Plugin 类型及宿主 frozenWorkflow 值；describe 返回 frozenWorkflow，decide 实现冻结业务规则。只提交入口及授权业务模块，view.ts/config.json/compatibility.json 由宿主生成，不提交重复字段定义。禁止 any、enum、类型抑制、依赖和 IO。辅助成员为独立自包含模块，无任何导入，export default contribute/decide，声明 commands，输入缺失用 input-required。只支持 task.detail UI 贡献。辅助改动 files=[] 精确继承主工作流。范围或保护变更用 report_blocker。构建、后端与真实浏览器全部通过仍等待独立应用确认。`,
+${owner === "host" ? "主工作流严格 TypeScript，从 ./contract.js 导入 WorkflowBusiness 类型；宿主提供冻结 describe、标准完成/重开、缺失必填表单、trim 和 Unicode 长度协议。decide 可选，用于自定义业务动作、标准动作的业务决策或拒绝文案；返回 undefined 使用标准协议。业务结果仍须满足全部冻结验收，宿主不修正业务代码产生的错误结果。" : "主工作流严格 TypeScript，从 ./contract.js 导入 Plugin 类型及宿主 frozenWorkflow 值；describe 返回 frozenWorkflow，decide 实现冻结业务规则。"}只提交入口及授权业务模块，view.ts/config.json/compatibility.json 由宿主生成，不提交重复字段定义。禁止 any、enum、类型抑制、依赖和 IO。辅助成员为独立自包含模块，无任何导入，export default contribute/decide，声明 commands，输入缺失用 input-required。只支持 task.detail UI 贡献。辅助改动 files=[] 精确继承主工作流。范围或保护变更用 report_blocker。构建、后端与真实浏览器全部通过仍等待独立应用确认。`,
     };
   }
   readMember(pluginId: string, versionId: string) {
@@ -796,7 +832,7 @@ export default plugin;`,
         );
       const built = await this.workspace.release.buildBundle(
         files,
-        workflowContract(goal.changeSpec),
+        workflowContract(goal.changeSpec,goal.binding?.workflowProtocol?.owner),
         signal,
       );
       code = built.outputs["business/entry.js"];
@@ -908,6 +944,13 @@ export default plugin;`,
       { ...base, pluginId: goal.pluginId, name: goal.name, members },
       (id) => this.workspace.release.get(id),
     );
+    let workflowProtocol:WorkflowProtocolProfile|undefined=pinWorkflow ? base.workflowProtocol : undefined;
+    if (!pinWorkflow && goal.binding?.workflowProtocol?.owner === "host") {
+      if (!goal.changeSpec?.workflowDefinition)
+        throw new ProtectedCandidateError("宿主协议缺少冻结工作流定义，必须重新规划");
+      definition=structuredClone(goal.changeSpec.workflowDefinition);
+      workflowProtocol={version:"host-workflow/1",definition,rules:structuredClone(goal.fields)};
+    }
     const candidate = this.workspace.release.record({
       pluginId: goal.pluginId,
       name: goal.name,
@@ -918,6 +961,7 @@ export default plugin;`,
       code,
       ...(bundle ? { bundle } : {}),
       definition,
+      ...(workflowProtocol ? {workflowProtocol} : {}),
       evidence: { passed: false, rules: goal.fields },
       members,
     });
@@ -1095,6 +1139,9 @@ export default plugin;`,
               checks.push(`member.upgraded:${member.pluginId}:disabled`);
               continue;
             }
+            const hasCommands = memberRegistrations.get(member.pluginId)?.capabilities.some(c =>
+              c.interfaceId === "command.register" && c.count > 0 && c.status === "active");
+            if (hasCommands) {
             const decision = await runtime.invoke<WorkflowDecision>(
               "decide",
               {
@@ -1116,6 +1163,7 @@ export default plugin;`,
             );
             if (decision.kind !== "reject")
               throw new Error(`成员未正确装载：${member.pluginId}`);
+            }
             const kind = addedMembers.some(
               (m) => m.pluginId === member.pluginId,
             )
@@ -1207,6 +1255,7 @@ export default plugin;`,
       });
     await prepared.runtime.close();
     const workspaceCasesEvidence: WorkspaceCaseEvidence[] = [];
+    const scheduleCasesEvidence: SchedulePolicyEvidence[] = [];
     let browser:
       | import("../shared/browser-cases.js").BrowserEvidence
       | undefined;
@@ -1235,6 +1284,10 @@ export default plugin;`,
               ? [{ member: c.providerId, fields: c.registeredFields }]
               : [],
           ),
+          [...new Set([
+            ...(verifyGoal.capabilities ?? []).filter(c => c.capability === "task.beforeCommit" && c.provider.startsWith("member:")).map(c => c.provider.slice(7)),
+            ...(verifyGoal.binding?.capabilities ?? []).filter(c => c.interfaceId === "task.beforeCommit").map(c => c.providerId),
+          ])],
         )),
       );
       if (verifyGoal.binding?.checkers.some((item) => item.id === "schedule/1"))
@@ -1244,6 +1297,8 @@ export default plugin;`,
             candidate,
             verifyGoal.memberCases ?? [],
             signal,
+            (verifyGoal.requirements??[]).flatMap(r=>(r.obligations??[]).filter(o=>o.kind==="schedule-policy")),
+            receipt=>scheduleCasesEvidence.push({...receipt,checkerVersion:verifyGoal.binding?.checkers.find(c=>c.id==="schedule/1")?.version,candidateProgramHash:candidateProgramHash(this.workspace,candidate)}),
           )),
         );
       stage("浏览器验收");
@@ -1276,6 +1331,7 @@ export default plugin;`,
           passed: false,
           rules: goal.fields,
           workspaceCases: workspaceCasesEvidence,
+          scheduleCases: scheduleCasesEvidence,
           changeSpec: goal.changeSpec,
           requirements: goal.requirements,
           browserCases: goal.browserCases,
@@ -1331,6 +1387,16 @@ export default plugin;`,
       },
       (id) => this.workspace.release.get(id),
     );
+    for (const receipt of workspaceCasesEvidence) {
+      if (!receipt.beforeCommit) continue;
+      const member = verifiedMembers.find(m => m.pluginId === receipt.beforeCommit!.providerId);
+      if (!member?.versionId) throw new Error("钩子验收证据缺少最终成员身份");
+      const actual = this.workspace.release.get(receipt.beforeCommit.providerVersionId);
+      const final = this.workspace.release.get(member.versionId);
+      if (beforeCommitArtifactHash(actual) !== beforeCommitArtifactHash(final))
+        throw new Error("钩子验收与最终成员产物不一致");
+      receipt.beforeCommit.finalProviderVersionId = member.versionId;
+    }
     for (const declaration of goal.capabilities ?? []) {
       if (!declaration.provider.startsWith("member:")) continue;
       const pluginId = declaration.provider.slice(7);
@@ -1376,6 +1442,7 @@ export default plugin;`,
       code,
       ...(bundle ? { bundle } : {}),
       definition: actual,
+      ...(workflowProtocol ? {workflowProtocol} : {}),
       evidence: {
         passed: true,
         changeSpec: goal.changeSpec,
@@ -1391,6 +1458,7 @@ export default plugin;`,
         memberUpgrades: plannedUpgrades,
         memberCases: goal.memberCases,
         workspaceCases: workspaceCasesEvidence,
+        scheduleCases: scheduleCasesEvidence,
         checks,
         systemChecks,
         capabilities,

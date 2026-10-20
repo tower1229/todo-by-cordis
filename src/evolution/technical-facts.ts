@@ -2,19 +2,31 @@ import type {
   InvestigatedPlan,
   RequirementReview,
 } from "../shared/assistant.js";
-import { workflowTextSemantics } from "../shared/checker-semantics.js";
+import { workflowTextSemantics, scheduleCheckSemantics } from "../shared/checker-semantics.js";
 import { hash } from "../release/storage.js";
 import { readOnlyFieldText } from "../shared/field-presentation.js";
 import {isInheritedAvailability,availabilityFacts,type ActionAvailability} from "./action-availability.js";
 import {fieldFacts,type FieldIdentity} from "./field-identity.js";
 import { workflowCheckerRules } from "./checker-rules.js";
 import { capabilityFacts } from "./capability-admission.js";
+import { schedulePolicySemantics } from "../shared/schedule-policy.js";
 
 export type TechnicalFact = {
   id: string;
   properties: Record<string, string>;
+  /** Only declared semantic alternatives can contradict a fact. Identity metadata is read-only. */
+  expectations?: Record<string, readonly string[]>;
   evidenceHash: string;
 };
+
+export function technicalExpectationValues(fact: TechnicalFact, property: string) {
+  const actual = fact.properties[property];
+  return actual === undefined ? [] : [...new Set([actual, ...(fact.expectations?.[property] ?? [])])];
+}
+export function assertTechnicalExpectation(fact: TechnicalFact | undefined, property: string, expected: unknown): asserts expected is string {
+  if (!fact || typeof expected !== "string" || !technicalExpectationValues(fact, property).includes(expected))
+    throw new Error("技术期望缺少宿主属性和值类型绑定；身份与基线元数据不能证明业务能力冲突");
+}
 export type TechnicalDecision = {
   issue: RequirementReview["issues"][number];
   factId: string;
@@ -86,6 +98,13 @@ export function businessChoices(
     ),
   ];
 }
+/** The wording is not an identity: identical questions can concern different operations. */
+export function semanticChoiceProof(plan:Pick<InvestigatedPlan,"requirements"|"workflowRules"|"binding">,id:string) {
+  const target=semanticChoiceTargets(plan).find(t=>t.id===id);
+  if(!target)throw new Error("业务选择缺少宿主目标");
+  const requirement=plan.requirements!.find(r=>r.id===target.requirementId)!;
+  return {proof:{id,hash:hash({target,requirement,rules:plan.workflowRules})},requirement,aspect:target.aspect,subject:target.subject};
+}
 /** A review cannot send arbitrary wording to the user. Questions are host projections. */
 export function reviewQuestion(
   review: RequirementReview,
@@ -156,6 +175,11 @@ export function technicalFacts(
     {
       id: "host-fact:workflow-text",
       properties: Object.fromEntries(workflowCheckerRules.map((rule) => [rule.property, rule.value])),
+      expectations: {
+        validationNormalization: ["trim", "none"],
+        persistenceNormalization: ["trim", "preserve"],
+        lengthMetric: ["unicode-code-point", "utf16-code-unit", "grapheme-cluster", "utf8-byte"],
+      },
     },
     {
       id: "host-fact:browser-error",
@@ -176,6 +200,7 @@ export function technicalFacts(
         auxiliaryMissingField: readOnlyFieldText(undefined),
         origin: "host-protection-not-business-requirement",
       },
+      expectations: { auxiliaryMissingField: [readOnlyFieldText(undefined), ""] },
     },
     {
       id: "host-fact:field-interaction",
@@ -209,6 +234,20 @@ export function technicalFacts(
         historicalPreparation: "baseline-replay-not-candidate-action",
       },
     },
+    ...(plan.binding?.checkers.filter(c => c.id === "schedule/1").map(checker => ({
+      id: "host-fact:checker:schedule/1",
+      properties: {
+        checker: checker.id,
+        checkerHash: checker.version,
+        stage: "candidate-verification-required",
+        execution: scheduleCheckSemantics.execution,
+        scope: "实际候选登记的每个字段型调度；须绑定设置截止与到期动作的冻结成功案例；此事实不代表候选已通过",
+        ...Object.fromEntries(Object.entries(scheduleCheckSemantics.assertions).map(([id, meaning]) => [`assert:${id}`, meaning])),
+        ...Object.fromEntries(Object.entries(schedulePolicySemantics).map(([id, meaning]) => [`policy:${id}`, `仅绑定对应冻结时序义务时执行：${meaning}`])),
+        limits: scheduleCheckSemantics.limits,
+      },
+      expectations: {execution: [scheduleCheckSemantics.execution, "manual-action-only"]},
+    })) ?? []),
     ...plan.workflowRules.map((rule) => ({
       id: `host-fact:workflow-field:${rule.key}`,
       properties: {
@@ -240,10 +279,13 @@ export function technicalFacts(
 /** The host binds each property once; reviewers cannot construct fact/property pairs. */
 export function technicalReviewTargets(plan: Parameters<typeof technicalFacts>[0]) {
   return technicalFacts(plan).flatMap((fact) =>
-    Object.entries(fact.properties).map(([property, actual]) => ({
+    Object.entries(fact.properties)
+      .filter(([property])=>technicalExpectationValues(fact,property).length>1)
+      .map(([property, actual]) => ({
       factId: fact.id,
       property,
       actual,
+      expectedValues: technicalExpectationValues(fact, property),
       evidenceHash: fact.evidenceHash,
     })),
   ).map((target, index) => ({ target: index + 1, ...target }));
@@ -269,6 +311,7 @@ export function adjudicateTechnicalReview(
       );
     const fact = facts.find((f) => f.id === claim.factId);
     const actual = fact?.properties[claim.property];
+    if (actual !== undefined) assertTechnicalExpectation(fact, claim.property, claim.expected);
     const outcome =
       actual === undefined
         ? "unsupported"

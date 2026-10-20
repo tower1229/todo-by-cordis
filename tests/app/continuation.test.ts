@@ -16,7 +16,12 @@ import {
 import { ExecutionDriver } from "./execution-fixture.js";
 
 async function settled(e: Evolution) {
-  const deadline = Date.now() + 60000;
+  // Browser cases and service restarts share the run budget; this waiter must not
+  // truncate a still-valid run before its own host deadline and cleanup.
+  const deadline =
+    Date.now() +
+    ((await e.observe()).run?.budget?.millisecondsRemaining ?? 600_000) +
+    10_000;
   while (Date.now() < deadline) {
     const s = await e.observe();
     if (s.run && !["planning", "executing", "applying"].includes(s.run.status))

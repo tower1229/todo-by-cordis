@@ -61,7 +61,9 @@ export type ChangeSpec = {
   }[];
   choices: { field: string; origin: "implementation"; value: unknown }[];
   invariants: { id: string; origin: "host"; contract: string }[];
+  validationOrigins: import("../evolution/validation-origins.js").ValidationOrigin[];
   hostRules: import("../evolution/checker-rules.js").HostCheckerRule[];
+  hostFacts: import("../evolution/technical-facts.js").TechnicalFact[];
   materials: PlanEvidence[];
 };
 
@@ -77,6 +79,7 @@ export type InvestigationState = {
 };
 
 export type ReviewFinding = {
+  evidenceHash?: string;
   id: string;
   key: string;
   status: "open" | "resolved" | "conflicting";

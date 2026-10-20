@@ -6,6 +6,10 @@ import type {
   InvestigatedPlan,
 } from "../shared/assistant.js";
 import { describeBlockers } from "../shared/assistant.js";
+import {
+  schedulePolicyChecks,
+  schedulePolicySemantics,
+} from "../shared/schedule-policy.js";
 import type { AssistantController } from "./useAssistant.js";
 import { Button, ErrorMessage, Spinner } from "./ui.js";
 
@@ -89,6 +93,17 @@ function CompositionIntentBlock({
 
 function PlanSummary({ plan }: { plan: InvestigatedPlan }) {
   const verification = (check: { checker: string; caseId: string }) => {
+    if (check.checker === "schedule/1") {
+      for (const requirement of plan.requirements ?? []) {
+        for (const obligation of requirement.obligations ?? []) {
+          if (obligation.kind !== "schedule-policy") continue;
+          const index = schedulePolicyChecks(obligation).findIndex(
+            c => c.caseId === check.caseId,
+          );
+          if (index >= 0) return schedulePolicySemantics[obligation.checks[index]];
+        }
+      }
+    }
     if (check.checker === "browser/1") {
       const example = plan.browserCases?.find((c) => c.id === check.caseId);
       if (example) {

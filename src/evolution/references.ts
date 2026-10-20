@@ -15,6 +15,7 @@ import {
 } from "./obligation-derivation.js";
 import { historicalPreparation } from "./historical-preparation.js";
 import {bindAvailability,type ActionAvailability} from "./action-availability.js";
+import { schedulePolicyChecks } from "../shared/schedule-policy.js";
 
 type Row = Record<string, unknown>;
 function row(value: unknown): Row {
@@ -52,6 +53,8 @@ export function compileReferences(
     "memberCases" | "browserCases" | "requirements"
   > & {
     baseVersion?: string;
+    requirementGate?: RequirementGate;
+    fieldIdentities?: import("./field-identity.js").FieldIdentity[];
     actionAvailability?: ActionAvailability;
     uiContributions?: {
       id: string;
@@ -105,6 +108,8 @@ export function compileReferences(
         ids.add("workflow");
       for (const c of inherited.uiContributions ?? [])
         if (c.fields.some((f) => f.key === key)) ids.add(c.providerId);
+      for (const f of inherited.fieldIdentities ?? [])
+        if (f.field === key) ids.add(f.member);
       if (ids.size > 1)
         throw new Error(`浏览器业务引用不存在或身份不唯一：field:${key}`);
       if (ids.size === 1) return [...ids][0];
@@ -305,9 +310,17 @@ export function compileReferences(
         )
       : [];
     if (!raw.length) throw new Error("验收义务列表无效或缺失");
+    for (const policy of obligations.filter(o=>o.kind==="schedule-policy"))
+      requirement.checks.push(...schedulePolicyChecks(policy));
     return { ...requirement, obligations };
   });
   const canonical = requirements.flatMap((r) => r.obligations);
+  const renderable = (requirement: Requirement) => (target: {member: string; contribution?: string}) =>
+    target.member === "workflow" || !!target.contribution ||
+    (requirement.type === "interface" && Array.isArray(draft.capabilityChanges) && draft.capabilityChanges.some(value => {
+      const change = row(value);
+      return change.provider === `member:${target.member}` && change.capability === "ui.slot";
+    }));
   const inputObligation = (requirement:Requirement) => {
     const inputs = draft.workflowRules as import("../shared/assistant.js").WorkflowRule[];
     if (rules.length && inputs.every(r=>typeof r.required==="boolean"&&Number.isInteger(r.minLength)&&Number.isInteger(r.maxLength)) && requirement.checks.some(c=>c.checker==="workflow/1"))
@@ -322,7 +335,7 @@ export function compileReferences(
         rules,
         (steps) => bindSteps(steps, requirement.id),
         canonical,
-        (target) => target.member === "workflow" || !!target.contribution,
+        renderable(requirement),
         lifecycle.existing,
       ),
     );
@@ -384,7 +397,8 @@ export function compileReferences(
       rules,
       (steps) => bindSteps(steps, old.id),
       requirements.flatMap((r) => r.obligations),
-      (target) => target.member === "workflow" || !!target.contribution,
+      renderable(replacement),
+      lifecycle.existing,
     );
     if (derived.some((old) => !regenerated.some((next) => next.id === old.id)))
       throw new Error(
@@ -398,6 +412,11 @@ export function compileReferences(
     replacement.obligations.push(...regenerated);
     requirements.push(replacement);
   }
+  // Inherit accepted obligations before checker binding and technical validation.
+  // Late inheritance in the execution loop must not leave their checkers unbound.
+  if (inherited.requirementGate)
+    for (const old of inherited.requirements??[])
+      if (!requirements.some(r=>r.id===old.id)) requirements.push({...structuredClone(old),obligations:structuredClone(old.obligations??[])});
   const histories = requirements
     .flatMap((r) => r.obligations)
     .filter((o) => o.kind === "history");

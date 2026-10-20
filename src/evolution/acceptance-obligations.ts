@@ -6,6 +6,7 @@ import { historicalPreparation } from "./historical-preparation.js";
 import { obligationCases } from "../shared/acceptance-obligations.js";
 import { hash } from "../release/storage.js";
 import { readOnlyFieldText } from "../shared/field-presentation.js";
+import { schedulePolicyChecks, schedulePolicySemantics, type SchedulePolicyCheck } from "../shared/schedule-policy.js";
 type Outcomes = Pick<
   import("../shared/assistant.js").InvestigatedPlan,
   "memberCases" | "extensions"
@@ -94,6 +95,7 @@ export function compileObligations(
         "text",
         "resolution",
         "unavailable",
+        "policies",
       ],
       ["kind"],
     );
@@ -108,6 +110,21 @@ export function compileObligations(
             index,
           }).slice(0, 24),
     };
+    if (v.kind === "schedule-policy") {
+      row(v,["kind","action","policies"]);
+      const action=bind([{kind:"action",action:text(v.action)}])[0];
+      if (action.kind!=="action" || action.member==="workflow") throw new Error("时序策略必须绑定辅助成员的到期动作");
+      const checks=list(v.policies,1,2).map(policy=>text(policy));
+      if (checks.some(check=>!Object.hasOwn(schedulePolicySemantics,check)) || new Set(checks).size!==checks.length)
+        throw new Error("时序策略检查不支持或重复");
+      const cases=(outcomes.memberCases??[]).filter(c=>c.member===action.member&&c.action===action.action&&c.expected.kind==="commit");
+      if(cases.length!==1) throw new Error("时序策略缺少唯一冻结的到期成功案例");
+      const fired=cases[0];
+      if (fired.expected.kind!=="commit" || !Object.entries(fired.expected.fields).some(([key,value])=>fired.fields[key]!==value))
+        throw new Error("时序策略仅支持具有冻结字段变化的到期效果");
+      const canonicalChecks=Object.keys(schedulePolicySemantics).filter(check=>checks.includes(check)) as SchedulePolicyCheck[];
+      return {...identity,kind:"schedule-policy",action:{kind:"action",member:action.member,action:action.action},checks:canonicalChecks,fireCase:{caseId:`member:${action.member}:${cases[0].name}`,definitionHash:hash(cases[0])}};
+    }
     if (v.kind === "backend-rejection" || v.kind === "feedback") {
       const action = bind([{ kind: "action", action: text(v.action) }])[0];
       if (action.kind !== "action") throw new Error("动作拒绝绑定失败");
@@ -303,6 +320,14 @@ export function obligationFailure(
         )
       )
         reasons.push("后端义务映射不一致");
+      continue;
+    }
+    if (o.kind === "schedule-policy") {
+      const cases=(outcomes.memberCases??[]).filter(c=>c.member===o.action.member&&c.action===o.action.action&&c.expected.kind==="commit");
+      if (!o.checks.length || new Set(o.checks).size!==o.checks.length || o.checks.some(c=>!Object.hasOwn(schedulePolicySemantics,c)) ||
+          cases.length!==1 || o.fireCase.caseId!==`member:${o.action.member}:${cases[0].name}` || o.fireCase.definitionHash!==hash(cases[0]) ||
+          schedulePolicyChecks(o).some(c=>!requirement.checks.some(ref=>hash(ref)===hash(c))))
+        reasons.push("时序策略义务与冻结案例或检查器映射不一致");
       continue;
     }
     if (o.kind === "backend-rejection") {

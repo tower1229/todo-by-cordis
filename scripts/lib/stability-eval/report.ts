@@ -1,6 +1,11 @@
 import { assertManifestFrozen, type FrozenManifest } from "./manifest.js";
 import { computeStabilityMetrics, type ScenarioRunRecord } from "./metrics.js";
 import { oracleComplete, oracleRecorded } from "./oracle.js";
+import {
+  assertResponsibilityExperiment,
+  type FrozenResponsibilityExperiment,
+} from "./responsibility.js";
+import type { WorkflowProtocolOwner } from "../../../src/shared/workflow-protocol.js";
 
 /** Completion is evidence accounting; acceptance is the business result. */
 export function evaluateSuite(
@@ -11,9 +16,18 @@ export function evaluateSuite(
   const expected = manifest.scenarios.flatMap((s) =>
     Array.from(
       { length: manifest.runs.independentRunsPerScenario },
-      (_, i) => `${s.id}-r${i + 1}`,
+      (_, i) => ({ trialId: `${s.id}-r${i + 1}`, scenarioId: s.id }),
     ),
   );
+  return evaluateCatalog(manifest, records, expected);
+}
+
+function evaluateCatalog(
+  manifest: FrozenManifest,
+  records: readonly ScenarioRunRecord[],
+  catalog: readonly { trialId: string; scenarioId: string }[],
+) {
+  const expected = catalog.map((t) => t.trialId);
   const ids = records.map((r) => r.trialId);
   const accountingErrors: string[] = [];
   if (
@@ -28,7 +42,8 @@ export function evaluateSuite(
     const scenario = manifest.scenarios.find((s) => s.id === record.scenarioId);
     if (
       !scenario ||
-      !record.trialId?.startsWith(`${scenario.id}-r`) ||
+      catalog.find((t) => t.trialId === record.trialId)?.scenarioId !==
+        record.scenarioId ||
       record.expectedOutcomeClass !== scenario.expectedOutcomeClass ||
       !oracleRecorded(scenario, record.oracle, {
         manifestHash: manifest.contentHash,
@@ -89,5 +104,130 @@ export function evaluateSuite(
     accountingErrors,
     budgetViolations,
     metrics: computeStabilityMetrics(records),
+  };
+}
+
+/** Preserve registered identities and oracle bindings; never rename records to fit another arm. */
+export function evaluateResponsibilityExperiment(
+  experiment: FrozenResponsibilityExperiment,
+  records: readonly ScenarioRunRecord[],
+) {
+  assertResponsibilityExperiment(experiment);
+  const manifest = experiment.manifest;
+  const all = evaluateCatalog(manifest, records, experiment.trials);
+  for (const record of records) {
+    const trial = experiment.trials.find((t) => t.trialId === record.trialId);
+    const proof = record.responsibility;
+    if (
+      !trial ||
+      !proof ||
+      proof.experimentHash !== experiment.contentHash ||
+      proof.trialId !== trial.trialId ||
+      proof.pairId !== trial.pairId ||
+      proof.owner !== trial.owner ||
+      proof.kernelHash !== experiment.kernelHash ||
+      proof.sequence !== trial.sequence ||
+      !proof.consistent ||
+      proof.issues.length ||
+      (proof.plannedOwner !== undefined &&
+        proof.plannedOwner !== trial.owner) ||
+      (proof.candidates.length > 0 && !proof.plannedOwner) ||
+      proof.candidates.some(
+        (c) => c.workflowChanged && c.actualOwner !== trial.owner,
+      ) ||
+      proof.candidates.some(
+        (c) =>
+          c.passed && (!c.versionId || !c.providerVersionId || !c.actualOwner),
+      ) ||
+      proof.candidates.some((c) => c.passed) !== Boolean(record.candidatePassed)
+    )
+      all.accountingErrors.push(
+        `职责分组或实际工作流证据不一致：${record.trialId}`,
+      );
+  }
+  const arm = (owner: WorkflowProtocolOwner, focus = false) =>
+    evaluateCatalog(
+      manifest,
+      records.filter(
+        (r) =>
+          experiment.trials.some(
+            (t) => t.trialId === r.trialId && t.owner === owner,
+          ) &&
+          (!focus ||
+            experiment.focusScenarios.some((id) => id === r.scenarioId)),
+      ),
+      experiment.trials.filter(
+        (t) =>
+          t.owner === owner &&
+          (!focus ||
+            experiment.focusScenarios.some((id) => id === t.scenarioId)),
+      ),
+    );
+  const arms = { model: arm("model"), host: arm("host") };
+  const focus = { model: arm("model", true), host: arm("host", true) };
+  const pairs = experiment.trials
+    .filter((t) => t.position === 1)
+    .map((first) => {
+      const outcome = (owner: WorkflowProtocolOwner) => {
+        const trial = experiment.trials.find(
+          (t) => t.pairId === first.pairId && t.owner === owner,
+        )!;
+        const record = records.find((r) => r.trialId === trial.trialId);
+        // A single-row catalog uses the same business gates and resource checks.
+        const verdict = evaluateCatalog(manifest, record ? [record] : [], [
+          trial,
+        ]);
+        return {
+          trialId: trial.trialId,
+          outcome: record?.observedOutcomeClass ?? "missing",
+          matched: verdict.acceptancePassed,
+        };
+      };
+      return {
+        pairId: first.pairId,
+        scenarioId: first.scenarioId,
+        positive:
+          manifest.scenarios.find((s) => s.id === first.scenarioId)!
+            .expectedOutcomeClass === "full-path-success",
+        focus: experiment.focusScenarios.some((id) => id === first.scenarioId),
+        model: outcome("model"),
+        host: outcome("host"),
+      };
+    });
+  const counts = (selected: typeof pairs) =>
+    selected.reduce(
+      (count, pair) => {
+        if (pair.model.matched && pair.host.matched) count.both++;
+        else if (pair.model.matched) count.modelOnly++;
+        else if (pair.host.matched) count.hostOnly++;
+        else count.neither++;
+        return count;
+      },
+      { both: 0, modelOnly: 0, hostOnly: 0, neither: 0 },
+    );
+  const executionComplete =
+    all.executionComplete && !all.accountingErrors.length;
+  const acceptancePassed =
+    executionComplete &&
+    arms.model.acceptancePassed &&
+    arms.host.acceptancePassed;
+  return {
+    ...all,
+    executionComplete,
+    acceptancePassed,
+    exitCode: executionComplete ? (acceptancePassed ? 0 : 1) : 2,
+    experimentHash: experiment.contentHash,
+    evidenceKind:
+      new Set(records.map((r) => r.evidenceKind)).size === 1
+        ? records[0]?.evidenceKind
+        : null,
+    arms,
+    focus,
+    pairs,
+    pairedCounts: {
+      positive: counts(pairs.filter((p) => p.positive)),
+      boundary: counts(pairs.filter((p) => !p.positive)),
+      focus: counts(pairs.filter((p) => p.focus)),
+    },
   };
 }

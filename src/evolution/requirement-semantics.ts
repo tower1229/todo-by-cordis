@@ -184,7 +184,7 @@ export function compileSemantics(
       );
       if (
         plan.questionAdjudications?.some(
-          (d) => d.key === key && (d.decision.kind === "unnecessary" || d.decision.kind === "implementation"),
+          (d) => !d.choice && d.key === key && (d.decision.kind === "unnecessary" || d.decision.kind === "implementation"),
         )
       )
         initial = { kind: "unspecified" };
@@ -225,6 +225,7 @@ export function compileSemantics(
   for (const q of plan.requestAdmission?.questions ?? []) {
     const judgment = plan.questionAdjudications?.find(
       (d) =>
+        !d.choice &&
         d.key ===
         semanticQuestionKey(
           q.question,
