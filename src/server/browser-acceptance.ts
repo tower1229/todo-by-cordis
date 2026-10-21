@@ -27,6 +27,9 @@ import { Workspace } from "./workspace.js";
 import { createApp } from "./app.js";
 import { importCompositionVersions } from "./workspace-acceptance.js";
 import { workflowProtocolProgram } from "../release/workflow-protocol.js";
+import type { MemberAcceptanceCase } from "../shared/acceptance-cases.js";
+import { operationPreparation } from "../evolution/obligation-derivation.js";
+import { createControllableClock, type ControllableClock } from "./host/clock.js";
 
 export class BrowserEnvironmentError extends Error {
   constructor(
@@ -125,6 +128,8 @@ export function browserEnvironment(
     checkerHash: hash({
       version: "browser/1",
       source: readFileSync(resolve("src/server/browser-acceptance.ts"), "utf8"),
+      preparation: readFileSync(resolve("src/evolution/obligation-derivation.ts"), "utf8"),
+      clock: readFileSync(resolve("src/server/host/clock.ts"), "utf8"),
       contract: readFileSync(resolve("src/shared/browser-cases.ts"), "utf8"),
       caseSchema: readFileSync(
         resolve("src/shared/browser-contract.ts"),
@@ -229,6 +234,7 @@ export async function verifyBrowser(
   requirements: Requirement[],
   definitionHash: string,
   signal: AbortSignal,
+  memberCases: MemberAcceptanceCase[] = [],
 ): Promise<BrowserEvidence> {
   const env = browserEnvironment();
   if (env.missing.length)
@@ -307,6 +313,7 @@ export async function verifyBrowser(
     for (const [viewportIndex, viewport] of browserViewports.entries()) {
       signal.throwIfAborted();
       const dbPath = join(directory, `workspace-${viewportIndex}.db`);
+      let acceptanceClock: ControllableClock | undefined;
       isolated = await Workspace.open(dbPath, { acceptanceProbe: true });
       importCompositionVersions(formal, isolated, base);
       importCompositionVersions(formal, isolated, candidate);
@@ -438,6 +445,59 @@ export async function verifyBrowser(
           command,
         );
       };
+      const restartWorkspace = async (clock = acceptanceClock) => {
+        const port = Number(new URL(origin).port);
+        await closeServer();
+        await isolated?.close();
+        isolated = undefined;
+        acceptanceClock = clock;
+        isolated = await Workspace.open(dbPath, { acceptanceProbe: true, ...(clock ? { clock } : {}) });
+        await isolated.whenSchedulesIdle();
+        await start(port);
+      };
+      const runCaseAction = async (step: Extract<BrowserStep, { kind: "case-action" }>, taskId: string) => {
+        const source = memberCases.find((c) => c.member === step.member && `member:${c.member}:${c.name}` === step.caseId);
+        if (!source || hash(source) !== step.definitionHash || source.expected.kind !== "commit" ||
+            !Object.hasOwn(source.expected.fields, step.field))
+          throw new BrowserDefinitionError("宿主动作案例步骤没有匹配的冻结成功案例");
+        const registry = isolated!.extensionRegistry();
+        const registered = registry.commands().find((c) => c.id === source.action && c.providerId === source.member);
+        const schedule = registry.schedules().find((s) => s.providerId === source.member && s.onFire.type === "action" && s.onFire.commandId === source.action);
+        if (!registered?.internalOnly) {
+          for (const action of operationPreparation(memberCases, source, "open", step.field))
+            await runAction({ ...action, member: source.member }, taskId);
+          await runAction({ kind: "action", member: source.member, action: source.action, input: source.input }, taskId);
+          return;
+        }
+        if (!schedule || schedule.atKind !== "field")
+          throw new BrowserDefinitionError("内部动作没有受信的字段定时通道");
+        const at = Date.parse(source.fields[schedule.at]);
+        if (!Number.isFinite(at))
+          throw new BrowserDefinitionError("冻结到期案例缺少有效的截止前置值");
+        const clock = createControllableClock(at - 60_000);
+        await restartWorkspace(clock);
+        await openTask(taskId);
+        // Full Given is prepared through real pages; the field-only fresh-task shortcut
+        // cannot omit the deadline needed to arm the scheduler.
+        for (const action of operationPreparation(memberCases.filter((c) => c.action !== source.action), source))
+          await runAction({ ...action, member: source.member }, taskId);
+        const before = isolated!.read(taskId);
+        if (before.state !== source.state || Object.entries(source.fields).some(([k, v]) => before.fields[k] !== v) ||
+            before.fields[step.field] === source.expected.fields[step.field])
+          throw new Error("真实页面未准备冻结的到期前置状态，或到期效果已提前出现");
+        await clock.advance(59_999);
+        await isolated!.whenSchedulesIdle();
+        const early = isolated!.read(taskId);
+        if (early.revision !== before.revision || hash(early.fields) !== hash(before.fields))
+          throw new Error("浏览器验收的定时效果提前触发");
+        await clock.advance(1);
+        await isolated!.whenSchedulesIdle();
+        const after = isolated!.read(taskId);
+        if (after.revision <= before.revision || after.state !== source.expected.state ||
+            Object.entries(source.expected.fields).some(([k, v]) => after.fields[k] !== v))
+          throw new Error("浏览器验收的真实调度未产生冻结效果");
+        await openTask(taskId);
+      };
       const existing = new Map<string, string>();
       for (const [index, c] of allCases.entries()) {
         if (c.prepare && c.task !== "existing")
@@ -556,14 +616,7 @@ export async function verifyBrowser(
               await page.reload();
               await open();
             } else if (step.kind === "restart") {
-              const port = Number(new URL(origin).port);
-              await closeServer();
-              await isolated?.close();
-              isolated = undefined;
-              isolated = await Workspace.open(dbPath, {
-                acceptanceProbe: true,
-              });
-              await start(port);
+              await restartWorkspace();
               await open();
             } else if (step.kind === "edit") {
               if (step.title !== undefined)
@@ -604,6 +657,8 @@ export async function verifyBrowser(
                 throw new Error("标题或备注不符合预期");
             } else if (step.kind === "action") {
               await runAction(step, taskId);
+            } else if (step.kind === "case-action") {
+              await runCaseAction(step, taskId);
             } else if (step.kind === "action-blocked") {
               const composition = isolated!.composition();
               const action = composition.workflow.actions.find(a => a.id === step.action);
@@ -700,6 +755,25 @@ export async function verifyBrowser(
               step.kind === "action-visible"
             ) {
               const composition = isolated!.composition();
+              if (step.kind === "action-visible") {
+                const workflow = composition.members.find((m) => m.role === "workflow")!.pluginId;
+                const owner = step.member === "workflow" ? workflow : step.member;
+                const declared = isolated!.extensionRegistry().commands().some((c) => c.id === step.action && c.providerId === owner) ||
+                  composition.workflow.actions.some((a) => a.id === step.action && (a.providerId ?? workflow) === owner);
+                if (!declared) throw new Error("可见动作身份不存在或不属于目标成员");
+                if (!step.visible && !step.contribution) {
+                  const buttons = [
+                    ...await editor.locator(attr("provider", owner)).locator(attr("action-id", step.action)).all(),
+                    ...await page.locator(attr("task-id", taskId)).locator(attr("action-id", step.action)).all(),
+                  ];
+                  actual = String((await Promise.all(buttons.map((button) => button.isVisible()))).some(Boolean));
+                  if (actual === "true") throw new Error("可见动作不符合预期");
+                  continue;
+                }
+                if (step.contribution && step.member !== "workflow" &&
+                    !composition.uiContributions?.some((c) => c.id === step.contribution && c.providerId === owner))
+                  throw new Error("浏览器贡献身份不存在或不唯一");
+              }
               let contribution = step.contribution;
               if (!contribution) {
                 if (step.member === "workflow") contribution = "workflow";

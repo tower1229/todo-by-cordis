@@ -29,7 +29,7 @@ import { EvolutionDomain } from "../../../src/server/evolution-domain.js";
 import { ExperienceSessionHost } from "../../../src/server/experience-session.js";
 import { createApp } from "../../../src/server/app.js";
 import type { Driver } from "../../../src/evolution/driver.js";
-import { activateDual } from "../../../tests/app/dual-composition-fixture.js";
+import { activateStabilityBaseline } from "./baseline.js";
 import { redactSensitive } from "../shortened-real-model.js";
 import {
   type FrozenManifest,
@@ -38,7 +38,6 @@ import {
 } from "./manifest.js";
 import {
   classifyFailure,
-  type ObservedOutcomeClass,
   type ScenarioRunRecord,
   failureFromEvidence,
   runIncidents,
@@ -54,6 +53,7 @@ import {
 } from "./responsibility.js";
 import type { WorkflowProtocolOwner } from "../../../src/shared/workflow-protocol.js";
 import {
+  observeOutcome,
   scoreCapabilityAndBlocking,
   type SettledPlanEvidence,
 } from "./scoring.js";
@@ -113,41 +113,28 @@ async function prepareWorkspace(
   const w = await Workspace.open(join(directory, "workspace.db"), {
     workflowProtocolOwner: owner,
   });
-  if (scenario.id === "member-upgrade-tags" || scenario.baseline === "dual")
-    await activateDual(w);
-  await w.command({
-    type: "create",
-    operationId: randomUUID(),
-    compositionRevision: w.composition().revision,
-    title: "稳定性评估保留任务",
-  });
-  return w;
+  try {
+    if (scenario.id === "member-upgrade-tags" || scenario.baseline === "dual") {
+      const baseline = await activateStabilityBaseline(w);
+      writeVerifiedJson(join(directory, "baseline-evidence.json"), baseline.evidence);
+    }
+    await w.command({
+      type: "create",
+      operationId: randomUUID(),
+      compositionRevision: w.composition().revision,
+      title: "稳定性评估保留任务",
+    });
+    return w;
+  } catch (error) {
+    try {
+      await w.close();
+    } catch (cleanup) {
+      throw new AggregateError([error, cleanup], `基线准备失败：${String(error)}；资源释放失败：${String(cleanup)}`);
+    }
+    throw error;
+  }
 }
 
-function observeOutcome(
-  scenario: StabilityScenario,
-  browserStatus: string,
-  runStatus: string | undefined,
-): ObservedOutcomeClass {
-  if (browserStatus === "failed") return "failed";
-  if (
-    scenario.expectedOutcomeClass === "current-blocker" &&
-    (browserStatus === "blocked-observed" || runStatus === "blocked")
-  )
-    return "current-blocker";
-  if (
-    scenario.expectedOutcomeClass === "accurate-block" &&
-    (browserStatus === "blocked-observed" || runStatus === "blocked")
-  )
-    return "accurate-block";
-  if (
-    browserStatus === "passed" &&
-    (runStatus === "succeeded" ||
-      (!scenario.requiresApply && runStatus === "awaiting-apply"))
-  )
-    return "full-path-success";
-  return "failed";
-}
 
 export async function runStabilityScenario(
   options: StabilityRunOptions,
@@ -809,13 +796,11 @@ async function runScenarioInEnvironment(
   }
   const observed = !archiveComplete
     ? "failed"
-    : runStatus === "blocked" &&
-        options.scenario.expectedOutcomeClass === "full-path-success"
-      ? "accurate-block"
-      : observeOutcome(
+    : observeOutcome(
           options.scenario,
           browserResult!.status,
           runStatus ?? browserResult!.observedRunStatus,
+          oracle ? oracleComplete(options.scenario, oracle) : undefined,
         );
 
   const reachedReadyOnFirstPlan = Boolean(browserResult!.confirmedPlan);

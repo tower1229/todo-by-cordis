@@ -25,7 +25,7 @@ export const scheduleCheckSemantics = {
       "停止隔离调度服务并跨过截止再重启，skip 不补执行错过的截止",
   },
   limits:
-    "仅验证候选实际登记的字段型调度与冻结成功案例所定义的效果；完成后重新打开和已过期再完成的保留仅在对应 schedule-policy 冻结义务存在时验证；不证明任意业务分支或页面呈现",
+    "仅验证候选实际登记的字段型调度与冻结成功案例所定义的效果；额外业务时序策略仅在对应 schedule-policy 冻结义务存在时验证，具体操作由该策略契约定义；不证明任意业务分支或页面呈现",
 } as const;
 
 export const scheduleCheckId = (

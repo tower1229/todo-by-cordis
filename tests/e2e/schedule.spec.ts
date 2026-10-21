@@ -400,6 +400,7 @@ test("browser sees deadline recovery after member enable and rollback keeps task
       .getByRole("dialog")
       .getByRole("button", { name: "设截止", exact: true })
       .click();
+    await expect(page.getByRole("dialog")).toBeHidden();
     const active = workspace.composition();
     const disabled = await app.request("/api/composition/members", {
       method: "POST",
@@ -470,6 +471,13 @@ test("browser sees deadline recovery after member enable and rollback keeps task
     );
     await page.reload();
     const restartTitle = "重启补执行截止";
+    // Exercise acknowledgement ordering even when the browser-to-host write is delayed.
+    await page.route("**/api/commands", async (route) => {
+      const command = route.request().postDataJSON() as { type?: string; actionId?: string };
+      if (command.type === "action" && command.actionId === "setDue")
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      await route.continue();
+    });
     await page
       .getByRole("textbox", { name: "添加任务", exact: true })
       .fill(restartTitle);
@@ -484,6 +492,7 @@ test("browser sees deadline recovery after member enable and rollback keeps task
       .getByRole("dialog")
       .getByRole("button", { name: "设截止", exact: true })
       .click();
+    await expect(page.getByRole("dialog")).toBeHidden();
     workspace.testHarness()!.scheduleService.stop();
     await clock.advance(5_000);
     await workspace.restart();

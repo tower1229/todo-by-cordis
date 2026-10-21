@@ -8,6 +8,7 @@ import { currentManifest } from "../../scripts/lib/stability-eval/current.js";
 import {
   parseAdmission,
   questionReviewKey,
+  admissionRequest,
 } from "../../src/evolution/request-admission.js";
 import { parseClarificationReview } from "../../src/evolution/clarification-review.js";
 import { technicalFacts } from "../../src/evolution/technical-facts.js";
@@ -17,7 +18,20 @@ const scenario = currentManifest("a".repeat(40)).scenarios.find(
   (s) => s.id === "clarification-reflection",
 )!;
 const undecided = "复盘是否必填尚未决定";
-function awaiting(freeQuestion?: string) {
+
+test("需求预检公开宿主来源条目，结构化澄清选择条目而不重新抄写引用", () => {
+  const sources=[{id:"run:1",text:scenario.request}];
+  const facts=technicalFacts({workflowRules:[]});
+  const request=admissionRequest(sources,facts);
+  const input=JSON.parse(request.message!);
+  assert.ok(Array.isArray(input.sourceItems),"宿主必须提供可引用的稳定来源条目");
+  const index=input.sourceItems.findIndex((item:{text:string})=>item.text===undecided);
+  assert.ok(index>=0);
+  const admission=parseAdmission(JSON.stringify({initials:[],effects:[],questions:[{sourceItem:index+1,choice:{kind:"field-required"}}]}),"base",sources,facts);
+  assert.equal(admission.questions[0].sourceQuote,undecided);
+  assert.equal(admission.questions[0].sourceRevision,"run:1");
+});
+function awaiting(freeQuestion?: string, sourceQuote = undecided) {
   const sources = [{ id: "run:1", text: scenario.request }];
   const facts = technicalFacts({ workflowRules: [] });
   const admission = parseAdmission(
@@ -27,10 +41,10 @@ function awaiting(freeQuestion?: string) {
       questions: [
         {
           source: 1,
-          sourceQuote: undecided,
+          sourceQuote,
           ...(freeQuestion
             ? { question: freeQuestion }
-            : { choice: { kind: "field-required", subjectQuote: "复盘" } }),
+            : { choice: { kind: "field-required" } }),
         },
       ],
     }),
@@ -49,7 +63,7 @@ function awaiting(freeQuestion?: string) {
         {
           kind: "business-ambiguity",
           source: 1,
-          sourceQuote: undecided,
+          sourceQuote,
           detail: "来源明确只将复盘必填性留待用户决定",
         },
       ],
@@ -76,7 +90,7 @@ function awaiting(freeQuestion?: string) {
 
 test("冻结答案绑定宿主生成的结构化选择及独立审查，不分析模型自由问法", () => {
   const run = awaiting();
-  assert.equal(run.question, "“复盘”是否必须填写？");
+  assert.equal(run.question, `请确认原文“${undecided}”中的未决要求：必须填写，还是可以留空？`);
   const result = frozenClarificationAnswer(scenario, run);
   assert.equal(result.answer, scenario.clarification!.answer);
   assert.equal(result.binding.sourceRevision, "run:1");
@@ -93,6 +107,41 @@ test("冻结答案绑定宿主生成的结构化选择及独立审查，不分�
       () => frozenClarificationAnswer(scenario, awaiting(question)),
       /结构化/,
     );
+});
+
+test("结构化澄清直接绑定完整未决原文，不接受扩大范围、截断来源或旧主题身份", () => {
+  const run = awaiting();
+  assert.deepEqual(
+    Object.keys(run.requestAdmissions[0].questions[0].choice!).sort(),
+    ["id", "kind"],
+  );
+  for (const quote of [
+    "是否必填尚未决定",
+    scenario.request,
+  ])
+    assert.throws(
+      () => frozenClarificationAnswer(scenario, awaiting(undefined, quote)),
+      /结构化|冻结/,
+    );
+  const legacy = awaiting();
+  Object.assign(legacy.requestAdmissions[0], { contract: "host-admission/8" });
+  assert.throws(
+    () => frozenClarificationAnswer(scenario, legacy),
+    /来源预检/,
+  );
+  for (const subjectQuote of ["复盘", "复盘是否必填"]) {
+    const admission = run.requestAdmissions[0];
+    assert.throws(() => parseAdmission(
+      JSON.stringify({
+        initials: [], effects: [],
+        questions: [{
+          source: 1, sourceQuote: undecided,
+          choice: { kind: "field-required", subjectQuote },
+        }],
+      }),
+      admission.baseVersion, admission.sources, admission.factsSnapshot,
+    ));
+  }
 });
 
 test("无独立审查、错来源、过期运行或未授权的澄清不能得到冻结答案", () => {
@@ -135,7 +184,7 @@ test("结构化选择不能夹带自由问题、伪造主题或修改宿主生�
     {
       source: 1,
       sourceQuote: undecided,
-      choice: { kind: "field-required", subjectQuote: "复盘" },
+      choice: { kind: "field-required" },
       question: "另外，标签是否必填？",
     },
     {
@@ -163,7 +212,7 @@ test("结构化选择不能夹带自由问题、伪造主题或修改宿主生�
     ...scenario,
     clarification: {
       ...scenario.clarification!,
-      choice: { kind: "field-required" as const, subjectQuote: "标签" },
+      sourceQuote: "其他行为沿用现有工作流",
     },
   };
   assert.throws(

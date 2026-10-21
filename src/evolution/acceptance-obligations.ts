@@ -114,7 +114,7 @@ export function compileObligations(
       row(v,["kind","action","policies"]);
       const action=bind([{kind:"action",action:text(v.action)}])[0];
       if (action.kind!=="action" || action.member==="workflow") throw new Error("时序策略必须绑定辅助成员的到期动作");
-      const checks=list(v.policies,1,2).map(policy=>text(policy));
+      const checks=list(v.policies,1,Object.keys(schedulePolicySemantics).length).map(policy=>text(policy));
       if (checks.some(check=>!Object.hasOwn(schedulePolicySemantics,check)) || new Set(checks).size!==checks.length)
         throw new Error("时序策略检查不支持或重复");
       const cases=(outcomes.memberCases??[]).filter(c=>c.member===action.member&&c.action===action.action&&c.expected.kind==="commit");
@@ -241,7 +241,7 @@ export function compileObligations(
       const scenarios = list(v.scenarios, 1, 8).map((value) => {
         const s = row(value, ["steps", "value"]);
         const steps = bind(list(s.steps, 1, 40));
-        if (!steps.some((s) => s.kind === "action" || s.kind === "edit"))
+        if (!steps.some((s) => s.kind === "action" || s.kind === "case-action" || s.kind === "edit"))
           throw new Error("字段动作后义务缺少真实操作");
         return {
           id: hash({ steps, history: undefined }).slice(0, 16),

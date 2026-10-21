@@ -14,7 +14,7 @@ test("当前澄清模型桩在来源预检阶段提出已冻结的未决项，�
   });
   const first = await driver.generate(request(false), new AbortController().signal);
   assert.equal(JSON.parse(first.text!).questions[0]?.sourceQuote, "复盘是否必填尚未决定");
-  assert.deepEqual(JSON.parse(first.text!).questions[0]?.choice,{kind:"field-required",subjectQuote:"复盘"});
+  assert.deepEqual(JSON.parse(first.text!).questions[0]?.choice,{kind:"field-required"});
   assert.equal(JSON.parse(first.text!).questions[0]?.question,undefined);
   const second = await driver.generate(request(true), new AbortController().signal);
   assert.deepEqual(JSON.parse(second.text!).questions, []);

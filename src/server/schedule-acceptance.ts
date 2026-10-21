@@ -129,6 +129,31 @@ export async function verifyScheduleViaIsolatedWorkspace(
         if (!created.task) throw new Error("无法创建调度验收任务");
         return created.task;
       };
+      for (const policy of requestedPolicies.filter((p) => p.checks.includes("set-past-due")))
+        await policyCheck(policy, "set-past-due", firedState, async (step) => {
+          const task = await create();
+          step("create-open", task);
+          const pastAt = new Date(clock.now() - 60_000).toISOString();
+          await isolated.command({
+            type: "action",
+            taskId: task.id,
+            actionId: setter.action,
+            input: { ...setter.input, [schedule.at]: pastAt },
+            expectedRevision: task.revision,
+            operationId: randomUUID(),
+            compositionRevision: revision(),
+          });
+          const dated = isolated.read(task.id);
+          step("set-past-deadline", dated);
+          if (dated.state !== "open" || dated.fields[schedule.at] !== pastAt)
+            throw new BusinessAssertionError(`定时策略 ${policy.id} 未完成任务未接受过去截止时间`);
+          await clock.advance(0);
+          await isolated.whenSchedulesIdle();
+          const expired = isolated.read(task.id);
+          step("scheduled-catch-up", expired);
+          if (expired.state !== firedState || !hasEffects(expired))
+            throw new BusinessAssertionError(`定时策略 ${policy.id} 设置过去截止后未由真实调度补执行`);
+        });
       const at = new Date(clock.now() + 60_000).toISOString();
       const task = await create();
       if (isolated.schedulerState().armed !== 0)
@@ -380,6 +405,41 @@ export async function verifyScheduleViaIsolatedWorkspace(
         );
       }
       checks.push(scheduleCheckId(schedule.id, `recovery-${schedule.missPolicy}`));
+      for (const policy of requestedPolicies.filter(p => p.checks.includes("reset-clears-effect")))
+        await policyCheck(policy, "reset-clears-effect", "open", async step => {
+          for (const operation of ["modify", "clear"] as const) {
+            const task = await create();
+            await setDue(task.id, task.revision,
+              new Date(clock.now() + 60_000).toISOString());
+            await clock.advance(60_000);
+            await isolated.whenSchedulesIdle();
+            const expired = isolated.read(task.id);
+            step(`${operation}:scheduled-effect`, expired);
+            if (expired.state !== "open" || !hasEffects(expired))
+              throw new BusinessAssertionError(`定时策略 ${policy.id} 缺少真实到期后的未完成任务`);
+            const nextAt = new Date(clock.now() + 60_000).toISOString();
+            const input = operation === "clear" ? "" : nextAt;
+            await setDue(expired.id, expired.revision, input);
+            const reset = isolated.read(task.id);
+            step(`${operation}:reset`, reset);
+            if (
+              reset.state !== "open" ||
+              (operation === "clear" ? !!reset.fields[schedule.at] : reset.fields[schedule.at] !== nextAt) ||
+              Object.entries(effects).some(([key, value]) => reset.fields[key] === value)
+            )
+              throw new BusinessAssertionError(`定时策略 ${policy.id} 修改或清除截止未清除旧到期效果：${operation}`);
+            await clock.advance(60_000);
+            await isolated.whenSchedulesIdle();
+            const settled = isolated.read(task.id);
+            step(`${operation}:after-deadline`, settled);
+            if (operation === "clear") {
+              if (settled.revision !== reset.revision || hash(settled.fields) !== hash(reset.fields))
+                throw new BusinessAssertionError(`定时策略 ${policy.id} 清除截止后仍触发`);
+            } else if (settled.state !== firedState || !hasEffects(settled) || settled.revision !== reset.revision + 1) {
+              throw new BusinessAssertionError(`定时策略 ${policy.id} 修改截止后未按新时间执行`);
+            }
+          }
+        });
     }
     if (policies.some(policy=>!matchedPolicies.has(policy.id)))
       throw new BusinessAssertionError("定时策略没有绑定候选实际登记的调度，不能跳过冻结义务");

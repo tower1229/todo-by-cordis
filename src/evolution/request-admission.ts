@@ -109,7 +109,7 @@ type PresentationCheck = Citation & {
   outcome: "supported" | "unsupported" | "deferred" | "not-applicable";
 };
 export type RequestAdmission = {
-  contract: "host-admission/8";
+  contract: "host-admission/9";
   intents: AdmissionIntent;
   factsSnapshot: TechnicalFact[];
   technicalChecks: PresentationCheck[];
@@ -196,11 +196,10 @@ export function admissionSchema(facts: TechnicalFact[] = []) {
               choice: {
                 type: "object",
                 additionalProperties: false,
-                description: "字段是否必填的业务选择；只提交主题原文，宿主生成问句。",
-                required: ["kind", "subjectQuote"],
+                description: "针对 sourceQuote 中单个未决必填要求的选择，宿主直接引用该原文生成问句。",
+                required: ["kind"],
                 properties: {
                   kind: { type: "string", enum: ["field-required"] },
-                  subjectQuote: { ...text, minLength: 1, maxLength: 100 },
                 },
               },
             }).items,
@@ -272,7 +271,7 @@ export function admissionKey(
   sources: Source[],
   facts: TechnicalFact[],
 ) {
-  return hash({ contract: "host-admission/8", baseVersion, sources, facts });
+  return hash({ contract: "host-admission/9", baseVersion, sources, facts });
 }
 export function parseAdmission(
   text: string,
@@ -447,7 +446,7 @@ export function parseAdmission(
     };
   });
   return {
-    contract: "host-admission/8",
+    contract: "host-admission/9",
     intents: structuredClone(raw),
     factsSnapshot: structuredClone(facts),
     technicalChecks,
@@ -465,15 +464,9 @@ export function parseAdmission(
       ...raw.questions.map((v) => {
         const citation = bind(v);
         if ("question" in v) return { ...citation, question: v.question.trim() };
-        if (
-          v.choice.subjectQuote !== v.choice.subjectQuote.trim() ||
-          !v.choice.subjectQuote.trim() ||
-          !v.sourceQuote.includes(v.choice.subjectQuote)
-        )
-          throw new Error("结构化澄清的主题必须引用该未决项中的连续原文");
         return {
           ...citation,
-          question: clarificationChoiceQuestion(v.choice),
+          question: clarificationChoiceQuestion(v.choice, citation.sourceQuote),
           choice: {
             ...v.choice,
             id: "choice-" + hash({ citation, choice: v.choice }).slice(0, 24),
@@ -648,7 +641,7 @@ export function admissionResolved(admission: RequestAdmission): boolean {
   // Canonical host replay verifies every derived reference and check; old pending evidence is never upgraded.
   try {
     if (
-      admission.contract !== "host-admission/8" ||
+      admission.contract !== "host-admission/9" ||
       !Array.isArray(admission.factsSnapshot)
     )
       return false;

@@ -60,9 +60,8 @@ export function frozenClarificationAnswer(
     !expected.choice ||
     !item?.choice ||
     item.sourceRevision !== `${run.id}:1` ||
-    !item.sourceQuote.includes(expected.sourceQuote) ||
-    hash(expected.choice) !==
-      hash({ kind: item.choice.kind, subjectQuote: item.choice.subjectQuote })
+    item.sourceQuote !== expected.sourceQuote ||
+    hash(expected.choice) !== hash({ kind: item.choice.kind })
   )
     throw new Error("冻结答案只适用于宿主生成的结构化未决项，不能回答自由问题");
   const review = reviews.find(
@@ -76,7 +75,7 @@ export function frozenClarificationAnswer(
     review.decision.kind !== "business-ambiguity" ||
     source?.id !== `${run.id}:1` ||
     !source.text.includes(review.decision.sourceQuote) ||
-    !review.decision.sourceQuote.includes(expected.sourceQuote)
+    review.decision.sourceQuote !== expected.sourceQuote
   )
     throw new Error("澄清审查没有绑定冻结答案对应的来源未决项");
   return {

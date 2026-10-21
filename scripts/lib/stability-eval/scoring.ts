@@ -1,3 +1,4 @@
+import type { ObservedOutcomeClass } from "./metrics.js";
 import type { InvestigatedPlan } from "../../../src/shared/assistant.js";
 import type { StabilityScenario } from "./manifest.js";
 
@@ -104,8 +105,11 @@ export function scoreCapabilityAndBlocking(input: SettledScoringInput): {
     scenario.expectedOutcomeClass === "accurate-block" ||
     scenario.expectedOutcomeClass === "current-blocker"
   ) {
-    // 阻塞场景：首次规划结果即为明确 blocked 计为「首个计划通过」。
-    firstPlanPassed = input.blockedWithoutReady;
+    // A terminal blocked state alone proves neither the reason nor plan success.
+    firstPlanPassed =
+      input.blockedWithoutReady &&
+      input.observedOutcomeClass === scenario.expectedOutcomeClass &&
+      errorBlockingCorrect !== false;
   }
 
   return {
@@ -155,4 +159,33 @@ export function plannedCapabilityCorrect(
       });
     }),
   );
+}
+
+export function observeOutcome(
+  scenario: StabilityScenario,
+  browserStatus: string,
+  runStatus: string | undefined,
+  independentBlockPassed?: boolean,
+): ObservedOutcomeClass {
+  if (browserStatus === "failed") return "failed";
+  if (
+    scenario.expectedOutcomeClass === "current-blocker" &&
+    (browserStatus === "blocked-observed" || runStatus === "blocked")
+  )
+    return "current-blocker";
+  if (
+    scenario.expectedOutcomeClass === "accurate-block" &&
+    (browserStatus === "blocked-observed" || runStatus === "blocked")
+  ) {
+    if (scenario.oracle?.kind === "block" && independentBlockPassed !== true)
+      return "failed";
+    return "accurate-block";
+  }
+  if (
+    browserStatus === "passed" &&
+    (runStatus === "succeeded" ||
+      (!scenario.requiresApply && runStatus === "awaiting-apply"))
+  )
+    return "full-path-success";
+  return "failed";
 }

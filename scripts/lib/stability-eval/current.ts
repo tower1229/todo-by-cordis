@@ -59,7 +59,7 @@ export function currentManifest(productCommit: string): StabilityEvalManifest {
     clarification: {
       question: "复盘是否必填",
       sourceQuote: "复盘是否必填尚未决定",
-      choice: {kind:"field-required",subjectQuote:"复盘"},
+      choice: {kind:"field-required"},
       answer:
         "复盘必填，去掉首尾空格后至少1个、最多5000个Unicode码点，重新打开保留复盘；已有与新增任务均适用，其他字段和行为不变。",
     },
@@ -96,7 +96,7 @@ export function currentManifest(productCommit: string): StabilityEvalManifest {
   });
   return {
     ...previous,
-    evaluation: "current/4",
+    evaluation: "current/5",
     title: "当前版本稳定性发现批次",
     scenarios,
     model: {

@@ -108,6 +108,14 @@ export function parseBrowserCases(value: unknown): BrowserCase[] {
     const steps = array(c.steps, 40).map((item) => {
       const s = record(item);
       const kind = boundedText(s.kind);
+      if (kind === "case-action") {
+        if (Object.keys(s).some((k) => !["kind", "member", "caseId", "definitionHash", "field"].includes(k)) ||
+            ![s.member, s.field].every((v) => typeof v === "string" && /^[\w.-]{1,100}$/.test(v)) ||
+            typeof s.caseId !== "string" || !s.caseId.startsWith(`member:${s.member}:`) || s.caseId.length > 240 ||
+            typeof s.definitionHash !== "string" || !/^[a-f0-9]{64}$/.test(s.definitionHash))
+          throw new Error("宿主动作案例步骤缺少精确冻结引用");
+        return structuredClone(s) as unknown as BrowserCase["steps"][number];
+      }
       if (kind === "form-invalid") {
         if (
           Object.keys(s).some(
@@ -374,7 +382,10 @@ export function coverage(
       const c = plan.browserCases?.find((c) => c.id === ref.caseId);
       let operated = false;
       for (const s of c?.steps ?? []) {
-        if (s.kind === "action") operated = true;
+        if (s.kind === "action" || s.kind === "case-action") operated = true;
+        if (s.kind === "case-action" && !plan.memberCases?.some((source) => source.member === s.member &&
+            `member:${source.member}:${source.name}` === s.caseId && hash(source) === s.definitionHash))
+          reasons.push("宿主动作案例步骤与冻结案例不一致：" + s.caseId);
         if (
           s.kind === "field" &&
           !fieldObligations.some(

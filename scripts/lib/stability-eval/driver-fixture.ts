@@ -319,7 +319,7 @@ export function stabilityDriverFor(
         const value = input.kind === "request-admission/2" ? {
           initials: [], effects: [],
           questions: input.sources?.some(s => s.text === scenario?.clarification?.answer) ? [] :
-            [{ source: 1, sourceQuote: quote, choice: {kind:"field-required",subjectQuote:"复盘"} }],
+            [{ source: 1, sourceQuote: quote, choice: {kind:"field-required"} }],
         } : input.kind === "clarification-review/2" ? {
           effects: ["external-delivery", "offline-delivery", "online-schedule"].map(effect => ({ effect, verdict: "not-requested" })),
           decisions: (input.questions ?? []).map(() => ({ kind: "business-ambiguity", source: 1,

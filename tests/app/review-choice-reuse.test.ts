@@ -38,7 +38,7 @@ test("非业务裁决不能清除独立业务异议，真实歧义及伪造引�
   assert.equal(parseReview(wire,p,sources).issues.length,2);
 });
 
-test("相同问题文字不能跨成员复用，目标定义变化、重复选择及无目标裁决均不能放行",()=>{
+test("成员不同的问题应展示身份，目标定义变化、重复选择及无目标裁决均不能放行",()=>{
   const p=plan();
   const other=structuredClone(p.requirements![0].obligations![0]);
   assert.equal(other.kind,"assertion");
@@ -46,7 +46,9 @@ test("相同问题文字不能跨成员复用，目标定义变化、重复选�
   other.id="other-visibility";other.expected.member="other-counter";
   p.requirements![0].obligations!.push(other);
   const [first,second]=semanticChoiceTargets(p);
-  assert.equal(first.question,second.question);
+  assert.notEqual(first.question,second.question);
+  assert.ok(first.question.includes("counter"));
+  assert.ok(second.question.includes("other-counter"));
   p.questionAdjudications=[{key:questionReviewKey(first.question,sources,technicalFacts(p)),question:first.question,choice:semanticChoiceProof(p,first.id).proof,call:5,decision:{kind:"unnecessary",sourceRevision:"run:1",sourceQuote:sources[0].text,detail:"仅裁决第一个目标"}}];
   const choices=[first,second].map(c=>({targetId:c.id,sourceRevision:"run:1",sourceQuote:sources[0].text}));
   const wire={reviewedIds:["r"],issues:[],fieldDecisions:[],unresolvedChoices:choices};
@@ -56,4 +58,36 @@ test("相同问题文字不能跨成员复用，目标定义变化、重复选�
   assert.equal(parseReview(JSON.stringify(wire),p,sources).issues.length,2);
   delete p.questionAdjudications[0].choice;
   assert.equal(parseReview(JSON.stringify(wire),p,sources).issues.length,2);
+});
+
+test("显示文字相同的不同义务仍必须按宿主目标证明分别复核",()=>{
+  const p=plan();
+  const other=structuredClone(p.requirements![0].obligations![0]);
+  if(other.kind!=="assertion"||other.expected.kind!=="action-visible")throw new Error("fixture");
+  other.id="opposite-expectation";
+  other.expected.visible=true;
+  p.requirements![0].obligations!.push(other);
+  const [first,second]=semanticChoiceTargets(p);
+  assert.equal(first.question,second.question);
+  assert.notDeepEqual(semanticChoiceProof(p,first.id).proof,semanticChoiceProof(p,second.id).proof);
+  p.questionAdjudications=[{key:questionReviewKey(first.question,sources,technicalFacts(p)),question:first.question,choice:semanticChoiceProof(p,first.id).proof,call:5,decision:{kind:"unnecessary",sourceRevision:"run:1",sourceQuote:sources[0].text,detail:"仅裁决第一个目标"}}];
+  const choices=[first,second].map(c=>({targetId:c.id,sourceRevision:"run:1",sourceQuote:sources[0].text}));
+  const result=parseReview(JSON.stringify({reviewedIds:["r"],issues:[],fieldDecisions:[],unresolvedChoices:choices}),p,sources);
+  assert.deepEqual(result.unresolvedChoices,[choices[1]]);
+});
+
+test("动作澄清投影包含准备路径，初始与完成后的选择不能显示为同一个问题",()=>{
+  const p=plan();
+  const initial=p.requirements![0].obligations![0];
+  const completed=structuredClone(initial);
+  if(completed.kind!=="assertion")throw new Error("fixture");
+  completed.id="completed-visibility";
+  completed.steps=[{kind:"action",member:"workflow",action:"complete",input:{review:"已完成"}}];
+  p.requirements![0].obligations!.push(completed);
+  const [first,second]=semanticChoiceTargets(p);
+  assert.notEqual(first.question,second.question);
+  assert.ok(first.question.includes("新建任务"));
+  assert.ok(second.question.includes("complete"));
+  assert.ok(second.question.includes("已完成"));
+  assert.ok(second.question.includes("workflow"));
 });

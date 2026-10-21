@@ -25,7 +25,7 @@ import type { SchedulePolicyEvidence } from "../../src/shared/schedule-policy.js
 import { importCompositionVersions } from "../../src/server/workspace-acceptance.js";
 
 const quote =
-  "增加截止调度：过期后完成保留过期标记；截止前完成不标记，截止后重新打开自动补标；其他行为不变";
+  "增加截止调度：未完成任务允许直接设置过去截止时间并自动补标；修改或清除截止时清除原过期标记；过期后完成保留过期标记；截止前完成不标记，截止后重新打开自动补标；其他行为不变";
 const at = "2030-01-01T00:01:00.000Z";
 const plan = {
   changes: [
@@ -82,7 +82,7 @@ const plan = {
         {
           kind: "schedule-policy",
           action: "expire",
-          policies: ["complete-retains-effect", "reopen-after-due"],
+          policies: ["set-past-due", "reset-clears-effect", "complete-retains-effect", "reopen-after-due"],
         },
       ],
     },
@@ -225,7 +225,7 @@ test("模型桩经完整候选门禁执行真实时序与浏览器验收，删�
     scheduleCases: SchedulePolicyEvidence[];
     [key: string]: unknown;
   };
-  assert.equal(evidence.scheduleCases.length, 2);
+  assert.equal(evidence.scheduleCases.length, 4);
   assert.equal(
     evidence.scheduleCases.every(
       (c) =>
@@ -248,6 +248,29 @@ test("模型桩经完整候选门禁执行真实时序与浏览器验收，删�
   });
   assert.throws(
     () => domain.verifyAcceptance(missing.id, ready.plan),
+    /冻结时序策略/,
+  );
+  const missingPast = workspace.release.record({
+    ...artifact,
+    evidence: {
+      ...evidence,
+      scheduleCases: evidence.scheduleCases.filter(
+        (receipt) => !receipt.caseId.endsWith(":set-past-due"),
+      ),
+    },
+  });
+  assert.throws(
+    () => domain.verifyAcceptance(missingPast.id, ready.plan),
+    /冻结时序策略/,
+  );
+  const missingReset = workspace.release.record({
+    ...artifact,
+    evidence: { ...evidence, scheduleCases: evidence.scheduleCases.filter(
+      receipt => !receipt.caseId.endsWith(":reset-clears-effect"),
+    ) },
+  });
+  assert.throws(
+    () => domain.verifyAcceptance(missingReset.id, ready.plan),
     /冻结时序策略/,
   );
   assert.equal(

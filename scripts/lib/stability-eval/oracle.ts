@@ -20,6 +20,7 @@ import {
   effectReviewResolved,
 } from "../../../src/evolution/capability-admission.js";
 import type { Investigation } from "../../../src/server/planning.js";
+import { schedulePolicyChecks } from "../../../src/shared/schedule-policy.js";
 
 export type OracleCheck = {
   id: string;
@@ -266,6 +267,19 @@ function hasDeadlineResetCases(
         (key) => fired.fields[key] === fired.input.scheduledAt,
       );
       if (!deadline) continue;
+      if (plan.requirements?.some(requirement =>
+        requirement.obligations?.some(obligation =>
+          obligation.kind === "schedule-policy" &&
+          obligation.version === 1 &&
+          obligation.action.member === fired.member &&
+          obligation.action.action === fired.action &&
+          obligation.fireCase.caseId === `member:${fired.member}:${fired.name}` &&
+          obligation.fireCase.definitionHash === hash(fired) &&
+          obligation.checks.includes("reset-clears-effect") &&
+          schedulePolicyChecks(obligation).every(check =>
+            requirement.checks.some(bound => hash(bound) === hash(check))),
+        ),
+      )) return true;
       const resets = cases.filter(
         (c) =>
           c.member === fired.member &&
@@ -523,7 +537,6 @@ export function checkIndependentBlock(
               check.outcome === "unsupported" &&
               check.expected.kind === "visible" &&
               check.expected.value === "" &&
-              oracle.sources.some((q) => check.sourceQuote.includes(q)) &&
               admission.claims.some(
                 (claim) =>
                   claim.sourceRevision === check.sourceRevision &&
@@ -531,8 +544,10 @@ export function checkIndependentBlock(
                   admission.semanticReview?.decisions.some(
                     (d) =>
                       d.claimId === claim.id &&
+                      d.sourceRevision === check.sourceRevision &&
                       d.verdict === "entailed" &&
-                      d.layer === "initial-display",
+                      d.layer === "initial-display" &&
+                      oracle.sources.some((q) => d.sourceQuote.includes(q)),
                   ),
               ),
           ),

@@ -95,6 +95,54 @@ test("schedule/1 uses real timer dispatch and rejects missing or ineffective sch
     ],
   );
   const policy:SchedulePolicy={version:1,id:"due-lifecycle",kind:"schedule-policy",action:{kind:"action",member:"due",action:"expire"},fireCase:{caseId:"member:due:expire",definitionHash:hash(cases[1])},checks:["complete-retains-effect","reopen-after-due"]};
+  const pastPolicy: SchedulePolicy = { ...policy, checks: ["set-past-due"] };
+  const pastReceipts: SchedulePolicyEvidence[] = [];
+  const pastChecks = await verifyScheduleViaIsolatedWorkspace(
+    formal, good, cases, signal, [pastPolicy], (receipt) => pastReceipts.push(receipt),
+  );
+  assert.ok(pastChecks.includes("schedule-policy:due-lifecycle:set-past-due"));
+  assert.equal(pastReceipts[0]?.status, "passed");
+  assert.deepEqual(pastReceipts[0]?.steps.map((step) => step.operation),
+    ["create-open", "set-past-deadline", "scheduled-catch-up"]);
+  const rejectsPastSource = dueAutoExpireSource.replace(
+    'const dueAt = String(input.dueAt).trim();',
+    'const dueAt = String(input.dueAt).trim(); if (dueAt && Date.parse(dueAt) < Date.parse("2030-01-01T00:00:00.000Z")) return { kind: "reject", message: "past deadline rejected" };',
+  );
+  assert.notEqual(rejectsPastSource, dueAutoExpireSource);
+  const rejectsPast = await candidate(rejectsPastSource);
+  await verifyScheduleViaIsolatedWorkspace(formal, rejectsPast, cases, signal);
+  const failedPast: SchedulePolicyEvidence[] = [];
+  await assert.rejects(
+    verifyScheduleViaIsolatedWorkspace(formal, rejectsPast, cases, signal,
+      [pastPolicy], (receipt) => failedPast.push(receipt)),
+    /past deadline rejected/,
+  );
+  assert.equal(failedPast[0]?.status, "failed");
+  const resetPolicy: SchedulePolicy = { ...policy, checks: ["reset-clears-effect"] };
+  const resetReceipts: SchedulePolicyEvidence[] = [];
+  await verifyScheduleViaIsolatedWorkspace(formal, good, cases, signal,
+    [resetPolicy], receipt => resetReceipts.push(receipt));
+  assert.equal(resetReceipts[0]?.status, "passed");
+  assert.deepEqual(resetReceipts[0]?.steps.map(step => step.operation), [
+    "modify:scheduled-effect", "modify:reset", "modify:after-deadline",
+    "clear:scheduled-effect", "clear:reset", "clear:after-deadline",
+  ]);
+  for (const condition of ["dueAt", "!dueAt"]) {
+    const retainsEffectSource = dueAutoExpireSource.replace(
+      "delete fields.expired;",
+      `if (!(${condition})) delete fields.expired;`,
+    );
+    assert.notEqual(retainsEffectSource, dueAutoExpireSource);
+    const retainsEffect = await candidate(retainsEffectSource);
+    await verifyScheduleViaIsolatedWorkspace(formal, retainsEffect, cases, signal);
+    const resetFailures: SchedulePolicyEvidence[] = [];
+    await assert.rejects(
+      verifyScheduleViaIsolatedWorkspace(formal, retainsEffect, cases, signal,
+        [resetPolicy], receipt => resetFailures.push(receipt)),
+      /修改或清除截止未清除旧到期效果/,
+    );
+    assert.equal(resetFailures.at(-1)?.status, "failed");
+  }
   const lifecycleChecks=await verifyScheduleViaIsolatedWorkspace(formal,good,cases,signal,[policy]);
   assert.ok(lifecycleChecks.includes("schedule-policy:due-lifecycle:complete-retains-effect"));
   assert.ok(lifecycleChecks.includes("schedule-policy:due-lifecycle:reopen-after-due"));
@@ -122,6 +170,17 @@ test("schedule/1 uses real timer dispatch and rejects missing or ineffective sch
       await verifyScheduleViaIsolatedWorkspace(formal, skip, cases, signal)
     ).includes("schedule/1:due-expire:recovery-skip"),
   );
+  const skippedPast: SchedulePolicyEvidence[] = [];
+  await assert.rejects(
+    verifyScheduleViaIsolatedWorkspace(
+      formal, skip, cases, signal, [pastPolicy],
+      (receipt) => skippedPast.push(receipt),
+    ),
+    /设置过去截止后未由真实调度补执行/,
+  );
+  assert.equal(skippedPast[0]?.status, "failed");
+  assert.deepEqual(skippedPast[0]?.steps.map((step) => step.operation),
+    ["create-open", "set-past-deadline", "scheduled-catch-up"]);
   await assert.rejects(
     verifyScheduleViaIsolatedWorkspace(
       formal,

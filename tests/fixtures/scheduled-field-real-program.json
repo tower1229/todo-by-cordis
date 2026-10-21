@@ -1,0 +1,379 @@
+{
+  "provenance": {
+    "trialId": "due-auto-expire-pair-3-model",
+    "rawEvidenceSha256": "e8e1688241640cfdc45b69fac8038a4cf0037649e1aeffb19880f942f16c5f52",
+    "originalCandidateVersionId": "812aad64819790be56fb708b9741e29f7264f3ae9a7dc92085f6e30f03ec49f7",
+    "note": "Business source and compiled modules are unchanged. The regression creates a local candidate with failed test metadata; it never inherits archived passing evidence."
+  },
+  "request": "请给任务增加可选截止时间：到点仍未完成则自动标记过期；已完成任务不误标；可修改或清除截止时间。过期标记的保存值为 true，任务详情显示保存值。修改或清除截止时清除原过期标记；允许设置过去时间，未完成任务在宿主在线时自动补标过期；已经过期再完成时保留过期标记；提前完成后重新打开时截止已过则自动标记过期。未设置截止或尚未到点时不要求额外的默认保存值或初始显示。",
+  "proposal": {
+    "changes": [
+      {
+        "cases": [
+          {
+            "action": "setDue",
+            "expected": {
+              "fields": {
+                "dueAt": "2030-01-01T12:00:00Z"
+              },
+              "kind": "commit",
+              "state": "open"
+            },
+            "fields": {},
+            "input": {
+              "dueAt": "2030-01-01T12:00:00Z"
+            },
+            "name": "set-deadline",
+            "state": "open"
+          },
+          {
+            "action": "setDue",
+            "expected": {
+              "fields": {
+                "dueAt": "2031-06-15T08:30:00Z"
+              },
+              "kind": "commit",
+              "state": "open"
+            },
+            "fields": {
+              "dueAt": "2030-01-01T12:00:00Z",
+              "expired": "true"
+            },
+            "input": {
+              "dueAt": "2031-06-15T08:30:00Z"
+            },
+            "name": "modify-deadline-clears-expired",
+            "state": "open"
+          },
+          {
+            "action": "setDue",
+            "expected": {
+              "fields": {},
+              "kind": "commit",
+              "state": "open"
+            },
+            "fields": {
+              "dueAt": "2030-01-01T12:00:00Z",
+              "expired": "true"
+            },
+            "input": {
+              "dueAt": ""
+            },
+            "name": "clear-deadline-clears-expired",
+            "state": "open"
+          },
+          {
+            "action": "setDue",
+            "expected": {
+              "kind": "reject"
+            },
+            "fields": {},
+            "input": {
+              "dueAt": "明天"
+            },
+            "name": "set-deadline-rejects-invalid-time",
+            "state": "open"
+          },
+          {
+            "action": "expire",
+            "expected": {
+              "fields": {
+                "dueAt": "2030-01-01T12:00:00Z",
+                "expired": "true"
+              },
+              "kind": "commit",
+              "state": "open"
+            },
+            "fields": {
+              "dueAt": "2030-01-01T12:00:00Z"
+            },
+            "input": {
+              "scheduledAt": "2030-01-01T12:00:00Z"
+            },
+            "name": "expire-due-task",
+            "state": "open"
+          },
+          {
+            "action": "expire",
+            "expected": {
+              "kind": "reject"
+            },
+            "fields": {
+              "dueAt": "2030-01-01T12:00:00Z",
+              "expired": "true"
+            },
+            "input": {
+              "scheduledAt": "2030-01-01T12:00:00Z"
+            },
+            "name": "expire-rejects-completed-task",
+            "state": "done"
+          },
+          {
+            "action": "expire",
+            "expected": {
+              "kind": "reject"
+            },
+            "fields": {
+              "dueAt": "2031-06-15T08:30:00Z"
+            },
+            "input": {
+              "scheduledAt": "2030-01-01T12:00:00Z"
+            },
+            "name": "expire-rejects-stale-deadline",
+            "state": "open"
+          }
+        ],
+        "features": [
+          "commands",
+          "fields",
+          "detail",
+          "schedules"
+        ],
+        "name": "截止时间守卫",
+        "target": "deadline-guard"
+      }
+    ],
+    "intent": "improve",
+    "requirements": [
+      {
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "action": "setDue",
+            "kind": "action-visible",
+            "state": "open",
+            "visible": true
+          }
+        ],
+        "quote": "请给任务增加可选截止时间：到点仍未完成则自动标记过期；已完成任务不误标；可修改或清除截止时间。",
+        "type": "behavior"
+      },
+      {
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "examples": [
+              "true"
+            ],
+            "field": "expired",
+            "kind": "field"
+          }
+        ],
+        "quote": "过期标记的保存值为 true，任务详情显示保存值。",
+        "type": "behavior"
+      },
+      {
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "examples": [
+              "2030-01-01T12:00:00Z"
+            ],
+            "field": "dueAt",
+            "kind": "field"
+          }
+        ],
+        "quote": "修改或清除截止时清除原过期标记；允许设置过去时间，未完成任务在宿主在线时自动补标过期；",
+        "type": "behavior"
+      },
+      {
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "action": "expire",
+            "kind": "schedule-policy",
+            "policies": [
+              "complete-retains-effect"
+            ]
+          }
+        ],
+        "quote": "已经过期再完成时保留过期标记；",
+        "type": "behavior"
+      },
+      {
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "action": "expire",
+            "kind": "schedule-policy",
+            "policies": [
+              "reopen-after-due"
+            ]
+          }
+        ],
+        "quote": "提前完成后重新打开时截止已过则自动标记过期。",
+        "type": "behavior"
+      },
+      {
+        "expectations": [
+          {
+            "field": "dueAt",
+            "kind": "field"
+          },
+          {
+            "field": "expired",
+            "kind": "field"
+          }
+        ],
+        "quote": "未设置截止或尚未到点时不要求额外的默认保存值或初始显示。",
+        "type": "constraint"
+      }
+    ],
+    "summary": "新增「截止时间守卫」辅助成员：可选截止时间字段、按截止字段登记在线调度，到点仅对未完成任务写入过期标记 true；设置/修改/留空清除截止时清除原标记，并由 run-once 调度补标过期。",
+    "uses": [
+      {
+        "feature": "scheduler",
+        "member": "host:online-scheduler"
+      }
+    ]
+  },
+  "baseInputs": [
+    {
+      "pluginId": "default",
+      "name": "轻快完成",
+      "service": "workflow",
+      "contractVersion": "workflow/1",
+      "source": "import type { Workflow } from \"./contract.js\";\nexport const workflow: Workflow = {\n  definition: {\n    id: \"default\",\n    name: \"轻快完成\",\n    version: \"1.0.0\",\n    initialState: \"open\",\n    states: {\n      open: { label: \"未完成\", category: \"open\" },\n      done: { label: \"已完成\", category: \"done\" },\n    },\n    actions: [\n      { id: \"complete\", label: \"完成\", from: [\"open\"] },\n      { id: \"reopen\", label: \"重新打开\", from: [\"done\"] },\n    ],\n    fields: [],\n  },\n  decide(task, action) {\n    if (\n      !this.definition.actions.some(\n        (a) => a.id === action && a.from.includes(task.state),\n      )\n    )\n      return { kind: \"reject\", message: \"当前状态不能执行此操作\" };\n    return {\n      kind: \"commit\",\n      state: action === \"complete\" ? \"done\" : \"open\",\n      fields: task.fields,\n    };\n  },\n};\n\nexport default {\n  describe: () => workflow.definition,\n  decide: (data: {\n    task: Parameters<typeof workflow.decide>[0];\n    action: string;\n    input: Record<string, string>;\n  }) => workflow.decide(data.task, data.action, data.input),\n};\n",
+      "code": "                                              \nexport const workflow           = {\n  definition: {\n    id: \"default\",\n    name: \"轻快完成\",\n    version: \"1.0.0\",\n    initialState: \"open\",\n    states: {\n      open: { label: \"未完成\", category: \"open\" },\n      done: { label: \"已完成\", category: \"done\" },\n    },\n    actions: [\n      { id: \"complete\", label: \"完成\", from: [\"open\"] },\n      { id: \"reopen\", label: \"重新打开\", from: [\"done\"] },\n    ],\n    fields: [],\n  },\n  decide(task, action) {\n    if (\n      !this.definition.actions.some(\n        (a) => a.id === action && a.from.includes(task.state),\n      )\n    )\n      return { kind: \"reject\", message: \"当前状态不能执行此操作\" };\n    return {\n      kind: \"commit\",\n      state: action === \"complete\" ? \"done\" : \"open\",\n      fields: task.fields,\n    };\n  },\n};\n\nexport default {\n  describe: () => workflow.definition,\n  decide: (data   \n                                                \n                   \n                                  \n   ) => workflow.decide(data.task, data.action, data.input),\n};\n",
+      "definition": {
+        "id": "default",
+        "name": "轻快完成",
+        "version": "1.0.0",
+        "initialState": "open",
+        "states": {
+          "open": {
+            "label": "未完成",
+            "category": "open"
+          },
+          "done": {
+            "label": "已完成",
+            "category": "done"
+          }
+        },
+        "actions": [
+          {
+            "id": "complete",
+            "label": "完成",
+            "from": [
+              "open"
+            ]
+          },
+          {
+            "id": "reopen",
+            "label": "重新打开",
+            "from": [
+              "done"
+            ]
+          }
+        ],
+        "fields": []
+      },
+      "evidence": {
+        "passed": true,
+        "origin": "builtin"
+      }
+    },
+    {
+      "pluginId": "deadline-guard",
+      "name": "截止时间守卫",
+      "service": "plugin:deadline-guard",
+      "contractVersion": "extensions/1",
+      "source": "type TaskSnapshot = {\n  state: string;\n  fields: Record<string, string>;\n};\n\ntype FieldDefinition = {\n  key: string;\n  label: string;\n  type: \"text\";\n  required?: boolean;\n  description?: string;\n};\n\ntype WorkflowDecision =\n  | { kind: \"reject\"; message: string }\n  | { kind: \"input-required\"; fields: FieldDefinition[] }\n  | { kind: \"commit\"; state: string; fields: Record<string, string> };\n\ntype CommandDefinition = {\n  id: string;\n  label: string;\n  from?: string[];\n  internalOnly?: boolean;\n};\n\ntype ScheduleDefinition = {\n  id: string;\n  at: string;\n  atKind?: \"absolute\" | \"field\";\n  timezone?: string;\n  dedupeKey: string;\n  onFire: {\n    type: \"action\";\n    commandId: string;\n    taskId?: string;\n    input?: Record<string, string>;\n  };\n  missPolicy: \"skip\" | \"run-once\";\n};\n\ntype UiSlotDefinition = {\n  id: string;\n  slot: \"task.detail\";\n  title: string;\n  body?: string;\n  actions?: { commandId: string; label: string }[];\n  fields?: { key: string; label: string }[];\n  order?: number;\n};\n\ntype Contribution = {\n  fields?: FieldDefinition[];\n  commands?: CommandDefinition[];\n  schedules?: ScheduleDefinition[];\n  uiSlots?: UiSlotDefinition[];\n};\n\ntype DecideInput = {\n  task: TaskSnapshot;\n  action: string;\n  input: Record<string, string>;\n};\n\nconst dueAtField: FieldDefinition = {\n  key: \"dueAt\",\n  label: \"截止时间\",\n  type: \"text\",\n  description: \"ISO 8601 时间，例如 2030-01-01T12:00:00Z；留空可清除\",\n};\n\nconst expiredField: FieldDefinition = {\n  key: \"expired\",\n  label: \"已过期\",\n  type: \"text\",\n};\n\nfunction isLeapYear(year: number): boolean {\n  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);\n}\n\nfunction daysInMonth(year: number, month: number): number {\n  if (month === 2) return isLeapYear(year) ? 29 : 28;\n  if (month === 4 || month === 6 || month === 9 || month === 11) return 30;\n  return 31;\n}\n\nfunction isValidDueAt(value: string): boolean {\n  const isoPattern =\n    /^\\d{4}-\\d{2}-\\d{2}T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,3})?(?:Z|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$/i;\n  if (!isoPattern.test(value)) return false;\n  const year = Number(value.slice(0, 4));\n  const month = Number(value.slice(5, 7));\n  const day = Number(value.slice(8, 10));\n  if (month < 1 || month > 12) return false;\n  if (day < 1 || day > daysInMonth(year, month)) return false;\n  return true;\n}\n\nexport default {\n  contribute(): Contribution {\n    return {\n      fields: [dueAtField, expiredField],\n      commands: [\n        { id: \"setDue\", label: \"设截止\", from: [\"open\", \"done\"] },\n        { id: \"expire\", label: \"标记过期\", from: [\"open\"], internalOnly: true },\n      ],\n      schedules: [\n        {\n          id: \"due-expire\",\n          atKind: \"field\",\n          at: \"dueAt\",\n          dedupeKey: \"due-expire\",\n          onFire: { type: \"action\", commandId: \"expire\" },\n          missPolicy: \"run-once\",\n        },\n      ],\n      uiSlots: [\n        {\n          id: \"due-detail\",\n          slot: \"task.detail\",\n          title: \"截止与过期\",\n          fields: [\n            { key: \"dueAt\", label: \"截止时间\" },\n            { key: \"expired\", label: \"已过期\" },\n          ],\n          actions: [{ commandId: \"setDue\", label: \"设截止\" }],\n        },\n      ],\n    };\n  },\n\n  decide({ task, action, input }: DecideInput): WorkflowDecision {\n    if (action === \"setDue\") {\n      if (!Object.prototype.hasOwnProperty.call(input, \"dueAt\")) {\n        return {\n          kind: \"input-required\",\n          fields: [{ ...dueAtField, required: false }],\n        };\n      }\n\n      const dueAt = String(input[\"dueAt\"]).trim();\n      if (dueAt.length > 0 && !isValidDueAt(dueAt)) {\n        return {\n          kind: \"reject\",\n          message:\n            \"请输入有效的 ISO 8601 截止时间，例如 2030-01-01T12:00:00Z；留空可清除\",\n        };\n      }\n\n      const fields: Record<string, string> = { ...task.fields };\n      delete fields[\"expired\"];\n      if (dueAt.length > 0) fields[\"dueAt\"] = dueAt;\n      else delete fields[\"dueAt\"];\n      return { kind: \"commit\", state: task.state, fields };\n    }\n\n    if (action === \"expire\") {\n      if (task.state !== \"open\") {\n        return { kind: \"reject\", message: \"仅未完成任务会自动标记过期\" };\n      }\n      if (!task.fields[\"dueAt\"]) {\n        return { kind: \"reject\", message: \"任务未设置截止时间\" };\n      }\n\n      const scheduledAt =\n        typeof input[\"scheduledAt\"] === \"string\"\n          ? input[\"scheduledAt\"].trim()\n          : \"\";\n      if (task.fields[\"dueAt\"] !== scheduledAt) {\n        return { kind: \"reject\", message: \"截止时间已修改或清除\" };\n      }\n\n      return {\n        kind: \"commit\",\n        state: task.state,\n        fields: { ...task.fields, expired: \"true\" },\n      };\n    }\n\n    return { kind: \"reject\", message: \"未知动作\" };\n  },\n};\n",
+      "code": "                     \n                \n                                 \n  \n\n                        \n              \n                \n               \n                     \n                       \n  \n\n                       \n                                       \n                                                         \n                                                                      \n\n                          \n             \n                \n                  \n                         \n  \n\n                           \n             \n             \n                                \n                    \n                    \n           \n                   \n                      \n                    \n                                   \n    \n                                  \n  \n\n                         \n             \n                      \n                \n                \n                                                   \n                                            \n                 \n  \n\n                     \n                             \n                                 \n                                   \n                               \n  \n\n                    \n                     \n                 \n                                \n  \n\nconst dueAtField                  = {\n  key: \"dueAt\",\n  label: \"截止时间\",\n  type: \"text\",\n  description: \"ISO 8601 时间，例如 2030-01-01T12:00:00Z；留空可清除\",\n};\n\nconst expiredField                  = {\n  key: \"expired\",\n  label: \"已过期\",\n  type: \"text\",\n};\n\nfunction isLeapYear(year        )          {\n  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);\n}\n\nfunction daysInMonth(year        , month        )         {\n  if (month === 2) return isLeapYear(year) ? 29 : 28;\n  if (month === 4 || month === 6 || month === 9 || month === 11) return 30;\n  return 31;\n}\n\nfunction isValidDueAt(value        )          {\n  const isoPattern =\n    /^\\d{4}-\\d{2}-\\d{2}T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,3})?(?:Z|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$/i;\n  if (!isoPattern.test(value)) return false;\n  const year = Number(value.slice(0, 4));\n  const month = Number(value.slice(5, 7));\n  const day = Number(value.slice(8, 10));\n  if (month < 1 || month > 12) return false;\n  if (day < 1 || day > daysInMonth(year, month)) return false;\n  return true;\n}\n\nexport default {\n  contribute()               {\n    return {\n      fields: [dueAtField, expiredField],\n      commands: [\n        { id: \"setDue\", label: \"设截止\", from: [\"open\", \"done\"] },\n        { id: \"expire\", label: \"标记过期\", from: [\"open\"], internalOnly: true },\n      ],\n      schedules: [\n        {\n          id: \"due-expire\",\n          atKind: \"field\",\n          at: \"dueAt\",\n          dedupeKey: \"due-expire\",\n          onFire: { type: \"action\", commandId: \"expire\" },\n          missPolicy: \"run-once\",\n        },\n      ],\n      uiSlots: [\n        {\n          id: \"due-detail\",\n          slot: \"task.detail\",\n          title: \"截止与过期\",\n          fields: [\n            { key: \"dueAt\", label: \"截止时间\" },\n            { key: \"expired\", label: \"已过期\" },\n          ],\n          actions: [{ commandId: \"setDue\", label: \"设截止\" }],\n        },\n      ],\n    };\n  },\n\n  decide({ task, action, input }             )                   {\n    if (action === \"setDue\") {\n      if (!Object.prototype.hasOwnProperty.call(input, \"dueAt\")) {\n        return {\n          kind: \"input-required\",\n          fields: [{ ...dueAtField, required: false }],\n        };\n      }\n\n      const dueAt = String(input[\"dueAt\"]).trim();\n      if (dueAt.length > 0 && !isValidDueAt(dueAt)) {\n        return {\n          kind: \"reject\",\n          message:\n            \"请输入有效的 ISO 8601 截止时间，例如 2030-01-01T12:00:00Z；留空可清除\",\n        };\n      }\n\n      const fields                         = { ...task.fields };\n      delete fields[\"expired\"];\n      if (dueAt.length > 0) fields[\"dueAt\"] = dueAt;\n      else delete fields[\"dueAt\"];\n      return { kind: \"commit\", state: task.state, fields };\n    }\n\n    if (action === \"expire\") {\n      if (task.state !== \"open\") {\n        return { kind: \"reject\", message: \"仅未完成任务会自动标记过期\" };\n      }\n      if (!task.fields[\"dueAt\"]) {\n        return { kind: \"reject\", message: \"任务未设置截止时间\" };\n      }\n\n      const scheduledAt =\n        typeof input[\"scheduledAt\"] === \"string\"\n          ? input[\"scheduledAt\"].trim()\n          : \"\";\n      if (task.fields[\"dueAt\"] !== scheduledAt) {\n        return { kind: \"reject\", message: \"截止时间已修改或清除\" };\n      }\n\n      return {\n        kind: \"commit\",\n        state: task.state,\n        fields: { ...task.fields, expired: \"true\" },\n      };\n    }\n\n    return { kind: \"reject\", message: \"未知动作\" };\n  },\n};\n",
+      "bundle": {
+        "files": {
+          "business/entry.ts": "type TaskSnapshot = {\n  state: string;\n  fields: Record<string, string>;\n};\n\ntype FieldDefinition = {\n  key: string;\n  label: string;\n  type: \"text\";\n  required?: boolean;\n  description?: string;\n};\n\ntype WorkflowDecision =\n  | { kind: \"reject\"; message: string }\n  | { kind: \"input-required\"; fields: FieldDefinition[] }\n  | { kind: \"commit\"; state: string; fields: Record<string, string> };\n\ntype CommandDefinition = {\n  id: string;\n  label: string;\n  from?: string[];\n  internalOnly?: boolean;\n};\n\ntype ScheduleDefinition = {\n  id: string;\n  at: string;\n  atKind?: \"absolute\" | \"field\";\n  timezone?: string;\n  dedupeKey: string;\n  onFire: {\n    type: \"action\";\n    commandId: string;\n    taskId?: string;\n    input?: Record<string, string>;\n  };\n  missPolicy: \"skip\" | \"run-once\";\n};\n\ntype UiSlotDefinition = {\n  id: string;\n  slot: \"task.detail\";\n  title: string;\n  body?: string;\n  actions?: { commandId: string; label: string }[];\n  fields?: { key: string; label: string }[];\n  order?: number;\n};\n\ntype Contribution = {\n  fields?: FieldDefinition[];\n  commands?: CommandDefinition[];\n  schedules?: ScheduleDefinition[];\n  uiSlots?: UiSlotDefinition[];\n};\n\ntype DecideInput = {\n  task: TaskSnapshot;\n  action: string;\n  input: Record<string, string>;\n};\n\nconst dueAtField: FieldDefinition = {\n  key: \"dueAt\",\n  label: \"截止时间\",\n  type: \"text\",\n  description: \"ISO 8601 时间，例如 2030-01-01T12:00:00Z；留空可清除\",\n};\n\nconst expiredField: FieldDefinition = {\n  key: \"expired\",\n  label: \"已过期\",\n  type: \"text\",\n};\n\nfunction isLeapYear(year: number): boolean {\n  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);\n}\n\nfunction daysInMonth(year: number, month: number): number {\n  if (month === 2) return isLeapYear(year) ? 29 : 28;\n  if (month === 4 || month === 6 || month === 9 || month === 11) return 30;\n  return 31;\n}\n\nfunction isValidDueAt(value: string): boolean {\n  const isoPattern =\n    /^\\d{4}-\\d{2}-\\d{2}T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,3})?(?:Z|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$/i;\n  if (!isoPattern.test(value)) return false;\n  const year = Number(value.slice(0, 4));\n  const month = Number(value.slice(5, 7));\n  const day = Number(value.slice(8, 10));\n  if (month < 1 || month > 12) return false;\n  if (day < 1 || day > daysInMonth(year, month)) return false;\n  return true;\n}\n\nexport default {\n  contribute(): Contribution {\n    return {\n      fields: [dueAtField, expiredField],\n      commands: [\n        { id: \"setDue\", label: \"设截止\", from: [\"open\", \"done\"] },\n        { id: \"expire\", label: \"标记过期\", from: [\"open\"], internalOnly: true },\n      ],\n      schedules: [\n        {\n          id: \"due-expire\",\n          atKind: \"field\",\n          at: \"dueAt\",\n          dedupeKey: \"due-expire\",\n          onFire: { type: \"action\", commandId: \"expire\" },\n          missPolicy: \"run-once\",\n        },\n      ],\n      uiSlots: [\n        {\n          id: \"due-detail\",\n          slot: \"task.detail\",\n          title: \"截止与过期\",\n          fields: [\n            { key: \"dueAt\", label: \"截止时间\" },\n            { key: \"expired\", label: \"已过期\" },\n          ],\n          actions: [{ commandId: \"setDue\", label: \"设截止\" }],\n        },\n      ],\n    };\n  },\n\n  decide({ task, action, input }: DecideInput): WorkflowDecision {\n    if (action === \"setDue\") {\n      if (!Object.prototype.hasOwnProperty.call(input, \"dueAt\")) {\n        return {\n          kind: \"input-required\",\n          fields: [{ ...dueAtField, required: false }],\n        };\n      }\n\n      const dueAt = String(input[\"dueAt\"]).trim();\n      if (dueAt.length > 0 && !isValidDueAt(dueAt)) {\n        return {\n          kind: \"reject\",\n          message:\n            \"请输入有效的 ISO 8601 截止时间，例如 2030-01-01T12:00:00Z；留空可清除\",\n        };\n      }\n\n      const fields: Record<string, string> = { ...task.fields };\n      delete fields[\"expired\"];\n      if (dueAt.length > 0) fields[\"dueAt\"] = dueAt;\n      else delete fields[\"dueAt\"];\n      return { kind: \"commit\", state: task.state, fields };\n    }\n\n    if (action === \"expire\") {\n      if (task.state !== \"open\") {\n        return { kind: \"reject\", message: \"仅未完成任务会自动标记过期\" };\n      }\n      if (!task.fields[\"dueAt\"]) {\n        return { kind: \"reject\", message: \"任务未设置截止时间\" };\n      }\n\n      const scheduledAt =\n        typeof input[\"scheduledAt\"] === \"string\"\n          ? input[\"scheduledAt\"].trim()\n          : \"\";\n      if (task.fields[\"dueAt\"] !== scheduledAt) {\n        return { kind: \"reject\", message: \"截止时间已修改或清除\" };\n      }\n\n      return {\n        kind: \"commit\",\n        state: task.state,\n        fields: { ...task.fields, expired: \"true\" },\n      };\n    }\n\n    return { kind: \"reject\", message: \"未知动作\" };\n  },\n};\n",
+          "business/view.ts": "export default { title: \"extension\", fields: [] };",
+          "business/config.json": "{}",
+          "business/compatibility.json": "{\"preserveUnknownFields\":true}"
+        },
+        "outputs": {
+          "business/entry.js": "                     \n                \n                                 \n  \n\n                        \n              \n                \n               \n                     \n                       \n  \n\n                       \n                                       \n                                                         \n                                                                      \n\n                          \n             \n                \n                  \n                         \n  \n\n                           \n             \n             \n                                \n                    \n                    \n           \n                   \n                      \n                    \n                                   \n    \n                                  \n  \n\n                         \n             \n                      \n                \n                \n                                                   \n                                            \n                 \n  \n\n                     \n                             \n                                 \n                                   \n                               \n  \n\n                    \n                     \n                 \n                                \n  \n\nconst dueAtField                  = {\n  key: \"dueAt\",\n  label: \"截止时间\",\n  type: \"text\",\n  description: \"ISO 8601 时间，例如 2030-01-01T12:00:00Z；留空可清除\",\n};\n\nconst expiredField                  = {\n  key: \"expired\",\n  label: \"已过期\",\n  type: \"text\",\n};\n\nfunction isLeapYear(year        )          {\n  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);\n}\n\nfunction daysInMonth(year        , month        )         {\n  if (month === 2) return isLeapYear(year) ? 29 : 28;\n  if (month === 4 || month === 6 || month === 9 || month === 11) return 30;\n  return 31;\n}\n\nfunction isValidDueAt(value        )          {\n  const isoPattern =\n    /^\\d{4}-\\d{2}-\\d{2}T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,3})?(?:Z|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$/i;\n  if (!isoPattern.test(value)) return false;\n  const year = Number(value.slice(0, 4));\n  const month = Number(value.slice(5, 7));\n  const day = Number(value.slice(8, 10));\n  if (month < 1 || month > 12) return false;\n  if (day < 1 || day > daysInMonth(year, month)) return false;\n  return true;\n}\n\nexport default {\n  contribute()               {\n    return {\n      fields: [dueAtField, expiredField],\n      commands: [\n        { id: \"setDue\", label: \"设截止\", from: [\"open\", \"done\"] },\n        { id: \"expire\", label: \"标记过期\", from: [\"open\"], internalOnly: true },\n      ],\n      schedules: [\n        {\n          id: \"due-expire\",\n          atKind: \"field\",\n          at: \"dueAt\",\n          dedupeKey: \"due-expire\",\n          onFire: { type: \"action\", commandId: \"expire\" },\n          missPolicy: \"run-once\",\n        },\n      ],\n      uiSlots: [\n        {\n          id: \"due-detail\",\n          slot: \"task.detail\",\n          title: \"截止与过期\",\n          fields: [\n            { key: \"dueAt\", label: \"截止时间\" },\n            { key: \"expired\", label: \"已过期\" },\n          ],\n          actions: [{ commandId: \"setDue\", label: \"设截止\" }],\n        },\n      ],\n    };\n  },\n\n  decide({ task, action, input }             )                   {\n    if (action === \"setDue\") {\n      if (!Object.prototype.hasOwnProperty.call(input, \"dueAt\")) {\n        return {\n          kind: \"input-required\",\n          fields: [{ ...dueAtField, required: false }],\n        };\n      }\n\n      const dueAt = String(input[\"dueAt\"]).trim();\n      if (dueAt.length > 0 && !isValidDueAt(dueAt)) {\n        return {\n          kind: \"reject\",\n          message:\n            \"请输入有效的 ISO 8601 截止时间，例如 2030-01-01T12:00:00Z；留空可清除\",\n        };\n      }\n\n      const fields                         = { ...task.fields };\n      delete fields[\"expired\"];\n      if (dueAt.length > 0) fields[\"dueAt\"] = dueAt;\n      else delete fields[\"dueAt\"];\n      return { kind: \"commit\", state: task.state, fields };\n    }\n\n    if (action === \"expire\") {\n      if (task.state !== \"open\") {\n        return { kind: \"reject\", message: \"仅未完成任务会自动标记过期\" };\n      }\n      if (!task.fields[\"dueAt\"]) {\n        return { kind: \"reject\", message: \"任务未设置截止时间\" };\n      }\n\n      const scheduledAt =\n        typeof input[\"scheduledAt\"] === \"string\"\n          ? input[\"scheduledAt\"].trim()\n          : \"\";\n      if (task.fields[\"dueAt\"] !== scheduledAt) {\n        return { kind: \"reject\", message: \"截止时间已修改或清除\" };\n      }\n\n      return {\n        kind: \"commit\",\n        state: task.state,\n        fields: { ...task.fields, expired: \"true\" },\n      };\n    }\n\n    return { kind: \"reject\", message: \"未知动作\" };\n  },\n};\n",
+          "business/view.js": "export default { title: \"extension\", fields: [] };"
+        },
+        "lockHash": "c80b79e8e2013b1257253e8ff91d30ddc9ee6c6debe52feeeb67d3a9b13ecac9",
+        "builder": "member-strip/1"
+      },
+      "definition": {
+        "id": "deadline-guard"
+      },
+      "evidence": {
+        "passed": false,
+        "generated": true,
+        "origin": "evolution-member-addition",
+        "baseVersion": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0"
+      }
+    }
+  ],
+  "candidateInput": {
+    "pluginId": "default",
+    "name": "轻快完成",
+    "parentId": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0",
+    "service": "workflow",
+    "contractVersion": "workflow/1",
+    "source": "import type { Workflow } from \"./contract.js\";\nexport const workflow: Workflow = {\n  definition: {\n    id: \"default\",\n    name: \"轻快完成\",\n    version: \"1.0.0\",\n    initialState: \"open\",\n    states: {\n      open: { label: \"未完成\", category: \"open\" },\n      done: { label: \"已完成\", category: \"done\" },\n    },\n    actions: [\n      { id: \"complete\", label: \"完成\", from: [\"open\"] },\n      { id: \"reopen\", label: \"重新打开\", from: [\"done\"] },\n    ],\n    fields: [],\n  },\n  decide(task, action) {\n    if (\n      !this.definition.actions.some(\n        (a) => a.id === action && a.from.includes(task.state),\n      )\n    )\n      return { kind: \"reject\", message: \"当前状态不能执行此操作\" };\n    return {\n      kind: \"commit\",\n      state: action === \"complete\" ? \"done\" : \"open\",\n      fields: task.fields,\n    };\n  },\n};\n\nexport default {\n  describe: () => workflow.definition,\n  decide: (data: {\n    task: Parameters<typeof workflow.decide>[0];\n    action: string;\n    input: Record<string, string>;\n  }) => workflow.decide(data.task, data.action, data.input),\n};\n",
+    "code": "                                              \nexport const workflow           = {\n  definition: {\n    id: \"default\",\n    name: \"轻快完成\",\n    version: \"1.0.0\",\n    initialState: \"open\",\n    states: {\n      open: { label: \"未完成\", category: \"open\" },\n      done: { label: \"已完成\", category: \"done\" },\n    },\n    actions: [\n      { id: \"complete\", label: \"完成\", from: [\"open\"] },\n      { id: \"reopen\", label: \"重新打开\", from: [\"done\"] },\n    ],\n    fields: [],\n  },\n  decide(task, action) {\n    if (\n      !this.definition.actions.some(\n        (a) => a.id === action && a.from.includes(task.state),\n      )\n    )\n      return { kind: \"reject\", message: \"当前状态不能执行此操作\" };\n    return {\n      kind: \"commit\",\n      state: action === \"complete\" ? \"done\" : \"open\",\n      fields: task.fields,\n    };\n  },\n};\n\nexport default {\n  describe: () => workflow.definition,\n  decide: (data   \n                                                \n                   \n                                  \n   ) => workflow.decide(data.task, data.action, data.input),\n};\n",
+    "definition": {
+      "id": "default",
+      "name": "轻快完成",
+      "version": "1.0.0",
+      "initialState": "open",
+      "states": {
+        "open": {
+          "label": "未完成",
+          "category": "open"
+        },
+        "done": {
+          "label": "已完成",
+          "category": "done"
+        }
+      },
+      "actions": [
+        {
+          "id": "complete",
+          "label": "完成",
+          "from": [
+            "open"
+          ]
+        },
+        {
+          "id": "reopen",
+          "label": "重新打开",
+          "from": [
+            "done"
+          ]
+        }
+      ],
+      "fields": []
+    },
+    "members": [
+      {
+        "pluginId": "default",
+        "versionId": "3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0",
+        "enabled": true,
+        "role": "workflow"
+      },
+      {
+        "pluginId": "deadline-guard",
+        "versionId": "b21d9a7b5d331b06b053106a7a3119106e89a18bda4cc7f5214a4c61482c5d20",
+        "enabled": true,
+        "role": "auxiliary"
+      }
+    ],
+    "evidence": {
+      "passed": false,
+      "origin": "real-model-archive-regression"
+    }
+  },
+  "candidateProgramHash": "1c5858e6ac6929a0820f2afcbc7d20367a28611b29a017a45a649f29808f13a3"
+}

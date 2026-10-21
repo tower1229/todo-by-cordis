@@ -4,9 +4,51 @@ import {
   STABILITY_EVAL_MANIFEST,
   type StabilityScenario,
 } from "../../scripts/lib/stability-eval/manifest.js";
-import { scoreCapabilityAndBlocking } from "../../scripts/lib/stability-eval/scoring.js";
+import { observeOutcome, scoreCapabilityAndBlocking } from "../../scripts/lib/stability-eval/scoring.js";
 import { assertRealModelAuthorization } from "../../scripts/lib/stability-eval/authorization.js";
 import { postchangeManifest } from "../../scripts/lib/stability-eval/postchange.js";
+import { currentManifest } from "../../scripts/lib/stability-eval/current.js";
+
+test("独立阻塞判定缺失或失败时，终态 blocked 不得被标为准确阻塞", () => {
+  const boundary = currentManifest("a".repeat(40)).scenarios.find(
+    (s) => s.id === "unsupported-blank-presentation",
+  )!;
+  for (const proof of [undefined, false]) {
+    const observed = observeOutcome(boundary, "blocked-observed", "blocked", proof);
+    assert.equal(
+      observed,
+      "failed",
+    );
+    const score = scoreCapabilityAndBlocking({
+      scenario: boundary,
+      observedOutcomeClass: observed,
+      reachedReadyOnFirstPlan: false,
+      blockedWithoutReady: true,
+    });
+    assert.equal(score.firstPlanPassed, false);
+  }
+  assert.equal(
+    observeOutcome(boundary, "blocked-observed", "blocked", true),
+    "accurate-block",
+  );
+  for (const blockedWithoutReady of [true, false]) {
+    assert.equal(scoreCapabilityAndBlocking({
+      scenario: boundary,
+      observedOutcomeClass: observeOutcome(boundary, "blocked-observed", "blocked", true),
+      reachedReadyOnFirstPlan: false,
+      blockedWithoutReady,
+    }).firstPlanPassed, blockedWithoutReady);
+  }
+  assert.equal(
+    observeOutcome(boundary, "failed", "blocked", true),
+    "failed",
+  );
+  assert.equal(
+    observeOutcome({ ...boundary, expectedOutcomeClass: "full-path-success" },
+      "blocked-observed", "blocked", true),
+    "failed",
+  );
+});
 
 const scenario = (id: string): StabilityScenario => {
   const found = STABILITY_EVAL_MANIFEST.scenarios.find((s) => s.id === id);
@@ -69,6 +111,7 @@ test("准确阻塞计分看 blockReason/依赖文案，而非仅 observed===expe
     blockedWithoutReady: true,
   });
   assert.equal(wrong.errorBlockingCorrect, false);
+  assert.equal(wrong.firstPlanPassed, false);
 });
 
 test("缺失推送阻塞要求 maintainer-capability 或推送相关文案", () => {

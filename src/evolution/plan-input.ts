@@ -10,7 +10,7 @@ import type { WorkflowDefinition } from "../server/business/contracts.js";
 import { sourceFieldCandidates } from "./field-identity.js";
 import { admissionResolved, type RequestAdmission } from "./request-admission.js";
 import { compilePrimaryOperations } from "./planning-operations.js";
-import { operationPreparation } from "./obligation-derivation.js";
+import { operationPreparation, scheduledMembers } from "./obligation-derivation.js";
 import { schedulePolicySemantics, type SchedulePolicyCheck } from "../shared/schedule-policy.js";
 
 const text = { type: "string" };
@@ -78,7 +78,7 @@ export const businessExpectationsSchema = list(
   {
     anyOf: [
       object({ kind: kind("behavior", "preserve-ui") }),
-      object({kind:kind("schedule-policy"),action:text,policies:{...list(kind(...Object.keys(schedulePolicySemantics)),2),minItems:1}}),
+      object({kind:kind("schedule-policy"),action:text,policies:{...list(kind(...Object.keys(schedulePolicySemantics)),Object.keys(schedulePolicySemantics).length),minItems:1}}),
       object(
         { kind: kind("field"), field: text, initial, examples: list(text, 8) },
         ["kind", "field"],
@@ -614,6 +614,7 @@ export function compilePlanInput(
       };
     }),
   ];
+  const scheduleProviders = scheduledMembers({ capabilityChanges: changes, requiredCapabilities });
   const checks = [
     { kind: "workflow" },
     ...(enabled ? [{ kind: "enabled" }] : []),
@@ -692,7 +693,9 @@ export function compilePlanInput(
                 c.expected.fields[e.field] !== c.fields[e.field],
             )
             .map((c) => ({
-              steps: [...operationPreparation(operations,c,workflow.initialState,e.field),{ kind: "action", action: c.action, input: c.input }],
+              steps: "member" in c && scheduleProviders.has(c.member)
+                ? [{ kind: "case-action", member: c.member, caseId: `member:${c.member}:${c.name}`, definitionHash: hash(c), field: e.field }]
+                : [...operationPreparation(operations,c,workflow.initialState,e.field),{ kind: "action", action: c.action, input: c.input }],
               value:
                 c.expected.kind === "commit" ? c.expected.fields[e.field] : "",
             }));

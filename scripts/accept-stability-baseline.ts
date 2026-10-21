@@ -125,20 +125,9 @@ if (!child) {
   }
   const productFiles = treeHashes(join(directory, "src"));
   const harnessFiles = [
-    "scripts/accept-stability-baseline.ts",
-    "scripts/lib/shortened-real-model.ts",
     "tsconfig.evaluation.json",
-    "tests/app/dual-composition-fixture.ts",
-    "tests/app/planning-fixture.ts",
-    "tests/app/evolution-fixture.ts",
-    "tests/app/evolution-adapter.ts",
-    "tests/app/member-case-fixtures.ts",
-    "tests/fixtures/member-ui.ts",
-    "tests/fixtures/aux-workflow.mjs",
-    "tests/fixtures/tags-plugin.mjs",
-    "tests/fixtures/due-plugin.mjs",
-    ...Object.keys(treeHashes("scripts/lib/stability-eval")).map(
-      (path) => `scripts/lib/stability-eval/${path}`,
+    ...["scripts", "tests"].flatMap((directory) =>
+      Object.keys(treeHashes(directory)).map((path) => join(directory, path)),
     ),
   ];
   const harness = Object.fromEntries(

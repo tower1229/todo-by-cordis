@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { currentManifest } from "../../scripts/lib/stability-eval/current.js";
+import { hash } from "../../src/release/storage.js";
+import { schedulePolicyChecks, type SchedulePolicy } from "../../src/shared/schedule-policy.js";
 import {
   checkIndependentPlan,
   checkIndependentBrowser,
@@ -103,6 +105,28 @@ test("计时验收补全定义也必须补全执行义务，遗漏修改或清�
   for (const cases of [[fired], [fired,modify], [fired,clear], [fired,modify,{...clear,expected:{...clear.expected,fields:{expired:"true"}}}]])
     assert.equal(checkIndependentPlan(scenario,{memberCases:cases}).find(c => c.id === "plan:due-policy")?.status,"failed");
   assert.equal(checkIndependentPlan(scenario,{memberCases:[fired,modify,clear]}).find(c => c.id === "plan:due-policy")?.status,"passed");
+  const policy: SchedulePolicy = {
+    version: 1, id: "reset", kind: "schedule-policy",
+    action: { kind: "action", member: "due", action: "expire" },
+    fireCase: { caseId: "member:due:到期", definitionHash: hash(fired) },
+    checks: ["reset-clears-effect"],
+  };
+  const requirement = {
+    id: "r", description: "修改或清除截止时清除原过期标记",
+    sourceRevision: "run:1", sourceQuote: scenario.request,
+    type: "behavior" as const,
+    checks: schedulePolicyChecks(policy), obligations: [policy],
+  };
+  const result = (r = requirement) => checkIndependentPlan(scenario, {
+    memberCases: [fired], requirements: [r],
+  }).find(c => c.id === "plan:due-policy")?.status;
+  assert.equal(result(), "passed");
+  assert.equal(result({ ...requirement, checks: [] }), "failed");
+  for (const forged of [
+    { ...policy, fireCase: { ...policy.fireCase, definitionHash: "forged" } },
+    { ...policy, action: { ...policy.action, member: "other" } },
+    { ...policy, checks: ["set-past-due"] as SchedulePolicy["checks"] },
+  ]) assert.equal(result({ ...requirement, obligations: [forged] }), "failed");
   const checks = duePolicyCheckIds.map(id => oracleCheck(id,true,true));
   assert.equal(checkDuePolicy(checks).status,"passed");
   assert.equal(checkDuePolicy(checks.slice(1)).status,"failed");
@@ -121,4 +145,61 @@ test("能力阻塞须有当前来源和宿主绑定证明，恢复过的协议�
   const tampered=structuredClone(admission);tampered.capabilityChecks[0].factHash="伪造";
   assert.equal(checkIndependentBlock(scenario,{...run,requestAdmissions:[tampered]},context).status,"failed");
   assert.equal(checkIndependentBlock(scenario,{...run,stop:{kind:"protocol",phase:"review",code:"invalid-model-protocol",evidence:["model-call:2"]}},context).status,"failed");
+});
+
+test("空白呈现阻塞通过同一 claim 的已复核完整来源绑定，不要求条件引用重复效果原文", () => {
+  const scenario = currentManifest("a".repeat(40)).scenarios.find(
+    (s) => s.id === "unsupported-blank-presentation",
+  )!;
+  const sources = [{ id: "s:1", text: scenario.request }];
+  const parsed = parseAdmission(
+    JSON.stringify({
+      initials: [{
+        source: 1,
+        sourceQuote: "尚未填写时",
+        target: { kind: "new", name: "评审备注" },
+        meaning: {
+          kind: "blank",
+          conditionQuote: "尚未填写时",
+          effectQuote: "显示空白",
+        },
+      }],
+      effects: [],
+      questions: [],
+    }),
+    "base",
+    sources,
+    technicalFacts({ workflowRules: [] }),
+  );
+  const admission = adjudicateAdmission(
+    JSON.stringify({ decisions: [{
+      claim: 1,
+      source: 1,
+      sourceQuote: "任务详情显示备注，尚未填写时显示空白",
+      layer: "initial-display",
+      verdict: "entailed",
+      detail: "原文明确要求未填写时显示空白",
+    }] }),
+    parsed,
+    sources,
+  );
+  const context = {
+    environment: { node: "test", dependencies: {}, missing: [] },
+    capabilities: [],
+  };
+  const run = {
+    status: "blocked",
+    blockReason: "maintainer-capability",
+    requestAdmissions: [admission],
+  };
+  assert.equal(checkIndependentBlock(scenario, run, context).status, "passed");
+  const tampered = structuredClone(admission);
+  tampered.technicalChecks[0].factHash = "fabricated";
+  assert.equal(checkIndependentBlock(scenario, {
+    ...run, requestAdmissions: [tampered],
+  }, context).status, "failed");
+  assert.equal(checkIndependentBlock({
+    ...scenario,
+    oracle: { kind: "block", reason: "blank-presentation", sources: ["标签显示空白"] },
+  }, run, context).status, "failed");
 });

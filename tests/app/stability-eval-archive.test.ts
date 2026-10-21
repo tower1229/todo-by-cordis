@@ -92,6 +92,38 @@ test("证据处理异常覆盖已观察到的正确阻塞，保留原始终态�
   }
 });
 
+test("预期完整路径成功的场景被真实规划门禁阻塞时，归档记为失败而非正确阻塞", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "cordis-positive-blocked-"));
+  const manifest = freezeManifest(currentManifest("a".repeat(40)));
+  const scenario = manifest.scenarios.find((s) => s.id === "tags-add")!;
+  assert.equal(scenario.expectedOutcomeClass, "full-path-success");
+  try {
+    const result = await runStabilityScenario({
+      directory, scenario, manifest, evidenceKind: "model-stub",
+      driver: { async generate() { return { text: "{}", history: [], calls: [], usage: {}, raw: {} }; } },
+      browserRun: async ({ app }) => {
+        await app.request("/api/assistant/commands", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "request", operationId: crypto.randomUUID(), text: scenario.request }),
+        });
+        let status: string | undefined;
+        for (let i = 0; i < 1000; i++) {
+          status = (await (await app.request("/api/assistant")).json()).run?.status;
+          if (status === "blocked") break;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        assert.equal(status, "blocked");
+        return { status: "blocked-observed", viewport: { width: 390, height: 844 }, openedImprovePanel: true,
+          recoveryEntryVisible: true, screenshot: "", pageErrors: [], observedRunStatus: "blocked" };
+      },
+    });
+    assert.equal(result.record.terminal?.status, "blocked");
+    assert.equal(result.record.evidenceComplete, true);
+    assert.equal(result.record.fullPathSucceeded, false);
+    assert.equal(result.record.observedOutcomeClass, "failed");
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test("归档封存后替换通过记录、删除证据或追加文件都会破坏身份", () => {
   const root = mkdtempSync(join(tmpdir(), "cordis-seal-"));
   try {

@@ -10,6 +10,17 @@ import {fieldFacts,type FieldIdentity} from "./field-identity.js";
 import { workflowCheckerRules } from "./checker-rules.js";
 import { capabilityFacts } from "./capability-admission.js";
 import { schedulePolicySemantics } from "../shared/schedule-policy.js";
+import type { BrowserStep } from "../shared/browser-cases.js";
+
+function clarificationStep(step: BrowserStep): string {
+  if (step.kind === "action")
+    return `执行成员“${step.member}”的“${step.action}”动作${step.input ? `（输入 ${JSON.stringify(step.input)}）` : ""}`;
+  if (step.kind === "open") return "打开任务详情";
+  if (step.kind === "refresh") return "刷新页面";
+  if (step.kind === "restart") return "重启服务后打开任务";
+  if (step.kind === "edit") return `编辑任务 ${JSON.stringify({ title: step.title, description: step.description })}`;
+  return `检查 ${JSON.stringify(step)}`;
+}
 
 export type TechnicalFact = {
   id: string;
@@ -56,7 +67,7 @@ export function semanticChoiceTargets(
               requirementId: r.id,
               aspect: "action-availability" as const,
               subject: o.id,
-              question: `在这项要求的场景中，是否应显示 ${o.expected.action} 动作？`,
+              question: `从新建任务开始${o.steps.length ? `，依次${o.steps.map(clarificationStep).join("，再")}` : "，尚未执行任何动作"}；此时成员“${o.expected.member}”${o.expected.contribution ? `的界面“${o.expected.contribution}”` : ""}是否应显示“${o.expected.action}”动作？`,
             },
           ]
         : [],

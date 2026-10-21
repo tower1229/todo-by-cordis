@@ -376,6 +376,7 @@ export class EvolutionDomain implements Domain {
             goal.requirements ?? [],
             goal.requirementGate?.definitionHash ?? "",
             signal,
+            goal.memberCases ?? [],
           );
         } catch (error) {
           if (error instanceof BrowserAssertionError)
@@ -712,6 +713,7 @@ ${owner === "host" ? "主工作流严格 TypeScript，从 ./contract.js 导入 W
           goal.requirements ?? [],
           goal.requirementGate?.definitionHash ?? "",
           signal,
+          goal.memberCases ?? [],
         );
       } catch (error) {
         browser =
@@ -1310,6 +1312,7 @@ ${owner === "host" ? "主工作流严格 TypeScript，从 ./contract.js 导入 W
         goal.requirements ?? [],
         goal.requirementGate?.definitionHash ?? "",
         signal,
+        goal.memberCases ?? [],
       );
       checks.push("browser/1:基础页面、任务详情及冻结需求案例通过（两种视口）");
     } catch (error: unknown) {
@@ -1952,8 +1955,11 @@ export async function verifyWorkflow(
       input,
     });
   const valid = validFieldInputs(goal.fields);
-  const assert = (ok: boolean, name: string) => {
-    if (!ok) throw new BusinessAssertionError(`行为验收失败：${name}`);
+  const assert = (ok: boolean, name: string, detail?: Record<string, unknown>) => {
+    if (!ok)
+      throw new BusinessAssertionError(
+        `行为验收失败：${name}${detail ? `；${JSON.stringify(detail)}` : ""}`,
+      );
     checks.push(name);
   };
   for (const f of goal.fields) {
@@ -1969,6 +1975,14 @@ export async function verifyWorkflow(
         assert(
           d.kind === "input-required" && d.fields.some((x) => x.key === f.key),
           `${f.key}:missing-input-form`,
+          {
+            state: "open",
+            action: "complete",
+            input,
+            fields: { ...task.fields, [f.key]: "已有历史文字" },
+            expected: { kind: "input-required", field: f.key },
+            actual: d,
+          },
         );
       }
     }

@@ -68,7 +68,7 @@ test("缺少独立判定、无原文引用或放大预算的当前清单不能�
 
 test("新批次预先确定计时业务边界，历史批次身份不能被覆盖", () => {
   const next = currentManifest("a".repeat(40));
-  assert.equal(next.evaluation, "current/4");
+  assert.equal(next.evaluation, "current/5");
   const due = next.scenarios.find(s => s.id === "due-auto-expire")!;
   for (const clause of ["修改或清除截止时清除原过期标记", "允许设置过去时间", "已经过期再完成时保留过期标记", "重新打开时截止已过则自动标记过期"])
     assert(due.request.includes(clause), clause);
@@ -87,6 +87,21 @@ test("新版澄清验收冻结来源未决项，缺失或伪造绑定不能用�
     assert.throws(()=>assertManifestFrozen(freezeManifest({...current,
       scenarios:current.scenarios.map(s=>s.clarification?{...s,clarification:{...s.clarification,choice}}:s),
     })),/结构化|主题/);
+});
+
+test("旧版主题身份仅保留历史清单校验，新版采样拒绝重复主题身份", () => {
+  const current = currentManifest("a".repeat(40));
+  const legacyScenarios = current.scenarios.map(s => s.clarification
+    ? { ...s, clarification: {
+      ...s.clarification,
+      choice: { kind: "field-required" as const, subjectQuote: "复盘" },
+    } } : s);
+  assert.doesNotThrow(() => assertManifestFrozen(freezeManifest({
+    ...current, evaluation: "current/4", scenarios: legacyScenarios,
+  })));
+  assert.throws(() => assertManifestFrozen(freezeManifest({
+    ...current, scenarios: legacyScenarios,
+  })), /结构化/);
 });
 
 test("宽时间诊断单独冻结资源身份，只放宽时间且不能篡改旧清单或重试约束", () => {

@@ -185,6 +185,16 @@ export function fieldLifecycle(
  * This does not interpret natural language or claim unrelated UI requirements covered.
  * Explicit business expectations remain authoritative; an unbound UI target still fails coverage.
  */
+export function scheduledMembers(plan: {
+  capabilityChanges?: { provider: string; capability: string }[];
+  requiredCapabilities?: { providerId: string; interfaceId: string }[];
+}) {
+  return new Set([
+    ...(plan.capabilityChanges ?? []).filter((c) => c.capability === "schedule.register").map((c) => c.provider.replace(/^member:/, "")),
+    ...(plan.requiredCapabilities ?? []).filter((c) => c.interfaceId === "schedule.register").map((c) => c.providerId),
+  ]);
+}
+
 export function deriveFieldObligations(
   requirement: Requirement,
   memberCases: MemberAcceptanceCase[],
@@ -197,6 +207,7 @@ export function deriveFieldObligations(
     contribution?: string;
   }) => boolean = () => true,
   existing: (target: { member: string; field: string }) => boolean = () => true,
+  scheduleProviders: ReadonlySet<string> = new Set(),
 ): AcceptanceObligation[] {
   const projections: {
     field: string;
@@ -312,12 +323,10 @@ export function deriveFieldObligations(
         scenarios: [],
         derivation: { checker: p.checker },
       } satisfies Extract<AcceptanceObligation, { kind: "field" }>);
-    const steps = bind([
-      ...(p.operation
-        ? operationPreparation(memberCases, p.operation, "open", p.field)
-        : []),
-      ...p.steps,
-    ]);
+    const source = p.operation && memberCases.find((c) => hash(c) === hash(p.operation));
+    const steps = source && scheduleProviders.has(source.member)
+      ? [{ kind: "case-action" as const, member: source.member, caseId: `member:${source.member}:${source.name}`, definitionHash: hash(source), field: p.field }]
+      : bind([...(p.operation ? operationPreparation(memberCases, p.operation, "open", p.field) : []), ...p.steps]);
     const scenario = {
       id: hash({
         checker: p.checker,

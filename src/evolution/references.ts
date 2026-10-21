@@ -12,6 +12,7 @@ import {
   fieldLifecycle,
   deriveFieldObligations,
   changesBaselineValue,
+  scheduledMembers,
 } from "./obligation-derivation.js";
 import { historicalPreparation } from "./historical-preparation.js";
 import {bindAvailability,type ActionAvailability} from "./action-availability.js";
@@ -160,6 +161,12 @@ export function compileReferences(
             "任务属性断言由宿主绑定合成基线及编辑步骤，不得提交手工期望",
           );
         return { kind: "task", ...taskExpectation };
+      }
+      if (s.kind === "case-action") {
+        const source = memberCases.find((c) => `member:${c.member}:${c.name}` === s.caseId && c.member === s.member);
+        if (!source || hash(source) !== s.definitionHash || typeof s.field !== "string")
+          throw new Error("宿主动作案例引用与冻结来源不一致");
+        return s;
       }
       if (["action", "field", "action-visible"].includes(String(s.kind))) {
         if (s.member !== undefined || s.contribution !== undefined)
@@ -337,6 +344,7 @@ export function compileReferences(
         canonical,
         renderable(requirement),
         lifecycle.existing,
+        scheduledMembers(draft as Pick<InvestigatedPlan, "capabilityChanges" | "requiredCapabilities">),
       ),
     );
   const fields = requirements
