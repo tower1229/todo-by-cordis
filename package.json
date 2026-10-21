@@ -25,7 +25,7 @@
     "@base-ui/react": "1.8.0",
     "@hono/node-server": "2.1.1",
     "cordis": "4.0.0-rc.9",
-    "hono": "4.13.7",
+    "hono": "4.13.11",
     "lucide-react": "1.41.0",
     "playwright": "1.63.0",
     "react": "19.2.8",
