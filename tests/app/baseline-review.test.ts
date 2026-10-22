@@ -360,7 +360,7 @@ for (const phase of ["admission", "planning", "review", "generation"] as const)
   test(`输出策略与工具目录解耦，按阶段选择额度：${phase}`, async () => {
     assert.equal(modelPolicy(phase).thinking, "enabled");
     assert.equal(modelPolicy(phase).reasoningEffort, "max");
-    assert.equal(modelPolicy(phase).maxTokens, phase === "review" || phase === "generation" ? 131072 : 65536);
+    assert.equal(modelPolicy(phase).maxTokens, phase === "admission" ? 65536 : 131072);
     let payload: Record<string, unknown> = {};
     const driver = new DeepSeek("test-key", async (_url, init) => {
       payload = JSON.parse(String(init?.body));

@@ -21,6 +21,7 @@ import type { BrowserCase } from "../shared/browser-cases.js";
 import { browserSteps } from "../shared/browser-contract.js";
 import { specificationFailure } from "../evolution/specification.js";
 import { obligationFailure } from "../evolution/acceptance-obligations.js";
+import { scheduledPreparationFailures } from "../evolution/obligation-derivation.js";
 import { fieldCaseObligation } from "../evolution/historical-preparation.js";
 import { schedulePolicyChecks } from "../shared/schedule-policy.js";
 import {
@@ -29,6 +30,7 @@ import {
   semanticChoiceProof,
   technicalFacts,
   technicalReviewTargets,
+  technicalReviewFailure,
   assertTechnicalExpectation,
 } from "../evolution/technical-facts.js";
 import {
@@ -350,6 +352,7 @@ export function coverage(
 ) {
   const catalog = caseCatalog(plan);
   const ids = (plan.requirements ?? []).map((r) => r.id);
+  const preparationFailures = scheduledPreparationFailures(plan);
   return (plan.requirements ?? []).map((r) => {
     const reasons: string[] = [];
     const availability=availabilityFailure(plan);
@@ -379,6 +382,7 @@ export function coverage(
     }
     const uiChecks = r.checks.filter((c) => c.checker === "browser/1");
     for (const ref of uiChecks) {
+      reasons.push(...preparationFailures.filter((failure) => failure.caseId === ref.caseId).map((failure) => failure.reason));
       const c = plan.browserCases?.find((c) => c.id === ref.caseId);
       let operated = false;
       for (const s of c?.steps ?? []) {
@@ -882,6 +886,9 @@ function gateVersion() {
       "src/shared/acceptance-obligations.ts",
       "src/shared/change-spec.ts",
       "src/evolution/technical-facts.ts",
+      "src/evolution/technical-premise.ts",
+      "src/evolution/source-items.ts",
+      "src/shared/clarification-choice.ts",
       "src/evolution/checker-rules.ts",
       "src/evolution/review-input.ts",
       "src/evolution/validation-origins.ts",
@@ -959,6 +966,8 @@ export function gateFailure(
   }
   const specFailure = specificationFailure(plan);
   if (specFailure) return specFailure;
+  const technicalFailure = technicalReviewFailure(plan,g.sources,g.review);
+  if (technicalFailure) return technicalFailure;
   if (
     coverage(
       plan,

@@ -9,8 +9,11 @@ import {
   parseAdmission,
   questionReviewKey,
   admissionRequest,
+  admissionQuestionState,
+  admissionResolved,
 } from "../../src/evolution/request-admission.js";
-import { parseClarificationReview } from "../../src/evolution/clarification-review.js";
+import { parseClarificationReview, clarificationRequest } from "../../src/evolution/clarification-review.js";
+import { sourceItems } from "../../src/evolution/source-items.js";
 import { technicalFacts } from "../../src/evolution/technical-facts.js";
 import { hostEffectIds } from "../../src/evolution/capability-admission.js";
 
@@ -31,20 +34,21 @@ test("需求预检公开宿主来源条目，结构化澄清选择条目而不�
   assert.equal(admission.questions[0].sourceQuote,undecided);
   assert.equal(admission.questions[0].sourceRevision,"run:1");
 });
-function awaiting(freeQuestion?: string, sourceQuote = undecided) {
-  const sources = [{ id: "run:1", text: scenario.request }];
+function awaiting(freeQuestion?: string, sourceQuote = undecided, request = scenario.request) {
+  const sources = [{ id: "run:1", text: request }];
   const facts = technicalFacts({ workflowRules: [] });
+  const items=JSON.parse(admissionRequest(sources,facts).message!).sourceItems as {text:string}[];
+  const itemIndex=items.findIndex(item=>item.text===sourceQuote);
+  if(!freeQuestion && itemIndex<0)throw new Error("结构化来源条目不存在");
   const admission = parseAdmission(
     JSON.stringify({
       initials: [],
       effects: [],
       questions: [
         {
-          source: 1,
-          sourceQuote,
           ...(freeQuestion
-            ? { question: freeQuestion }
-            : { choice: { kind: "field-required" } }),
+            ? { source: 1, sourceQuote, question: freeQuestion }
+            : { sourceItem:itemIndex+1, choice: { kind: "field-required" } }),
         },
       ],
     }),
@@ -53,7 +57,7 @@ function awaiting(freeQuestion?: string, sourceQuote = undecided) {
     facts,
   );
   const question = admission.questions[0].question;
-  const [{ decision }] = parseClarificationReview(
+  const [{ decision, admissionChoice }] = parseClarificationReview(
     JSON.stringify({
       effects: hostEffectIds.map((effect) => ({
         effect,
@@ -62,8 +66,7 @@ function awaiting(freeQuestion?: string, sourceQuote = undecided) {
       decisions: [
         {
           kind: "business-ambiguity",
-          source: 1,
-          sourceQuote,
+          ...(freeQuestion ? {source:1,sourceQuote} : {}),
           detail: "来源明确只将复盘必填性留待用户决定",
         },
       ],
@@ -71,6 +74,7 @@ function awaiting(freeQuestion?: string, sourceQuote = undecided) {
     [question],
     sources,
     facts,
+    admission.questions,
   );
   return {
     id: "run",
@@ -83,6 +87,7 @@ function awaiting(freeQuestion?: string, sourceQuote = undecided) {
         question,
         call: 2,
         decision,
+        ...(admissionChoice ? {admissionChoice} : {}),
       },
     ],
   };
@@ -90,7 +95,7 @@ function awaiting(freeQuestion?: string, sourceQuote = undecided) {
 
 test("冻结答案绑定宿主生成的结构化选择及独立审查，不分析模型自由问法", () => {
   const run = awaiting();
-  assert.equal(run.question, `请确认原文“${undecided}”中的未决要求：必须填写，还是可以留空？`);
+  assert.equal(run.question, `请确认第 ${run.requestAdmissions[0].questions[0].choice!.sourceItem.ordinal} 项原文“${undecided}”中的未决要求：必须填写，还是可以留空？`);
   const result = frozenClarificationAnswer(scenario, run);
   assert.equal(result.answer, scenario.clarification!.answer);
   assert.equal(result.binding.sourceRevision, "run:1");
@@ -109,11 +114,11 @@ test("冻结答案绑定宿主生成的结构化选择及独立审查，不分�
     );
 });
 
-test("结构化澄清直接绑定完整未决原文，不接受扩大范围、截断来源或旧主题身份", () => {
+test("结构化澄清绑定宿主来源条目，不接受自由范围、截断来源或旧主题身份", () => {
   const run = awaiting();
   assert.deepEqual(
     Object.keys(run.requestAdmissions[0].questions[0].choice!).sort(),
-    ["id", "kind"],
+    ["id", "kind", "sourceItem"],
   );
   for (const quote of [
     "是否必填尚未决定",
@@ -124,7 +129,7 @@ test("结构化澄清直接绑定完整未决原文，不接受扩大范围、�
       /结构化|冻结/,
     );
   const legacy = awaiting();
-  Object.assign(legacy.requestAdmissions[0], { contract: "host-admission/8" });
+  Object.assign(legacy.requestAdmissions[0], { contract: "host-admission/9" });
   assert.throws(
     () => frozenClarificationAnswer(scenario, legacy),
     /来源预检/,
@@ -240,6 +245,72 @@ test("独立判定重放来源审查，不接受仅声称提交过正确答案�
     { ...receipt, binding: { ...receipt.binding, auditKey: "fabricated" } },
     { ...receipt, binding: { ...receipt.binding, choiceId: "another-choice" } },
     { ...receipt, binding: { ...receipt.binding, choiceHash: "fabricated" } },
+    { ...receipt, binding: { ...receipt.binding, sourceItemId: "another-source-item" } },
   ])
     assert.equal(frozenClarificationReceiptMatches(scenario, run, bad), false);
+});
+
+test("宿主条目位置区分重复文本，修订和原文变化使旧身份失效", () => {
+  const sources=[{id:"run:1",text:`🧪 复盘，${undecided}；${undecided}`}];
+  const items=sourceItems(sources);
+  for(const item of items)assert.equal(sources[0].text.slice(item.start,item.end),item.text);
+  const duplicates=items.filter(item=>item.text===undecided);
+  assert.equal(duplicates.length,2);
+  assert.notEqual(duplicates[0].id,duplicates[1].id);
+  assert.notEqual(items[0].id,sourceItems([{...sources[0],id:"run:2"}])[0].id);
+  assert.notEqual(items[0].id,sourceItems([{...sources[0],text:sources[0].text+"；新要求"}])[0].id);
+  const facts=technicalFacts({workflowRules:[]});
+  const indexes=duplicates.map(item=>items.indexOf(item)+1);
+  const admission=parseAdmission(JSON.stringify({initials:[],effects:[],questions:indexes.map(sourceItem=>({sourceItem,choice:{kind:"field-required"}}))}),"base",sources,facts);
+  assert.notEqual(admission.questions[0].question,admission.questions[1].question);
+  const [{decision,admissionChoice}]=parseClarificationReview(JSON.stringify({effects:hostEffectIds.map(effect=>({effect,verdict:"not-requested"})),decisions:[{kind:"business-ambiguity",detail:"只复核第一个问题"}]}),[admission.questions[0].question],sources,facts,[admission.questions[0]]);
+  const state=admissionQuestionState(admission,sources,facts,[{key:questionReviewKey(admission.questions[0].question,sources,facts),decision,admissionChoice}]);
+  assert.deepEqual(state.pendingTargets,[admission.questions[1]]);
+  const repeatedScenario={...scenario,request:scenario.request+`；${undecided}`};
+  assert.throws(()=>frozenClarificationAnswer(repeatedScenario,awaiting(undefined,undecided,repeatedScenario.request)),/唯一|冻结/);
+});
+
+test("结构化复核不接受模型重写引用、目标身份、跨问题分支或缺失证明",()=>{
+  const run=awaiting();
+  const admission=run.requestAdmissions[0],target=admission.questions[0];
+  const request=clarificationRequest([target.question],admission.sources,admission.factsSnapshot,undefined,[target]);
+  assert.deepEqual(request.history,[]);
+  assert.equal(request.tools,undefined);
+  const effects=hostEffectIds.map(effect=>({effect,verdict:"not-requested"}));
+  const decision={kind:"business-ambiguity",detail:"原文明确尚未决定"};
+  for(const extra of [{source:1,sourceQuote:undecided+"，请先集中问我这一项"},{targetId:"伪造"},{sourceItem:1}])
+    assert.throws(()=>parseClarificationReview(JSON.stringify({effects,decisions:[{...decision,...extra}]}),[target.question],admission.sources,admission.factsSnapshot,[target]),/未授权|分支/);
+  const free={sourceRevision:target.sourceRevision,sourceQuote:"其他行为沿用现有工作流",question:"是否修改其他行为？"};
+  const freeDecision={kind:"unnecessary",source:1,sourceQuote:free.sourceQuote,detail:"原文已要求沿用既有行为"};
+  const questions=[target.question,free.question],targets=[target,free];
+  const mixed=parseClarificationReview(JSON.stringify({effects,decisions:[decision,freeDecision]}),questions,admission.sources,admission.factsSnapshot,targets);
+  assert.ok(mixed[0].admissionChoice);
+  assert.equal(mixed[1].admissionChoice,undefined);
+  assert.throws(()=>parseClarificationReview(JSON.stringify({effects,decisions:[freeDecision,decision]}),questions,admission.sources,admission.factsSnapshot,targets),/未授权|分支|source/);
+  const tampered=structuredClone(target);
+  tampered.choice!.sourceItem.start++;
+  assert.throws(()=>clarificationRequest([target.question],admission.sources,admission.factsSnapshot,undefined,[tampered]),/绑定/);
+  const noProof=awaiting();
+  delete noProof.clarificationReviews[0].admissionChoice;
+  assert.throws(()=>frozenClarificationAnswer(scenario,noProof),/独立审查/);
+  const notRequired=awaiting();
+  notRequired.clarificationReviews[0].decision.kind="unnecessary";
+  assert.throws(()=>frozenClarificationAnswer(scenario,notRequired),/独立审查/);
+  const altered=awaiting();
+  altered.requestAdmissions[0].questions[0].choice!.sourceItem.id="other-item";
+  assert.equal(admissionResolved(altered.requestAdmissions[0]),false);
+});
+
+test("结构化来源索引由宿主校验，旧引用契约、重复选择和不存在条目都拒绝",()=>{
+  const run=awaiting(),admission=run.requestAdmissions[0];
+  const catalog=sourceItems(admission.sources);
+  const selected=catalog.findIndex(item=>item.text===undecided)+1;
+  for(const questions of [
+    [{sourceItem:0,choice:{kind:"field-required"}}],
+    [{sourceItem:catalog.length+1,choice:{kind:"field-required"}}],
+    [{sourceItem:1.5,choice:{kind:"field-required"}}],
+    [{sourceItem:selected,choice:{kind:"field-required"}},{sourceItem:selected,choice:{kind:"field-required"}}],
+    [{sourceItem:selected,source:1,sourceQuote:undecided,choice:{kind:"field-required"}}],
+    [{source:1,sourceQuote:undecided,choice:{kind:"field-required"}}],
+  ])assert.throws(()=>parseAdmission(JSON.stringify({initials:[],effects:[],questions}),admission.baseVersion,admission.sources,admission.factsSnapshot));
 });

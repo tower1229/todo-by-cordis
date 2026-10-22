@@ -12,10 +12,8 @@ import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { Workspace } from "../src/server/workspace.js";
 import { Evolution } from "../src/evolution/evolution.js";
-import {
-  EvolutionDomain,
-  verifyWorkflow,
-} from "../src/server/evolution-domain.js";
+import { EvolutionDomain } from "../src/server/evolution-domain.js";
+import { verifyWorkflow } from "../src/server/workflow-acceptance.js";
 import { DeepSeek } from "../src/evolution/deepseek.js";
 import { admissionResolved } from "../src/evolution/request-admission.js";
 import { createApp } from "../src/server/app.js";

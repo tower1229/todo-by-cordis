@@ -159,7 +159,7 @@ export function compileSemantics(
   for (const interpretation of plan.requestAdmission?.initialMeanings ?? []) {
     const claim = plan.requestAdmission?.claims.find(
       (c) =>
-        c.interpretation.intentId === interpretation.id,
+        c.intentId === interpretation.id,
     );
     const judgment = plan.requestAdmission?.semanticReview?.decisions.find(
       (d) => d.claimId === claim?.id,

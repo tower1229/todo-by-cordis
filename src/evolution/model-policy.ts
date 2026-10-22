@@ -2,7 +2,7 @@ import type { ModelPhase } from "./budget.js";
 import { hash } from "../release/storage.js";
 
 export type ModelOutputPolicy = {
-  version: 3;
+  version: 4;
   phase: ModelPhase | "standalone";
   maxTokens: 65536 | 131072;
   tokenScope: "reasoning-and-answer";
@@ -14,12 +14,12 @@ export type ModelOutputPolicy = {
 );
 
 // max_tokens covers reasoning and the final answer. Use the documented max-effort
-// default (128K) for review/generation and 64K for smaller intake/planning turns.
+// allowance (128K) for planning/review/generation and 64K for source intake.
 // The shared run deadline remains authoritative; a larger cap does not extend it.
 // https://api-docs.deepseek.com/api/create-chat-completion/
 const outputPolicies = {
   admission: { thinking: "enabled", reasoningEffort: "max", maxTokens: 65536 },
-  planning: { thinking: "enabled", reasoningEffort: "max", maxTokens: 65536 },
+  planning: { thinking: "enabled", reasoningEffort: "max", maxTokens: 131072 },
   review: { thinking: "enabled", reasoningEffort: "max", maxTokens: 131072 },
   generation: {
     thinking: "enabled",
@@ -33,7 +33,7 @@ export function modelPolicy(
   phase: ModelPhase | "standalone" = "standalone",
 ): ModelOutputPolicy {
   const body = {
-    version: 3 as const,
+    version: 4 as const,
     phase,
     tokenScope: "reasoning-and-answer" as const,
     ...outputPolicies[phase],

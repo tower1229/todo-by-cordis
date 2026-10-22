@@ -1,4 +1,5 @@
 import type { AssistantSnapshot } from "../../../src/shared/assistant.js";
+import { experienceRequestTimeoutMs } from "../../../src/shared/request-policy.js";
 import { Hono } from "hono";
 import assert from "node:assert/strict";
 import { serve } from "@hono/node-server";
@@ -278,10 +279,24 @@ export async function runStabilityBrowserPath(input: {
     }
 
     if (input.scenario.requiresExperience) {
-      await page.getByRole("button", { name: "体验", exact: true }).click();
+      const opened = await responseForAction(
+        page,
+        (response) =>
+          new URL(response.url()).pathname === "/api/assistant/commands" &&
+          response.request().method() === "POST" &&
+          response.request().postDataJSON()?.type === "experience",
+        () => page!.getByRole("button", { name: "体验", exact: true }).click(),
+        Math.min(experienceRequestTimeoutMs, remaining()),
+      );
+      assert.equal(opened.status(), 200);
+      const openedRun = ((await opened.json()) as AssistantSnapshot).run;
+      assert.equal(openedRun?.status, "awaiting-apply");
+      assert.equal(openedRun?.experienceSession?.status, "active");
       await expect(
         page.getByRole("status", { name: "候选体验提示" }),
-      ).toContainText("候选体验 · 测试数据 · 尚未应用");
+      ).toContainText("候选体验 · 测试数据 · 尚未应用", {
+        timeout: Math.min(experienceRequestTimeoutMs, remaining()),
+      });
       result.experienced = true;
       bindings = input.bindings ?? (await input.resolveBindings?.());
       result.experienceActions = await exerciseExperience(page, bindings);

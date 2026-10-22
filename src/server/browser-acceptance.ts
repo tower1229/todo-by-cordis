@@ -28,8 +28,9 @@ import { createApp } from "./app.js";
 import { importCompositionVersions } from "./workspace-acceptance.js";
 import { workflowProtocolProgram } from "../release/workflow-protocol.js";
 import type { MemberAcceptanceCase } from "../shared/acceptance-cases.js";
-import { operationPreparation } from "../evolution/obligation-derivation.js";
+import { operationPreparation, scheduledOperationPreparation } from "../evolution/obligation-derivation.js";
 import { createControllableClock, type ControllableClock } from "./host/clock.js";
+import { apiRequestTimeoutMs } from "../shared/request-policy.js";
 
 export class BrowserEnvironmentError extends Error {
   constructor(
@@ -135,6 +136,7 @@ export function browserEnvironment(
         resolve("src/shared/browser-contract.ts"),
         "utf8",
       ),
+      requestPolicy: readFileSync(resolve("src/shared/request-policy.ts"), "utf8"),
       obligations: readFileSync(
         resolve("src/shared/acceptance-obligations.ts"),
         "utf8",
@@ -349,7 +351,7 @@ export async function verifyBrowser(
           : route.abort(),
       );
       const page = await context.newPage();
-      page.setDefaultTimeout(5000);
+      page.setDefaultTimeout(apiRequestTimeoutMs);
       const pageErrors: string[] = [];
       page.on("pageerror", (error) => pageErrors.push(error.message));
       const command = async (action: () => Promise<unknown>) => {
@@ -463,8 +465,17 @@ export async function verifyBrowser(
         const registry = isolated!.extensionRegistry();
         const registered = registry.commands().find((c) => c.id === source.action && c.providerId === source.member);
         const schedule = registry.schedules().find((s) => s.providerId === source.member && s.onFire.type === "action" && s.onFire.commandId === source.action);
+        const preparation = (mode: "scheduled" | "action") => {
+          try {
+            return mode === "scheduled"
+              ? scheduledOperationPreparation(memberCases, source)
+              : operationPreparation(memberCases, source, "open", step.field);
+          } catch (error) {
+            throw new BrowserDefinitionError(`冻结案例准备不可执行：${error instanceof Error ? error.message : String(error)}`);
+          }
+        };
         if (!registered?.internalOnly) {
-          for (const action of operationPreparation(memberCases, source, "open", step.field))
+          for (const action of preparation("action"))
             await runAction({ ...action, member: source.member }, taskId);
           await runAction({ kind: "action", member: source.member, action: source.action, input: source.input }, taskId);
           return;
@@ -479,7 +490,7 @@ export async function verifyBrowser(
         await openTask(taskId);
         // Full Given is prepared through real pages; the field-only fresh-task shortcut
         // cannot omit the deadline needed to arm the scheduler.
-        for (const action of operationPreparation(memberCases.filter((c) => c.action !== source.action), source))
+        for (const action of preparation("scheduled"))
           await runAction({ ...action, member: source.member }, taskId);
         const before = isolated!.read(taskId);
         if (before.state !== source.state || Object.entries(source.fields).some(([k, v]) => before.fields[k] !== v) ||

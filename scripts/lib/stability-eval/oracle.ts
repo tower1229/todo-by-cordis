@@ -21,6 +21,7 @@ import {
 } from "../../../src/evolution/capability-admission.js";
 import type { Investigation } from "../../../src/server/planning.js";
 import { schedulePolicyChecks } from "../../../src/shared/schedule-policy.js";
+import { scheduleCheckSemantics } from "../../../src/shared/checker-semantics.js";
 
 export type OracleCheck = {
   id: string;
@@ -205,8 +206,7 @@ export function checkIndependentPlan(
       ),
     );
   } else {
-    const expiryActions = new Set(
-      (plan.memberCases ?? [])
+    const firing = (plan.memberCases ?? [])
         .filter(
           (c) =>
             c.expected.kind === "commit" &&
@@ -215,20 +215,18 @@ export function checkIndependentPlan(
                 value === oracle.expiredValue && c.fields[key] !== value,
             ) &&
             !!c.input.scheduledAt,
-        )
-        .map((c) => c.action),
-    );
+        );
+    const expiryActions = new Set(firing.map(c => c.action));
+    const scheduledCompletionProtection = hasBoundCompletedSafety(plan);
     checks.push(
       oracleCheck(
         "plan:due",
         true,
-        expiryActions.size > 0 &&
-          !!plan.memberCases?.some(
-            (c) =>
-              expiryActions.has(c.action) &&
-              c.state === "done" &&
-              c.expected.kind === "reject",
-          ) &&
+        firing.some(fired =>
+          plan.capabilityChanges?.some(change => change.capability === "schedule.register" && change.provider === `member:${fired.member}`) &&
+          (scheduledCompletionProtection || plan.memberCases?.some(c =>
+            c.member === fired.member && c.action === fired.action && c.state === "done" && c.expected.kind === "reject")),
+        ) &&
           !!plan.requiredCapabilities?.some(
             (c) =>
               c.interfaceId === "schedule.runtime" &&
@@ -251,6 +249,23 @@ export function checkIndependentPlan(
       );
   }
   return checks;
+}
+
+/** A plan may rely on the frozen scheduler's executable completion protection.
+ * This is pending checker coverage, never evidence that a candidate already passed.
+ * The independent browser path still completes before the deadline and checks the real task.
+ */
+function hasBoundCompletedSafety(plan: Partial<InvestigatedPlan>) {
+  const checker = plan.binding?.checkers.find(c => c.id === "schedule/1");
+  const fact = plan.changeSpec?.hostFacts.find(f => f.id === "host-fact:checker:schedule/1");
+  if (!checker || !/^[a-f0-9]{64}$/.test(checker.version) || !fact) return false;
+  const {evidenceHash, ...definition} = fact;
+  return plan.changeSpec!.baseVersion === plan.baseVersion &&
+    evidenceHash === hash({fact: definition, checkers: plan.binding!.checkers, rules: plan.workflowRules}) &&
+    fact.properties.checker === checker.id && fact.properties.checkerHash === checker.version &&
+    fact.properties.stage === "candidate-verification-required" &&
+    fact.properties.execution === scheduleCheckSemantics.execution &&
+    fact.properties["assert:completed-safe"] === scheduleCheckSemantics.assertions["completed-safe"];
 }
 
 function hasDeadlineResetCases(
@@ -559,15 +574,9 @@ export function checkIndependentBlock(
         (run.requestAdmissions ?? []).filter(admissionResolved).some((a) => {
           const checks = [
             ...a.capabilityChecks.filter((c) =>
-              a.claims.some(
-                (claim) =>
-                  claim.interpretation.effect === c.effect &&
-                  a.semanticReview?.decisions.some(
-                    (d) =>
-                      d.claimId === claim.id &&
-                      d.layer === "capability" &&
-                      d.verdict === "entailed",
-                  ),
+              a.semanticReview?.decisions.some(
+                (decision) => decision.claimId === c.claimId &&
+                  decision.layer === "capability" && decision.verdict === "entailed",
               ),
             ),
             ...(run.clarificationReviews ?? []).flatMap((r) =>

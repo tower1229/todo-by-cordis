@@ -24,6 +24,7 @@ import {
   verifyArchive,
 } from "./lib/stability-eval/archive.js";
 import { linkDependencies } from "./lib/stability-eval/environment.js";
+import { recordRunnerCompletion } from "./lib/stability-eval/runner-completion.js";
 import { assertRealModelAuthorization } from "./lib/stability-eval/authorization.js";
 import { postchangeManifest } from "./lib/stability-eval/postchange.js";
 import { currentManifest } from "./lib/stability-eval/current.js";
@@ -160,6 +161,7 @@ if (!child) {
   writeVerifiedJson(join(root, "identity.json"), identity);
   try {
     execFileSync("pnpm", ["build"], { cwd: directory, stdio: "inherit" });
+    const childStartedAt = new Date().toISOString();
     const childResult = spawnSync(
       process.execPath,
       [
@@ -180,27 +182,33 @@ if (!child) {
         env: { ...process.env, STABILITY_EVAL_PATH: root },
       },
     );
-    if (childResult.error) throw childResult.error;
-    if (childResult.status !== 0) {
-      const summaryPath = join(root, "summary.json");
-      if (!existsSync(summaryPath))
-        throw new Error(
-          `隔离评测异常结束：${childResult.signal ?? childResult.status}`,
-        );
-      const summary = JSON.parse(readFileSync(summaryPath, "utf8")) as {
-        verdict?: { exitCode: number };
-      };
-      if (summary.verdict?.exitCode !== childResult.status)
-        throw new Error("评测退出状态与封存结论不一致");
-      verifyArchive(
-        root,
-        digest(readFileSync(join(root, "archive-index.json"))),
-      );
-      process.exitCode = childResult.status;
-    }
+    const completion = recordRunnerCompletion(root, {
+      startedAt: childStartedAt, pid: childResult.pid, exitCode: childResult.status,
+      signal: childResult.signal, ...(childResult.error ? {error: childResult.error.message} : {}),
+    }, {
+      productSourceUnchanged: () => identity.productTreeHash === digest(JSON.stringify(treeHashes(join(directory, "src")))),
+      dependencyLockUnchanged: () => identity.lockHash === digest(readFileSync(join(directory, "pnpm-lock.yaml"))),
+      harnessUnchanged: () => Object.entries(identity.harnessFiles).every(([file, expected]) => digest(readFileSync(join(directory, file))) === expected),
+      childArchive: () => {
+        if (childResult.error) throw childResult.error;
+        if (childResult.status === null) throw new Error(`隔离评测未正常退出：${childResult.signal}`);
+        if (prepare && childResult.status === 0) {
+          const prepared = JSON.parse(readFileSync(join(root, "prepared.json"), "utf8"));
+          if (prepared.status !== "prepared" || prepared.apiCalls !== 0) throw new Error("隔离准备回执无效");
+        } else {
+          const summary = JSON.parse(readFileSync(join(root, "summary.json"), "utf8")) as {verdict?: {exitCode: number}};
+          if (summary.verdict?.exitCode !== childResult.status) throw new Error("评测退出状态与封存结论不一致");
+        }
+        verifyArchive(root, digest(readFileSync(join(root, "archive-index.json"))));
+        return true;
+      },
+    });
+    if (!completion.integrityVerified)
+      throw new Error("隔离评测后置校验未通过，退出事实已独立保留：" + JSON.stringify(completion.checks));
+    process.exitCode = childResult.status ?? 2;
     rmSync(directory, { recursive: true, force: true });
   } catch (error) {
-    writeVerifiedJson(join(root, "runner-failure.json"), {
+    writeVerifiedJson(`${root}-runner-failure.json`, {
       message: error instanceof Error ? error.message : String(error),
       preservedDirectory: directory,
     });

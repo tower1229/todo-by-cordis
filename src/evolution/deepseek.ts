@@ -68,12 +68,13 @@ export class DeepSeek implements Driver {
         }))
       : undefined;
     const policy = this.policy(request.phase);
+    const expectedPolicy = modelPolicy(request.phase);
     const { hash: digest, ...policyBody } = policy;
     if (
       digest !== hash(policyBody) ||
       policy.phase !== (request.phase ?? "standalone") ||
-      policy.version !== 3 ||
-      policy.maxTokens !== modelPolicy(request.phase).maxTokens ||
+      policy.version !== expectedPolicy.version ||
+      policy.maxTokens !== expectedPolicy.maxTokens ||
       policy.tokenScope !== "reasoning-and-answer" ||
       policy.truncation !== "block" ||
       !(

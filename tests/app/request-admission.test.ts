@@ -16,6 +16,8 @@ import {
 } from "../../src/evolution/model-protocol.js";
 import { clarificationSchema } from "../../src/evolution/clarification-review.js";
 import {
+  admissionSourceReviewContract,
+  type RequestAdmission,
   parseAdmission,
   admissionSchema,
   admissionQuestionState,
@@ -31,6 +33,7 @@ import {fieldFacts} from "../../src/evolution/field-identity.js";
 import {memberUiReleaseInput} from "../fixtures/member-ui.js";
 import { compileSemantics } from "../../src/evolution/requirement-semantics.js";
 import type { InvestigatedPlan } from "../../src/shared/assistant.js";
+import { hash } from "../../src/release/storage.js";
 
 const reply = (value: unknown) => ({
   text: JSON.stringify(value),
@@ -97,7 +100,7 @@ test("已证实的外部和离线交付缺口先于渠道澄清，在原预算�
       { source: 1, sourceQuote: "向外部推送通知", effect: "external-delivery" },
       { source: 1, sourceQuote: "离线时仍保证送达", effect: "offline-delivery" },
     ], questions: [{ source: 1, sourceQuote: "邮件或短信", question: "选择邮件还是短信，接收人是谁？" }] });
-    assert.equal(v.kind, "admission-source-review/2", "不能先审查渠道或进入业务规划");
+    assert.equal(v.kind, admissionSourceReviewContract, "不能先审查渠道或进入业务规划");
     return reply({ decisions: v.claims.map((c: { sourceQuote: string }, i: number) => ({
       claim: i + 1, source: 1, sourceQuote: c.sourceQuote, layer: "capability", verdict: "entailed", detail: "用户明确要求外部交付和离线保证",
     })) });
@@ -157,7 +160,7 @@ test("来源标签误判经独立裁决后继续必要澄清，完整原文及�
       effects: [], initials: [{ source: 1, sourceQuote: "完成前填写复盘", target: {kind:"new",name:"复盘"}, meaning:{kind:"literal",value:"复盘",conditionQuote:"完成前填写复盘",effectQuote:"完成前填写复盘"} }],
       questions: [{ source: 1, sourceQuote: "是否必填尚未决定", question: "复盘是否必填？" }],
     } : empty());
-    if (v.kind === "admission-source-review/2") {
+    if (v.kind === admissionSourceReviewContract) {
       assert.deepEqual(r.history, []); assert.equal(r.tools, undefined);
       assert.equal(v.claims[0].interpretation.condition, "initial-missing-field");
       return reply({ decisions: [{ claim: 1, source: 1, sourceQuote: "完成前填写复盘", layer: "initial-display", verdict:"not-requested", detail: "复盘是待填写的字段，原文没有要求该字样作为初始值" }] });
@@ -185,7 +188,8 @@ test("来源裁决不能漏项、重复、伪造原文或将未裁决争议标�
   const resolved = adjudicateAdmission(JSON.stringify({ decisions: [decision] }), proposed, sources);
   assert.ok(admissionResolved(resolved));
   assert.equal(admissionResolved({...resolved,initialMeanings:[]}),false);
-  assert.equal(admissionResolved({ ...resolved, claims: [{ ...resolved.claims[0], interpretation: { value: "篡改" } }] }), false);
+  const tampered: unknown = { ...resolved, claims: [{ ...resolved.claims[0], interpretation: { value: "篡改" } }] };
+  assert.equal(admissionResolved(tampered as RequestAdmission), false);
   assert.equal(admissionResolved({ ...resolved, semanticReview: undefined }), false);
   const uncertain = adjudicateAdmission(JSON.stringify({ decisions: [{ ...decision, layer: "initial-display", verdict:"uncertain" }] }), proposed, sources);
   assert.match(uncertain.blockers[0], /尚未裁决/);
@@ -224,7 +228,7 @@ test("预检问题的裁决绑定精确来源与事实；伪造键、旧来源�
  const admission=parseAdmission(JSON.stringify({...empty(),questions:[{source:1,sourceQuote:"必填未决定",question:"是否必填？"}]}),"base",sources,facts);
  const decision={kind:"unnecessary" as const,sourceRevision:"s:1",sourceQuote:"必填未决定",detail:"测试裁决",effects:parseEffectReview(noEffectsFixture(),sources,facts)};
  const review={key:questionReviewKey("是否必填？",sources,facts),decision};
- assert.deepEqual(admissionQuestionState(admission,sources,facts,[review]),{pending:[],questions:[],blockers:[]});
+ assert.deepEqual(admissionQuestionState(admission,sources,facts,[review]),{pending:[],pendingTargets:[],questions:[],blockers:[]});
  assert.equal(admissionQuestionState(admission,[{...sources[0],id:"s:2"}],facts,[review]).pending.length,1);
  assert.equal(admissionQuestionState(admission,sources,[...facts,{id:"new",properties:{x:"y"},evidenceHash:"new"}],[review]).pending.length,1);
  assert.equal(admissionQuestionState(admission,sources,facts,[{...review,key:"fake"}]).pending.length,1);
@@ -569,7 +573,7 @@ test("已知字段明确但无法支持的空白初始呈现在源码调查前�
   const { w, e } = await setup(t, {
     async generate(r) {
       const v = input(r);
-      if (v.kind === "admission-source-review/2") {
+      if (v.kind === admissionSourceReviewContract) {
         assert.deepEqual(r.history, []);
         assert.equal(r.tools, undefined);
         return reply({ decisions: [{ claim: 1, source: 1, sourceQuote: "尚未填写时显示空白", layer: "initial-display", verdict:"entailed", detail: "原文明确指定未填写时的空白显示" }] });
@@ -676,6 +680,50 @@ test("必要澄清经过独立审查，回答使旧预检失效，同一运行5�
       .map((r) => r.history),
     [[], []],
   );
+});
+
+test("来源条目澄清经生产调用链绑定独立复核，回答后同预算继续且旧契约不能开始",async(t)=>{
+  const fixture=new PlanningDriver();
+  const {e,w}=await setup(t,{async generate(request,signal){
+    const value=input(request);
+    if(value.kind==="request-admission/2"){
+      const index=value.sourceItems.findIndex((item:{text:string})=>item.text==="复盘是否必填尚未决定");
+      assert.ok(index>=0);
+      return reply({...empty(),questions:value.sources.length===1?[{sourceItem:index+1,choice:{kind:"field-required"}}]:[]});
+    }
+    if(value.kind==="clarification-review/2"){
+      assert.equal(value.admissionTargets.length,1);
+      assert.equal(value.admissionTargets[0].choice.sourceItem.text,"复盘是否必填尚未决定");
+      assert.deepEqual(request.history,[]);
+      assert.equal(request.tools,undefined);
+      return reply(clarificationPayloadFixture({kind:"business-ambiguity",detail:"完整原文明确将该项留待用户决定"}));
+    }
+    return fixture.generate(request,signal);
+  }});
+  await e.command({type:"request",text:"完成前填写复盘，复盘是否必填尚未决定，请先集中问我这一项",operationId:"request"});
+  const waiting=await settle(e);
+  assert.equal(waiting.status,"awaiting-input");
+  assert.equal(waiting.budget?.callsUsed,2);
+  const target=waiting.requestAdmissions![0].questions[0];
+  assert.ok(target.choice);
+  assert.deepEqual(waiting.clarificationReviews![0].admissionChoice,{id:target.choice.id,hash:hash(target.choice)});
+  assert.equal(waiting.clarificationReviews![0].decision.sourceQuote,target.sourceQuote);
+  await e.command({type:"answer",runId:waiting.id,text:"复盘必填",operationId:"answer"});
+  const ready=await settle(e);
+  assert.equal(ready.status,"ready");
+  assert.equal(ready.id,waiting.id);
+  assert.equal(ready.budget?.callsUsed,5);
+  assert.equal(ready.budget?.callsRemaining,7);
+  assert.equal(ready.budget?.candidatesRemaining,3);
+  assert.equal(w.db.prepare("SELECT count(*) n FROM evolution_calls").get()!.n,5);
+  if(ready.status!=="ready")return;
+  const stored=JSON.parse(String(w.db.prepare("SELECT body FROM evolution_runs WHERE id=?").get(ready.id)!.body));
+  const original=w.composition();
+  stored.run.plan.requestAdmission.contract="host-admission/9";
+  w.db.prepare("UPDATE evolution_runs SET body=? WHERE id=?").run(JSON.stringify(stored),ready.id);
+  await assert.rejects(e.command({type:"start",runId:ready.id,planId:ready.plan.id,operationId:"start"}),/预检|重新规划/);
+  assert.deepEqual(w.composition(),original);
+  assert.equal((await e.observe()).candidates.length,0);
 });
 
 test("澄清预留包含回答后的预检，未达到完整路径预算即阻塞且不提问", async (t) => {
@@ -786,7 +834,7 @@ test("回答只修改必填性，重复标签误读通过同一语义契约纠�
       if(source===2){assert.equal(v.priorSemantics.length,1);assert.equal(v.priorSemantics[0].target.field,"复盘");reused++;}
       return reply({effects: [], initials:[{source,sourceQuote:quote,target: {kind:"new",name:"复盘"},meaning:{kind:"literal",value:"复盘",conditionQuote:quote,effectQuote:quote}}],questions:source===1?[{source:1,sourceQuote:"是否必填尚未决定",question:"复盘是否必填？"}]:[]});
     }
-    if(v.kind==="admission-source-review/2"){
+    if(v.kind===admissionSourceReviewContract){
       const source=v.sources.length,quote=source===1?"完成前填写复盘":"复盘必填";
       return reply({decisions:[{claim:1,source,sourceQuote:quote,layer: "initial-display", verdict:"not-requested",detail:"填写对象或必填字段名称，不是初始内容"}]});
     }

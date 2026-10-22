@@ -1,4 +1,5 @@
 import type { Command, CommandResult } from "../shared/contracts.js";
+import { apiRequestTimeout } from "../shared/request-policy.js";
 
 export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请重试";
@@ -27,7 +28,7 @@ export function isStringRecord(
 }
 export async function api<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`/api${path}`, {
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(apiRequestTimeout(path, body)),
     ...(body === undefined
       ? {}
       : {

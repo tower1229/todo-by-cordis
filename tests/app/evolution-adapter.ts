@@ -3,6 +3,7 @@ import { Evolution as HostEvolution } from "../../src/evolution/evolution.js";
 import type { Driver, ModelRequest } from "../../src/evolution/driver.js";
 import { hash } from "../../src/release/storage.js";
 import { candidateArtifact } from "../../src/evolution/candidate-delta.js";
+import type { AssistantRun } from "../../src/shared/assistant.js";
 
 /** Migrate old full-artifact model fixtures to the new wire contract, without changing expectations. */
 export class DeltaFixture implements Driver {
@@ -113,4 +114,26 @@ export class AdmissionEvolution extends HostEvolution {
       return reply ? Promise.resolve(reply) : args[1].generate(request,signal);
     }},args[2],args[3],args[4]);
   }
+}
+
+/** Observe a bounded host run; fixture wall-clock limits must not cancel valid acceptance work. */
+export async function settleEvolution(e: Pick<HostEvolution, "observe">, status?: string) {
+  const first = (await e.observe()).run;
+  if (!first) throw new Error("missing run");
+  const isSettled = (run: AssistantRun) => {
+    const terminal = !["planning", "executing", "applying"].includes(run.status);
+    if (status && terminal && run.status !== status)
+      throw new Error(`unexpected host terminal: expected ${status}, observed ${run.status}; ${JSON.stringify(run)}`);
+    return run.status === status || terminal;
+  };
+  if (isSettled(first)) return first;
+  if (!first.budget) throw new Error("missing host run budget");
+  const deadline = Date.now() + first.budget.millisecondsRemaining + 15_000;
+  while (Date.now() < deadline) {
+    const run = (await e.observe()).run;
+    if (!run || run.id !== first.id) throw new Error("run identity changed while waiting");
+    if (isSettled(run)) return run;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`timeout within host run budget: ${JSON.stringify((await e.observe()).run)}`);
 }

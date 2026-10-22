@@ -14,6 +14,7 @@ import {
 } from "../../../tests/app/member-case-fixtures.js";
 import type { StabilityScenario } from "./manifest.js";
 import { dueAutoExpireSource } from "../../../src/server/capability-guides.js";
+import { admissionSourceReviewContract } from "../../../src/evolution/request-admission.js";
 
 const tagsSource = (lower: boolean) =>
   `export default {
@@ -300,8 +301,8 @@ export function stabilityDriverFor(
           { source: 1, sourceQuote: "向外部推送通知", effect: "external-delivery" },
           { source: 1, sourceQuote: "离线时仍保证送达", effect: "offline-delivery" },
         ], initials: [], questions: [],
-      } : input.kind === "admission-source-review/2" ? { decisions: input.claims.map((c: {sourceQuote:string}, i:number) => ({
-        claim: i + 1, source: 1, sourceQuote: c.sourceQuote, layer: "capability", verdict: "entailed", detail: "合成需求明确要求宿主不支持的外部和离线交付",
+      } : input.kind === admissionSourceReviewContract ? { decisions: input.claims.map((c: {sourceQuote:string}, i:number) => ({
+        claim: i + 1, source: 1, sourceQuote: c.sourceQuote, layer: "capability", verdict: "entailed", detail: "合成需求明确要求外部和离线交付",
       })) } : undefined;
       if (!value) throw new Error("交付边界模型桩不得进入业务规划或生成");
       return { text: JSON.stringify(value), calls: [], history: [], usage: null, raw: {fixture:"current-delivery-boundary"} };
@@ -314,16 +315,19 @@ export function stabilityDriverFor(
       async generate(request, signal, onTransport) {
         const input = JSON.parse(request.message ?? "{}") as {
           kind?: string; sources?: { text: string }[]; questions?: string[];
+          sourceItems?: {text:string}[];
+          admissionTargets?: ({choice:unknown}|null)[];
         };
         const quote = scenario?.clarification?.sourceQuote ?? "复盘是否必填尚未决定";
         const value = input.kind === "request-admission/2" ? {
           initials: [], effects: [],
           questions: input.sources?.some(s => s.text === scenario?.clarification?.answer) ? [] :
-            [{ source: 1, sourceQuote: quote, choice: {kind:"field-required"} }],
+            [{ sourceItem: (input.sourceItems ?? []).findIndex(item=>item.text===quote)+1, choice: {kind:"field-required"} }],
         } : input.kind === "clarification-review/2" ? {
           effects: ["external-delivery", "offline-delivery", "online-schedule"].map(effect => ({ effect, verdict: "not-requested" })),
-          decisions: (input.questions ?? []).map(() => ({ kind: "business-ambiguity", source: 1,
-            sourceQuote: quote, detail: "模型桩仅审查需求明确未决定的复盘必填性" })),
+          decisions: (input.questions ?? []).map((_question,index) => ({ kind: "business-ambiguity",
+            ...(input.admissionTargets?.[index]?.choice ? {} : {source:1,sourceQuote:quote}),
+            detail: "模型桩仅审查需求明确未决定的复盘必填性" })),
         } : undefined;
         if (value) {
           return { text: JSON.stringify(value), calls: [], history: [], usage: null,
@@ -358,7 +362,7 @@ export function stabilityDriverFor(
             ],
             questions: [],
           };
-        else if (input.kind === "admission-source-review/2")
+        else if (input.kind === admissionSourceReviewContract)
           value = {
             decisions: input.claims!.map((c, i) => ({
               claim: i + 1,

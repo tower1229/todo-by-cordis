@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Workspace } from "../../src/server/workspace.js";
@@ -18,9 +18,11 @@ import {
 import { capabilityGuides } from "../../src/server/capability-guides.js";
 import { hash } from "../../src/release/storage.js";
 import { createControllableClock } from "../../src/server/host/clock.js";
+import {workflowProtocolKernelHash} from "../../src/release/workflow-protocol.js";
 import type {
   InvestigatedPlan,
   WorkflowRule,
+  AssistantSnapshot,
 } from "../../src/shared/assistant.js";
 
 for (const rules of [
@@ -185,6 +187,23 @@ test("重复资料由宿主交付回执复用，无需模型维护knownHashes，
   assert.ok("content" in cached && cached.content===null && cached.reused);
   const unearned=readInvestigation("read_source",{ref:"active-source"},context,[{ref:"active-source",hash:"forged"}]);
   assert.ok("content" in unearned && unearned.content!==null);
+});
+
+test("规划首轮交付独立工作流检查器全文，摘要绑定实际实现；执行域仅按需读取", async t => {
+  const directory=mkdtempSync(join(tmpdir(),"cordis-checker-seam-"));
+  const w=await Workspace.open(join(directory,"workspace.db"));
+  t.after(async()=>{await w.close();rmSync(directory,{recursive:true,force:true});});
+  const context=capture(w);
+  const inspection=readInvestigation("inspect_application",{},context);
+  assert.ok("documents" in inspection);
+  const checker=inspection.documents?.find(d=>d.ref==="src/server/workflow-acceptance.ts");
+  assert.ok(checker,"检查器不能因上下文收窄而只交付名称或描述");
+  assert.equal(checker.content,readFileSync("src/server/workflow-acceptance.ts","utf8"));
+  assert.equal(checker.hash,context.files[checker.ref].hash);
+  assert.equal(context.checkerVersions["workflow/1"],hash({id:"workflow/1",source:checker.content,protocolKernel:workflowProtocolKernelHash()}));
+  assert.equal(inspection.documents?.some(d=>d.ref==="src/server/evolution-domain.ts"),false,"规划器不应接收整个受保护执行域");
+  const optional=readInvestigation("read_source",{ref:"src/server/evolution-domain.ts"},context);
+  assert.ok("content" in optional && optional.content===context.files["src/server/evolution-domain.ts"].content,"必要调查仍可按需读取执行域");
 });
 
 test("capability guides are delivered on demand and only delivered hashes count as evidence", async (t) => {
@@ -628,6 +647,67 @@ test("clarification and revision keep one run, retained plans and remaining budg
   });
   assert.equal(rejected.status, 400);
   assert.equal(w.release.all().length, 2);
+});
+
+for (const selector of ["latest", "run-id", "revise"] as const)
+  test(`就绪状态发布须等待活动预算收尾，观察与下一命令不能抢跑：${selector}`, async t => {
+    const directory=mkdtempSync(join(tmpdir(),"cordis-ready-publication-"));
+    const w=await Workspace.open(join(directory,"workspace.db"));
+    const fixture=new PlanningDriver();
+    const e=new Evolution(w.db,fixture,new EvolutionDomain(w));
+    t.after(async()=>{await e.close();await w.close();rmSync(directory,{recursive:true,force:true});});
+    const observed=Promise.withResolvers<AssistantSnapshot>();
+    let scheduled=false;
+    w.db.function("observe_first_ready",(id)=>{
+      if(scheduled)return 0;
+      scheduled=true;
+      // Observe the actual SQLite publication before the async phase's finally runs.
+      queueMicrotask(()=>{
+        const runId=String(id);
+        const command={type:"revise" as const,runId,text:"完成前填写复盘",operationId:"revise-at-publication"};
+        const result=selector==="revise"
+          ? Promise.all([e.command(command),e.command(command)]).then(([first,second])=>{assert.deepEqual(first,second);return first;})
+          : e.observe(selector==="run-id"?runId:undefined);
+        result.then(observed.resolve,observed.reject);
+      });
+      return 0;
+    });
+    w.db.exec(`CREATE TRIGGER observe_ready_publication AFTER UPDATE ON evolution_runs
+      WHEN json_extract(NEW.body,'$.run.status')='ready'
+      BEGIN SELECT observe_first_ready(NEW.id); END;`);
+    await e.command({type:"request",text:"完成前填写复盘",operationId:"request"});
+    const first=await observed.promise;
+    assert.ok(scheduled);
+    if(selector==="revise"){
+      assert.equal(first.run?.status,"planning");
+      for(let attempt=0;attempt<200;attempt++){
+        const state=await e.observe(first.run!.id);
+        if(state.run?.status!=="planning"){
+          assert.equal(state.run?.status,"ready",JSON.stringify(state.run));
+          assert.equal(state.run?.requestRevision,2);
+          assert.equal(state.run?.budget?.callsUsed,6);
+          return;
+        }
+        await new Promise(resolve=>setTimeout(resolve,10));
+      }
+      assert.fail("就绪后的修订未完成");
+    }
+    assert.equal(first.run?.status,"ready");
+    assert.deepEqual((await e.observe(first.run!.id)).run,first.run);
+    await new Promise(resolve=>setTimeout(resolve,10));
+    assert.deepEqual((await e.observe()).run,first.run,"预算与更新时间在就绪后应稳定，不允许以排除时间字段掩盖竞态");
+  });
+
+test("并发重放同一规划命令只创建一个运行和一份原始回执", async t => {
+  const directory=mkdtempSync(join(tmpdir(),"cordis-command-publication-"));
+  const w=await Workspace.open(join(directory,"workspace.db"));
+  const e=new Evolution(w.db,new PlanningDriver(),new EvolutionDomain(w));
+  t.after(async()=>{await e.close();await w.close();rmSync(directory,{recursive:true,force:true});});
+  const command={type:"request" as const,text:"完成前填写复盘",operationId:"same-concurrent-command"};
+  const [first,second]=await Promise.all([e.command(command),e.command(command)]);
+  assert.deepEqual(first,second);
+  assert.equal(w.db.prepare("SELECT COUNT(*) AS count FROM evolution_runs").get()!.count,1);
+  assert.equal(w.db.prepare("SELECT COUNT(*) AS count FROM evolution_operations").get()!.count,1);
 });
 
 test("bounded planning, cancellation and model errors never publish or silently retry", async (t) => {
@@ -1434,7 +1514,7 @@ test("inspection supplies exact baseline documents within the existing budget an
             "active-acceptance",
             "check_environment",
             "src/shared/contracts.ts",
-            "src/server/evolution-domain.ts",
+            "src/server/workflow-acceptance.ts",
             "src/web/ActionForm.tsx",
           ])
             assert.ok(

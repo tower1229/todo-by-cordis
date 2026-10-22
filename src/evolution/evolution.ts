@@ -10,6 +10,8 @@ import { recordReview, reviewEvidence } from "./review.js";
 import { requirementReviewInput } from "./review-input.js";
 import { clarificationRequest, parseClarificationReview, clarificationBlockers, type ClarificationDecision } from "./clarification-review.js";
 import { admissionRequest, admissionKey, parseAdmission, admissionQuestionState, questionReviewKey, admissionReviewRequest, adjudicateAdmission, admissionResolved } from "./request-admission.js";
+import { admissionChoiceProof, type AdmissionQuestionTarget } from "./source-items.js";
+import { technicalPremiseContext, technicalPremiseBasis, technicalPremiseRequest, parseTechnicalPremises, technicalPremisesResolved } from "./technical-premise.js";
 import { ModelProtocolError, ModelResourceError, replyProblems } from "./model-protocol.js";
 import { stopForError } from "./run-stop.js";
 import {
@@ -48,6 +50,7 @@ import type {
   PlanBinding,
   PlanEvidence,
   RequirementGate,
+  RequirementReview,
 } from "../shared/assistant.js";
 import { describeBlockers } from "../shared/assistant.js";
 import { AppError } from "../shared/contracts.js";
@@ -70,6 +73,7 @@ import {
 } from "../server/capability-guides.js";
 import { ExperienceSessionHost } from "../server/experience-session.js";
 import { experienceSessionBanner } from "../shared/assistant.js";
+import { experienceRequestTimeoutMs } from "../shared/request-policy.js";
 export type Target = {
   kind: "plugin";
   baseVersion: string;
@@ -493,15 +497,28 @@ export class Evolution {
       candidates,
     };
   }
-  async observe(runId?: string, afterSequence = 0): Promise<AssistantSnapshot> {
-    if (runId) return this.snapshot(this.get(runId).run, afterSequence);
-    const row = this.db
-      .prepare("SELECT body FROM evolution_runs ORDER BY rowid DESC LIMIT 1")
-      .get();
-    const run = row ? (JSON.parse(String(row.body)) as RecordRun).run : null;
-    return this.snapshot(run, afterSequence);
+  /** A settled status is public only after its phase has charged time and released ownership. */
+  private async publishedRecord(runId?: string): Promise<RecordRun | null> {
+    let record: RecordRun | null;
+    if (runId) record = this.get(runId);
+    else {
+      const row = this.db.prepare("SELECT body FROM evolution_runs ORDER BY rowid DESC LIMIT 1").get();
+      record = row ? JSON.parse(String(row.body)) as RecordRun : null;
+    }
+    const phase = this.active;
+    if (
+      record && phase?.id === record.run.id &&
+      !["planning", "executing", "applying"].includes(record.run.status)
+    ) {
+      await phase.promise;
+      record = this.get(record.run.id);
+    }
+    return record;
   }
-  async command(command: AssistantCommand): Promise<AssistantSnapshot> {
+  async observe(runId?: string, afterSequence = 0): Promise<AssistantSnapshot> {
+    return this.snapshot((await this.publishedRecord(runId))?.run ?? null, afterSequence);
+  }
+  private priorCommand(command: AssistantCommand): AssistantSnapshot | undefined {
     const prior = this.db
       .prepare("SELECT hash,runId,receipt FROM evolution_operations WHERE id=?")
       .get(command.operationId);
@@ -515,6 +532,17 @@ export class Evolution {
       return prior.receipt
         ? (JSON.parse(String(prior.receipt)) as AssistantSnapshot)
         : this.snapshot(this.get(String(prior.runId)).run);
+    }
+  }
+  async command(command: AssistantCommand): Promise<AssistantSnapshot> {
+    const prior = this.priorCommand(command);
+    if (prior) return prior;
+    // Cancellation must remain immediate while all other transitions wait for a published phase.
+    if (command.type !== "cancel" && this.active) {
+      await this.publishedRecord("runId" in command ? command.runId : undefined);
+      // Another caller may have committed this operation while publication was awaited.
+      const settled = this.priorCommand(command);
+      if (settled) return settled;
     }
     let record: RecordRun;
     let work: "plan" | "execute" | "apply" | undefined;
@@ -770,7 +798,7 @@ export class Evolution {
         versionId: candidate.versionId,
         evidenceHash: candidate.evidenceHash,
         compositionRevision: plan.compositionRevision,
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(experienceRequestTimeoutMs),
       });
       record.run = {
         ...record.run,
@@ -1028,7 +1056,7 @@ export class Evolution {
               };
           this.save(record);
           const lastCall = this.db.prepare("SELECT body FROM evolution_calls WHERE runId=? ORDER BY id DESC LIMIT 1").get(record.run.id);
-          const phase = (error instanceof ModelProtocolError || error instanceof ModelTransportError) && lastCall ?
+          const phase = (error instanceof ModelProtocolError || error instanceof ModelTransportError || error instanceof ModelResourceError) && lastCall ?
             (JSON.parse(String(lastCall.body)) as {phase:string}).phase : kind === "execute" ? "execution" : kind === "apply" ? "apply" : "planning";
           const stop = stopForError(error, phase, record.calls, controller.signal);
           if (stop) {
@@ -1252,19 +1280,19 @@ export class Evolution {
     });
     this.save(r);
   }
-  private async auditQuestions(r: RecordRun, questions: string[], sources: RequirementGate["sources"], facts: ReturnType<typeof technicalFacts>, signal: AbortSignal, targets?: ReturnType<typeof semanticChoiceProof>[]) {
+  private async auditQuestions(r: RecordRun, questions: string[], sources: RequirementGate["sources"], facts: ReturnType<typeof technicalFacts>, signal: AbortSignal, targets?: ReturnType<typeof semanticChoiceProof>[], admissionTargets?: AdmissionQuestionTarget[]) {
     this.scheduler.requireClarification(r.calls, false, this.remainingTime(r), true);
-    if (questions.some((question,index) => r.run.clarificationReviews?.some(a => a.key === questionReviewKey(question,sources,facts) && hash(a.choice)===hash(targets?.[index].proof))))
+    if (questions.some((question,index) => r.run.clarificationReviews?.some(a => a.key === questionReviewKey(question,sources,facts) && hash(a.choice)===hash(targets?.[index].proof) && hash(a.admissionChoice)===hash(admissionTargets?.[index] ? admissionChoiceProof(admissionTargets[index]) : undefined))))
       throw new ModelProtocolError("相同澄清已审查且没有新证据，保留原预算并停止");
     const history = r.history;
     try {
-      const request = clarificationRequest(questions,sources,facts,targets);
-      const parse = (text:string) => parseClarificationReview(text,questions,sources,facts);
+      const request = clarificationRequest(questions,sources,facts,targets,admissionTargets);
+      const parse = (text:string) => parseClarificationReview(text,questions,sources,facts,admissionTargets);
       const reply = await this.call(r,request,signal,"review",reply => parse(reply.text));
       signal.throwIfAborted();
       const decisions = parse(reply.text).map((d,index)=>({...d,...(targets?.[index]?{choice:targets[index].proof}:{})}));
-      for (const {question,decision,choice} of decisions)
-        (r.run.clarificationReviews ??= []).push({key:questionReviewKey(question,sources,facts),question,call:r.calls,decision,...(choice?{choice}:{})});
+      for (const {question,decision,choice,admissionChoice} of decisions)
+        (r.run.clarificationReviews ??= []).push({key:questionReviewKey(question,sources,facts),question,call:r.calls,decision,...(choice?{choice}:{}),...(admissionChoice?{admissionChoice}:{})});
       r.history = history;
       this.save(r);
       return decisions;
@@ -1272,6 +1300,22 @@ export class Evolution {
   }
   private async auditQuestion(r: RecordRun, question: string, sources: RequirementGate["sources"], facts: ReturnType<typeof technicalFacts>, signal: AbortSignal) {
     return (await this.auditQuestions(r,[question],sources,facts,signal))[0].decision;
+  }
+  private async auditTechnicalPremises(r: RecordRun, review: RequirementReview, plan: InvestigatedPlan, sources: RequirementGate["sources"], signal: AbortSignal) {
+    const facts = technicalFacts(plan), context = technicalPremiseContext(plan, sources);
+    const basis = technicalPremiseBasis(review, facts, context);
+    if (!basis.claims.length) return review;
+    const cached = r.run.reviewLedger?.attempts.map(attempt => attempt.review.technicalPremiseAudit)
+      .find(audit => audit?.key === basis.key && technicalPremisesResolved(audit,review,facts,context));
+    if (cached) return {...review,technicalPremiseAudit:cached};
+    const history = r.history;
+    try {
+      const request = technicalPremiseRequest(review,facts,context);
+      const parse = (text:string) => parseTechnicalPremises(text,review,facts,context);
+      const reply = await this.call(r,request,signal,"review",reply=>parse(reply.text));
+      signal.throwIfAborted();
+      return {...review,technicalPremiseAudit:parse(reply.text)};
+    } finally { r.history = history; }
   }
   private async plan(r: RecordRun, signal: AbortSignal) {
     const context = this.domain.context();
@@ -1330,14 +1374,15 @@ export class Evolution {
         this.save(r);
       }
       if (admitted.blockers.length) {
-        const capability = admitted.capabilityChecks.some(c => c.outcome === "unsupported" && admitted.claims.some(claim => claim.interpretation.effect === c.effect && admitted!.semanticReview?.decisions.some(d => d.claimId === claim.id && d.verdict === "entailed")));
+        const capability = admitted.capabilityChecks.some(check => check.outcome === "unsupported" &&
+          admitted!.semanticReview?.decisions.some(decision => decision.claimId === check.claimId &&
+            decision.layer === "capability" && decision.verdict === "entailed"));
         r.run={...this.base(r),status:"blocked",stop:{kind:capability?"capability":"semantic",phase:"admission",code:capability?"unsupported-host-effect":admitted.semanticReview?.decisions.some(d=>d.verdict==="uncertain")?"source-undecided":"unsupported-initial-presentation",evidence:["run.requestAdmissions"]},...describeBlockers(admitted.blockers)};
         this.save(r);return;
       }
       if (admitted.questions.length) {
-        const pending=admissionQuestionState(admitted,sourceCatalog,admissionContext.facts,r.run.clarificationReviews??[]).pending;
-        if(pending.length===1) await this.auditQuestion(r,pending[0],sourceCatalog,admissionContext.facts,signal);
-        else if(pending.length>1) await this.auditQuestions(r,pending,sourceCatalog,admissionContext.facts,signal);
+        const pending=admissionQuestionState(admitted,sourceCatalog,admissionContext.facts,r.run.clarificationReviews??[]).pendingTargets;
+        if(pending.length) await this.auditQuestions(r,pending.map((target)=>target.question),sourceCatalog,admissionContext.facts,signal,undefined,pending);
         const state=admissionQuestionState(admitted,sourceCatalog,admissionContext.facts,r.run.clarificationReviews??[]);
         if(state.pending.length)throw new ModelProtocolError("需求预检澄清缺少完整裁决");
         if(state.blockers.length){const capability = r.run.clarificationReviews?.some(a=>a.decision.effects?.checks.some(c=>c.verdict==="required"&&c.outcome==="unsupported"));r.run={...this.base(r),status:"blocked",stop:{kind:capability?"capability":"semantic",phase:"admission",code:capability?"unsupported-host-effect":"clarification-boundary",evidence:["run.clarificationReviews"]},...describeBlockers(state.blockers)};this.save(r);return;}
@@ -1630,20 +1675,18 @@ export class Evolution {
                   "review",
                   reply=>parseReview(reply.text,plan,sources),
                 );
-                reviewReturned = true;
                 if (review.calls.length)
                   throw new Error("独立复核禁止工具调用");
-                let result = adjudicateTechnicalReview(
-                  parseReview(review.text, plan, sources),
-                  technicalFacts(plan),
-                );
+                const reviewed = await this.auditTechnicalPremises(r,parseReview(review.text,plan,sources),plan,sources,signal);
+                reviewReturned = true;
+                let result = adjudicateTechnicalReview(reviewed,technicalFacts(plan),technicalPremiseContext(plan,sources));
                 resolveErrorFeedback(plan,result);
                 let choiceDecisions:{question:string;decision:ClarificationDecision;choice?:{id:string;hash:string}}[]=[];
-                if(result.unresolvedChoices?.length && !result.technicalDecisions?.some(d=>d.outcome!=="satisfied")) {
+                if(result.unresolvedChoices?.length && !result.technicalDecisions?.some(d=>!["satisfied","not-requested"].includes(d.outcome))) {
                   const choices=businessChoices(plan,result).filter(c=>result.unresolvedChoices!.some(choice=>choice.targetId===c.id));
                   choiceDecisions=await this.auditQuestions(r,choices.map(c=>c.question),sources,technicalFacts(plan),signal,choices.map(c=>semanticChoiceProof(plan,c.id)));
                   plan.questionAdjudications=structuredClone(r.run.clarificationReviews??[]);
-                  result=adjudicateTechnicalReview(parseReview(review.text,plan,sources),technicalFacts(plan));
+                  result=adjudicateTechnicalReview({...parseReview(review.text,plan,sources),...(reviewed.technicalPremiseAudit?{technicalPremiseAudit:reviewed.technicalPremiseAudit}:{})},technicalFacts(plan),technicalPremiseContext(plan,sources));
                   resolveErrorFeedback(plan,result);
                 }
                 // Replace only coverage diagnostics after the deterministic source projection.
@@ -1679,7 +1722,7 @@ export class Evolution {
                 parsed.blockers.push(...recorded.blockers);
                 if (recorded.halt) parsed.retryable = false;
                 const technicalBlock = result.technicalDecisions?.some(
-                  (d) => d.outcome !== "satisfied",
+                  (d) => !["satisfied","not-requested"].includes(d.outcome),
                 );
                 if (technicalBlock) parsed.retryable = false;
                 const question = technicalBlock ? undefined : reviewQuestion(result, plan);
@@ -1723,7 +1766,7 @@ export class Evolution {
                     .run(plan.id, JSON.stringify(plan.requirementGate));
               } catch (error) {
                 signal.throwIfAborted();
-                if (error instanceof BudgetExhaustedError) throw error;
+                if (error instanceof BudgetExhaustedError || error instanceof ModelTransportError || error instanceof ModelResourceError || error instanceof ModelProtocolError) throw error;
                 if (!reviewReturned || error instanceof ModelProtocolError) parsed.retryable = false;
                 parsed.blockers.push(
                   `需求独立复核未通过：${error instanceof Error ? error.message : "无效返回"}`,

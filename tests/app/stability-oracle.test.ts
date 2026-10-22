@@ -48,6 +48,21 @@ test("模型自报通过不能替代原文要求：遗漏必填或替换长度�
   }
 });
 
+test("截止时间的拒绝案例必须属于同一成员与到期动作，其他成员不能冒充完成保护", () => {
+  const scenario = currentManifest("a".repeat(40)).scenarios.find(s => s.id === "due-auto-expire")!;
+  const fired = {name:"到期",member:"due",state:"open",fields:{dueAt:"2030-01-01T00:00:00Z"},action:"expire",input:{scheduledAt:"2030-01-01T00:00:00Z"},expected:{kind:"commit" as const,state:"open",fields:{dueAt:"2030-01-01T00:00:00Z",expired:"true"}}};
+  const reject = {name:"完成不误标",member:"different-member",state:"done",fields:{},action:"expire",input:{},expected:{kind:"reject" as const}};
+  const candidate = {
+    memberCases: [fired, reject],
+    requiredCapabilities: [{interfaceId:"schedule.runtime",providerId:"host:online-scheduler"}],
+    capabilityChanges: [{capability:"schedule.register",provider:"member:due",consumers:[],change:"新增截止"}],
+  };
+  const status = () => checkIndependentPlan(scenario,candidate).find(c => c.id === "plan:due")?.status;
+  assert.equal(status(),"failed");
+  reject.member="due";
+  assert.equal(status(),"passed");
+});
+
 test("基础页面成功或重复同一视口的通过结果不能冒充独立业务覆盖", () => {
   const evidence: BrowserEvidence = {
     checker: "browser/1",

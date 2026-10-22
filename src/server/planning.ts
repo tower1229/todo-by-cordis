@@ -9,6 +9,7 @@ import {
   planSchemaFor,
 } from "../evolution/plan-input.js";
 import { compileReferences } from "../evolution/references.js";
+import { scheduledPreparationFailures } from "../evolution/obligation-derivation.js";
 import {captureAvailability} from "../evolution/action-availability.js";
 import {baselineFields} from "../evolution/field-identity.js";
 import { workflowTextSemantics } from "../shared/checker-semantics.js";
@@ -69,7 +70,7 @@ import type {
 } from "../shared/assistant.js";
 
 const checkerSources: Record<string, string> = {
-  "workflow/1": "src/server/evolution-domain.ts",
+  "workflow/1": "src/server/workflow-acceptance.ts",
   "business-actions/1": "src/server/business-verification.ts",
   "workspace/1": "src/server/workspace-acceptance.ts",
   "beforeCommit/1": "src/server/workspace-acceptance.ts",
@@ -267,6 +268,7 @@ const sources = [
   "src/server/plugins/review.ts",
 
   "src/server/evolution-domain.ts",
+  "src/server/workflow-acceptance.ts",
   ...consumerSources,
 
   "src/web/ActionForm.tsx",
@@ -297,7 +299,7 @@ const requiredEvidence = [
   "active-contract",
   "active-acceptance",
   "src/shared/contracts.ts",
-  "src/server/evolution-domain.ts",
+  "src/server/workflow-acceptance.ts",
   "check_environment",
 ];
 export type InvestigationCapability = {
@@ -757,6 +759,7 @@ export function compilePlanDraft(value: unknown, context: Investigation, seen: P
     restartImpact: "重启隔离业务运行并短暂停写，失败恢复上一组合",
   };
   const parsed = parsePlan(compiled, context, evidence);
+  parsed.blockers.push(...scheduledPreparationFailures(parsed.plan).map((failure) => failure.reason));
   const sourceAdjudication: {obligationId:string;diagnostic:string}[] = [];
   const sourceReviewable = parsed.blockers.length === 0;
   for (const o of parsed.plan.requirements?.flatMap(r => r.obligations ?? []) ?? []) {
@@ -1003,7 +1006,7 @@ export function readInvestigation(
               },
               {
                 id: "workflow/1",
-                source: "src/server/evolution-domain.ts",
+                source: "src/server/workflow-acceptance.ts",
                 scope: "complete 文本字段必填及长度、既有状态动作和数据保留",
               },
             ],

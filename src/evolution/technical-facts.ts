@@ -11,6 +11,7 @@ import { workflowCheckerRules } from "./checker-rules.js";
 import { capabilityFacts } from "./capability-admission.js";
 import { schedulePolicySemantics } from "../shared/schedule-policy.js";
 import type { BrowserStep } from "../shared/browser-cases.js";
+import { technicalPremiseDecision, technicalPremisesResolved, technicalPremiseContext, type TechnicalPremiseContext } from "./technical-premise.js";
 
 function clarificationStep(step: BrowserStep): string {
   if (step.kind === "action")
@@ -45,7 +46,7 @@ export type TechnicalDecision = {
   property: string;
   expected: string;
   actual?: string;
-  outcome: "satisfied" | "conflict" | "unsupported";
+  outcome: "satisfied" | "conflict" | "unsupported" | "unverified" | "not-requested" | "undetermined";
 };
 /** Known aspects are facts, not pending questions. Only independent unresolved judgments create choices. */
 export function semanticChoiceTargets(
@@ -306,7 +307,11 @@ export function technicalReviewTargets(plan: Parameters<typeof technicalFacts>[0
 export function adjudicateTechnicalReview(
   review: RequirementReview,
   facts: TechnicalFact[],
+  context?: TechnicalPremiseContext,
 ): RequirementReview {
+  const audit = review.technicalPremiseAudit;
+  if (audit && (!context || !technicalPremisesResolved(audit, review, facts, context)))
+    throw new Error("技术语义前提裁决与当前来源、作用域或事实不一致");
   const issues: RequirementReview["issues"] = [];
   const technicalDecisions: TechnicalDecision[] = [];
   for (const issue of review.issues) {
@@ -323,12 +328,17 @@ export function adjudicateTechnicalReview(
     const fact = facts.find((f) => f.id === claim.factId);
     const actual = fact?.properties[claim.property];
     if (actual !== undefined) assertTechnicalExpectation(fact, claim.property, claim.expected);
-    const outcome =
+    let outcome: TechnicalDecision["outcome"] =
       actual === undefined
         ? "unsupported"
         : actual === claim.expected
           ? "satisfied"
           : "conflict";
+    if (outcome === "conflict") {
+      const premise = audit && technicalPremiseDecision(audit, issue);
+      outcome = !premise ? "unverified" : premise.verdict === "not-requested"
+        ? "not-requested" : premise.verdict === "uncertain" ? "undetermined" : "conflict";
+    }
     technicalDecisions.push({
       issue: structuredClone(issue),
       factId: claim.factId,
@@ -338,13 +348,34 @@ export function adjudicateTechnicalReview(
       ...(actual === undefined ? {} : { actual }),
       outcome,
     });
-    if (outcome !== "satisfied") {
+    if (outcome !== "satisfied" && outcome !== "not-requested") {
       const { clarification: _question, ...blocked } = issue;
       issues.push({
         ...blocked,
-        detail: `宿主技术事实裁决 ${outcome}：${claim.factId}.${claim.property} 期望 ${claim.expected}，实际 ${actual ?? "不支持"}；${issue.detail}`,
+        detail: outcome === "unverified" || outcome === "undetermined"
+          ? `技术语义前提${outcome === "unverified" ? "缺少独立来源证明" : "仍未确定"}：${claim.factId}.${claim.property} 是否要求 ${claim.expected}；不能据此确认宿主技术冲突；${issue.detail}`
+          : `宿主技术事实裁决 ${outcome}：${claim.factId}.${claim.property} 期望 ${claim.expected}，实际 ${actual ?? "不支持"}；${issue.detail}`,
       });
     }
   }
   return { ...review, issues, technicalDecisions };
+}
+
+/** A signed review cannot drop a premise or change its result after adjudication. */
+export function technicalReviewFailure(plan: InvestigatedPlan, sources: {id:string;text:string}[], review: RequirementReview) {
+  if (!review.technicalDecisions?.length && !review.technicalPremiseAudit) return;
+  try {
+    const originals = [
+      ...review.issues.filter((issue) => !issue.technical && !issue.target?.subject.startsWith("host-fact:")),
+      ...(review.technicalDecisions ?? []).map((decision) => decision.issue),
+    ];
+    const replay = adjudicateTechnicalReview({...review,issues:originals},technicalFacts(plan),technicalPremiseContext(plan,sources));
+    if (hash(replay.technicalDecisions) !== hash(review.technicalDecisions) ||
+      hash(replay.issues.map(hash).sort()) !== hash(review.issues.map(hash).sort()))
+      return "技术来源前提或宿主裁决结果已变化，请重新规划";
+    if (replay.technicalDecisions?.some((decision) => !["satisfied","not-requested"].includes(decision.outcome)))
+      return "技术语义前提或事实冲突尚未解决，请重新规划";
+  } catch {
+    return "技术来源前提与冻结来源、作用域或事实不一致，请重新规划";
+  }
 }

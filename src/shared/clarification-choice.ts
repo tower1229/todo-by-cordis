@@ -6,6 +6,7 @@ export type ClarificationChoice = {
 export function clarificationChoiceQuestion(
   _choice: ClarificationChoice,
   sourceQuote: string,
+  ordinal: number,
 ) {
-  return `请确认原文“${sourceQuote}”中的未决要求：必须填写，还是可以留空？`;
+  return `请确认第 ${ordinal} 项原文“${sourceQuote}”中的未决要求：必须填写，还是可以留空？`;
 }

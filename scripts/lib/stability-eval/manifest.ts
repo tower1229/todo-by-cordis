@@ -83,7 +83,7 @@ export type StabilityEvalManifest = {
     failureClasses: readonly string[];
   };
   scenarios: readonly StabilityScenario[];
-  evaluation?: "current/1" | "current/2" | "current/3" | "current/4" | "current/5";
+  evaluation?: "current/1" | "current/2" | "current/3" | "current/4" | "current/5" | "current/6";
   resourceProfile?: "extended-time/1";
 };
 
@@ -276,7 +276,7 @@ export function assertManifestFrozen(manifest: FrozenManifest): void {
     throw new Error(
       "评估清单 contentHash 与正文不一致：禁止在执行后选择性修改需求、预算、评分或重试规则",
     );
-  if (manifest.resourceProfile !== undefined && (manifest.resourceProfile !== "extended-time/1" || !["current/2", "current/3", "current/4", "current/5"].includes(manifest.evaluation ?? "")))
+  if (manifest.resourceProfile !== undefined && (manifest.resourceProfile !== "extended-time/1" || !["current/2", "current/3", "current/4", "current/5", "current/6"].includes(manifest.evaluation ?? "")))
     throw new Error("未知资源预算配置或评测版本不匹配");
   if (manifest.evaluation) {
     if (
@@ -309,7 +309,7 @@ export function assertManifestFrozen(manifest: FrozenManifest): void {
     )
       throw new Error("当前运行清单身份或次数无效");
     for (const scenario of manifest.scenarios) {
-      if (["current/3", "current/4", "current/5"].includes(manifest.evaluation ?? "") && scenario.clarification && (!scenario.clarification.sourceQuote?.trim() ||
+      if (["current/3", "current/4", "current/5", "current/6"].includes(manifest.evaluation ?? "") && scenario.clarification && (!scenario.clarification.sourceQuote?.trim() ||
           !scenario.request.includes(scenario.clarification.sourceQuote)))
         throw new Error("冻结澄清必须绑定需求原文中的未决项");
       if (manifest.evaluation === "current/4" && scenario.clarification &&
@@ -317,7 +317,7 @@ export function assertManifestFrozen(manifest: FrozenManifest): void {
            !scenario.clarification.choice.subjectQuote?.trim() ||
            !scenario.clarification.sourceQuote!.includes(scenario.clarification.choice.subjectQuote)))
         throw new Error("冻结澄清必须绑定结构化选择及其主题原文");
-      if (manifest.evaluation === "current/5" && scenario.clarification &&
+      if (["current/5", "current/6"].includes(manifest.evaluation ?? "") && scenario.clarification &&
           (scenario.clarification.choice?.kind !== "field-required" ||
            Object.keys(scenario.clarification.choice).some(key => key !== "kind")))
         throw new Error("冻结澄清必须绑定结构化选择及其完整未决原文");

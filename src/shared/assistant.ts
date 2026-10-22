@@ -185,6 +185,7 @@ export type RequirementReview = {
     reason: string;
   }[];
   technicalDecisions?: import("../evolution/technical-facts.js").TechnicalDecision[];
+  technicalPremiseAudit?: import("../evolution/technical-premise.js").TechnicalPremiseAudit;
   errorDecisions?: import("../evolution/error-review.js").ErrorDecision[];
   fieldDecisions?: import("../evolution/field-review.js").FieldDecision[];
 };
@@ -210,7 +211,7 @@ type Run = {
   resourceFailures?: {phase:string;call:number;kind:"output-budget";requestHash:string;responseHash:string;finishReason:"length";usage:unknown}[];
   requestAdmissions?: import("../evolution/request-admission.js").RequestAdmission[];
   protocolFailures?: {phase: string;call: number;requestHash: string;responseHash: string;problems: string[]}[];
-  clarificationReviews?: {key: string; question: string; call: number; choice?:{id:string;hash:string}; decision: import("../evolution/clarification-review.js").ClarificationDecision}[];
+  clarificationReviews?: {key: string; question: string; call: number; choice?:{id:string;hash:string}; admissionChoice?: import("../evolution/source-items.js").AdmissionChoiceProof; decision: import("../evolution/clarification-review.js").ClarificationDecision}[];
   reviewLedger?: ReviewLedger;
   staleReason?: string;
   historicalPlan?: AssistantPlan;

@@ -2,18 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { currentManifest } from "../../scripts/lib/stability-eval/current.js";
 import { stabilityDriverFor } from "../../scripts/lib/stability-eval/driver-fixture.js";
+import { admissionRequest } from "../../src/evolution/request-admission.js";
 
 test("当前澄清模型桩在来源预检阶段提出已冻结的未决项，回答后不再次提问", async () => {
   const scenario = currentManifest("a".repeat(40)).scenarios.find(s => s.id === "clarification-reflection")!;
   const driver = stabilityDriverFor(scenario.id, scenario);
-  const request = (answered: boolean) => ({ history: [], schema: {},
-    message: JSON.stringify({ kind: "request-admission/2", sources: [
+  const request = (answered: boolean) => admissionRequest([
       { id: "run:1", text: scenario.request },
       ...(answered ? [{ id: "run:2", text: scenario.clarification!.answer }] : []),
-    ] }),
-  });
+    ],[]);
   const first = await driver.generate(request(false), new AbortController().signal);
-  assert.equal(JSON.parse(first.text!).questions[0]?.sourceQuote, "复盘是否必填尚未决定");
+  const index=JSON.parse(first.text!).questions[0]?.sourceItem;
+  assert.equal(JSON.parse(request(false).message!).sourceItems[index-1].text, "复盘是否必填尚未决定");
+  assert.equal(JSON.parse(first.text!).questions[0]?.sourceQuote, undefined);
   assert.deepEqual(JSON.parse(first.text!).questions[0]?.choice,{kind:"field-required"});
   assert.equal(JSON.parse(first.text!).questions[0]?.question,undefined);
   const second = await driver.generate(request(true), new AbortController().signal);

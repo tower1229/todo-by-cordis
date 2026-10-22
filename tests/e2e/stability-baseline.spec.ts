@@ -400,6 +400,46 @@ test("响应先超时、点击仍等待时也应捕获失败", async ({ page }) 
   ).rejects.toThrow(/Timeout/);
 });
 
+for (const delayed of ["command", "snapshot"] as const)
+  test(`打开体验的${delayed}响应超过五秒仍遵循宿主操作期限（模型桩）`, async () => {
+    test.setTimeout(300_000);
+    const { runStabilityBrowserPath } = await import(
+      "../../scripts/lib/stability-eval/browser.js"
+    );
+    const scenario = STABILITY_EVAL_MANIFEST.scenarios.find(
+      (item) => item.id === "counter-add",
+    )!;
+    const directory = await mkdtemp(join(tmpdir(), "cordis-slow-experience-"));
+    let delayedResponses = 0;
+    try {
+      const result = await runStabilityScenario({
+        directory,
+        scenario,
+        manifest: freezeManifest(STABILITY_EVAL_MANIFEST),
+        evidenceKind: "model-stub",
+        browserRun: (input) => runStabilityBrowserPath({
+          ...input,
+          configurePage: async (page) => {
+            await page.route((url) => delayed === "command"
+              ? url.pathname === "/api/assistant/commands"
+              : url.pathname === "/api/experience" && url.searchParams.has("sessionId"), async (route) => {
+              if (delayed === "snapshot" || route.request().postDataJSON()?.type === "experience") {
+                delayedResponses++;
+                await new Promise((resolve) => setTimeout(resolve, delayed === "command" ? 16_500 : 6500));
+              }
+              await route.continue().catch(() => undefined);
+            });
+          },
+        }),
+      });
+      expect(delayedResponses).toBe(1);
+      expect(result.record.fullPathSucceeded, await readFile(result.eventsPath, "utf8")).toBe(true);
+      expect(result.record.evidenceComplete).toBe(true);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
 for (const selected of currentManifest("a".repeat(40)).scenarios)
   test(`当前评测真实浏览器路径与独立达标判定（模型桩）：${selected.id}`, async () => {
     test.setTimeout(300000);

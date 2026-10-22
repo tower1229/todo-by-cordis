@@ -6,6 +6,7 @@ import {
 } from "../../../src/evolution/request-admission.js";
 import type { StabilityScenario } from "./manifest.js";
 import { hash } from "../../../src/release/storage.js";
+import { sourceItems, admissionChoiceProof } from "../../../src/evolution/source-items.js";
 
 type AwaitingRun = Pick<
   NonNullable<AssistantSnapshot["run"]>,
@@ -56,16 +57,24 @@ export function frozenClarificationAnswer(
     admission.factsSnapshot,
   );
   const item = admission.questions.find((q) => q.question === run.question);
+  const expectedItems = sourceItems(admission.sources).filter(
+    (sourceItem) => sourceItem.sourceRevision === `${run.id}:1` && sourceItem.text === expected.sourceQuote,
+  );
   if (
     !expected.choice ||
-    !item?.choice ||
-    item.sourceRevision !== `${run.id}:1` ||
-    item.sourceQuote !== expected.sourceQuote ||
-    hash(expected.choice) !== hash({ kind: item.choice.kind })
+    !item?.choice
   )
     throw new Error("冻结答案只适用于宿主生成的结构化未决项，不能回答自由问题");
+  if (
+    expectedItems.length !== 1 ||
+    item.choice.sourceItem.id !== expectedItems[0].id ||
+    item.sourceRevision !== `${run.id}:1` ||
+    hash(expected.choice) !== hash({ kind: item.choice.kind })
+  )
+    throw new Error("结构化未决项没有绑定唯一的冻结来源条目");
   const review = reviews.find(
-    (r) => !r.choice && r.key === key && r.question === run.question,
+    (r) => !r.choice && r.key === key && r.question === run.question &&
+      hash(r.admissionChoice) === hash(admissionChoiceProof(item)),
   );
   const source = admission.sources.find(
     (s) => s.id === review?.decision.sourceRevision,
@@ -83,6 +92,7 @@ export function frozenClarificationAnswer(
     binding: {
       sourceRevision: source.id,
       sourceQuote: expected.sourceQuote,
+      sourceItemId: expectedItems[0].id,
       auditKey: key,
       choiceId: item.choice.id,
       choiceHash: hash(item.choice),
@@ -119,6 +129,7 @@ export function frozenClarificationReceiptMatches(
       receipt.answer === expected.answer &&
       receipt.binding.sourceRevision === expected.binding.sourceRevision &&
       receipt.binding.sourceQuote === expected.binding.sourceQuote &&
+      receipt.binding.sourceItemId === expected.binding.sourceItemId &&
       receipt.binding.auditKey === expected.binding.auditKey &&
       receipt.binding.choiceId === expected.binding.choiceId &&
       receipt.binding.choiceHash === expected.binding.choiceHash

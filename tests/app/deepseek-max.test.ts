@@ -42,7 +42,7 @@ for (const phase of [
     );
     assert.deepEqual(body.thinking, { type: "enabled" });
     assert.equal(body.reasoning_effort, "max");
-    assert.equal(body.max_tokens, phase === "review" || phase === "generation" ? 131072 : 65536);
+    assert.equal(body.max_tokens, phase === "admission" || phase === "standalone" ? 65536 : 131072);
     assert.equal(modelPolicy(phase).truncation, "block");
     assert.equal(reply.transport?.outputPolicy?.thinking, "enabled");
     assert.equal(reply.transport?.profile, "deepseek-chat/6");
@@ -121,7 +121,7 @@ test("思考工具使用供应商 auto，宿主仍拒绝空调用、未授权工
 
 test("思考强度属于宿主冻结策略，不接受不一致参数或篡改摘要", async () => {
   let requests = 0;
-  for (const change of ["effort", "digest", "tokens", "scope", "phase", "version"] as const) {
+  for (const change of ["effort", "digest", "tokens", "scope", "phase", "version", "retired-version"] as const) {
     const driver = new DeepSeek(
       "synthetic-key",
       async () => {
@@ -138,6 +138,7 @@ test("思考强度属于宿主冻结策略，不接受不一致参数或篡改�
           ...(change === "scope" ? { tokenScope: "answer-only" } : {}),
           ...(change === "phase" ? { phase: "admission" } : {}),
           ...(change === "version" ? { version: 2 } : {}),
+          ...(change === "retired-version" ? { version: 3 } : {}),
         };
         return {
           ...altered,

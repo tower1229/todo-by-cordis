@@ -96,7 +96,7 @@ export function currentManifest(productCommit: string): StabilityEvalManifest {
   });
   return {
     ...previous,
-    evaluation: "current/5",
+    evaluation: "current/6",
     title: "当前版本稳定性发现批次",
     scenarios,
     model: {

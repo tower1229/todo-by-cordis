@@ -7,7 +7,15 @@ import {
   adjudicateTechnicalReview,
   technicalFacts,
   technicalReviewTargets,
+  technicalReviewFailure,
 } from "../../src/evolution/technical-facts.js";
+import {
+  technicalPremiseContext,
+  technicalPremiseBasis,
+  technicalPremiseRequest,
+  parseTechnicalPremises,
+  technicalPremisesResolved,
+} from "../../src/evolution/technical-premise.js";
 import { modelPolicy } from "../../src/evolution/model-policy.js";
 import { Workspace } from "../../src/server/workspace.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
@@ -22,6 +30,8 @@ import {
   boundReviewSchema,
   caseCatalog,
   parseReview,
+  freezeRequirements,
+  gateFailure,
 } from "../../src/server/requirement-coverage.js";
 import type {
   InvestigatedPlan,
@@ -136,7 +146,7 @@ test("定时检查器真实覆盖范围以宿主事实绑定，不能被误认�
   const parsed = parseReview(review(p, [{kind:"unverifiable",sourceRevision:sources[0].id,sourceQuote:sources[0].text,detail:"误认为没有真实定时检查器",technical:{target:target.target,expected:"manual-action-only"}}]),p,sources);
   const result = adjudicateTechnicalReview(parsed,technicalFacts(p));
   assert.equal(result.issues.length,1);
-  assert.equal(result.technicalDecisions[0].outcome,"conflict");
+  assert.equal(result.technicalDecisions[0].outcome,"unverified");
   const supported = parseReview(review(p, [{kind:"unverifiable",sourceRevision:sources[0].id,sourceQuote:sources[0].text,detail:"要求真实受控时钟执行",technical:{target:target.target,expected:fact.properties.execution}}]),p,sources);
   assert.equal(adjudicateTechnicalReview(supported,technicalFacts(p)).issues.length,0);
 });
@@ -192,7 +202,7 @@ test("同一检查器的校验、保存规则有独立宿主来源、作用域�
   );
 });
 
-test("技术裁决不依赖模型问题分类；匹配事实留证，显式要求相反保存语义仍阻塞", () => {
+test("技术裁决不依赖模型问题分类；匹配事实留证，相反期望缺少来源证明仍阻塞", () => {
   const p = plan();
   const target = technicalReviewTargets(p).find(
     (t) => t.property === "persistenceNormalization",
@@ -221,7 +231,7 @@ test("技术裁决不依赖模型问题分类；匹配事实留证，显式要�
     );
     assert.equal(
       result.technicalDecisions![0].outcome,
-      expected === "trim" ? "satisfied" : "conflict",
+      expected === "trim" ? "satisfied" : "unverified",
     );
     assert.equal(result.issues.length, expected === "trim" ? 0 : 1);
   }
@@ -244,6 +254,123 @@ test("技术裁决不依赖模型问题分类；匹配事实留证，显式要�
     1,
     "宽泛业务异议不能被宿主规则自动抹掉",
   );
+});
+
+test("仅声明相反期望不能把未证实的来源语义升级为宿主技术冲突",()=>{
+  const p=plan();
+  const target=technicalReviewTargets(p).find(t=>t.property==="persistenceNormalization")!;
+  const parsed=parseReview(review(p,[{kind:"extra-constraint",sourceRevision:sources[0].id,sourceQuote:"去掉首尾空白后至少1个、最多100个Unicode码点",detail:"校验时去空白不意味着保存去空白，期望保留原始输入",technical:{target:target.target,expected:"preserve"}}]),p,sources);
+  const result=adjudicateTechnicalReview(parsed,technicalFacts(p));
+  assert.equal(result.technicalDecisions![0].actual,"trim");
+  assert.equal(result.technicalDecisions![0].outcome,"unverified");
+  assert.equal(result.issues.length,1,"没有语义来源证明时仍然阻塞，不能直接放行");
+  assert.doesNotMatch(result.issues[0].detail,/宿主技术事实裁决 conflict/);
+});
+
+function premiseFixture(text = sources[0].text) {
+  const p = plan();
+  const source = [{ id: sources[0].id, text }];
+  p.requirements![0].sourceQuote = text;
+  p.requirements![0].obligations = [{version: 1, id: "workflow-check", kind: "backend", scope: "checker-suite", checks: p.requirements![0].checks}];
+  p.changeSpec = compileSpec(p, "run", "source-hash");
+  const target = technicalReviewTargets(p).find(t => t.property === "persistenceNormalization")!;
+  const parsed = parseReview(review(p, [{
+    kind: "extra-constraint", sourceRevision: source[0].id, sourceQuote: text,
+    detail: "模型声称必须保留原始输入", technical: {target: target.target, expected: "preserve"},
+  }]), p, source);
+  return {p, source, parsed, facts: technicalFacts(p), context: technicalPremiseContext(p, source)};
+}
+
+test("来源前提独立复核只返回有限裁决，身份、去重和位置绑定由宿主维护", () => {
+  const {parsed, facts, context} = premiseFixture();
+  parsed.issues.push({...parsed.issues[0], detail: "重复同一属性命题", sourceQuote: "去掉首尾空白"});
+  const request = technicalPremiseRequest(parsed, facts, context);
+  assert.deepEqual(request.history, []);
+  assert.equal(request.tools, undefined);
+  const input = JSON.parse(request.message!);
+  assert.equal(input.claims.length, 1);
+  assert.deepEqual(Object.keys(input.claims[0]).sort(), ["expected", "factId", "property", "sourceRevision"]);
+  assert.equal(input.hostFacts, undefined, "来源命题复核不能把宿主当前值当作需求依据");
+  const audit = parseTechnicalPremises(JSON.stringify({decisions: [{verdict: "not-requested", detail: "原文仅约束校验"}]}), parsed, facts, context);
+  assert.equal(audit.decisions[0].claimId, audit.claims[0].id);
+  assert.ok(technicalPremisesResolved(audit, parsed, facts, context));
+  const outcome = adjudicateTechnicalReview({...parsed, technicalPremiseAudit: audit}, facts, context);
+  assert.equal(outcome.technicalDecisions!.length, 2, "原始意见均保留，不能因审查去重丢失证据");
+  for (const raw of [
+    {}, {decisions: []}, {decisions: [{verdict: "not-requested", detail: ""}]},
+    {decisions: [{verdict: "not-requested", detail: "理由", claimId: audit.claims[0].id}]},
+    {decisions: [{verdict: "pass", detail: "理由"}]},
+    {decisions: [{verdict: "not-requested", detail: "理由"}, {verdict: "not-requested", detail: "额外裁决"}]},
+  ]) assert.throws(() => parseTechnicalPremises(JSON.stringify(raw), parsed, facts, context));
+});
+
+test("前提为未要求时仅消解该技术意见；真实冲突和不确定命题仍阻塞", () => {
+  for (const verdict of ["not-requested", "entailed", "uncertain"] as const) {
+    const {p, source, parsed, facts, context} = premiseFixture(
+      verdict === "entailed" ? "完成必须填写复盘；保存时必须保留原始首尾空白" : sources[0].text,
+    );
+    const audit = parseTechnicalPremises(JSON.stringify({decisions: [{verdict, detail: "独立来源解释"}]}), parsed, facts, context);
+    const outcome = adjudicateTechnicalReview({...parsed, technicalPremiseAudit: audit}, facts, context);
+    assert.equal(outcome.technicalDecisions![0].outcome,
+      verdict === "entailed" ? "conflict" : verdict === "uncertain" ? "undetermined" : "not-requested");
+    assert.deepEqual(outcome.technicalDecisions![0].issue, parsed.issues[0]);
+    assert.equal(outcome.issues.length, verdict === "not-requested" ? 0 : 1);
+    assert.equal(technicalReviewFailure(p, source, outcome) === undefined, verdict === "not-requested");
+    parsed.issues.push({kind: "omission", sourceRevision: source[0].id, sourceQuote: source[0].text,
+      detail: "独立业务缺口", target: {subject: "requirement", aspect: "coverage"}, stance: "required"});
+    const preserved = adjudicateTechnicalReview({...parsed, technicalPremiseAudit: audit}, facts, context);
+    assert.ok(preserved.issues.some(issue => issue.detail === "独立业务缺口"));
+  }
+});
+
+test("裁决复用绑定完整来源、基础版本、作用域和相关事实；措辞变化及无关事实不改变身份", () => {
+  const {p, parsed, facts, context} = premiseFixture();
+  const raw = JSON.stringify({decisions: [{verdict: "not-requested", detail: "仅要求校验时去空白"}]});
+  const audit = parseTechnicalPremises(raw, parsed, facts, context);
+  const reworded = structuredClone(parsed);
+  reworded.issues[0].sourceQuote = "去掉首尾空白";
+  reworded.issues[0].detail = "同一命题的不同措辞";
+  assert.equal(technicalPremiseBasis(reworded, facts, context).key, audit.key);
+  assert.ok(technicalPremisesResolved(audit, reworded, facts, context));
+  const unrelated = structuredClone(facts);
+  unrelated.find(f => f.id === "host-fact:browser-error")!.evidenceHash = "changed-unrelated";
+  assert.equal(technicalPremiseBasis(parsed, unrelated, context).key, audit.key);
+  for (const changed of [
+    {...context, sources: [{id: context.sources[0].id, text: "修订后的来源"}]},
+    {...context, scope: {...context.scope, baseVersion: "new-base"}},
+    {...context, scope: {...context.scope, workflowFields: [{key: "different", label: "不同字段"}]}},
+  ]) assert.equal(technicalPremisesResolved(audit, parsed, facts, changed), false);
+  const changedFacts = structuredClone(facts);
+  changedFacts.find(f => f.id === "host-fact:workflow-text")!.evidenceHash = "different-checker";
+  assert.equal(technicalPremisesResolved(audit, parsed, changedFacts, context), false);
+  const changedClaim = structuredClone(parsed);
+  changedClaim.issues[0].technical!.expected = "trim";
+  assert.equal(technicalPremisesResolved(audit, changedClaim, facts, context), false);
+  assert.throws(() => technicalPremiseBasis(parsed, facts, {...context, sources: []}), /不存在的需求修订/);
+  assert.throws(() => technicalPremiseContext({...p, baseVersion: undefined}, context.sources), /冻结基础版本/);
+});
+
+test("冻结门禁重放来源和事实裁决；删证明、换结果、改实际值或重算摘要均不能应用", () => {
+  const {p, source, parsed, facts, context} = premiseFixture();
+  const audit = parseTechnicalPremises(JSON.stringify({decisions: [{verdict: "not-requested", detail: "原文未要求保留首尾空白"}]}), parsed, facts, context);
+  const result = adjudicateTechnicalReview({...parsed, technicalPremiseAudit: audit}, facts, context);
+  p.requirementGate = freezeRequirements(p, source, "request", result, ["workflow/1"]);
+  const trusted = structuredClone(p.requirementGate);
+  assert.equal(gateFailure(p, trusted), undefined);
+  for (const alter of ["delete-audit", "verdict", "actual", "drop-decisions", "source", "hash"] as const) {
+    const copy = structuredClone(p);
+    const gate = copy.requirementGate!;
+    if (alter === "delete-audit") delete gate.review.technicalPremiseAudit;
+    if (alter === "verdict") gate.review.technicalPremiseAudit!.decisions[0].verdict = "entailed";
+    if (alter === "actual") gate.review.technicalDecisions![0].actual = "preserve";
+    if (alter === "drop-decisions") gate.review.technicalDecisions = [];
+    if (alter === "source") gate.sources[0].text += "；必须保留原始输入";
+    if (alter === "hash") gate.review.technicalPremiseAudit!.factsHash = "forged";
+    const {seal: _seal, ...body} = gate;
+    gate.seal = hash(body);
+    assert.ok(gateFailure(copy, trusted), alter);
+    assert.ok(technicalReviewFailure(copy, gate.sources, gate.review), alter);
+  }
 });
 
 test("伪造技术目标、手填属性及无效来源无法进入宿主裁决", () => {

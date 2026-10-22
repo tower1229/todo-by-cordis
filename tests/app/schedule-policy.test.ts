@@ -23,6 +23,9 @@ import { PlanningDriver, toolReply } from "./planning-fixture.js";
 import type { Driver } from "../../src/evolution/driver.js";
 import type { SchedulePolicyEvidence } from "../../src/shared/schedule-policy.js";
 import { importCompositionVersions } from "../../src/server/workspace-acceptance.js";
+import {currentManifest} from "../../scripts/lib/stability-eval/current.js";
+import {checkIndependentPlan} from "../../scripts/lib/stability-eval/oracle.js";
+import {hash} from "../../src/release/storage.js";
 
 const quote =
   "增加截止调度：未完成任务允许直接设置过去截止时间并自动补标；修改或清除截止时清除原过期标记；过期后完成保留过期标记；截止前完成不标记，截止后重新打开自动补标；其他行为不变";
@@ -99,6 +102,40 @@ async function fixture(t: TestContext) {
   await activateWorkflowOnly(workspace);
   return workspace;
 }
+
+test("独立计划评测接受冻结真实调度的完成保护，不额外要求手写直接调用拒绝案例", async t => {
+  const workspace = await fixture(t);
+  const context = capture(workspace);
+  const initial = readInvestigation("inspect_application", {}, context, []);
+  if (!("ref" in initial)) throw new Error(initial.message);
+  const draft = structuredClone(plan);
+  const rejected = draft.changes[0].cases.find(c => c.state === "done")!;
+  Object.assign(rejected, {name: "missing-scheduledAt", state: "open", input: {}});
+  const parsed = compilePlanDraft(draft, context, [initial, ...(initial.documents ?? [])].map(({ref, hash}) => ({ref, hash})), [{id: "due-plan:1", text: quote}]);
+  assert.deepEqual(parsed.blockers, []);
+  const p = {...parsed.plan, id: "due-plan", requestRevision: 1};
+  p.changeSpec = compileSpec(p, "due-plan", context.files["active-source"].hash);
+  const scenario = currentManifest("a".repeat(40)).scenarios.find(s => s.id === "due-auto-expire")!;
+  const result = (candidate = p) => checkIndependentPlan(scenario, candidate).find(c => c.id === "plan:due");
+  assert.equal(p.memberCases?.some(c => c.state === "done"), false);
+  assert.equal(result()?.status, "passed");
+  for (const alter of ["checker", "fact", "checker-hash", "execution", "stage", "assertion", "fired-case", "wrong-member", "scope"] as const) {
+    const copy = structuredClone(p);
+    const fact = copy.changeSpec!.hostFacts.find(f => f.id === "host-fact:checker:schedule/1")!;
+    if (alter === "checker") copy.binding!.checkers = copy.binding!.checkers.filter(c => c.id !== "schedule/1");
+    if (alter === "fact") copy.changeSpec!.hostFacts = copy.changeSpec!.hostFacts.filter(f => f.id !== fact.id);
+    if (alter === "checker-hash") fact.properties.checkerHash = "different-checker";
+    if (alter === "execution") fact.properties.execution = "manual-action-only";
+    if (alter === "stage") fact.properties.stage = "model-self-report";
+    if (alter === "assertion") delete fact.properties["assert:completed-safe"];
+    if (alter === "fired-case") copy.memberCases = copy.memberCases!.map(c => ({...c, input: {}}));
+    if (alter === "wrong-member") copy.memberCases = copy.memberCases!.map(c => ({...c, member: "different-provider"}));
+    if (alter === "scope") copy.changeSpec!.baseVersion = "different-base";
+    const {evidenceHash: _hash, ...body} = fact;
+    fact.evidenceHash = hash({fact: body, checkers: copy.binding!.checkers, rules: copy.workflowRules});
+    assert.equal(result(copy)?.status, "failed", alter);
+  }
+});
 
 test("时序义务由宿主绑定案例、检查器与来源；没有真实效果或篡改绑定不能进入完整计划", async (t) => {
   const workspace = await fixture(t);

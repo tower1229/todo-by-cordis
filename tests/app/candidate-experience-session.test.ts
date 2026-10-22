@@ -17,18 +17,7 @@ import {
 } from "../../src/web/experience-api.js";
 import { experienceSessionBanner } from "../../src/shared/assistant.js";
 import { AppError } from "../../src/shared/contracts.js";
-import type { Evolution } from "./evolution-adapter.js";
-
-async function settle(e: Evolution) {
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    const run = (await e.observe()).run;
-    if (!run) throw new Error("missing run");
-    if (!["planning", "executing", "applying"].includes(run.status)) return run;
-    await new Promise((r) => setTimeout(r, 20));
-  }
-  throw new Error("timeout");
-}
+import { settleEvolution as settle } from "./evolution-adapter.js";
 
 test("isExperienceSnapshot distinguishes active snapshots from gone/invalid", () => {
   assert.equal(

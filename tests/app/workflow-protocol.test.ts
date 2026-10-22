@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Workspace } from "../../src/server/workspace.js";
-import { verifyWorkflow } from "../../src/server/evolution-domain.js";
+import { verifyWorkflow } from "../../src/server/workflow-acceptance.js";
 import type { WorkflowDefinition } from "../../src/shared/contracts.js";
 import {
   candidateProgramHash,

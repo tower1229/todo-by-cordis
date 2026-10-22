@@ -1,7 +1,7 @@
 import type { AcceptanceObligation } from "../shared/acceptance-obligations.js";
 import type { MemberAcceptanceCase } from "../shared/acceptance-cases.js";
 import type { BrowserStep } from "../shared/browser-cases.js";
-import type { Requirement } from "../shared/assistant.js";
+import type { InvestigatedPlan, Requirement } from "../shared/assistant.js";
 import { hash } from "../release/storage.js";
 import { readOnlyFieldText } from "../shared/field-presentation.js";
 
@@ -121,6 +121,51 @@ export function operationPreparation(
     "字段断言的前置状态无法从冻结候选操作唯一确定可达路径，不能注入字段或伪造历史准备",
   );
 }
+
+/** A scheduler must be armed through a complete Given, before the fire action runs. */
+export function scheduledOperationPreparation(
+  cases: OperationCase[],
+  target: OperationCase,
+) {
+  return operationPreparation(
+    cases.filter((item) => item.action !== target.action),
+    target,
+  );
+}
+
+/** Frozen temporal obligations identify scheduler actions without guessing field or command names. */
+export function scheduledPreparationFailures(
+  plan: Pick<InvestigatedPlan, "requirements" | "browserCases" | "memberCases">,
+): { caseId: string; reason: string }[] {
+  const policies = (plan.requirements ?? []).flatMap((requirement) =>
+    (requirement.obligations ?? []).filter((obligation) => obligation.kind === "schedule-policy"),
+  );
+  const failures: { caseId: string; reason: string }[] = [];
+  for (const browserCase of plan.browserCases ?? []) {
+    for (const step of browserCase.steps) {
+      if (step.kind !== "case-action" || !policies.some((policy) =>
+        policy.action.member === step.member && policy.fireCase.caseId === step.caseId &&
+        policy.fireCase.definitionHash === step.definitionHash,
+      )) continue;
+      const source = plan.memberCases?.find((item) =>
+        item.member === step.member && `member:${item.member}:${item.name}` === step.caseId &&
+        hash(item) === step.definitionHash,
+      );
+      // Existing binding checks report stale or absent references independently.
+      if (!source) continue;
+      try {
+        scheduledOperationPreparation(plan.memberCases ?? [], source);
+      } catch (error) {
+        failures.push({
+          caseId: browserCase.id,
+          reason: `定时浏览器案例 ${step.caseId} 不可执行：${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    }
+  }
+  return failures;
+}
+
 export type ObligationBaseline = {
   fieldIdentities?: { member: string; field: string }[];
   uiContributions?: Ui[];

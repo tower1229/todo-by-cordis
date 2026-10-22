@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Workspace } from "../../src/server/workspace.js";
-import { Evolution } from "./evolution-adapter.js";
+import { Evolution, settleEvolution as settle } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
@@ -67,22 +67,6 @@ const upgradedTagsSource = `export default {
     return { kind: "reject", message: "未知动作" };
   },
 };`;
-
-async function settle(e: Evolution, status?: string) {
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    const run = (await e.observe()).run;
-    if (!run) throw new Error("missing run");
-    if (
-      status
-        ? run.status === status
-        : !["planning", "executing", "applying"].includes(run.status)
-    )
-      return run;
-    await new Promise((r) => setTimeout(r, 20));
-  }
-  throw new Error(`timeout: ${JSON.stringify((await e.observe()).run)}`);
-}
 
 function memberSnapshot(composition: ReturnType<Workspace["composition"]>) {
   return composition.members
