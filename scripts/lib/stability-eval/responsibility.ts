@@ -221,7 +221,7 @@ export function assertResponsibilityExperiment(
   assertManifestFrozen(experiment.manifest);
   const manifest = experiment.manifest;
   if (
-    !["current/4", "current/5", "current/6"].includes(manifest.evaluation ?? "") ||
+    !["current/4", "current/5", "current/6", "current/7"].includes(manifest.evaluation ?? "") ||
     manifest.resourceProfile !== "extended-time/1" ||
     manifest.budget.calls !== 12 ||
     manifest.budget.candidates !== 3 ||

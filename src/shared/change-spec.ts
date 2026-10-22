@@ -53,6 +53,7 @@ export type ChangeSpec = {
   compositionRevision: number;
   baseHash: string;
   definition: ChangeDefinition;
+  authority: ReturnType<typeof import("../evolution/contract-authority.js").compileAuthority>;
   workflowDefinition?: import("../server/business/contracts.js").WorkflowDefinition;
   requirementOrigins: {
     id: string;

@@ -4,6 +4,7 @@ import { hash } from "../release/storage.js";
 import { validationOrigins } from "./validation-origins.js";
 import { hostCheckerRules } from "./checker-rules.js";
 import { technicalFacts } from "./technical-facts.js";
+import { compileAuthority } from "./contract-authority.js";
 
 const keys = [
   "semanticState",
@@ -57,6 +58,7 @@ export function compileSpec(
     compositionRevision: plan.compositionRevision,
     baseHash,
     definition: structuredClone(changeDefinition(plan)),
+    authority: compileAuthority(plan),
     ...(baseline
       ? {
           workflowDefinition: {
@@ -126,11 +128,15 @@ export function specificationFailure(plan: InvestigatedPlan) {
   const spec = plan.changeSpec;
   if (!spec || spec.version !== "change/3")
     return "缺少统一变更规格，请重新规划";
+  let authority: ReturnType<typeof compileAuthority>;
+  try { authority = compileAuthority(plan); }
+  catch { return "冻结命题作用域或设计授权已变化，请重新规划"; }
   if (
     spec.requestRevision !== plan.requestRevision ||
     spec.baseVersion !== plan.baseVersion ||
     spec.compositionRevision !== plan.compositionRevision ||
     hash(spec.definition) !== hash(changeDefinition(plan)) ||
+    hash(spec.authority) !== hash(authority) ||
     hash(spec.hostRules) !== hash(hostCheckerRules(plan)) ||
     hash(spec.hostFacts) !== hash(technicalFacts(plan)) ||
     hash(spec.validationOrigins) !== hash(validationOrigins(plan))

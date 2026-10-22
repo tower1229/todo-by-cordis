@@ -8,6 +8,7 @@ import { businessChoices, technicalReviewTargets } from "./technical-facts.js";
 import { fieldReviewTargets } from "./field-review.js";
 import { errorReviewTargets, feedbackConflicts } from "./error-review.js";
 import { specificationFailure } from "./specification.js";
+import { designTargets } from "./contract-authority.js";
 
 /** Keep every historic finding, with repeated issue bodies represented by content references. */
 function reviewHistory(ledger?: ReviewLedger) {
@@ -79,6 +80,8 @@ export function requirementReviewInput(
       actions: spec.definition.binding?.actionAvailability?.actions.map(({member,contribution,action,from})=>({member,contribution,action,from})) ?? [],
     },
     hostInvariants: spec.invariants,
+    contractAuthority: spec.authority,
+    designTargets: designTargets(plan).map((target, index) => ({ target: index + 1, ...target })),
     hostFacts: spec.hostFacts,
     hostRules: spec.hostRules.map(
       ({ factId, property, value: _value, ...rule }) => ({

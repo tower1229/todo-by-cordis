@@ -69,7 +69,7 @@ export function frozenClarificationAnswer(
     expectedItems.length !== 1 ||
     item.choice.sourceItem.id !== expectedItems[0].id ||
     item.sourceRevision !== `${run.id}:1` ||
-    hash(expected.choice) !== hash({ kind: item.choice.kind })
+    hash(expected.choice) !== hash((({ id: _id, sourceItem: _item, ...choice }) => choice)(item.choice))
   )
     throw new Error("结构化未决项没有绑定唯一的冻结来源条目");
   const review = reviews.find(

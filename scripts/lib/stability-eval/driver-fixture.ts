@@ -322,7 +322,7 @@ export function stabilityDriverFor(
         const value = input.kind === "request-admission/2" ? {
           initials: [], effects: [],
           questions: input.sources?.some(s => s.text === scenario?.clarification?.answer) ? [] :
-            [{ sourceItem: (input.sourceItems ?? []).findIndex(item=>item.text===quote)+1, choice: {kind:"field-required"} }],
+            [{ sourceItem: (input.sourceItems ?? []).findIndex(item=>item.text===quote)+1, choice: { kind: "field-required" as const, scope: "action-input" as const, action: "complete", field: { kind: "new" as const, name: "复盘" } } }],
         } : input.kind === "clarification-review/2" ? {
           effects: ["external-delivery", "offline-delivery", "online-schedule"].map(effect => ({ effect, verdict: "not-requested" })),
           decisions: (input.questions ?? []).map((_question,index) => ({ kind: "business-ambiguity",

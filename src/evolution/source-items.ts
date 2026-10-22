@@ -48,7 +48,7 @@ export function sourceItems(sources: Source[]): SourceItem[] {
 export function sourceChoice(item: SourceItem, choice: ClarificationChoice) {
   return {
     ...choice,
-    id: "choice-" + hash({ sourceItemId: item.id, kind: choice.kind }).slice(0, 24),
+    id: "choice-" + hash({ sourceItemId: item.id, choice }).slice(0, 24),
     sourceItem: item,
   };
 }
@@ -71,12 +71,13 @@ export function assertAdmissionTargets(
       throw new Error("需求澄清与宿主目标顺序不一致");
     if (!target.choice) continue;
     const item = catalog.find((entry) => entry.id === target.choice!.sourceItem?.id);
+    const { id: _id, sourceItem: _item, ...choice } = target.choice;
     if (
       !item ||
       target.choice.kind !== "field-required" ||
       target.sourceRevision !== item.sourceRevision ||
       target.sourceQuote !== item.text ||
-      hash(target.choice) !== hash(sourceChoice(item, { kind: target.choice.kind })) ||
+      hash(target.choice) !== hash(sourceChoice(item, choice)) ||
       target.question !== clarificationChoiceQuestion(target.choice, item.text, item.ordinal)
     )
       throw new Error("结构化澄清缺少当前宿主来源条目绑定");

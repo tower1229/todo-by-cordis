@@ -1287,7 +1287,7 @@ export class Evolution {
     const history = r.history;
     try {
       const request = clarificationRequest(questions,sources,facts,targets,admissionTargets);
-      const parse = (text:string) => parseClarificationReview(text,questions,sources,facts,admissionTargets);
+      const parse = (text:string) => parseClarificationReview(text,questions,sources,facts,admissionTargets,targets);
       const reply = await this.call(r,request,signal,"review",reply => parse(reply.text));
       signal.throwIfAborted();
       const decisions = parse(reply.text).map((d,index)=>({...d,...(targets?.[index]?{choice:targets[index].proof}:{})}));
@@ -1695,6 +1695,7 @@ export class Evolution {
                 plan.requirementCoverage=coverage(plan,sources,supported);
                 parsed.blockers.push(...plan.requirementCoverage.flatMap(c=>c.reasons.map(reason=>`需求 ${c.requirementId}：${reason}`)));
                 if(feedbackConflicts(plan).some(c=>plan.requirements?.some(r=>r.obligations?.some(o=>o.id===c.obligationId&&o.kind==="feedback"&&o.resolution==="required"))) || result.errorDecisions?.some(d=>d.feedback==="undetermined")) parsed.retryable=false;
+                plan.designDecisions = structuredClone(result.designDecisions ?? []);
                 const semantics=compileSemantics(plan,sources,result);
                 for(const entry of semantics.entries.filter(e=>e.status==="conflicting")){
                   const evidence=entry.evidence[0];

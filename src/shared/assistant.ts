@@ -81,6 +81,7 @@ export type RepairEvidence = {
   diagnostic: string;
 };
 export type InvestigatedPlan = AssistantPlan & {
+  designDecisions?: import("../evolution/contract-authority.js").DesignDecision[];
   semanticState?: import("../evolution/requirement-semantics.js").SemanticState;
   requestAdmission?: import("../evolution/request-admission.js").RequestAdmission;
   questionAdjudications?: NonNullable<Run["clarificationReviews"]>;
@@ -163,6 +164,8 @@ export type Requirement = {
   obligations?: import("./acceptance-obligations.js").AcceptanceObligation[];
 };
 export type RequirementReview = {
+  designDecisions?: import("../evolution/contract-authority.js").DesignDecision[];
+  resolutionEvidence?: { issueId: string; kind: "source-revision" | "specification-change" | "design-authorization" | "source-adjudication"; before: string; after: string }[];
   /** Host-only consumption of a source/fact-bound clarification receipt. */
   choiceAdjudications?: {targetId:string;receiptKey:string}[];
   unresolvedChoices?: {targetId:string;sourceRevision:string;sourceQuote:string}[];
@@ -177,6 +180,7 @@ export type RequirementReview = {
     clarification?: string;
     clarificationChoice?: string;
     technical?: { factId: string; property: string; expected: string };
+    sourceDecision?: { kind: "field-initial"; obligationId: string; interpretationHash: string };
   }[];
   resolutions?: {
     issueId: string;

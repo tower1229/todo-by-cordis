@@ -286,6 +286,7 @@ test("静态目录声明的是检查器及先决条件，缺真实字段证据�
 
 function errorPlan(text: string): InvestigatedPlan {
   return {
+    workflowRules: [],
     requirements: [
       {
         id: "requirement",

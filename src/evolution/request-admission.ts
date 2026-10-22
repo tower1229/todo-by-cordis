@@ -15,6 +15,7 @@ import { hash } from "../release/storage.js";
 import { schemaProblems } from "./model-protocol.js";
 import {
   clarificationChoiceQuestion,
+  clarificationChoiceSchema,
   type ClarificationChoice,
 } from "../shared/clarification-choice.js";
 import {
@@ -38,7 +39,7 @@ import {
 
 type Source = { id: string; text: string };
 type Citation = { sourceRevision: string; sourceQuote: string };
-export const hostAdmissionContract = "host-admission/11" as const;
+export const hostAdmissionContract = "host-admission/12" as const;
 export const admissionSourceReviewContract = "admission-source-review/3" as const;
 type SourceInterpretation =
   | { layer: "capability"; effect: HostEffect }
@@ -228,15 +229,7 @@ export function admissionSchema(facts: TechnicalFact[] = [], sources: Source[] =
           anyOf: [
             ...(items.length ? [list({
               sourceItem: { type: "integer", enum: items.map((_, index) => index + 1) },
-              choice: {
-                type: "object",
-                additionalProperties: false,
-                description: "针对宿主 sourceItems 条目中的未决必填要求；来源身份、引用及问句由宿主绑定。",
-                required: ["kind"],
-                properties: {
-                  kind: { type: "string", enum: ["field-required"] },
-                },
-              },
+              choice: clarificationChoiceSchema(fieldReferenceSchema(catalog)),
             }).items] : []),
             list({
               ...citation(sources.length),

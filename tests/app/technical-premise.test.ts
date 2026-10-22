@@ -80,9 +80,13 @@ async function setup(
               sourceQuote: input.sources[0].text,
               target: { subject: input.requirements[0].id, aspect: "coverage" },
               stance: "required",
-              detail: "计划摘要应列明复盘",
+              detail: "需补充完成及重新打开后保留复盘的可执行验收义务",
             });
-            fixture.finish.summary = "完成前必填复盘，并保留重新打开后的复盘";
+            fixture.finish.browserCases = [{ id: "reopen-preserves-reflection", task: "new", steps: [
+              { kind: "action", action: "complete", input: { reflection: "复盘内容" } },
+              { kind: "action", action: "reopen" },
+              { kind: "field", field: "reflection", value: "复盘内容" },
+            ] }];
           }
           result.text = JSON.stringify(review);
         }
@@ -160,7 +164,7 @@ test("生产规划链路：来源未要求的相反期望不再伪装成技术�
   assert.equal((await e.observe()).candidates?.length ?? 0, 0);
 });
 
-test("相同来源与事实命题的复核随账本复用，不因另一个计划说明修正多花一次调用（模型桩）", async (t) => {
+test("相同来源与事实命题的复核随账本复用，不因另一项验收义务修正多花一次调用（模型桩）", async (t) => {
   const { e, requests } = await setup(t, () => verdict("not-requested"), {
     repeat: true,
   });

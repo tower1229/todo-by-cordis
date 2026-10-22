@@ -1,4 +1,5 @@
 import { compileSemantics, semanticQuestionKey } from "../evolution/requirement-semantics.js";
+import { designDecisionSchema, parseDesignDecisions, designAuthorized, authorityFailure } from "../evolution/contract-authority.js";
 import { clarificationBlockers } from "../evolution/clarification-review.js";
 import {availabilityFailure,isInheritedAvailability} from "../evolution/action-availability.js";
 import {
@@ -596,6 +597,7 @@ export function boundReviewSchema(
     ],
     properties: {
       ...schema.properties,
+      designDecisions: designDecisionSchema(plan, sources),
       unresolvedChoices: {
         type: "array",
         maxItems: Math.min(20,choiceIds.length),
@@ -664,6 +666,8 @@ export function parseReview(
   sources: RequirementGate["sources"],
 ): RequirementReview {
   const v = record(JSON.parse(text));
+  if (v.resolutionEvidence !== undefined) throw new Error("复核消解证据由宿主生成");
+  const designDecisions = parseDesignDecisions(v.designDecisions, plan, sources);
   const reviewedIds = array(v.reviewedIds).map(boundedText);
   if (
     hash([...reviewedIds].sort()) !==
@@ -672,6 +676,7 @@ export function parseReview(
     throw new Error("独立复核未逐项覆盖需求清单");
   const issues = array(v.issues).map((item) => {
     const wire = record(item);
+    if (wire.sourceDecision !== undefined) throw new Error("来源解释消解证据由宿主生成");
     let i = wire;
     if (wire.technical !== undefined) {
       if (
@@ -826,6 +831,8 @@ export function parseReview(
       throw new Error("未决语义缺少真实目标或来源");
     if(seenChoices.has(choice.targetId))throw new Error("未决语义目标重复");
     seenChoices.add(choice.targetId);
+    if (designAuthorized(plan, { designDecisions }, choice.targetId))
+      throw new Error("同一作用域不能同时声明设计授权与未决业务选择");
     const receipt=plan.questionAdjudications?.find(a=>
       a.question===target.question &&
       a.choice?.id===target.id && a.choice.hash===semanticChoiceProof(plan,target.id).proof.hash &&
@@ -863,6 +870,7 @@ export function parseReview(
     ...(choiceAdjudications.length?{choiceAdjudications}:{}),
     issues: [...issues, ...fields.issues, ...errors.issues],
     resolutions,
+    designDecisions,
     fieldDecisions: fields.decisions,
     errorDecisions: errors.decisions,
   };
@@ -872,6 +880,7 @@ function gateVersion() {
     [
       "src/server/requirement-coverage.ts",
       "src/evolution/specification.ts",
+      "src/evolution/contract-authority.ts",
       "src/evolution/references.ts",
       "src/evolution/candidate-delta.ts",
       "src/evolution/review.ts",
@@ -966,6 +975,8 @@ export function gateFailure(
   }
   const specFailure = specificationFailure(plan);
   if (specFailure) return specFailure;
+  const authority = authorityFailure(plan, g.sources, g.review);
+  if (authority) return authority;
   const technicalFailure = technicalReviewFailure(plan,g.sources,g.review);
   if (technicalFailure) return technicalFailure;
   if (

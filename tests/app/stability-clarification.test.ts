@@ -30,7 +30,7 @@ test("需求预检公开宿主来源条目，结构化澄清选择条目而不�
   assert.ok(Array.isArray(input.sourceItems),"宿主必须提供可引用的稳定来源条目");
   const index=input.sourceItems.findIndex((item:{text:string})=>item.text===undecided);
   assert.ok(index>=0);
-  const admission=parseAdmission(JSON.stringify({initials:[],effects:[],questions:[{sourceItem:index+1,choice:{kind:"field-required"}}]}),"base",sources,facts);
+  const admission=parseAdmission(JSON.stringify({initials:[],effects:[],questions:[{sourceItem:index+1,choice:{ kind: "field-required" as const, scope: "action-input" as const, action: "complete", field: { kind: "new" as const, name: "复盘" } }}]}),"base",sources,facts);
   assert.equal(admission.questions[0].sourceQuote,undecided);
   assert.equal(admission.questions[0].sourceRevision,"run:1");
 });
@@ -48,7 +48,7 @@ function awaiting(freeQuestion?: string, sourceQuote = undecided, request = scen
         {
           ...(freeQuestion
             ? { source: 1, sourceQuote, question: freeQuestion }
-            : { sourceItem:itemIndex+1, choice: { kind: "field-required" } }),
+            : { sourceItem:itemIndex+1, choice: { kind: "field-required" as const, scope: "action-input" as const, action: "complete", field: { kind: "new" as const, name: "复盘" } } }),
         },
       ],
     }),
@@ -95,7 +95,7 @@ function awaiting(freeQuestion?: string, sourceQuote = undecided, request = scen
 
 test("冻结答案绑定宿主生成的结构化选择及独立审查，不分析模型自由问法", () => {
   const run = awaiting();
-  assert.equal(run.question, `请确认第 ${run.requestAdmissions[0].questions[0].choice!.sourceItem.ordinal} 项原文“${undecided}”中的未决要求：必须填写，还是可以留空？`);
+  assert.equal(run.question, `请确认第 ${run.requestAdmissions[0].questions[0].choice!.sourceItem.ordinal} 项原文“${undecided}”中的未决要求：执行“complete”时的“复盘”输入必须填写，还是可以留空？`);
   const result = frozenClarificationAnswer(scenario, run);
   assert.equal(result.answer, scenario.clarification!.answer);
   assert.equal(result.binding.sourceRevision, "run:1");
@@ -118,7 +118,7 @@ test("结构化澄清绑定宿主来源条目，不接受自由范围、截断�
   const run = awaiting();
   assert.deepEqual(
     Object.keys(run.requestAdmissions[0].questions[0].choice!).sort(),
-    ["id", "kind", "sourceItem"],
+    ["action", "field", "id", "kind", "scope", "sourceItem"],
   );
   for (const quote of [
     "是否必填尚未决定",
@@ -189,7 +189,7 @@ test("结构化选择不能夹带自由问题、伪造主题或修改宿主生�
     {
       source: 1,
       sourceQuote: undecided,
-      choice: { kind: "field-required" },
+      choice: { kind: "field-required" as const, scope: "action-input" as const, action: "complete", field: { kind: "new" as const, name: "复盘" } },
       question: "另外，标签是否必填？",
     },
     {
@@ -261,7 +261,7 @@ test("宿主条目位置区分重复文本，修订和原文变化使旧身份�
   assert.notEqual(items[0].id,sourceItems([{...sources[0],text:sources[0].text+"；新要求"}])[0].id);
   const facts=technicalFacts({workflowRules:[]});
   const indexes=duplicates.map(item=>items.indexOf(item)+1);
-  const admission=parseAdmission(JSON.stringify({initials:[],effects:[],questions:indexes.map(sourceItem=>({sourceItem,choice:{kind:"field-required"}}))}),"base",sources,facts);
+  const admission=parseAdmission(JSON.stringify({initials:[],effects:[],questions:indexes.map(sourceItem=>({sourceItem,choice:{ kind: "field-required" as const, scope: "action-input" as const, action: "complete", field: { kind: "new" as const, name: "复盘" } }}))}),"base",sources,facts);
   assert.notEqual(admission.questions[0].question,admission.questions[1].question);
   const [{decision,admissionChoice}]=parseClarificationReview(JSON.stringify({effects:hostEffectIds.map(effect=>({effect,verdict:"not-requested"})),decisions:[{kind:"business-ambiguity",detail:"只复核第一个问题"}]}),[admission.questions[0].question],sources,facts,[admission.questions[0]]);
   const state=admissionQuestionState(admission,sources,facts,[{key:questionReviewKey(admission.questions[0].question,sources,facts),decision,admissionChoice}]);
@@ -306,11 +306,11 @@ test("结构化来源索引由宿主校验，旧引用契约、重复选择和�
   const catalog=sourceItems(admission.sources);
   const selected=catalog.findIndex(item=>item.text===undecided)+1;
   for(const questions of [
-    [{sourceItem:0,choice:{kind:"field-required"}}],
-    [{sourceItem:catalog.length+1,choice:{kind:"field-required"}}],
-    [{sourceItem:1.5,choice:{kind:"field-required"}}],
-    [{sourceItem:selected,choice:{kind:"field-required"}},{sourceItem:selected,choice:{kind:"field-required"}}],
-    [{sourceItem:selected,source:1,sourceQuote:undecided,choice:{kind:"field-required"}}],
-    [{source:1,sourceQuote:undecided,choice:{kind:"field-required"}}],
+    [{sourceItem:0,choice:{ kind: "field-required" as const, scope: "action-input" as const, action: "complete", field: { kind: "new" as const, name: "复盘" } }}],
+    [{sourceItem:catalog.length+1,choice:{ kind: "field-required" as const, scope: "action-input" as const, action: "complete", field: { kind: "new" as const, name: "复盘" } }}],
+    [{sourceItem:1.5,choice:{ kind: "field-required" as const, scope: "action-input" as const, action: "complete", field: { kind: "new" as const, name: "复盘" } }}],
+    [{sourceItem:selected,choice:{ kind: "field-required" as const, scope: "action-input" as const, action: "complete", field: { kind: "new" as const, name: "复盘" } }},{sourceItem:selected,choice:{ kind: "field-required" as const, scope: "action-input" as const, action: "complete", field: { kind: "new" as const, name: "复盘" } }}],
+    [{sourceItem:selected,source:1,sourceQuote:undecided,choice:{ kind: "field-required" as const, scope: "action-input" as const, action: "complete", field: { kind: "new" as const, name: "复盘" } }}],
+    [{source:1,sourceQuote:undecided,choice:{ kind: "field-required" as const, scope: "action-input" as const, action: "complete", field: { kind: "new" as const, name: "复盘" } }}],
   ])assert.throws(()=>parseAdmission(JSON.stringify({initials:[],effects:[],questions}),admission.baseVersion,admission.sources,admission.factsSnapshot));
 });

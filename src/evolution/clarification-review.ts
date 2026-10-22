@@ -47,16 +47,18 @@ function boundClarificationSchema(facts?: TechnicalFact[]) {
   const schema = clarificationSchema(facts);
   return {
     ...schema,
-    anyOf: schema.anyOf.map((branch) => ({
+    anyOf: schema.anyOf.filter(branch => branch.properties.kind.enum.every(kind => !["technical", "implementation"].includes(kind))).map((branch) => ({
       ...branch,
       required: branch.required.filter((key) => key !== "source" && key !== "sourceQuote"),
       properties: Object.fromEntries(Object.entries(branch.properties).filter(([key]) => key !== "source" && key !== "sourceQuote")),
     })),
   };
 }
-function clarificationReviewSchema(count: number, facts?: TechnicalFact[], targets?: AdmissionQuestionTarget[]) {
+function clarificationReviewSchema(count: number, facts?: TechnicalFact[], targets?: AdmissionQuestionTarget[], businessScoped = false) {
+  const general = clarificationSchema(facts);
+  if (businessScoped) general.anyOf = general.anyOf.filter(branch => branch.properties.kind.enum.every(kind => !["technical", "implementation"].includes(kind)));
   const branches = [
-    ...(!targets || targets.some((target) => !target.choice) ? [clarificationSchema(facts)] : []),
+    ...(!targets || targets.some((target) => !target.choice) ? [general] : []),
     ...(targets?.some((target) => target.choice) ? [boundClarificationSchema(facts)] : []),
   ];
   return {
@@ -86,7 +88,7 @@ export function clarificationRequest(
   if (admissionTargets) assertAdmissionTargets(questions, admissionTargets, sources);
   return {
     history: [],
-    schema: clarificationReviewSchema(questions.length, facts, admissionTargets),
+    schema: clarificationReviewSchema(questions.length, facts, admissionTargets, !!questionTargets),
     instruction:
       "独立审查完整 sources 和 questions，空历史且禁止工具。先独立核对 effects 中每项宿主效果是否 required、not-requested 或 uncertain，完整覆盖目录一次，不依赖规划者是否提到；offline-delivery 指宿主离线仍保证交付，关闭浏览器不等于宿主离线。支持性由宿主绑定，不能把能力缺口转为渠道、收件人或降级问题。然后按 questions 顺序逐项返回 decisions，不维护索引。business-ambiguity 只用于影响业务结果且来源仍未决定的选择；unnecessary 用于已明确或未要求的细节；implementation 只用于未要求改变的宿主 field-interaction，引用 fact/property，由宿主绑定实际行为；scope-reduction 表示请求降级；technical 引用 facts 序号、property、expected，由宿主裁决。来源和事实使用一基序号。admissionTargets 中含 choice 的问题已绑定来源条目，决策只返回 kind、detail 及该种类允许的事实引用；不得重写 source、sourceQuote 或目标身份。",
     message: JSON.stringify({
@@ -108,12 +110,13 @@ export function parseClarificationReview(
   sources: { id: string; text: string }[],
   facts: TechnicalFact[],
   admissionTargets?: AdmissionQuestionTarget[],
+  businessTargets?: ReturnType<typeof import("./technical-facts.js").semanticChoiceProof>[],
 ) {
   if (admissionTargets) assertAdmissionTargets(questions, admissionTargets, sources);
   const raw: unknown = JSON.parse(text);
   const problems = schemaProblems(
     raw,
-    clarificationReviewSchema(questions.length, facts, admissionTargets),
+    clarificationReviewSchema(questions.length, facts, admissionTargets, !!businessTargets),
   );
   if (problems.length) throw new Error(problems.join("；"));
   const value = raw as { effects: unknown; decisions: unknown[] };
@@ -128,10 +131,13 @@ export function parseClarificationReview(
       source: sources.findIndex((source) => source.id === target.sourceRevision) + 1,
       sourceQuote: target.sourceQuote,
     } : v;
+    const decision = parseClarificationDecision(JSON.stringify(wire), sources, facts);
+    if ((businessTargets?.[i] || target?.choice) && (decision.kind === "technical" || decision.kind === "implementation"))
+      throw new Error("业务选择没有同作用域的技术推导；事实相等不能代替需求或设计授权");
     return {
       question: questions[i],
       decision: {
-        ...parseClarificationDecision(JSON.stringify(wire), sources, facts),
+        ...decision,
         effects,
       },
       ...(target?.choice ? { admissionChoice: admissionChoiceProof(target) } : {}),
@@ -181,7 +187,7 @@ export function clarificationSchema(facts?: TechnicalFact[]) {
           "property",
           "expected",
         ],
-        ...(facts ? {anyOf: facts.flatMap((fact,index)=>Object.keys(fact.properties).map(property=>({
+        ...(facts ? {anyOf: facts.flatMap((fact,index)=>Object.keys(fact.properties).filter(property => technicalExpectationValues(fact, property).length > 1).map(property=>({
           properties:{fact:{enum:[index+1]},property:{enum:[property]},expected:{enum:technicalExpectationValues(fact,property)}},
         })))}:{}),
         properties: {
@@ -255,7 +261,11 @@ export function parseClarificationDecision(
           !["detail", "editing"].includes(String(v.property))))
     )
       throw new Error("澄清技术事实引用不支持");
-    if (v.kind === "technical") assertTechnicalExpectation(fact, v.property, v.expected);
+    if (v.kind === "technical") {
+      assertTechnicalExpectation(fact, v.property, v.expected);
+      if (technicalExpectationValues(fact, v.property).length < 2)
+        throw new Error("技术事实缺少可比较的作用域命题，生成策略不能推导业务决定");
+    }
     decision.fact = {
       id: fact.id,
       hash: fact.evidenceHash,

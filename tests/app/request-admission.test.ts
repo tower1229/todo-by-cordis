@@ -689,7 +689,7 @@ test("来源条目澄清经生产调用链绑定独立复核，回答后同预�
     if(value.kind==="request-admission/2"){
       const index=value.sourceItems.findIndex((item:{text:string})=>item.text==="复盘是否必填尚未决定");
       assert.ok(index>=0);
-      return reply({...empty(),questions:value.sources.length===1?[{sourceItem:index+1,choice:{kind:"field-required"}}]:[]});
+      return reply({...empty(),questions:value.sources.length===1?[{sourceItem:index+1,choice:{ kind: "field-required" as const, scope: "action-input" as const, action: "complete", field: { kind: "new" as const, name: "复盘" } }}]:[]});
     }
     if(value.kind==="clarification-review/2"){
       assert.equal(value.admissionTargets.length,1);

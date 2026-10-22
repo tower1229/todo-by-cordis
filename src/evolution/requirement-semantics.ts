@@ -7,6 +7,7 @@ import type {
 import type { FieldExpectation } from "../shared/acceptance-obligations.js";
 import { isInheritedAvailability } from "./action-availability.js";
 import { admissionFieldTargets } from "./field-identity.js";
+import { designAuthorized } from "./contract-authority.js";
 
 export const semanticQuestionKey = (
   question: string,
@@ -377,7 +378,7 @@ export function compileSemantics(
           "specified",
           isInheritedAvailability(o, plan.binding?.actionAvailability)
             ? "host"
-            : "requirement",
+            : designAuthorized(plan, review ?? {}, `business-choice:action-availability:${o.id}`) ? "implementation" : "requirement",
           isInheritedAvailability(o, plan.binding?.actionAvailability)
             ? {
                 visible: o.expected.visible,

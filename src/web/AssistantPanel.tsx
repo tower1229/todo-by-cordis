@@ -147,6 +147,19 @@ function PlanSummary({ plan }: { plan: InvestigatedPlan }) {
       {!!plan.compositionIntent && (
         <CompositionIntentBlock intent={plan.compositionIntent} />
       )}
+      {!!plan.designDecisions?.some(d => d.permission === "delegated") && (
+        <div>
+          <dt className="plan-label">需求允许的设计选择</dt>
+          <dd className="space-y-2">
+            {plan.changeSpec?.authority?.propositions.filter(p => p.authority === "authorized-design").map(p => (
+              <p key={p.id}>
+                {"visible" in p.predicate && `动作展示选择：${p.predicate.visible ? "显示动作" : "不显示动作"}`}。
+                授权来源：{plan.designDecisions?.find(d => d.targetId === p.id)?.sourceQuote}
+              </p>
+            ))}
+          </dd>
+        </div>
+      )}
       {!!plan.requirements?.length && (
         <div>
           <dt className="plan-label">要求与验证方式</dt>
