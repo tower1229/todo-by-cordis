@@ -1,5 +1,5 @@
 // Explicitly authorized, isolated real-model acceptance. Never activates candidates.
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -22,6 +22,9 @@ if (process.env.ACCEPT_REAL_MODEL !== "1")
 if (existsSync(".env")) process.loadEnvFile(".env");
 if (!process.env.DEEPSEEK_API_KEY?.trim())
   throw new Error("DEEPSEEK_API_KEY is not configured");
+const maxPaidCalls = Number(process.env.ACCEPT_MAX_PAID_CALLS ?? 24);
+if (!Number.isSafeInteger(maxPaidCalls) || maxPaidCalls < 1)
+  throw new Error("ACCEPT_MAX_PAID_CALLS must be a positive integer");
 const directory = mkdtempSync(resolve(".runtime/interaction-real-"));
 const write = (file: string, value: unknown) =>
   writeFileSync(
@@ -34,7 +37,8 @@ const paths = execFileSync(
   { encoding: "utf8" },
 )
   .trim()
-  .split("\n");
+  .split("\n")
+  .filter((path) => statSync(path).isFile());
 const manifest = () =>
   Object.fromEntries(
     paths.map((path) => [
@@ -55,11 +59,14 @@ const requests = [
     request:
       "在任务详情增加一个可选的备注标签，通过显式动作填写或修改，保留已有任务和其他行为。",
     calls: 5,
+    answer:
+      "已完成任务也可以填写或修改备注标签，填写或修改备注标签不改变任务状态。",
   },
-];
+].filter((scenario) => !process.env.ACCEPT_SCENARIO || scenario.id === process.env.ACCEPT_SCENARIO);
+if (!requests.length) throw new Error("Unknown ACCEPT_SCENARIO");
 write("authorization.json", {
   model: DEEPSEEK_MODEL,
-  maxPaidCalls: 24,
+  maxPaidCalls,
   requests,
   sourceClean: false,
   productionApplication: false,
@@ -78,12 +85,12 @@ try {
       w.db,
       {
         async generate(request, signal, progress) {
-          if (paidCalls >= 24)
-            throw new Error("真实验证已达到24次付费调用总额，保留当前结果");
+          if (paidCalls >= maxPaidCalls)
+            throw new Error(`真实验证已达到${maxPaidCalls}次付费调用总额，保留当前结果`);
           paidCalls++;
-          write("usage-counter.json", { paidCalls, maxPaidCalls: 24 });
+          write("usage-counter.json", { paidCalls, maxPaidCalls });
           console.log(
-            `${scenario.id}: call ${paidCalls}/24 (${request.phase})`,
+            `${scenario.id}: call ${paidCalls}/${maxPaidCalls} (${request.phase})`,
           );
           return provider.generate(request, signal, progress);
         },
@@ -107,6 +114,8 @@ try {
     const observations: unknown[] = [];
     const callStart = paidCalls;
     let final: AssistantSnapshot | undefined;
+    let experienced = false;
+    let answered = false;
     try {
       await page.goto(`http://127.0.0.1:${address.port}/`);
       await page.getByRole("button", { name: "改进应用", exact: true }).click();
@@ -130,7 +139,7 @@ try {
           previous = run.status;
         }
         if (run.status === "awaiting-budget") {
-          if (paidCalls >= 24 || resumed >= 4) {
+          if (paidCalls >= maxPaidCalls || resumed >= 12) {
             final = snapshot;
             break;
           }
@@ -139,7 +148,7 @@ try {
             .click();
           resumed++;
         } else if (run.status === "ready") {
-          if (paidCalls >= 24) {
+          if (paidCalls >= maxPaidCalls) {
             final = snapshot;
             break;
           }
@@ -150,6 +159,23 @@ try {
           await page
             .getByRole("button", { name: "开始执行", exact: true })
             .click();
+        } else if (run.status === "awaiting-input" && scenario.answer && !answered &&
+          run.questions?.length === 1 && /备注标签|填写备注/.test(run.questions[0].title)) {
+          write(`${scenario.id}-answer.json`, { question: run.questions[0], answer: scenario.answer });
+          await page.getByRole("form", { name: "回答当前问题" }).getByRole("textbox").fill(scenario.answer);
+          await page.getByRole("button", { name: "提交回答", exact: true }).click();
+          answered = true;
+        } else if (run.status === "awaiting-apply") {
+          await page.getByRole("button", { name: "体验", exact: true }).click();
+          await page.getByRole("status", { name: "候选体验提示" }).waitFor();
+          await page.screenshot({ path: join(directory, `${scenario.id}-experience.png`), fullPage: true });
+          await page.getByRole("button", { name: "结束体验", exact: true }).click();
+          await page.getByRole("status", { name: "候选体验提示" }).waitFor({state:"hidden"});
+          await page.getByRole("button", { name: "改进应用", exact: true }).click();
+          await page.getByRole("button", { name: "确认应用", exact: true }).waitFor();
+          experienced = true;
+          final = await evolution.observe();
+          break;
         } else if (
           !["planning", "executing", "applying"].includes(run.status)
         ) {
@@ -173,10 +199,13 @@ try {
         grants: final.run?.budget?.grants,
         passed:
           final.run?.status === "awaiting-apply" &&
+          experienced &&
           unchanged &&
           (scenario.id !== "continuation" ||
             !!final.run.budget?.grants?.length),
         efficiencyTarget: scenario.calls,
+        experienced,
+        efficiencyMet: paidCalls - callStart <= scenario.calls,
         unchanged,
         final,
       });
@@ -201,7 +230,7 @@ try {
       await sessions.close();
       await new Promise<void>((r) => server.close(() => r()));
       await w.close();
-      write("result.json", { paidCalls, maxPaidCalls: 24, results });
+      write("result.json", { paidCalls, maxPaidCalls, results });
     }
   }
 } finally {
@@ -215,7 +244,7 @@ try {
   if (!sourceUnchanged) process.exitCode = 1;
   write("result.json", {
     paidCalls,
-    maxPaidCalls: 24,
+    maxPaidCalls,
     sourceUnchanged,
     passed: passed && sourceUnchanged,
     results,

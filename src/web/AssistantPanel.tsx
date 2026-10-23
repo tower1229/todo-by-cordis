@@ -558,6 +558,10 @@ export function AssistantPanel({
           </section>
         )}
         {showDetails && <section aria-label="运行详情" className="space-y-5 border-t border-line pt-4">
+        {run?.status === "awaiting-apply" && <div className="space-y-4">
+          <Steps steps={run.steps} />
+          <EventLog events={snapshot?.events ?? []} />
+        </div>}
         {run?.parentRunId && (
           <details className="text-xs leading-6 text-muted break-words">
             <summary>关联运行与基础版本</summary>
@@ -697,8 +701,6 @@ export function AssistantPanel({
                 ? " 当前已有活跃的体验会话，刷新页面可继续。"
                 : ""}
             </p>
-            <Steps steps={run.steps} />
-            <EventLog events={snapshot?.events ?? []} />
             <div className="flex flex-wrap gap-2">
               <Button
                 variant={run.experienceSession ? "secondary" : "primary"}

@@ -53,6 +53,12 @@ test("真实服务中的预算暂停、刷新、追加、验收、体验和显�
   expect(validated.run.budget.callsUsed).toBeGreaterThan(
     paused.run.budget.callsUsed,
   );
+  await expect(page.getByRole("list", { name: "执行进度" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "体验", exact: true })).toBeInViewport();
+  await expect(page.getByRole("button", { name: "确认应用", exact: true })).toBeInViewport();
+  await page.getByRole("button", { name: "运行详情", exact: true }).click();
+  await expect(page.getByRole("list", { name: "执行进度" })).toBeVisible();
+  await page.getByRole("button", { name: "运行详情", exact: true }).click();
   await page.setViewportSize({ width: 1360, height: 900 });
   await page.screenshot({
     path: info.outputPath("candidate-desktop.png"),

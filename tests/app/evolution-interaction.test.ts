@@ -120,6 +120,44 @@ test("建议追加同时补齐后续阶段时间与候选缺口", () => {
   );
 });
 
+test("可修正的规划诊断在调用预留边界暂停，追加后保留诊断并继续独立复核", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "cordis-plan-correction-"));
+  const w = await Workspace.open(join(directory, "workspace.db"));
+  const driver = new PlanningDriver();
+  const domain = new EvolutionDomain(w);
+  const parse = domain.parse.bind(domain);
+  let proposals = 0;
+  domain.parse = (...args) => {
+    const parsed = parse(...args);
+    if (++proposals === 1) parsed.blockers.push("案例的前置状态缺少可达准备步骤");
+    return parsed;
+  };
+  const e = new Evolution(w.db, driver, domain, {calls: 6, candidates: 3, milliseconds: 600000});
+  t.after(async () => {
+    await e.close();
+    await w.close();
+    await rm(directory, {recursive: true, force: true});
+  });
+  await e.command({type: "request", operationId: randomUUID(), text: "完成任务前必须填写复盘"});
+  const paused = await settleEvolution(e, "awaiting-budget");
+  assert.equal(paused.status, "awaiting-budget");
+  if (paused.status !== "awaiting-budget") throw new Error("not paused");
+  assert.equal(paused.pause.resource, "calls");
+  assert.equal(proposals, 1);
+  assert.equal(paused.budget?.callsUsed, 2);
+  assert.equal(paused.plans?.length, 1);
+  await e.command({type: "resume-budget", operationId: randomUUID(), runId: paused.id, pauseRevision: paused.pause.revision, amounts: paused.pause.suggested});
+  const ready = await settleEvolution(e, "ready");
+  assert.equal(ready.status, "ready");
+  assert.equal(ready.id, paused.id);
+  assert.equal(proposals, 2);
+  assert.equal(ready.budget?.efficiencyTarget, 6);
+  assert.equal(ready.budget?.callsUsed, 4);
+  assert(driver.requests.some(request => JSON.stringify(request.history).includes("案例的前置状态缺少可达准备步骤")));
+  assert.equal(driver.requests.filter(request => JSON.parse(request.message ?? "{}").kind === "request-admission/2").length, 1);
+  assert.equal(driver.requests.filter(request => request.phase === "review").length, 1);
+});
+
 test("默认记录必须有独立逐项裁决，用户回答必须绑定当前问题及合法选项", () => {
   const defaults = compileDefaults([
     {
