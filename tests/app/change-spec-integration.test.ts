@@ -1,3 +1,4 @@
+import { answerCurrent } from "./interaction-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -307,7 +308,7 @@ test("澄清直接等待用户，回答沿同一运行和预算复用已验证�
   });
   const waiting = await settle(e);
   assert.equal(waiting.status, "awaiting-input");
-  await e.command({
+  await answerCurrent(e, {
     type: "answer",
     runId: waiting.id,
     text: "必填",
@@ -431,7 +432,7 @@ test("独立复核可直接提出业务澄清；同一运行回答后复核必�
   assert.equal(waiting.status, "awaiting-input");
   assert.equal(waiting.budget?.callsUsed, 4);
   assert.equal(waiting.reviewLedger!.findings[0].status, "open");
-  await e.command({
+  await answerCurrent(e, {
     type: "answer",
     runId: waiting.id,
     text: "复盘必填",

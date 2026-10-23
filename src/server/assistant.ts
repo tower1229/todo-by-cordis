@@ -10,6 +10,18 @@ export type AssistantService = {
   command(command: AssistantCommand): Promise<AssistantSnapshot>;
 };
 
+function parseAnswer(input: Record<string, unknown>) {
+  if (input.answers === undefined && input.questionRevision === undefined) return {};
+  if (!Number.isSafeInteger(input.questionRevision) || Number(input.questionRevision) < 1 || !Array.isArray(input.answers) || input.answers.length > 20) throw new AppError("INVALID_INPUT", "回答格式无效");
+  const answers = input.answers.map((item: unknown) => {
+    if (!item || typeof item !== "object") throw new AppError("INVALID_INPUT", "回答格式无效");
+    const a = item as Record<string, unknown>;
+    if (typeof a.questionId !== "string" || a.questionId.length > 100 || (a.optionId !== undefined && (typeof a.optionId !== "string" || a.optionId.length > 120)) || (a.text !== undefined && (typeof a.text !== "string" || a.text.length > 5000))) throw new AppError("INVALID_INPUT", "回答格式无效");
+    return { questionId: a.questionId, ...(typeof a.optionId === "string" ? {optionId:a.optionId}:{}), ...(typeof a.text === "string" ? {text:a.text}:{}) };
+  });
+  return { questionRevision: Number(input.questionRevision), answers };
+}
+
 export function parseAssistantCommand(value: unknown): AssistantCommand {
   const invalid = () => new AppError("INVALID_INPUT", "AI 请求格式无效");
   if (!value || typeof value !== "object") throw invalid();
@@ -43,6 +55,7 @@ export function parseAssistantCommand(value: unknown): AssistantCommand {
         operationId: input.operationId,
         text: input.text.trim(),
         runId: input.runId,
+        ...(input.type === "answer" ? parseAnswer(input) : {}),
       };
     }
     return {
@@ -54,6 +67,11 @@ export function parseAssistantCommand(value: unknown): AssistantCommand {
     };
   }
   if (!id(input.runId)) throw invalid();
+  if (input.type === "resume-budget") {
+    const amounts = input.amounts as Record<string, unknown> | undefined;
+    if (!Number.isSafeInteger(input.pauseRevision) || Number(input.pauseRevision) < 1 || !amounts || ["calls", "candidates", "milliseconds"].some(k => !Number.isSafeInteger(amounts[k]) || Number(amounts[k]) < 0)) throw invalid();
+    return { type: "resume-budget", operationId: input.operationId, runId: input.runId, pauseRevision: Number(input.pauseRevision), amounts: { calls: Number(amounts.calls), candidates: Number(amounts.candidates), milliseconds: Number(amounts.milliseconds) } };
+  }
   if (input.type === "continue") {
     if (
       !id(input.baseVersion) ||

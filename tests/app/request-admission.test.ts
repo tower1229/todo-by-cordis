@@ -1,3 +1,4 @@
+import { answerCurrent } from "./interaction-fixture.js";
 import { fieldTargetId } from "../../src/evolution/field-identity.js";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -172,7 +173,7 @@ test("来源标签误判经独立裁决后继续必要澄清，完整原文及�
   assert.equal(waiting.budget?.callsUsed, 3);
   assert.equal(waiting.requestAdmissions?.[0].claims.length, 1);
   assert.equal(waiting.requestAdmissions?.[0].semanticReview?.decisions[0].verdict, "not-requested");
-  await e.command({ type: "answer", runId: waiting.id, text: "复盘必填，其他行为不变", operationId: "answer" });
+  await answerCurrent(e, { type: "answer", runId: waiting.id, text: "复盘必填，其他行为不变", operationId: "answer" });
   const ready = await settle(e); assert.equal(ready.status, "ready");
   assert.equal(ready.budget?.callsUsed, 6); assert.equal(ready.budget!.callsRemaining, 6);
   assert.equal(ready.requestAdmissions?.length, 2);
@@ -267,7 +268,7 @@ test("活动时间截止由宿主记录最终预算原因，迟到模型结果�
   } }, 12, 30);
   await e.command({type:"request",text:"增加标签",operationId:"request"});
   const run = await settle(e);
-  assert.equal(run.status,"failed");
+  assert.equal(run.status,"awaiting-budget");
   assert.equal(run.stop?.kind,"budget");
   assert.equal(run.stop?.code,"active-time-budget");
   assert.equal(run.budget?.callsUsed,1);
@@ -659,7 +660,7 @@ test("必要澄清经过独立审查，回答使旧预检失效，同一运行5�
   const waiting = await settle(e);
   assert.equal(waiting.status, "awaiting-input");
   assert.equal(waiting.budget?.callsUsed, 2);
-  await e.command({
+  await answerCurrent(e, {
     type: "answer",
     runId: waiting.id,
     text: "复盘必填",
@@ -708,7 +709,7 @@ test("来源条目澄清经生产调用链绑定独立复核，回答后同预�
   assert.ok(target.choice);
   assert.deepEqual(waiting.clarificationReviews![0].admissionChoice,{id:target.choice.id,hash:hash(target.choice)});
   assert.equal(waiting.clarificationReviews![0].decision.sourceQuote,target.sourceQuote);
-  await e.command({type:"answer",runId:waiting.id,text:"复盘必填",operationId:"answer"});
+  await answerCurrent(e, {type:"answer",runId:waiting.id,text:"复盘必填",operationId:"answer"});
   const ready=await settle(e);
   assert.equal(ready.status,"ready");
   assert.equal(ready.id,waiting.id);
@@ -747,7 +748,7 @@ test("澄清预留包含回答后的预检，未达到完整路径预算即阻�
     operationId: "request",
   });
   const r = await settle(e);
-  assert.equal(r.status, "blocked");
+  assert.equal(r.status, "awaiting-budget");
   assert.equal(r.budget?.callsUsed, 1);
   const s = new BudgetScheduler({
     calls: 12,
@@ -842,7 +843,7 @@ test("回答只修改必填性，重复标签误读通过同一语义契约纠�
   }});
   await e.command({type:"request",text:"完成前填写复盘，是否必填尚未决定",operationId:"request"});
   const waiting=await settle(e);assert.equal(waiting.status,"awaiting-input");
-  await e.command({type:"answer",runId:waiting.id,text:"复盘必填",operationId:"answer"});
+  await answerCurrent(e, {type:"answer",runId:waiting.id,text:"复盘必填",operationId:"answer"});
   const ready=await settle(e);assert.equal(ready.status,"ready","message" in ready?ready.message:ready.status);
   assert.equal(ready.id,waiting.id);assert.equal(ready.budget?.callsUsed,7);assert.equal(reused,1);
   assert.notEqual(ready.requestAdmissions![0].key,ready.requestAdmissions![1].key);
@@ -862,7 +863,7 @@ test("阶段时间窗口取消仍只计一次付费调用，迟到响应不能�
   let started = false;
   let signal: AbortSignal | undefined;
   let late!: (value: ReturnType<typeof reply>) => void;
-  const e = new Evolution(w.db,{generate(_request,s) { started = true; signal = s; return new Promise(resolve=>{late=resolve;}); }},new EvolutionDomain(w),{milliseconds:10000});
+  const e = new Evolution(w.db,{generate(_request,s) { started = true; signal = s; return new Promise(resolve=>{late=resolve;}); }},new EvolutionDomain(w),{calls:12,candidates:3,milliseconds:10000});
   t.after(async()=>{t.mock.timers.reset(); await e.close(); await w.close(); await rm(directory,{recursive:true,force:true});});
   t.mock.timers.enable({apis:["setTimeout"]});
   await e.command({type:"request",text:"增加标签",operationId:"request"});
@@ -871,13 +872,13 @@ test("阶段时间窗口取消仍只计一次付费调用，迟到响应不能�
   t.mock.timers.tick(8001);
   for (let i=0;i<1000&&(await e.observe()).run?.status==="planning";i++) await new Promise<void>(resolve=>setImmediate(resolve));
   const stopped = (await e.observe()).run!;
-  assert.equal(stopped.status,"blocked");
+  assert.equal(stopped.status,"awaiting-budget");
   assert.equal(stopped.stop?.kind,"budget");
   assert.equal(stopped.stop?.code,"phase-time-reserve");
   assert.equal(stopped.budget?.callsUsed,1);
   assert.equal(signal?.aborted,true);
   late(reply(empty()));
   await new Promise<void>(resolve=>setImmediate(resolve));
-  assert.equal((await e.observe()).run?.status,"blocked");
+  assert.equal((await e.observe()).run?.status,"awaiting-budget");
   assert.equal((await e.observe()).candidates?.length??0,0);
 });

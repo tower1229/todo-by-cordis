@@ -236,7 +236,7 @@ test("stale member disable shows readable reason and keeps protected shell", asy
   await page.getByRole("button", { name: "关闭工作区设置", exact: true }).click();
 
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
-  await expect(page.getByRole("button", { name: "应用", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "确认应用", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "关闭改进应用", exact: true }).click();
 
   snapshot = {
@@ -253,5 +253,5 @@ test("stale member disable shows readable reason and keeps protected shell", asy
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await expect(page.getByRole("button", { name: "停止", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "停止", exact: true }).click();
-  await expect(page.getByText("已取消", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status").filter({hasText:"已取消"})).toBeVisible();
 });

@@ -1,3 +1,6 @@
+import { budgetPause } from "./budget-authorization.js";
+import { questionsFor, answerText, compileDefaults } from "./interaction.js";
+import type { BudgetGrant, ResourceAmounts } from "../shared/evolution-interaction.js";
 import { compileSemantics, semanticReuse } from "./requirement-semantics.js";
 import { resolveErrorFeedback, feedbackConflicts } from "./error-review.js";
 import { planSchemaFor } from "./plan-input.js";
@@ -166,6 +169,13 @@ export interface Domain {
 }
 type RecordRun = {
   run: AssistantRun;
+  initialLimits?: ResourceAmounts;
+  authorizedLimits?: ResourceAmounts;
+  grants?: BudgetGrant[];
+  pauseRevision?: number;
+  memoReplies?: Record<string, ModelReply>;
+  planner?: { message?: string; response?: ModelReply; proposalId?: string; rejections: string[]; ready?: { plan: InvestigatedPlan; parsed: ReturnType<Domain["parse"]> } };
+  generator?: { history: unknown[]; message?: string; previousCandidate?: {id: string; source: string}; failures: string[]; response?: ModelReply; pendingCandidate?: { rowId: number; source: string; candidate: CandidateAttempt } };
   target?: Target;
   plan?: AssistantPlan | InvestigatedPlan;
   history: unknown[];
@@ -195,7 +205,8 @@ const editable = (status: string) =>
 export class Evolution {
   private sessions?: ExperienceSessionHost;
   private materials: InvestigationStore;
-  private get scheduler() { return new BudgetScheduler(this.limits); }
+  private runLimits(r: RecordRun) { return r.authorizedLimits ?? this.limits; }
+  private scheduler(r: RecordRun) { return new BudgetScheduler(this.runLimits(r)); }
   private limits = { calls: 12, candidates: 3, milliseconds: 600_000 };
   private active?: {
     id: string;
@@ -331,12 +342,15 @@ export class Evolution {
         ? { versionId: r.versionId ?? r.run.versionId }
         : {}),
       budget: {
+        efficiencyTarget: r.initialLimits?.calls ?? this.limits.calls,
+        authorized: this.runLimits(r),
+        grants: r.grants ?? [],
         callsUsed: r.calls,
-        callsRemaining: Math.max(0, this.limits.calls - r.calls),
-        candidatesRemaining: Math.max(0, this.limits.candidates - r.candidates),
+        callsRemaining: Math.max(0, this.runLimits(r).calls - r.calls),
+        candidatesRemaining: Math.max(0, this.runLimits(r).candidates - r.candidates),
         millisecondsRemaining: Math.max(
           0,
-          this.limits.milliseconds - r.elapsed - (this.active?.id === r.run.id ? performance.now() - this.active.started : 0),
+          this.runLimits(r).milliseconds - r.elapsed - (this.active?.id === r.run.id ? performance.now() - this.active.started : 0),
         ),
       },
       updatedAt: new Date().toISOString(),
@@ -387,6 +401,11 @@ export class Evolution {
     return this.get(id).run.status === "executing";
   }
   private save(r: RecordRun) {
+    if (r.run.status === "awaiting-input" && r.initialLimits && !r.run.questions) {
+      const questions = r.run.clarificationReviews?.filter(v => r.run.status === "awaiting-input" && (r.run.question === v.question || r.run.question.split("\n").includes(v.question))).map(v => v.question) ?? [];
+      r.run.questions = questionsFor(r.run.id, r.run.requestRevision ?? 1, [...new Set(questions)], r.run.clarificationReviews ?? []);
+      r.run.questionRevision = r.run.requestRevision ?? 1;
+    }
     this.db
       .prepare(
         "INSERT INTO evolution_runs VALUES(?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
@@ -535,6 +554,7 @@ export class Evolution {
     }
   }
   async command(command: AssistantCommand): Promise<AssistantSnapshot> {
+    const commandHash = hash(command);
     const prior = this.priorCommand(command);
     if (prior) return prior;
     // Cancellation must remain immediate while all other transitions wait for a published phase.
@@ -545,6 +565,7 @@ export class Evolution {
       if (settled) return settled;
     }
     let record: RecordRun;
+    let boundAnswers: Omit<import("../shared/evolution-interaction.js").AnsweredQuestion,"sourceRevision">[] | undefined;
     let work: "plan" | "execute" | "apply" | undefined;
     let applyOp: string | undefined;
     let refreshApplyReceipt = false;
@@ -595,6 +616,9 @@ export class Evolution {
           plans: [],
           evidence: [],
         },
+        initialLimits: {...this.limits},
+        authorizedLimits: {...this.limits},
+        grants: [],
         history: [],
         calls: 0,
         candidates: 0,
@@ -656,6 +680,16 @@ export class Evolution {
             409,
           );
         record = previous;
+        if (command.type === "answer" && previous.run.status === "awaiting-input" && previous.run.questions?.length) {
+          if (command.questionRevision !== previous.run.questionRevision || !command.answers) throw new AppError("QUESTION_STALE", "请回答当前问题，旧回答不能覆盖新问题", 409);
+          const publishedQuestions = previous.run.questions;
+          const submittedAnswers = command.answers;
+          answerText(publishedQuestions,submittedAnswers);
+          boundAnswers = publishedQuestions.map(q=>({questionId:q.id,question:q.title,answer:answerText([q],[submittedAnswers.find(a=>a.questionId===q.id)!])}));
+          command = {...command, text: boundAnswers.map(a=>a.answer).join("\n\n")};
+        }
+        record.planner = undefined;
+        record.memoReplies = undefined;
         const revision = (previous.run.requestRevision ?? 1) + 1;
         record.history = [];
         record.run = {
@@ -669,6 +703,7 @@ export class Evolution {
               revision,
               type: command.type === "revise" ? "revise" : "answer",
               text: command.text,
+              ...(boundAnswers ? {answers:boundAnswers} : {}),
               createdAt: new Date().toISOString(),
             },
           ],
@@ -677,6 +712,22 @@ export class Evolution {
         };
       }
       work = "plan";
+    } else if (command.type === "resume-budget") {
+      record = this.get(command.runId);
+      const run = record.run;
+      if (run.status !== "awaiting-budget" || run.pause.revision !== command.pauseRevision || !record.initialLimits) throw new AppError("BUDGET_PAUSE_STALE", "追加请求已过期，请刷新当前进度", 409);
+      const context = this.domain.context();
+      if (context.versionId !== run.baseVersion || context.pluginId !== run.capabilityId) throw new AppError("PLAN_STALE", "基础版本已变化，请结束本次改进后重新规划", 409);
+      if (run.pause.resume === "execute") this.checkPlan(record, record.target!, (record.plan as InvestigatedPlan).compositionRevision, record.plan as InvestigatedPlan);
+      const limits = this.runLimits(record);
+      for (const resource of ["calls", "candidates", "milliseconds"] as const) {
+        const value = command.amounts[resource];
+        if (!Number.isSafeInteger(value) || value < run.pause.minimum[resource] || !Number.isSafeInteger(limits[resource] + value)) throw new AppError("BUDGET_GRANT_TOO_SMALL", "追加资源不足以恢复当前阶段", 400);
+      }
+      record.authorizedLimits = {calls: limits.calls + command.amounts.calls, candidates: limits.candidates + command.amounts.candidates, milliseconds: limits.milliseconds + command.amounts.milliseconds};
+      (record.grants ??= []).push({operationId: command.operationId, pauseRevision: command.pauseRevision, amounts: command.amounts, at: new Date().toISOString()});
+      work = run.pause.resume;
+      record.run = work === "plan" ? {...this.base(record),status:"planning"} : {...this.base(record),status:"executing",plan:record.plan as InvestigatedPlan,steps:this.steps(record)};
     } else if (command.type === "cancel") {
       record = this.get(command.runId);
       this.sessions?.endForRun(record.run.id);
@@ -863,6 +914,7 @@ export class Evolution {
     } else {
       throw new AppError("INVALID_INPUT", "AI 请求格式无效");
     }
+    if (record.initialLimits) record.run = {...record.run,...this.base(record)};
     this.db.exec("BEGIN IMMEDIATE");
     let receipt: AssistantSnapshot;
     try {
@@ -883,7 +935,7 @@ export class Evolution {
         )
         .run(
           command.operationId,
-          hash(command),
+          commandHash,
           record.run.id,
           JSON.stringify(receipt),
         );
@@ -943,8 +995,8 @@ export class Evolution {
     const controller = new AbortController();
     const started = performance.now();
     const timer = setTimeout(
-      () => controller.abort(new DOMException(`已达到 ${this.limits.milliseconds / 60_000} 分钟活动时间上限`, "TimeoutError")),
-      Math.max(1, this.limits.milliseconds - record.elapsed),
+      () => controller.abort(new DOMException(`已达到 ${this.runLimits(record).milliseconds / 60_000} 分钟活动时间上限`, "TimeoutError")),
+      Math.max(1, this.runLimits(record).milliseconds - record.elapsed),
     );
     const promise = Promise.resolve().then(async () => {
       try {
@@ -1054,6 +1106,12 @@ export class Evolution {
                   s.status === "running" ? { ...s, status: "failed" } : s,
                 ),
               };
+          const timeBudget = controller.signal.aborted && controller.signal.reason instanceof DOMException && controller.signal.reason.name === "TimeoutError";
+          if (kind !== "apply" && record.initialLimits && (error instanceof BudgetExhaustedError || timeBudget)) {
+            const pause = budgetPause({revision: (record.pauseRevision ?? 0) + 1, resume: kind, phase: error instanceof BudgetExhaustedError ? error.phase ?? kind : kind, resource: error instanceof BudgetExhaustedError ? error.resource : "milliseconds", limits: this.runLimits(record), calls: record.calls, candidates: record.candidates, elapsed: record.elapsed + performance.now() - started, message});
+            record.pauseRevision = pause.revision;
+            record.run = {...this.base(record), status:"awaiting-budget", pause, ...(record.plan ? {plan:record.plan as InvestigatedPlan}:{}), steps:this.steps(record)};
+          }
           this.save(record);
           const lastCall = this.db.prepare("SELECT body FROM evolution_calls WHERE runId=? ORDER BY id DESC LIMIT 1").get(record.run.id);
           const phase = (error instanceof ModelProtocolError || error instanceof ModelTransportError || error instanceof ModelResourceError) && lastCall ?
@@ -1084,6 +1142,8 @@ export class Evolution {
     validate?: (reply: ModelReply) => unknown,
   ): Promise<ModelReply> {
     request={...request,phase};
+    const memoKey = phase === "review" || phase === "admission" ? hash(request) : undefined;
+    if (memoKey && r.memoReplies?.[memoKey]) return structuredClone(r.memoReplies[memoKey]);
     const original = request;
     for (let attempt = 0; ; attempt++) {
       const reply = await this.callOnce(r, request, signal, phase);
@@ -1097,7 +1157,10 @@ export class Evolution {
         try { validate(reply); }
         catch (error) {problems.push(error instanceof Error ? error.message : "宿主来源绑定校验未通过");}
       }
-      if (!problems.length) return reply;
+      if (!problems.length) {
+        if (memoKey) { (r.memoReplies ??= {})[memoKey] = structuredClone(reply); this.save(r); }
+        return reply;
+      }
       (r.run.protocolFailures ??= []).push({phase,call:r.calls,requestHash:hash(original),responseHash:hash(reply.raw),problems});
       this.save(r);
       if (attempt || r.run.protocolFailures.length > 2)
@@ -1120,11 +1183,11 @@ export class Evolution {
   ): Promise<ModelReply> {
     signal.throwIfAborted();
     const remaining = this.remainingTime(r);
-    this.scheduler.admit(r.calls, phase, remaining);
-    const modelMilliseconds = this.scheduler.modelWindow(phase, remaining);
+    this.scheduler(r).admit(r.calls, phase, remaining);
+    const modelMilliseconds = this.scheduler(r).modelWindow(phase, remaining);
     request = { ...request, resourceWindow: { remainingMilliseconds: remaining, reservedMilliseconds: Math.max(0, remaining - modelMilliseconds), modelMilliseconds } };
-    if (r.calls >= this.limits.calls)
-      throw new BudgetExhaustedError(`已达到 ${this.limits.calls} 次模型调用上限`);
+    if (r.calls >= this.runLimits(r).calls)
+      throw new BudgetExhaustedError(`已达到 ${this.runLimits(r).calls} 次模型调用上限`);
     r.calls++;
     if (phase !== "review" && phase !== "admission" && r.investigation && r.pendingMaterials?.length) {
       this.materials.delivered(r.investigation, phase, r.calls, r.pendingMaterials);
@@ -1281,7 +1344,9 @@ export class Evolution {
     this.save(r);
   }
   private async auditQuestions(r: RecordRun, questions: string[], sources: RequirementGate["sources"], facts: ReturnType<typeof technicalFacts>, signal: AbortSignal, targets?: ReturnType<typeof semanticChoiceProof>[], admissionTargets?: AdmissionQuestionTarget[]) {
-    this.scheduler.requireClarification(r.calls, false, this.remainingTime(r), true);
+    const cached = questions.map((question,index) => r.run.clarificationReviews?.find(a => a.key === questionReviewKey(question,sources,facts) && hash(a.choice) === hash(targets?.[index].proof) && hash(a.admissionChoice) === hash(admissionTargets?.[index] ? admissionChoiceProof(admissionTargets[index]) : undefined)));
+    if (r.planner?.response && cached.every(Boolean)) return cached.map(a => ({question:a!.question,decision:a!.decision,choice:a!.choice,admissionChoice:a!.admissionChoice}));
+    this.scheduler(r).requireClarification(r.calls, false, this.remainingTime(r), true);
     if (questions.some((question,index) => r.run.clarificationReviews?.some(a => a.key === questionReviewKey(question,sources,facts) && hash(a.choice)===hash(targets?.[index].proof) && hash(a.admissionChoice)===hash(admissionTargets?.[index] ? admissionChoiceProof(admissionTargets[index]) : undefined))))
       throw new ModelProtocolError("相同澄清已审查且没有新证据，保留原预算并停止");
     const history = r.history;
@@ -1316,6 +1381,9 @@ export class Evolution {
       signal.throwIfAborted();
       return {...review,technicalPremiseAudit:parse(reply.text)};
     } finally { r.history = history; }
+  }
+  private answeredQuestions(r:RecordRun) {
+    return (r.run.revisions ?? []).flatMap(revision => (revision.answers ?? []).map(answer => ({...answer,sourceRevision:`${r.run.id}:${revision.revision}`})));
   }
   private async plan(r: RecordRun, signal: AbortSignal) {
     const context = this.domain.context();
@@ -1361,7 +1429,10 @@ export class Evolution {
         const history = r.history;
         try {
           const prior = semanticReuse((r.run.requestAdmissions??[]).filter(admissionResolved),sourceCatalog);
-          const response = await this.call(r,admissionRequest(sourceCatalog,admissionContext.facts,prior),signal,"admission",reply=>parseAdmission(reply.text,context.versionId,sourceCatalog,admissionContext.facts));
+          const intake = admissionRequest(sourceCatalog,admissionContext.facts,prior);
+          intake.instruction += "\nansweredQuestions 是宿主的问题对应记录，question 不是用户声明，answer 才是对应来源的用户回答。";
+          intake.message = JSON.stringify({...JSON.parse(intake.message ?? "{}"),answeredQuestions:this.answeredQuestions(r)});
+          const response = await this.call(r,intake,signal,"admission",reply=>parseAdmission(reply.text,context.versionId,sourceCatalog,admissionContext.facts));
           try { admitted = parseAdmission(response.text,context.versionId,sourceCatalog,admissionContext.facts); }
           catch (error) {throw new ModelProtocolError("需求预检未通过：" + (error instanceof Error ? error.message : "无效来源解释"));}
           if (admitted.claims.length) {
@@ -1387,7 +1458,7 @@ export class Evolution {
         if(state.pending.length)throw new ModelProtocolError("需求预检澄清缺少完整裁决");
         if(state.blockers.length){const capability = r.run.clarificationReviews?.some(a=>a.decision.effects?.checks.some(c=>c.verdict==="required"&&c.outcome==="unsupported"));r.run={...this.base(r),status:"blocked",stop:{kind:capability?"capability":"semantic",phase:"admission",code:capability?"unsupported-host-effect":"clarification-boundary",evidence:["run.clarificationReviews"]},...describeBlockers(state.blockers)};this.save(r);return;}
         if(state.questions.length){
-        this.scheduler.requireClarification(r.calls, true, this.remainingTime(r));
+        this.scheduler(r).requireClarification(r.calls, true, this.remainingTime(r));
         r.run={...this.base(r),status:"awaiting-input",stop:{kind:"clarification",phase:"admission",code:"business-answer-required",evidence:["run.question","run.clarificationReviews"]},question:state.questions.join("\n")};
         this.save(r);return;
         }
@@ -1409,10 +1480,12 @@ export class Evolution {
         semanticReview:r.run.requestAdmissions.at(-1)!.semanticReview,
       }:undefined,
       sources: sourceCatalog,
+      answeredQuestions:this.answeredQuestions(r),
       questionAdjudications:r.run.clarificationReviews,
     });
-    r.history = [];
-    const rejections = new Set<string>();
+    if (!r.planner) { r.history = []; r.planner = {message, rejections:[]}; this.save(r); }
+    message = r.planner.message;
+    const rejections = new Set<string>(r.planner.rejections);
     const conclusions = [
       "redirect_request",
       "request_clarification",
@@ -1426,8 +1499,8 @@ export class Evolution {
       error: string,
       instruction: string,
     ) => {
-      if (r.calls >= this.limits.calls)
-        throw new BudgetExhaustedError(`已达到 ${this.limits.calls} 次模型调用上限`);
+      if (r.calls >= this.runLimits(r).calls)
+        throw new BudgetExhaustedError(`已达到 ${this.runLimits(r).calls} 次模型调用上限`);
       if (!response.calls.length) {
         message = JSON.stringify({
           error,
@@ -1457,11 +1530,16 @@ export class Evolution {
         ];
       }
       r.run = { ...this.base(r), status: "planning" };
+      r.planner = {message, rejections:[...rejections]};
+      r.memoReplies = undefined;
       this.save(r);
     };
     investigation: while (true) {
-      const conclusionOnly = this.scheduler.conclusionOnly(r.calls,this.remainingTime(r));
-      const response = await this.call(
+      const conclusionOnly = this.scheduler(r).conclusionOnly(r.calls,this.remainingTime(r));
+      r.planner.rejections = [...rejections];
+      r.planner.message = message;
+      this.save(r);
+      const response = r.planner.response ?? await this.call(
         r,
         {
           instruction: this.budgetInstruction(
@@ -1485,6 +1563,8 @@ export class Evolution {
         },
         signal,
       );
+      r.planner.response = response;
+      this.save(r);
       message = undefined;
       if (conclusionOnly && response.calls.some(c => !(conclusions as readonly string[]).includes(c.name)))
         throw new BudgetExhaustedError("规划预算已到结论边界，不能继续读取；候选及复核预留不变");
@@ -1534,7 +1614,7 @@ export class Evolution {
               retryProtocol(response, "宿主已裁决该问题无需用户澄清：" + JSON.stringify(decision), "保持原始要求，在同一预算内纠正规格或报告阻断，不以替代要求发起用户确认。");
               continue investigation;
             } else {
-              this.scheduler.requireClarification(r.calls, !!admissionContext, this.remainingTime(r));
+              this.scheduler(r).requireClarification(r.calls, !!admissionContext, this.remainingTime(r));
               r.run = {...this.base(r),status:"awaiting-input",stop:{kind:"clarification",phase:"planning",code:"business-answer-required",evidence:["run.question","run.clarificationReviews"]},question};
             }
           } else {
@@ -1551,7 +1631,7 @@ export class Evolution {
               const diagnostic =
                 error instanceof Error ? error.message : "计划结构无效";
               const rejection = hash({ diagnostic, evidence: r.run.evidence });
-              if (error instanceof HistoricalPreparationBlocked || rejections.has(rejection) || r.calls >= this.limits.calls) {
+              if (error instanceof HistoricalPreparationBlocked || rejections.has(rejection) || r.calls >= this.runLimits(r).calls) {
                 r.run = {
                   ...this.base(r),
                   status: "blocked",
@@ -1569,14 +1649,14 @@ export class Evolution {
               );
               continue investigation;
             }
-            if (r.calls >= this.limits.calls)
+            if (r.calls >= this.runLimits(r).calls)
               parsed.blockers.push(
                 "调查已耗尽模型调用预算，需要新的运行重新规划",
               );
-            const plan: InvestigatedPlan = {
+            let plan: InvestigatedPlan = {
               ...parsed.plan,
               intent: r.run.intent === "repair" ? "repair" : parsed.plan.intent,
-              id: randomUUID(),
+              id: r.planner.proposalId ??= randomUUID(),
               requestRevision: r.run.requestRevision ?? 1,
               ...(admissionContext ? {requestAdmission: r.run.requestAdmissions?.at(-1)} : {}),
               questionAdjudications:structuredClone(r.run.clarificationReviews??[]),
@@ -1643,6 +1723,9 @@ export class Evolution {
               id: requirement.sourceRevision.startsWith(r.run.id + ":") && !(inherited.requirements ?? []).some(old => old.id === requirement.id) && !(r.run.plans ?? []).some(p => p.requirements?.some(old => old.id === requirement.id && old.sourceRevision === requirement.sourceRevision))
                 ? "requirement-" + hash({source: requirement.sourceRevision, key: requirement.id}).slice(0, 24) : requirement.id,
             }));
+            plan.answeredQuestions = this.answeredQuestions(r);
+            const inferred = (r.run.clarificationReviews ?? []).filter(a => a.decision.sourceRevision === `${r.run.id}:${r.run.requestRevision ?? 1}`).flatMap(a => a.decision.default ? compileDefaults([a.decision.default]) : []);
+            plan.defaults = [...new Map([...(plan.defaults ?? []),...inferred].map(d => [d.id,d])).values()];
             plan.semanticState = compileSemantics(plan,sources);
             plan.changeSpec = compileSpec(plan, r.run.id, context.files["active-source"].hash, JSON.parse(context.files["active-contract"].content));
             const supported = Object.keys(context.checkerVersions);
@@ -1658,7 +1741,8 @@ export class Evolution {
                 ),
               ),
             );
-            if (!parsed.blockers.length || parsed.sourceAdjudication?.length || feedbackAdjudication) {
+            if (r.planner.ready) { plan = r.planner.ready.plan; parsed = r.planner.ready.parsed; }
+            else if (!parsed.blockers.length || parsed.sourceAdjudication?.length || feedbackAdjudication) {
               const plannerHistory = r.history;
               let reviewReturned = false;
               try {
@@ -1695,6 +1779,20 @@ export class Evolution {
                 plan.requirementCoverage=coverage(plan,sources,supported);
                 parsed.blockers.push(...plan.requirementCoverage.flatMap(c=>c.reasons.map(reason=>`需求 ${c.requirementId}：${reason}`)));
                 if(feedbackConflicts(plan).some(c=>plan.requirements?.some(r=>r.obligations?.some(o=>o.id===c.obligationId&&o.kind==="feedback"&&o.resolution==="required"))) || result.errorDecisions?.some(d=>d.feedback==="undetermined")) parsed.retryable=false;
+                plan.defaultReviews = structuredClone(result.defaultReviews ?? []);
+                const undecidedDefaults = (result.defaultReviews ?? []).filter(d => d.verdict === "requires-choice");
+                if (undecidedDefaults.length) {
+                  const source = sources.at(-1)!;
+                  const questions = undecidedDefaults.map(d => {
+                    const chosen = plan.defaults!.find(value => value.id === d.id)!;
+                    return `关于“${chosen.scope}”，你希望如何处理？拟采用的行为：${chosen.behavior}`;
+                  });
+                  for (const [index, question] of questions.entries()) (r.run.clarificationReviews ??= []).push({key:questionReviewKey(question,sources,technicalFacts(plan)),question,call:r.calls,decision:{kind:"business-ambiguity",sourceRevision:source.id,sourceQuote:source.text,detail:undecidedDefaults[index].detail}});
+                  r.run = {...this.base(r),status:"awaiting-input",question:questions.join("\n"),questions:questionsFor(r.run.id,r.run.requestRevision??1,questions,r.run.clarificationReviews??[]),questionRevision:r.run.requestRevision??1};
+                  this.save(r);
+                  return;
+                }
+                parsed.blockers.push(...(result.defaultReviews ?? []).filter(d => d.verdict === "conflict").map(d => "默认处理与明确要求冲突：" + d.detail));
                 plan.designDecisions = structuredClone(result.designDecisions ?? []);
                 const semantics=compileSemantics(plan,sources,result);
                 for(const entry of semantics.entries.filter(e=>e.status==="conflicting")){
@@ -1737,7 +1835,7 @@ export class Evolution {
                   const choice=businessChoices(plan,result).find(c=>c.question===question);
                   const decision=choiceDecisions.find(d=>d.choice?.id===choice?.id)?.decision ?? await this.auditQuestion(r,question,sources,technicalFacts(plan),signal);
                   if(decision.kind === "business-ambiguity" && !clarificationBlockers(decision).length) {
-                    this.scheduler.requireClarification(r.calls, !!admissionContext, this.remainingTime(r));
+                    this.scheduler(r).requireClarification(r.calls, !!admissionContext, this.remainingTime(r));
                     r.run={...this.base(r),status:"awaiting-input",stop:{kind:"clarification",phase:"review",code:"business-answer-required",evidence:["run.question","run.clarificationReviews"]},question};this.save(r);return;
                   }
                   if(clarificationBlockers(decision).length) {parsed.retryable=false;parsed.blockers.push(...clarificationBlockers(decision));}
@@ -1776,7 +1874,9 @@ export class Evolution {
                 r.history = plannerHistory;
               }
             }
-            if (!parsed.blockers.length) this.scheduler.requireReady(r.calls, this.remainingTime(r));
+            r.planner.ready = {plan,parsed};
+            this.save(r);
+            if (!parsed.blockers.length) this.scheduler(r).requireReady(r.calls, this.remainingTime(r));
             if (!parsed.blockers.length && plan.intent === "repair") {
               parsed.retryable = false;
               if (plan.acceptanceChanges?.length)
@@ -1815,7 +1915,7 @@ export class Evolution {
             if (
               parsed.blockers.length &&
               parsed.retryable &&
-              this.scheduler.remaining(r.calls) >= this.scheduler.executionReserve + 2 &&
+              this.scheduler(r).remaining(r.calls) >= this.scheduler(r).executionReserve + 2 &&
               !rejections.has(rejection)
             ) {
               rejections.add(rejection);
@@ -1843,6 +1943,8 @@ export class Evolution {
                   ],
                 },
               ];
+              r.planner = {rejections:[...rejections]};
+              r.memoReplies = undefined;
               this.save(r);
               continue investigation;
             }
@@ -1872,6 +1974,8 @@ export class Evolution {
                   }
                 : { ...base, status: "ready", plan };
           }
+          r.planner = undefined;
+          r.memoReplies = undefined;
           this.save(r);
           return;
         }
@@ -1903,6 +2007,8 @@ export class Evolution {
         });
       }
       r.history = [...r.history, { role: "user", parts }];
+      r.planner = {rejections:[...rejections]};
+      r.memoReplies = undefined;
       this.save(r);
     }
   }
@@ -2006,11 +2112,16 @@ export class Evolution {
       },
     }));
     let previousCandidate: {id: string; source: string} | undefined;
-    const failures = new Set<string>();
-    while (r.candidates < this.limits.candidates) {
+    r.generator ??= {history, message, failures:[]};
+    history = r.generator.history;
+    message = r.generator.message;
+    previousCandidate = r.generator.previousCandidate;
+    const failures = new Set<string>(r.generator.failures);
+    this.save(r);
+    while (r.candidates < this.runLimits(r).candidates || r.generator.pendingCandidate) {
       if (!this.alive(r.run.id)) return;
       this.domain.check(target, revision, plan);
-      const attempt = r.candidates + 1;
+      const attempt = r.generator.pendingCandidate?.candidate.attempt ?? r.candidates + 1;
       const intentNote = plan.compositionIntent
         ? `（${compositionIntentLabel(plan.compositionIntent)}）`
         : "";
@@ -2024,7 +2135,7 @@ export class Evolution {
       let submitted = false;
       while (!submitted) {
         if (!this.alive(r.run.id)) return;
-        const response = await this.call(
+        const response = r.generator.response ?? await this.call(
           r,
           {
             instruction: this.budgetInstruction(r, context.instruction),
@@ -2051,6 +2162,8 @@ export class Evolution {
           signal,
           "generation",
         );
+        r.generator.response = response;
+        this.save(r);
         history = response.history;
         message = undefined;
         if (!response.calls.length)
@@ -2097,13 +2210,14 @@ export class Evolution {
               undefined,
               "submit_candidate",
             );
-            if (r.candidates >= this.limits.candidates)
-              throw new Error(`已达到 ${this.limits.candidates} 个候选上限`);
-            r.candidates++;
+            if (!r.generator.pendingCandidate) {
+              if (r.candidates >= this.runLimits(r).candidates) throw new BudgetExhaustedError("候选机会不足", "candidates");
+              r.candidates++;
+            }
             this.save(r);
             // Charge even malformed submissions and retain their exact transport.
             let source = JSON.stringify(call.args);
-            const candidate: CandidateAttempt = {
+            const candidate: CandidateAttempt = r.generator.pendingCandidate?.candidate ?? {
               requirementSeal: plan.requirementGate?.seal,
               id: hash({
                 source,
@@ -2117,7 +2231,7 @@ export class Evolution {
               passed: false,
               sourceHash: hash(source),
             };
-            const entry = this.db
+            const entry = r.generator.pendingCandidate ? {lastInsertRowid:r.generator.pendingCandidate.rowId} : this.db
               .prepare(
                 "INSERT INTO evolution_candidates(runId,body) VALUES(?,?)",
               )
@@ -2134,12 +2248,14 @@ export class Evolution {
             let browserId: string | null = null;
             try {
               this.checkPlan(r, target, plan.compositionRevision, plan);
-              source = assembleCandidate(call.args, plan, context.source, previousCandidate, baseMembers);
-              candidate.delta = candidateDifference(plan, context.source, source, previousCandidate, baseMembers);
+              source = r.generator.pendingCandidate?.source ?? assembleCandidate(call.args, plan, context.source, previousCandidate, baseMembers);
+              candidate.delta ??= candidateDifference(plan, context.source, source, previousCandidate, baseMembers);
               candidate.sourceHash = hash(source);
               candidate.id = hash({source, planId: plan.id, baseVersion: target.baseVersion, attempt});
               previousCandidate = {id: candidate.id, source};
               saveAttempt();
+              r.generator.pendingCandidate = {rowId:Number(entry.lastInsertRowid),source,candidate};
+              this.save(r);
               r.versionId = await this.domain.candidate(
                 source,
                 target,
@@ -2218,6 +2334,12 @@ export class Evolution {
               );
               saveAttempt();
             } catch (error) {
+              if (error instanceof BudgetExhaustedError || (signal.aborted && signal.reason instanceof DOMException && signal.reason.name === "TimeoutError")) {
+                candidate.diagnostic = error instanceof Error ? error.message : "验证时间不足";
+                saveAttempt();
+                throw error;
+              }
+              r.generator.pendingCandidate = undefined;
               if (!this.alive(r.run.id) || signal.aborted) {
                 // Preserve the receipt even when cancellation already changed
                 // the run state; the candidate remains ineligible for apply.
@@ -2334,11 +2456,12 @@ export class Evolution {
         }
         history = [...history, { role: "user", parts }];
         r.history = history;
+        r.generator = {history,message,previousCandidate,failures:[...failures]};
         this.save(r);
       }
     }
     throw new BudgetExhaustedError(
-      `${this.limits.candidates} 个候选均未通过验证，当前版本保持不变`,
+      `${this.runLimits(r).candidates} 个候选均未通过验证，当前版本保持不变`,
       "candidates",
     );
   }

@@ -354,7 +354,7 @@ test("模型桩浏览器完成标签升级、事件候选体验、应用、启�
       page.getByRole("status", { name: "候选体验提示" }),
     ).not.toBeVisible();
     await page.getByRole("button", { name: "改进应用", exact: true }).click();
-    await page.getByRole("button", { name: "应用", exact: true }).click();
+    await page.getByRole("button", { name: "确认应用", exact: true }).click();
     await expect
       .poll(async () => (await evolution.observe()).run?.status)
       .toBe("succeeded");

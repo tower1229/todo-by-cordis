@@ -1,3 +1,4 @@
+import { answerCurrent } from "./interaction-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -206,7 +207,7 @@ test("真正业务歧义仍进入原澄清流程，内部审查记录与计数�
   const waiting = await settle(e);
   assert.equal(waiting.status, "awaiting-input");
   assert.equal(waiting.budget?.callsUsed, 3);
-  await e.command({
+  await answerCurrent(e, {
     type: "answer",
     runId: waiting.id,
     text: "复盘必填",

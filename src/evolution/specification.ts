@@ -7,6 +7,9 @@ import { technicalFacts } from "./technical-facts.js";
 import { compileAuthority } from "./contract-authority.js";
 
 const keys = [
+  "answeredQuestions",
+  "defaults",
+  "defaultReviews",
   "semanticState",
   "requirements",
   "browserCases",

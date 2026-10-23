@@ -201,15 +201,20 @@ export async function runStabilityBrowserPath(input: {
             binding: frozen.binding,
           };
         }
-        await page
-          .getByRole("textbox", { name: "告诉 AI 你的需求" })
-          .fill(input.clarificationAnswer);
+        const answerForm = page.getByRole("form", {name:"回答当前问题"});
+        if (await answerForm.count()) {
+          const fields = answerForm.getByRole("textbox");
+          if (await fields.count() !== 1) throw new Error("冻结澄清答案不能覆盖多项未绑定问题");
+          await fields.fill(input.clarificationAnswer);
+        } else {
+          await page.getByRole("textbox", {name:"回答当前问题"}).fill(input.clarificationAnswer);
+        }
         const answered = await responseForAction(
           page,
           (response) =>
             new URL(response.url()).pathname === "/api/assistant/commands" &&
             response.request().method() === "POST",
-          () => page!.getByRole("button", { name: "发送需求" }).click(),
+          () => page!.getByRole("button", { name: "提交回答" }).click(),
         );
         updateRun(((await answered.json()) as AssistantSnapshot).run);
         if (
@@ -308,7 +313,7 @@ export async function runStabilityBrowserPath(input: {
     }
 
     if (input.scenario.requiresApply) {
-      await page.getByRole("button", { name: "应用", exact: true }).click();
+      await page.getByRole("button", { name: "确认应用", exact: true }).click();
       await expect
         .poll(
           async () =>
@@ -397,10 +402,8 @@ async function detectPlanningState(
     return "awaiting-acceptance";
   if (
     status === "awaiting-input" &&
-    (await page
-      .getByRole("textbox", { name: "告诉 AI 你的需求" })
-      .isVisible()
-      .catch(() => false))
+    ((await page.getByRole("form", {name:"回答当前问题"}).isVisible().catch(() => false)) ||
+      (await page.getByRole("textbox", {name:"回答当前问题"}).isVisible().catch(() => false)))
   )
     return "awaiting-input";
   return "waiting";

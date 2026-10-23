@@ -317,7 +317,7 @@ test("模型桩浏览器生成、体验并独立应用到期自动过期", async
     ).not.toBeVisible();
     await page.unroute("**/api/experience/end");
     await page.getByRole("button", { name: "改进应用", exact: true }).click();
-    await page.getByRole("button", { name: "应用", exact: true }).click();
+    await page.getByRole("button", { name: "确认应用", exact: true }).click();
     await expect
       .poll(async () => (await evolution.observe()).run?.status)
       .toBe("succeeded");

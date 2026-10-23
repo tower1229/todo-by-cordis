@@ -401,7 +401,7 @@ for (const candidateLimit of [3, 1])
       const finished = await settle(e);
       assert.equal(
         finished.status,
-        candidateLimit === 3 ? "awaiting-apply" : "failed",
+        candidateLimit === 3 ? "awaiting-apply" : "awaiting-budget",
         JSON.stringify(finished),
       );
       const candidates = (await e.observe()).candidates!;

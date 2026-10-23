@@ -13,6 +13,9 @@ export const generationMaterialRefs = {
 
 export type ChangeDefinition = Pick<
   InvestigatedPlan,
+  | "answeredQuestions"
+  | "defaults"
+  | "defaultReviews"
   | "semanticState"
   | "requirements"
   | "browserCases"

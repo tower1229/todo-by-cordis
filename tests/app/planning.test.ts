@@ -608,6 +608,8 @@ test("clarification and revision keep one run, retained plans and remaining budg
     type: "answer",
     runId: first.id,
     text: "必填",
+    questionRevision: first.questionRevision,
+    answers: first.questions.map((q: {id:string}) => ({questionId:q.id,text:"必填"})),
     operationId: "two",
   };
   await send(command);
@@ -738,6 +740,8 @@ test("bounded planning, cancellation and model errors never publish or silently 
     candidates: 3,
     milliseconds: 60000,
   });
+  const preserved = (await e.observe()).run;
+  if (preserved?.status === "awaiting-budget") await e.command({type:"cancel",runId:preserved.id,operationId:"end-preserved-budget"});
   await e.command({ type: "request", text: "改进", operationId: "bounded2" });
   for (
     let i = 0;
@@ -745,7 +749,8 @@ test("bounded planning, cancellation and model errors never publish or silently 
     i++
   )
     await new Promise((r) => setTimeout(r, 10));
-  assert.equal((await e.observe()).run?.status, "blocked");
+  assert.equal((await e.observe()).run?.status, "awaiting-budget");
+  await e.command({type:"cancel",runId:(await e.observe()).run!.id,operationId:"end-budget-run"});
   assert.equal((await e.observe()).run?.budget?.callsUsed, 0);
   await e.close();
   let entered!: () => void;
@@ -898,7 +903,7 @@ test("host time budget bounds even a driver that ignores cancellation", async (t
   });
   await e.command({ type: "request", text: "改进", operationId: "request" });
   await new Promise((r) => setTimeout(r, 100));
-  assert.equal((await e.observe()).run?.status, "failed");
+  assert.equal((await e.observe()).run?.status, "awaiting-budget");
   assert.equal(w.composition().revision, 1);
 });
 

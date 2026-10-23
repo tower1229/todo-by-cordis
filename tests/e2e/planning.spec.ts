@@ -28,8 +28,8 @@ test("real backend restores clarification and investigated plan without changing
   await page.reload();
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await expect(page.getByText("复盘是必填还是选填？")).toBeVisible();
-  await page.getByRole("textbox", { name: "告诉 AI 你的需求" }).fill("必填");
-  await page.getByRole("button", { name: "发送需求" }).click();
+  await page.getByRole("radio", {name:/必填/}).check();
+  await page.getByRole("button", { name: "提交回答" }).click();
   await expect(page.getByRole("region", { name: "待确认方案" })).toBeVisible();
   await expect(page.getByText("要求与验证方式", { exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "待确认方案" })).toContainText(
@@ -157,7 +157,7 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
     )
     .toBe("awaiting-input");
   const current = await (await request.get("/api/assistant")).json();
-  await send({ type: "answer", runId: current.run.id, text: "必填" });
+  await send({ type: "answer", runId: current.run.id, text: "必填", questionRevision:current.run.questionRevision, answers:current.run.questions.map((q:{id:string})=>({questionId:q.id,text:"必填"})) });
   await expect
     .poll(
       async () =>
@@ -175,6 +175,7 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
     .toBe("awaiting-apply");
   await page.goto("/");
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  await page.getByRole("button",{name:"运行详情",exact:true}).click();
   const attempts = page.getByRole("region", { name: "候选尝试" });
   await expect(
     attempts.getByText("第 1 次候选 · 未通过", { exact: true }),
@@ -188,6 +189,7 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   await expect(attempts).toContainText("模型自测不作为通过依据");
   await page.reload();
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  await page.getByRole("button",{name:"运行详情",exact:true}).click();
   await expect(page.getByRole("region", { name: "候选尝试" })).toContainText(
     "第 1 次候选",
   );
@@ -200,7 +202,7 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
     page.getByRole("button", { name: "体验", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "应用", exact: true }),
+    page.getByRole("button", { name: "确认应用", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "调整后重新规划", exact: true }),
@@ -230,7 +232,7 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "应用", exact: true }),
+    page.getByRole("button", { name: "确认应用", exact: true }),
   ).toBeVisible();
   await expect(
     page
@@ -421,7 +423,7 @@ test("failed candidate diagnostics survive correction and refresh in the real pr
   await expect(page.getByRole("region", { name: "候选结果" })).toBeVisible({
     timeout: 90_000,
   });
-  await page.getByRole("button", { name: "应用", exact: true }).click();
+  await page.getByRole("button", { name: "确认应用", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "继续修改", exact: true }),
   ).toBeVisible({ timeout: 15000 });

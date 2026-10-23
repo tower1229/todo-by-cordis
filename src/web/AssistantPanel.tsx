@@ -1,3 +1,4 @@
+import { BudgetResume, QuestionForm, resourceLabel } from "./EvolutionInteraction.js";
 import { useRef, useState } from "react";
 import { ArrowUp, Check, Circle, CircleAlert, Sparkles } from "lucide-react";
 import type {
@@ -144,6 +145,7 @@ function PlanSummary({ plan }: { plan: InvestigatedPlan }) {
           <dd className="break-words">{value}</dd>
         </div>
       ))}
+      {!!plan.defaults?.length && <div><dt className="plan-label">已采用的默认处理</dt><dd className="space-y-3">{plan.defaults.map(d=><div key={d.id}><p>{d.behavior}</p><p className="text-xs text-muted">Agent 默认 · {d.basis}；{d.impact}</p></div>)}</dd></div>}
       {!!plan.compositionIntent && (
         <CompositionIntentBlock intent={plan.compositionIntent} />
       )}
@@ -333,8 +335,10 @@ export function AssistantPanel({
   const composing = useRef(false);
   const [editing, setEditing] = useState(false);
   const [repair, setRepair] = useState(false);
+  const [showDetails,setShowDetails] = useState(false);
   const unconfigured = snapshot?.availability === "unconfigured";
   const locked =
+    run?.status === "awaiting-budget" ||
     run?.status === "executing" ||
     run?.status === "awaiting-apply" ||
     run?.status === "applying";
@@ -343,7 +347,7 @@ export function AssistantPanel({
       run?.status ?? "",
     ) &&
       !editing) ||
-    locked;
+    locked || (run?.status === "awaiting-input" && !!run.questions?.length);
   const canSend =
     snapshot?.availability === "ready" &&
     !busy &&
@@ -363,6 +367,7 @@ export function AssistantPanel({
       : null;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {run && <div className="shrink-0 border-b border-line px-5 py-3 text-xs text-muted" aria-live="polite">{{planning:"正在整理方案", "awaiting-input":"等待你的回答", ready:"方案已准备好", "awaiting-acceptance":"需要确认规则修订",executing:"正在执行 · 需求已锁定","awaiting-budget":"等待追加资源","awaiting-apply":"候选已验证 · 尚未应用",applying:"正在应用",succeeded:"改进已应用",blocked:"需要处理阻塞",failed:"执行未完成",interrupted:"运行已中断",dismissed:"请求已结束",cancelled:"本次改进已结束"}[run.status]}</div>}
       <div className="flex-1 space-y-6 overflow-y-auto p-5">
         {!run && (
           <div className="pt-5">
@@ -384,9 +389,8 @@ export function AssistantPanel({
             正在理解需求并整理方案…
           </div>
         )}
-        {run?.status === "awaiting-input" && (
-          <p className="text-sm leading-6">{run.question}</p>
-        )}
+        {run?.status === "awaiting-input" && (run.questions?.length ? <QuestionForm key={`${run.id}:${run.questionRevision}`} run={run} controller={controller} /> : <section className="space-y-3"><h3 className="text-base font-semibold">需要你回答</h3><p className="text-sm leading-6">{run.question}</p></section>)}
+        {run?.status === "awaiting-budget" && <BudgetResume key={`${run.id}:${run.pause.revision}`} run={run} controller={controller} />}
         {run?.status === "blocked" && blockedFacing && (
           <section className="space-y-5" aria-label="无法开始">
             <h3 className="text-[15px] font-semibold">暂时无法开始</h3>
@@ -553,6 +557,7 @@ export function AssistantPanel({
             </Button>
           </section>
         )}
+        {showDetails && <section aria-label="运行详情" className="space-y-5 border-t border-line pt-4">
         {run?.parentRunId && (
           <details className="text-xs leading-6 text-muted break-words">
             <summary>关联运行与基础版本</summary>
@@ -593,11 +598,11 @@ export function AssistantPanel({
             </p>
           )}
         {run?.budget && (
-          <p className="text-xs text-muted">
+          <div className="space-y-2 text-xs text-muted"><p>效率目标：{run.budget.efficiencyTarget ?? "未知"} 次；已授权：{run.budget.authorized?.calls ?? "未知"} 次</p><p>
             模型调用 {run.budget.callsUsed} 次，剩余 {run.budget.callsRemaining}{" "}
             次；候选预算 {run.budget.candidatesRemaining}；活动时间剩余{" "}
             {Math.ceil(run.budget.millisecondsRemaining / 1000)} 秒
-          </p>
+          </p>{run.budget.grants?.map(g=><p key={g.operationId}>追加 {resourceLabel(g.amounts)}</p>)}</div>
         )}
         {!!snapshot?.candidates?.length && (
           <section aria-label="候选尝试" className="space-y-3 text-sm">
@@ -656,6 +661,7 @@ export function AssistantPanel({
               ))}
             </details>
           )}
+        </section>}
         {run?.status === "executing" && (
           <section className="space-y-5" aria-label="执行进度">
             <p role="status" className="text-sm font-medium">
@@ -695,6 +701,7 @@ export function AssistantPanel({
             <EventLog events={snapshot?.events ?? []} />
             <div className="flex flex-wrap gap-2">
               <Button
+                variant={run.experienceSession ? "secondary" : "primary"}
                 disabled={busy || !passedCandidate}
                 onClick={async () => {
                   if (!passedCandidate) return;
@@ -714,6 +721,7 @@ export function AssistantPanel({
                 体验
               </Button>
               <Button
+                variant={run.experienceSession ? "primary" : "secondary"}
                 disabled={busy || !passedCandidate?.evidenceHash}
                 onClick={() =>
                   passedCandidate?.evidenceHash &&
@@ -726,7 +734,7 @@ export function AssistantPanel({
                   })
                 }
               >
-                应用
+                确认应用
               </Button>
               <Button
                 disabled={busy}
@@ -829,6 +837,10 @@ export function AssistantPanel({
           </div>
         )}
       </div>
+      {run?.budget && <div className="flex shrink-0 items-center justify-between gap-3 border-t border-line px-4 py-2 text-xs text-muted">
+        <span className="flex min-w-0 items-center gap-2"><span aria-hidden="true" className="h-1 w-10 overflow-hidden rounded bg-line"><span className="block h-full bg-accent" style={{width:`${Math.min(100,100*run.budget.callsUsed/(run.budget.authorized?.calls || run.budget.callsUsed + run.budget.callsRemaining || 1))}%`}} /></span>已调用 {run.budget.callsUsed} 次</span>
+        <button type="button" className="min-h-11 shrink-0 px-2" aria-expanded={showDetails} onClick={()=>setShowDetails(!showDetails)}>运行详情</button>
+      </div>}
       {!working && !hideComposer && (
         <form
           className="shrink-0 border-t border-line p-4"
@@ -909,10 +921,10 @@ export function AssistantPanel({
           <div className="rounded-lg border border-line bg-surface p-2 focus-within:border-accent">
             <textarea
               data-panel-input
-              aria-label="告诉 AI 你的需求"
+              aria-label={run?.status === "awaiting-input" ? "回答当前问题" : "告诉 AI 你的需求"}
               className="w-full resize-none border-0 bg-transparent p-2 text-sm leading-6 outline-none"
               rows={3}
-              placeholder="描述希望应用增加或改变的能力"
+              placeholder={run?.status === "awaiting-input" ? "补充你的回答" : "描述希望应用增加或改变的能力"}
               maxLength={5000}
               disabled={busy}
               value={draft}
@@ -922,11 +934,11 @@ export function AssistantPanel({
               <Button
                 type="submit"
                 variant="primary"
-                className="min-h-9 w-9 p-0"
-                aria-label="发送需求"
+                className={run?.status === "awaiting-input" ? "min-h-11 px-4" : "min-h-11 w-11 p-0"}
+                aria-label={run?.status === "awaiting-input" ? "提交回答" : "发送需求"}
                 disabled={!canSend}
               >
-                {busy ? <Spinner /> : <ArrowUp className="size-[18px]" />}
+                {busy ? <Spinner /> : run?.status === "awaiting-input" ? "提交回答" : <ArrowUp className="size-[18px]" />}
               </Button>
             </div>
           </div>

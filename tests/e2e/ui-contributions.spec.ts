@@ -201,9 +201,9 @@ test("contribution action failure does not block stop/apply or workspace recover
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await expect(page.getByText(/候选已验证且尚未应用到正式环境/)).toBeVisible();
   await expect(page.getByRole("button", { name: "体验", exact: true })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "应用", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "确认应用", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "放弃候选", exact: true }).click();
-  await expect(page.getByText("已取消", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status").filter({hasText:"已取消"})).toBeVisible();
   await page.getByRole("button", { name: "关闭改进应用", exact: true }).click();
 
   await page.getByRole("button", { name: "更多选项", exact: true }).click();
@@ -419,5 +419,5 @@ test("executing run still exposes stop after contribution action failure", async
   await page.getByRole("button", { name: "关闭任务详情", exact: true }).click();
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await page.getByRole("button", { name: "停止", exact: true }).click();
-  await expect(page.getByText("已取消", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status").filter({hasText:"已取消"})).toBeVisible();
 });

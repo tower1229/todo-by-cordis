@@ -381,7 +381,7 @@ for (const mode of [
     const snapshot = await evolution.observe();
     assert.equal(
       snapshot.run?.status,
-      mode === "waiting-cancel" ? "cancelled" : "failed",
+      mode === "waiting-cancel" ? "cancelled" : mode === "waiting-timeout" || mode === "empty-timeout" ? "awaiting-budget" : "failed",
     );
     assert.equal(snapshot.run.budget?.callsUsed, 1);
     assert.equal(snapshot.run.budget?.callsRemaining, 11);

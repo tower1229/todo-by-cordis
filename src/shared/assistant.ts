@@ -81,6 +81,9 @@ export type RepairEvidence = {
   diagnostic: string;
 };
 export type InvestigatedPlan = AssistantPlan & {
+  answeredQuestions?: import("./evolution-interaction.js").AnsweredQuestion[];
+  defaults?: import("./evolution-interaction.js").DefaultDecision[];
+  defaultReviews?: import("./evolution-interaction.js").DefaultReview[];
   designDecisions?: import("../evolution/contract-authority.js").DesignDecision[];
   semanticState?: import("../evolution/requirement-semantics.js").SemanticState;
   requestAdmission?: import("../evolution/request-admission.js").RequestAdmission;
@@ -149,6 +152,7 @@ export type InvestigatedPlan = AssistantPlan & {
   unresolved: string[];
 };
 export type RequestRevision = {
+  answers?: Omit<import("./evolution-interaction.js").AnsweredQuestion,"sourceRevision">[];
   revision: number;
   type: "request" | "answer" | "revise";
   text: string;
@@ -164,6 +168,7 @@ export type Requirement = {
   obligations?: import("./acceptance-obligations.js").AcceptanceObligation[];
 };
 export type RequirementReview = {
+  defaultReviews?: import("./evolution-interaction.js").DefaultReview[];
   designDecisions?: import("../evolution/contract-authority.js").DesignDecision[];
   resolutionEvidence?: { issueId: string; kind: "source-revision" | "specification-change" | "design-authorization" | "source-adjudication"; before: string; after: string }[];
   /** Host-only consumption of a source/fact-bound clarification receipt. */
@@ -235,6 +240,9 @@ type Run = {
   plans?: InvestigatedPlan[];
   evidence?: PlanEvidence[];
   budget?: {
+    efficiencyTarget?: number;
+    authorized?: import("./evolution-interaction.js").ResourceAmounts;
+    grants?: import("./evolution-interaction.js").BudgetGrant[];
     callsUsed: number;
     callsRemaining: number;
     candidatesRemaining: number;
@@ -333,7 +341,8 @@ export type AssistantRun = Run &
       }
     | { status: "interrupted"; message: string }
     | { status: "dismissed"; message: string }
-    | { status: "awaiting-input"; question: string }
+    | { status: "awaiting-input"; question: string; questions?: import("./evolution-interaction.js").ClarificationQuestion[]; questionRevision?: number }
+    | { status: "awaiting-budget"; pause: import("./evolution-interaction.js").BudgetPause; plan?: InvestigatedPlan; steps: AssistantStep[] }
     | { status: "executing"; plan: InvestigatedPlan; steps: AssistantStep[] }
     | {
         status: "awaiting-apply";
@@ -401,6 +410,7 @@ export type AssistantSnapshot = {
   eventCursor?: number;
 };
 export type AssistantCommand =
+  | { type: "resume-budget"; operationId: string; runId: string; pauseRevision: number; amounts: import("./evolution-interaction.js").ResourceAmounts }
   | {
       type: "confirm-acceptance";
       operationId: string;
@@ -431,6 +441,8 @@ export type AssistantCommand =
     }
   | {
       type: "answer" | "revise";
+      questionRevision?: number;
+      answers?: import("./evolution-interaction.js").ClarificationAnswer[];
       operationId: string;
       runId: string;
       text: string;

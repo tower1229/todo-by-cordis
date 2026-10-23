@@ -57,8 +57,8 @@ test("investigation, clarification, ready and start entry are available", async 
     run: { ...base, status: "awaiting-input", question: "复盘必填还是选填？" },
   };
   await expect(page.getByText("复盘必填还是选填？")).toBeVisible();
-  await page.getByRole("textbox", { name: "告诉 AI 你的需求" }).fill("必填");
-  await page.getByRole("button", { name: "发送需求" }).click();
+  await page.getByRole("textbox", { name: "回答当前问题" }).fill("必填");
+  await page.getByRole("button", { name: "提交回答" }).click();
   const plan = {
     id: "plan-2",
     compositionRevision: 1,

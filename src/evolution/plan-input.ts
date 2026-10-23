@@ -1,3 +1,4 @@
+import { defaultsSchema, compileDefaults } from "./interaction.js";
 import { capabilityChecker } from "../server/capability-checkers.js";
 import { executableMemberInterfaces } from "../server/extensions/registry.js";
 import { hash } from "../release/storage.js";
@@ -147,6 +148,7 @@ export function planSchemaFor(
     Object.fromEntries(keys.map((key) => [key, changeProperties[key]]));
   return object(
     {
+      defaults: defaultsSchema,
       summary: text,
       changes: optionalList(
         {
@@ -224,6 +226,7 @@ type Expectation =
   | { kind: "task" }
   | { kind: "edit-task"; title?: string; description?: string };
 type NormalizedInput = {
+  defaults?: Omit<import("../shared/evolution-interaction.js").DefaultDecision, "id">[];
   summary: string;
   workflow: null | {
     modules: string[];
@@ -838,6 +841,7 @@ export function compilePlanInput(
   if (new Set(requirements.map((r) => r.id)).size !== requirements.length)
     throw new Error("相同业务要求重复，请合并预期");
   return {
+    defaults: compileDefaults(input.defaults),
     requirements,
     summary: input.summary,
     changes: [input.summary],

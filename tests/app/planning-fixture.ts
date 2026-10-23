@@ -92,11 +92,12 @@ export class PlanningDriver implements Driver {
     ) {
       const input = JSON.parse(request.message!);
       return {
-        text: JSON.stringify(clarificationPayloadFixture(input.questions.map(() => ({
+        text: JSON.stringify(clarificationPayloadFixture(input.questions.map((question:string) => ({
           kind: "business-ambiguity",
           source: input.sources.length,
           sourceQuote: input.sources.at(-1).text,
           detail: "模型桩确认必要业务歧义",
+          ...(question === "复盘是必填还是选填？" ? {presentation:{explanation:"填写要求会改变完成任务的条件",options:[{label:"必填"},{label:"选填"}],recommended:1}} : {}),
         })))),
         history: [],
         calls: [],
@@ -122,6 +123,7 @@ export class PlanningDriver implements Driver {
       };
       return {
         text: JSON.stringify({
+          defaultReviews: (JSON.parse(request.message!).defaults ?? []).map((d: {id:string}) => ({id:d.id,verdict:"safe-default",detail:"模型桩逐项确认低影响可逆且无冲突",targets:[]})),
           reviewedIds: input.requirements.map((r) => r.id),
           issues: [],
           fieldDecisions: fieldDecisionsFixture(input),

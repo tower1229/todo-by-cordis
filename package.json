@@ -16,6 +16,7 @@
     "test:e2e": "playwright test",
     "bench:m1": "node scripts/benchmark.mjs",
     "accept:shortened-tags": "node --import tsx scripts/accept-shortened-tags.ts",
+    "accept:interaction": "node --import tsx scripts/accept-interaction.ts",
     "accept:v1": "node --import tsx scripts/accept-v1.ts",
     "accept:stability-baseline": "node --import tsx scripts/accept-stability-baseline.ts",
     "accept:stability-current": "node --import tsx scripts/accept-stability-baseline.ts --current"

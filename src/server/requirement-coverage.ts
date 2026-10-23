@@ -1,4 +1,5 @@
 import { compileSemantics, semanticQuestionKey } from "../evolution/requirement-semantics.js";
+import { defaultReviewSchema, parseDefaultReviews, defaultAuthorizes } from "../evolution/interaction.js";
 import { designDecisionSchema, parseDesignDecisions, designAuthorized, authorityFailure } from "../evolution/contract-authority.js";
 import { clarificationBlockers } from "../evolution/clarification-review.js";
 import {availabilityFailure,isInheritedAvailability} from "../evolution/action-availability.js";
@@ -593,10 +594,12 @@ export function boundReviewSchema(
     required: [
       ...schema.required,
       "fieldDecisions",
+      ...(plan.defaults?.length ? ["defaultReviews"] : []),
       ...(errorReviewTargets(plan).length ? ["errorDecisions"] : []),
     ],
     properties: {
       ...schema.properties,
+      defaultReviews: defaultReviewSchema(plan.defaults ?? [], choiceIds),
       designDecisions: designDecisionSchema(plan, sources),
       unresolvedChoices: {
         type: "array",
@@ -667,6 +670,7 @@ export function parseReview(
 ): RequirementReview {
   const v = record(JSON.parse(text));
   if (v.resolutionEvidence !== undefined) throw new Error("复核消解证据由宿主生成");
+  const defaultReviews = parseDefaultReviews(v.defaultReviews, plan.defaults ?? [], semanticChoiceTargets(plan).map(t => t.id));
   const designDecisions = parseDesignDecisions(v.designDecisions, plan, sources);
   const reviewedIds = array(v.reviewedIds).map(boundedText);
   if (
@@ -831,6 +835,7 @@ export function parseReview(
       throw new Error("未决语义缺少真实目标或来源");
     if(seenChoices.has(choice.targetId))throw new Error("未决语义目标重复");
     seenChoices.add(choice.targetId);
+    if (defaultAuthorizes(defaultReviews, choice.targetId)) return [];
     if (designAuthorized(plan, { designDecisions }, choice.targetId))
       throw new Error("同一作用域不能同时声明设计授权与未决业务选择");
     const receipt=plan.questionAdjudications?.find(a=>
@@ -870,6 +875,7 @@ export function parseReview(
     ...(choiceAdjudications.length?{choiceAdjudications}:{}),
     issues: [...issues, ...fields.issues, ...errors.issues],
     resolutions,
+    defaultReviews,
     designDecisions,
     fieldDecisions: fields.decisions,
     errorDecisions: errors.decisions,
@@ -903,6 +909,8 @@ function gateVersion() {
       "src/evolution/validation-origins.ts",
       "src/evolution/model-input.ts",
       "src/evolution/budget.ts",
+      "src/evolution/interaction.ts",
+      "src/shared/evolution-interaction.ts",
       "src/shared/checker-semantics.ts",
       "src/shared/field-presentation.ts",
       "src/evolution/field-review.ts",

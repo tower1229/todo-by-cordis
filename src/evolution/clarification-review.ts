@@ -1,3 +1,4 @@
+import { compileDefaults } from "./interaction.js";
 import type { TechnicalFact } from "./technical-facts.js";
 import { assertTechnicalExpectation, technicalExpectationValues } from "./technical-facts.js";
 import {
@@ -13,8 +14,11 @@ import {
   type AdmissionQuestionTarget,
 } from "./source-items.js";
 export type ClarificationDecision = {
+  presentation?: {options:{label:string}[];recommended?:number;explanation:string};
+  default?: Omit<import("../shared/evolution-interaction.js").DefaultDecision, "id">;
   effects?: EffectReview;
   kind:
+    | "reasonable-default"
     | "business-ambiguity"
     | "unnecessary"
     | "scope-reduction"
@@ -90,7 +94,7 @@ export function clarificationRequest(
     history: [],
     schema: clarificationReviewSchema(questions.length, facts, admissionTargets, !!questionTargets),
     instruction:
-      "独立审查完整 sources 和 questions，空历史且禁止工具。先独立核对 effects 中每项宿主效果是否 required、not-requested 或 uncertain，完整覆盖目录一次，不依赖规划者是否提到；offline-delivery 指宿主离线仍保证交付，关闭浏览器不等于宿主离线。支持性由宿主绑定，不能把能力缺口转为渠道、收件人或降级问题。然后按 questions 顺序逐项返回 decisions，不维护索引。business-ambiguity 只用于影响业务结果且来源仍未决定的选择；unnecessary 用于已明确或未要求的细节；implementation 只用于未要求改变的宿主 field-interaction，引用 fact/property，由宿主绑定实际行为；scope-reduction 表示请求降级；technical 引用 facts 序号、property、expected，由宿主裁决。来源和事实使用一基序号。admissionTargets 中含 choice 的问题已绑定来源条目，决策只返回 kind、detail 及该种类允许的事实引用；不得重写 source、sourceQuote 或目标身份。",
+      "独立审查完整 sources 和 questions，空历史且禁止工具。先独立核对 effects 中每项宿主效果是否 required、not-requested 或 uncertain，完整覆盖目录一次，不依赖规划者是否提到；offline-delivery 指宿主离线仍保证交付，关闭浏览器不等于宿主离线。支持性由宿主绑定，不能把能力缺口转为渠道、收件人或降级问题。然后按 questions 顺序逐项返回 decisions，不维护索引。先判断是否可以按明确要求、既有规则或成熟惯例补全：低影响、可逆且无冲突的细节返回 reasonable-default，并给 default:{scope,behavior,basis,impact}，不把默认伪装成用户原话。business-ambiguity 仅用于缺乏可靠依据且不同选择明显改变业务目的、外部副作用、数据损失或权限的关键分支；不要因用户未逐字说明就提问。business-ambiguity 同时提供 presentation:{explanation,options:[{label}],recommended:一基推荐序号}，通常2到3个互斥选项，无法枚举时 options=[] 并省略 recommended；unnecessary 用于已明确或未要求的细节；implementation 只用于未要求改变的宿主 field-interaction，引用 fact/property，由宿主绑定实际行为；scope-reduction 表示请求降级；technical 引用 facts 序号、property、expected，由宿主裁决。来源和事实使用一基序号。admissionTargets 中含 choice 的问题已绑定来源条目，决策只返回 kind、detail 及该种类允许的事实引用；不得重写 source、sourceQuote 或目标身份。",
     message: JSON.stringify({
       kind: "clarification-review/2",
       questions,
@@ -155,6 +159,10 @@ export function clarificationSchema(facts?: TechnicalFact[]) {
     type: "object",
     anyOf: [
       {
+        type:"object", additionalProperties:false, required:["kind",...Object.keys(common),"default"],
+        properties:{kind:{type:"string",enum:["reasonable-default"]},...common,default:{type:"object",additionalProperties:false,required:["scope","behavior","basis","impact"],properties:{scope:text,behavior:text,basis:text,impact:text}}},
+      },
+      {
         type: "object",
         additionalProperties: false,
         required: ["kind", ...Object.keys(common), "fact", "property"],
@@ -175,6 +183,7 @@ export function clarificationSchema(facts?: TechnicalFact[]) {
             enum: ["business-ambiguity", "unnecessary", "scope-reduction"],
           },
           ...common,
+          presentation:{type:"object",additionalProperties:false,required:["explanation","options"],properties:{explanation:{type:"string",minLength:1,maxLength:2000},options:{type:"array",maxItems:3,items:{type:"object",additionalProperties:false,required:["label"],properties:{label:{type:"string",minLength:1,maxLength:500}}}},recommended:{type:"integer",minimum:1,maximum:3}}},
         },
       },
       {
@@ -215,6 +224,8 @@ export function parseClarificationDecision(
     "source",
     "sourceQuote",
     "detail",
+    "presentation",
+    ...(v.kind === "reasonable-default" ? ["default"] : []),
     ...(v.kind === "technical"
       ? ["fact", "property", "expected"]
       : v.kind === "implementation"
@@ -234,6 +245,7 @@ export function parseClarificationDecision(
     !v.detail.trim() ||
     v.detail.length > 10000 ||
     ![
+      "reasonable-default",
       "business-ambiguity",
       "unnecessary",
       "scope-reduction",
@@ -248,6 +260,16 @@ export function parseClarificationDecision(
     sourceQuote: v.sourceQuote,
     detail: v.detail,
   };
+  if (v.default) {
+    const defaults = compileDefaults([v.default]);
+    const {id:_id,...chosen} = defaults[0];
+    decision.default = chosen;
+  }
+  if (v.presentation) {
+    const presentation = v.presentation as NonNullable<ClarificationDecision["presentation"]>;
+    if (v.kind !== "business-ambiguity" || !Array.isArray(presentation.options) || presentation.options.length > 3 || (presentation.recommended !== undefined && !presentation.options[presentation.recommended-1])) throw new Error("问题选项或推荐项无效");
+    decision.presentation = presentation;
+  }
   if (v.kind === "technical" || v.kind === "implementation") {
     const fact = facts[Number(v.fact) - 1];
     if (

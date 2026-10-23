@@ -7,6 +7,7 @@ import type {
 import type { FieldExpectation } from "../shared/acceptance-obligations.js";
 import { isInheritedAvailability } from "./action-availability.js";
 import { admissionFieldTargets } from "./field-identity.js";
+import { defaultAuthorizes } from "./interaction.js";
 import { designAuthorized } from "./contract-authority.js";
 
 export const semanticQuestionKey = (
@@ -236,7 +237,7 @@ export function compileSemantics(
     )?.decision;
     add(
       { subject: hash(q.question), aspect: "choice" },
-      judgment?.kind === "unnecessary" || judgment?.kind === "implementation"
+      judgment?.kind === "unnecessary" || judgment?.kind === "reasonable-default" || judgment?.kind === "implementation"
         ? "unspecified"
         : judgment?.kind === "business-ambiguity"
           ? "undetermined"
@@ -378,7 +379,7 @@ export function compileSemantics(
           "specified",
           isInheritedAvailability(o, plan.binding?.actionAvailability)
             ? "host"
-            : designAuthorized(plan, review ?? {}, `business-choice:action-availability:${o.id}`) ? "implementation" : "requirement",
+            : (defaultAuthorizes(review?.defaultReviews, `business-choice:action-availability:${o.id}`) || designAuthorized(plan, review ?? {}, `business-choice:action-availability:${o.id}`)) ? "implementation" : "requirement",
           isInheritedAvailability(o, plan.binding?.actionAvailability)
             ? {
                 visible: o.expected.visible,

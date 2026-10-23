@@ -263,7 +263,7 @@ test("复核前预留不足时不调用模型、不签发可执行计划，沿�
     calls: 6,
   });
   const run = await settle(e);
-  assert.equal(run.status, "blocked", JSON.stringify(run));
+  assert.equal(run.status, "awaiting-budget", JSON.stringify(run));
   assert.equal(run.stop?.kind, "budget");
   assert.equal(run.budget?.callsUsed, 3);
   assert.equal(run.budget?.callsRemaining, 3);

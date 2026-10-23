@@ -11,6 +11,7 @@ import { PlanningDriver, toolReply } from "./planning-fixture.js";
 import { candidateSource, candidateScope } from "./evolution-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
 import { ExperienceSessionHost } from "../../src/server/experience-session.js";
+const budgetFixture = process.env.EVOLUTION_E2E_BUDGET === "1";
 const dir = mkdtempSync(join(tmpdir(), "cordis-browser-plan-"));
 const workspace = await Workspace.open(join(dir, "workspace.db"));
 const experienceSessions = new ExperienceSessionHost(workspace);
@@ -86,11 +87,12 @@ const evolution = new Evolution(
   },
   new EvolutionDomain(workspace),
   experienceSessions,
+  budgetFixture ? {calls:12,candidates:1,milliseconds:1800000} : undefined,
 );
 const app = createApp(workspace, evolution, experienceSessions);
 app.use("/*", serveStatic({ root: "./dist/web" }));
 app.get("*", serveStatic({ path: "./dist/web/index.html" }));
-const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 4519 });
+const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: budgetFixture ? 4520 : 4519 });
 async function stop() {
   await new Promise<void>((r) => server.close(() => r()));
   await evolution.close();

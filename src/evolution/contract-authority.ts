@@ -1,3 +1,4 @@
+import { defaultAuthorizes, parseDefaultReviews } from "./interaction.js";
 import { hash } from "../release/storage.js";
 import type {
   InvestigatedPlan,
@@ -180,11 +181,12 @@ export function compileAuthority(plan: InvestigatedPlan) {
         id: t.id,
         scope: t.scope,
         predicate: { visible: t.selected },
-        authority: designAuthorized(plan, { designDecisions: decisions }, t.id)
+        authority: defaultAuthorizes(plan.defaultReviews, t.id) ? ("reviewed-default" as const) : designAuthorized(plan, { designDecisions: decisions }, t.id)
           ? ("authorized-design" as const)
           : ("business-specification" as const),
       })),
     ],
+    defaultReviews: structuredClone(plan.defaultReviews ?? []),
     designDecisions: structuredClone(decisions),
     inputObligations: (plan.memberCases ?? []).map((c) => ({
       scope: {
@@ -247,6 +249,11 @@ export function authorityFailure(
   review: RequirementReview,
 ) {
   try {
+    if (hash(plan.defaultReviews ?? []) !== hash(review.defaultReviews ?? [])) return "默认处理与冻结独立复核不一致，请重新规划";
+    if (plan.defaults?.length) {
+      const defaults = parseDefaultReviews(review.defaultReviews, plan.defaults, [...new Set((review.defaultReviews ?? []).flatMap(r => r.targets))]);
+      if (defaults.some(d => d.verdict !== "safe-default")) return "默认处理尚未通过独立复核";
+    }
     if (hash(plan.designDecisions ?? []) !== hash(review.designDecisions ?? []))
       return "设计授权与冻结独立复核不一致，请重新规划";
     const targets = designTargets(plan);
