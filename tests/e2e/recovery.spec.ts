@@ -179,7 +179,7 @@ test("A12: cancel during executing keeps run identity without late apply command
   await page.getByRole("button", { name: "改进应用", exact: true }).click();
   await expect(page.getByRole("region", { name: "执行进度" })).toBeVisible();
   await page.getByRole("button", { name: "停止", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText("已取消");
+  await expect(page.getByText("有什么需要调整？", { exact: true })).toBeVisible();
   expect(commands).toEqual([
     expect.objectContaining({ type: "cancel", runId: base.id }),
   ]);

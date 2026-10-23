@@ -103,6 +103,36 @@ async function fixture(t: TestContext) {
   return workspace;
 }
 
+test("时序动作错绑的纠错信息定位动作和冲突案例，不自动重绑或删除验收", async (t) => {
+  const workspace = await fixture(t);
+  const context = capture(workspace);
+  const initial = readInvestigation("inspect_application", {}, context, []);
+  assert.ok("ref" in initial);
+  const seen = [initial, ...(initial.documents ?? [])].map(({ ref, hash }) => ({ ref, hash }));
+  const draft = structuredClone(plan);
+  const setter = structuredClone(draft.changes[0].cases[0]);
+  setter.name = "reset";
+  setter.fields = { dueAt: at };
+  draft.changes[0].cases.push(setter);
+  draft.requirements[0].expectations[1].action = "setDue";
+  assert.throws(() => compilePlanDraft(draft, context, seen, [{ id: "policy-run:1", text: quote }]),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /due\/setDue/);
+      assert.match(error.message, /2.*member:due:set.*member:due:reset/);
+      assert.match(error.message, /到期触发动作/);
+      return true;
+    });
+  draft.requirements[0].expectations[1].action = "expire";
+  const corrected = compilePlanDraft(draft, context, seen, [{ id: "policy-run:1", text: quote }]);
+  assert.deepEqual(corrected.blockers, []);
+  assert.equal(corrected.plan.memberCases?.length, draft.changes[0].cases.length);
+  const policy = corrected.plan.requirements?.flatMap(r => r.obligations ?? []).find(o => o.kind === "schedule-policy");
+  assert.ok(policy?.kind === "schedule-policy");
+  assert.equal(policy.action.action, "expire");
+  assert.deepEqual(policy.checks, plan.requirements[0].expectations[1].policies);
+});
+
 test("独立计划评测接受冻结真实调度的完成保护，不额外要求手写直接调用拒绝案例", async t => {
   const workspace = await fixture(t);
   const context = capture(workspace);

@@ -210,8 +210,121 @@ test("AI connection loss shows the last known stage and cancellation uses the ru
   await expect(page.getByText("正在理解需求并整理方案…")).toBeVisible();
   offline = false;
   await page.getByRole("button", { name: "取消", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText("已取消");
+  await expect(page.getByText("有什么需要调整？", { exact: true })).toBeVisible();
   expect(commands[0]).toMatchObject({ type: "cancel", runId: run.id });
+});
+
+test("cancellation resets the panel and the next request starts independently", async ({
+  page,
+}, info) => {
+  const run = {
+    id: "cancelled-draft-run",
+    request: "给待办增加截止时间",
+    baseVersion: "cancelled-base",
+    updatedAt: new Date().toISOString(),
+    budget: {
+      callsUsed: 8,
+      callsRemaining: 4,
+      candidatesRemaining: 3,
+      millisecondsRemaining: 590000,
+    },
+  };
+  let snapshot: AssistantSnapshot = { availability: "ready", run: null };
+  const commands: AssistantCommand[] = [];
+  await page.route("**/api/assistant**", (route) =>
+    route.fulfill({ json: snapshot }),
+  );
+  await page.route("**/api/assistant/commands", async (route) => {
+    const command = route.request().postDataJSON() as AssistantCommand;
+    commands.push(command);
+    snapshot = {
+      availability: "ready",
+      run: command.type === "cancel"
+        ? { ...run, status: "cancelled" }
+        : { ...run, status: "awaiting-input", question: "截止时间是否可选？" },
+    };
+    await route.fulfill({ json: snapshot });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  const repair = page.getByRole("checkbox", {
+    name: "修复已有问题（先复现旧版失败）",
+  });
+  await repair.check();
+  await page.getByRole("textbox", { name: "告诉 AI 你的需求" }).fill(run.request);
+  await page.getByRole("button", { name: "发送需求" }).click();
+  await page.getByRole("textbox", { name: "回答当前问题" }).fill("未提交的回答");
+  await page.getByRole("button", { name: "运行详情", exact: true }).click();
+  await expect(page.getByRole("region", { name: "运行详情" })).toBeVisible();
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+
+  const initial = page.getByText("有什么需要调整？", { exact: true });
+  const composer = page.getByRole("textbox", { name: "告诉 AI 你的需求" });
+  await expect(initial).toBeVisible();
+  await expect(composer).toHaveValue("");
+  await expect(repair).not.toBeChecked();
+  await expect(page.getByText(run.request, { exact: true })).toHaveCount(0);
+  await expect(page.getByText("本次改进已结束", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("已取消", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("已调用 8 次", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "运行详情", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "运行详情" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "发送需求" })).toBeDisabled();
+  expect(commands[1]).toMatchObject({ type: "cancel", runId: run.id });
+
+  await page.getByRole("button", { name: "关闭改进应用" }).click();
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  await expect(initial).toBeVisible();
+  await expect(composer).toHaveValue("");
+  await page.screenshot({ path: info.outputPath("cancel-reset.png") });
+  await composer.fill("增加任务标签");
+  await page.getByRole("button", { name: "关闭改进应用" }).click();
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  await expect(composer).toHaveValue("增加任务标签");
+  await page.reload();
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  await expect(initial).toBeVisible();
+  await expect(composer).toHaveValue("增加任务标签");
+  await page.getByRole("button", { name: "发送需求" }).click();
+  expect(commands[2]).toMatchObject({
+    type: "request",
+    intent: "improve",
+    text: "增加任务标签",
+  });
+  expect(commands[2]).not.toHaveProperty("runId");
+  expect(commands[2]).not.toHaveProperty("baseVersion");
+  await expect(page.getByRole("button", { name: "运行详情", exact: true })).toHaveAttribute("aria-expanded", "false");
+});
+
+test("failed cancellation keeps the current question and draft", async ({ page }) => {
+  const snapshot: AssistantSnapshot = {
+    availability: "ready",
+    run: {
+      id: "cancel-rejected-run",
+      request: "调整任务流程",
+      updatedAt: new Date().toISOString(),
+      status: "awaiting-input",
+      question: "复盘是否必填？",
+    },
+  };
+  await page.route("**/api/assistant**", (route) =>
+    route.fulfill({ json: snapshot }),
+  );
+  await page.route("**/api/assistant/commands", (route) =>
+    route.fulfill({
+      status: 409,
+      json: { code: "CANCEL_FAILED", message: "取消失败，请重试" },
+    }),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "改进应用", exact: true }).click();
+  const answer = page.getByRole("textbox", { name: "回答当前问题" });
+  await answer.fill("保留这个回答");
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("取消失败，请重试");
+  await expect(page.getByText("复盘是否必填？", { exact: true })).toBeVisible();
+  await expect(answer).toHaveValue("保留这个回答");
+  await expect(page.getByText("有什么需要调整？", { exact: true })).toHaveCount(0);
 });
 
 test("blocked plan shows why start is unavailable without dumping technical details", async ({

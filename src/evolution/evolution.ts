@@ -377,11 +377,47 @@ export class Evolution {
       if (plan.changeSpec?.runId !== r.run.id) throw new AppError("PLAN_STALE", "统一规格不属于当前运行", 409);
       if (hash(plan.questionAdjudications ?? []) !== hash(r.run.clarificationReviews ?? [])) throw new AppError("PLAN_STALE","冻结的澄清裁决已变化，请重新规划",409);
       if (this.domain.admission) {
-        const context=this.domain.context(), inputs=this.domain.admission(context);
-        const receipt=plan.requestAdmission;
-        const state=receipt ? admissionQuestionState(receipt,trusted?.sources??[],inputs.facts,r.run.clarificationReviews??[]) : undefined;
-        if (inputs.missing.length || !receipt || !admissionResolved(receipt) || receipt.key !== admissionKey(context.versionId,trusted?.sources ?? [],inputs.facts) || receipt.blockers.length || !state || state.pending.length || state.questions.length || state.blockers.length || !r.run.requestAdmissions?.some(a=>hash(a) === hash(receipt)))
-          throw new AppError("PLAN_STALE","需求预检事实或来源已变化，请重新规划",409);
+        const context = this.domain.context();
+        const reject = (code: string, message: string, detail: Record<string, unknown>) => {
+          this.emit(r, {
+            stepId: randomUUID(), attempt: r.candidates, label: "方案预检未通过",
+            status: "failed", tool: "host:plan-preflight",
+            detail: JSON.stringify({ planId: plan.id, runtimeStatus: context.runtimeStatus, ...detail }),
+          });
+          this.save(r);
+          throw new AppError(code, message, code === "UNAVAILABLE" ? 503 : 409);
+        };
+        // Recovery withdraws live registrations. They are not a new frozen baseline;
+        // retry only after readiness, then recheck every identity and acceptance gate.
+        if (context.runtimeStatus !== "ready")
+          reject("UNAVAILABLE", context.runtimeStatus === "recovering"
+            ? "宿主正在恢复，暂时无法检查方案，请稍后重试"
+            : "宿主运行环境不可用，请恢复宿主后重试", { reason: "runtime-not-ready" });
+        const inputs = this.domain.admission(context);
+        const receipt = plan.requestAdmission;
+        const sources = trusted?.sources ?? [];
+        const state = receipt ? admissionQuestionState(receipt, sources, inputs.facts, r.run.clarificationReviews ?? []) : undefined;
+        const checks = {
+          environmentAvailable: inputs.missing.length === 0,
+          receiptPresent: !!receipt,
+          receiptResolved: !!receipt && admissionResolved(receipt),
+          factsAndSourcesBound: receipt?.key === admissionKey(context.versionId, sources, inputs.facts),
+          receiptUnblocked: !!receipt && receipt.blockers.length === 0,
+          questionsResolved: !!state && !state.pending.length && !state.questions.length && !state.blockers.length,
+          receiptRecorded: !!receipt && !!r.run.requestAdmissions?.some(a => hash(a) === hash(receipt)),
+        };
+        if (Object.values(checks).some(passed => !passed)) {
+          const previousFacts = new Map((receipt?.factsSnapshot ?? []).map(fact => [fact.id, fact]));
+          const currentFacts = new Map(inputs.facts.map(fact => [fact.id, fact]));
+          reject("PLAN_STALE", "需求预检事实或来源已变化，请重新规划", {
+            reason: "admission-invalid", checks, missing: inputs.missing,
+            baseVersion: { frozen: receipt?.baseVersion, current: context.versionId },
+            sourcesHash: { frozen: hash(receipt?.sources), current: hash(sources) },
+            changedFacts: [...new Set([...previousFacts.keys(), ...currentFacts.keys()])]
+              .filter(id => hash(previousFacts.get(id)) !== hash(currentFacts.get(id)))
+              .map(id => ({ id, frozenHash: hash(previousFacts.get(id)), currentHash: hash(currentFacts.get(id)) })),
+          });
+        }
       }
       const failure = gateFailure(plan, trusted, hash(r.run.revisions), r.run.reviewLedger);
       if (failure) throw new AppError("PLAN_STALE", failure, 409);
@@ -431,7 +467,9 @@ export class Evolution {
     r: RecordRun,
     event: Omit<AssistantEvent, "sequence" | "at"> & { at?: string },
   ) {
-    const sequence = (r.eventSequence ?? 0) + 1;
+    // A restored/rejected run record may lag behind its durable diagnostic events.
+    const latest = this.db.prepare("SELECT MAX(sequence) AS sequence FROM evolution_events WHERE runId=?").get(r.run.id);
+    const sequence = Math.max(r.eventSequence ?? 0, Number(latest?.sequence ?? 0)) + 1;
     r.eventSequence = sequence;
     const body: AssistantEvent = {
       ...event,

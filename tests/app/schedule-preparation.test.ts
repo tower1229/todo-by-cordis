@@ -54,6 +54,7 @@ test("定时字段案例的完整前置必须在规划时可达，不能交给�
   const { context, seen } = await fixture(t);
   const parsed = compilePlanDraft(proposal(false), context, seen, sources);
   assert.ok(parsed.blockers.some((reason) => reason.includes("前置状态") && reason.includes("可达路径")), JSON.stringify(parsed.blockers));
+  assert.ok(parsed.blockers.some(reason => reason.includes(`"dueAt":"${due}"`) && reason.includes("从空任务经非到期动作")), "纠错须指明不可达的完整前置及所缺路径");
   assert.equal(parsed.retryable, true, "缺少可达案例在同一规划预算中纠正，不新增业务澄清");
   assert.ok(coverage(parsed.plan, sources, Object.keys(context.checkerVersions))
     .some((item) => item.reasons.some((reason) => reason.includes("前置状态") && reason.includes("可达路径"))),

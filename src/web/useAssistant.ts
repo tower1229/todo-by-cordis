@@ -116,6 +116,8 @@ export function useAssistant(onCompleted: () => Promise<void>) {
         events: [...events.current],
         eventCursor: eventCursor.current,
       });
+      if (input.type === "cancel" && result.run?.status === "cancelled")
+        setDraft("");
       return result;
     } catch (error) {
       setError(errorMessage(error));

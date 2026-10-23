@@ -118,7 +118,9 @@ export function compileObligations(
       if (checks.some(check=>!Object.hasOwn(schedulePolicySemantics,check)) || new Set(checks).size!==checks.length)
         throw new Error("时序策略检查不支持或重复");
       const cases=(outcomes.memberCases??[]).filter(c=>c.member===action.member&&c.action===action.action&&c.expected.kind==="commit");
-      if(cases.length!==1) throw new Error("时序策略缺少唯一冻结的到期成功案例");
+      if (cases.length !== 1) throw new Error(
+        `时序策略 action 绑定 ${action.member}/${action.action}，匹配 ${cases.length} 个 commit 案例：${cases.map(c => `member:${c.member}:${c.name}`).join("、") || "无"}；须绑定 schedule.onFire 的到期触发动作及其唯一成功案例，不是设置或清除时间的动作。请修正动作引用或补全对应案例，不得删除所需策略或改写验收效果`,
+      );
       const fired=cases[0];
       if (fired.expected.kind!=="commit" || !Object.entries(fired.expected.fields).some(([key,value])=>fired.fields[key]!==value))
         throw new Error("时序策略仅支持具有冻结字段变化的到期效果");

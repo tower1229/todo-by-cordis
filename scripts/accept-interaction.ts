@@ -25,6 +25,10 @@ if (!process.env.DEEPSEEK_API_KEY?.trim())
 const maxPaidCalls = Number(process.env.ACCEPT_MAX_PAID_CALLS ?? 24);
 if (!Number.isSafeInteger(maxPaidCalls) || maxPaidCalls < 1)
   throw new Error("ACCEPT_MAX_PAID_CALLS must be a positive integer");
+const previousPaidCalls = Number(process.env.ACCEPT_PREVIOUS_PAID_CALLS ?? 0);
+if (!Number.isSafeInteger(previousPaidCalls) || previousPaidCalls < 0 || !Number.isSafeInteger(previousPaidCalls + maxPaidCalls))
+  throw new Error("ACCEPT_PREVIOUS_PAID_CALLS must be a nonnegative safe integer with a safe cumulative limit");
+const cumulativeLimit = previousPaidCalls + maxPaidCalls;
 const directory = mkdtempSync(resolve(".runtime/interaction-real-"));
 const write = (file: string, value: unknown) =>
   writeFileSync(
@@ -67,6 +71,8 @@ if (!requests.length) throw new Error("Unknown ACCEPT_SCENARIO");
 write("authorization.json", {
   model: DEEPSEEK_MODEL,
   maxPaidCalls,
+  previousPaidCalls,
+  cumulativeLimit,
   requests,
   sourceClean: false,
   productionApplication: false,
@@ -88,9 +94,9 @@ try {
           if (paidCalls >= maxPaidCalls)
             throw new Error(`真实验证已达到${maxPaidCalls}次付费调用总额，保留当前结果`);
           paidCalls++;
-          write("usage-counter.json", { paidCalls, maxPaidCalls });
+          write("usage-counter.json", { paidCalls, maxPaidCalls, previousPaidCalls, cumulativePaidCalls: previousPaidCalls + paidCalls, cumulativeLimit });
           console.log(
-            `${scenario.id}: call ${paidCalls}/${maxPaidCalls} (${request.phase})`,
+            `${scenario.id}: call ${paidCalls}/${maxPaidCalls}, cumulative ${previousPaidCalls + paidCalls}/${cumulativeLimit} (${request.phase})`,
           );
           return provider.generate(request, signal, progress);
         },
@@ -125,7 +131,7 @@ try {
       await page.getByRole("button", { name: "发送需求", exact: true }).click();
       let previous = "",
         resumed = 0;
-      const deadline = Date.now() + 45 * 60_000;
+      const deadline = Date.now() + 90 * 60_000;
       while (Date.now() < deadline) {
         const snapshot = await evolution.observe();
         const run = snapshot.run;
@@ -245,6 +251,9 @@ try {
   write("result.json", {
     paidCalls,
     maxPaidCalls,
+    previousPaidCalls,
+    cumulativePaidCalls: previousPaidCalls + paidCalls,
+    cumulativeLimit,
     sourceUnchanged,
     passed: passed && sourceUnchanged,
     results,

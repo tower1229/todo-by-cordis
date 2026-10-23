@@ -1,5 +1,5 @@
 import { BudgetResume, QuestionForm, resourceLabel } from "./EvolutionInteraction.js";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUp, Check, Circle, CircleAlert, Sparkles } from "lucide-react";
 import type {
   AssistantEvent,
@@ -331,11 +331,19 @@ export function AssistantPanel({
 }) {
   const { snapshot, error, busy, draft, setDraft, command, working } =
     controller;
-  const run = snapshot?.run;
+  const run = snapshot?.run?.status === "cancelled" ? null : snapshot?.run;
   const composing = useRef(false);
   const [editing, setEditing] = useState(false);
   const [repair, setRepair] = useState(false);
   const [showDetails,setShowDetails] = useState(false);
+  useEffect(() => {
+    if (!run) {
+      setEditing(false);
+      setRepair(false);
+      setShowDetails(false);
+      composing.current = false;
+    }
+  }, [run]);
   const unconfigured = snapshot?.availability === "unconfigured";
   const locked =
     run?.status === "awaiting-budget" ||
@@ -367,7 +375,7 @@ export function AssistantPanel({
       : null;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {run && <div className="shrink-0 border-b border-line px-5 py-3 text-xs text-muted" aria-live="polite">{{planning:"正在整理方案", "awaiting-input":"等待你的回答", ready:"方案已准备好", "awaiting-acceptance":"需要确认规则修订",executing:"正在执行 · 需求已锁定","awaiting-budget":"等待追加资源","awaiting-apply":"候选已验证 · 尚未应用",applying:"正在应用",succeeded:"改进已应用",blocked:"需要处理阻塞",failed:"执行未完成",interrupted:"运行已中断",dismissed:"请求已结束",cancelled:"本次改进已结束"}[run.status]}</div>}
+      {run && <div className="shrink-0 border-b border-line px-5 py-3 text-xs text-muted" aria-live="polite">{{planning:"正在整理方案", "awaiting-input":"等待你的回答", ready:"方案已准备好", "awaiting-acceptance":"需要确认规则修订",executing:"正在执行 · 需求已锁定","awaiting-budget":"等待追加资源","awaiting-apply":"候选已验证 · 尚未应用",applying:"正在应用",succeeded:"改进已应用",blocked:"需要处理阻塞",failed:"执行未完成",interrupted:"运行已中断",dismissed:"请求已结束"}[run.status]}</div>}
       <div className="flex-1 space-y-6 overflow-y-auto p-5">
         {!run && (
           <div className="pt-5">
@@ -557,7 +565,7 @@ export function AssistantPanel({
             </Button>
           </section>
         )}
-        {showDetails && <section aria-label="运行详情" className="space-y-5 border-t border-line pt-4">
+        {showDetails && run && <section aria-label="运行详情" className="space-y-5 border-t border-line pt-4">
         {run?.status === "awaiting-apply" && <div className="space-y-4">
           <Steps steps={run.steps} />
           <EventLog events={snapshot?.events ?? []} />
@@ -816,11 +824,6 @@ export function AssistantPanel({
             <Button onClick={() => setDraft(run.request)}>修改后重试</Button>
           </div>
         )}
-        {run?.status === "cancelled" && (
-          <p role="status" className="text-sm text-muted">
-            已取消
-          </p>
-        )}
         {(working || run?.status === "awaiting-input") && run && (
           <Button
             variant="ghost"
@@ -863,7 +866,6 @@ export function AssistantPanel({
                         [
                           "succeeded",
                           "failed",
-                          "cancelled",
                           "interrupted",
                         ].includes(run.status) &&
                         (run.status === "succeeded"

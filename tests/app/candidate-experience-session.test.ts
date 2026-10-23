@@ -4,7 +4,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { Workspace } from "../../src/server/workspace.js";
+import { Workspace, type WorkspaceOpenOptions } from "../../src/server/workspace.js";
+import { Runtime } from "../../src/runtime/runtime.js";
 import { ExecutionDriver } from "./execution-fixture.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import { activateDual } from "./dual-composition-fixture.js";
@@ -53,9 +54,9 @@ test("isExperienceSnapshot distinguishes active snapshots from gone/invalid", ()
   );
 });
 
-async function awaitingApplyDual(t: TestContext) {
+async function awaitingApplyDual(t: TestContext, options: WorkspaceOpenOptions = {}) {
   const directory = await mkdtemp(join(tmpdir(), "cordis-exp-session-"));
-  const w = await Workspace.open(join(directory, "workspace.db"));
+  const w = await Workspace.open(join(directory, "workspace.db"), options);
   t.after(async () => {
     await w.close().catch(() => undefined);
     await rm(directory, { recursive: true, force: true });
@@ -68,7 +69,7 @@ async function awaitingApplyDual(t: TestContext) {
     compositionRevision: before.revision,
     operationId: randomUUID(),
   });
-  const { evolution: e, app, sessions } = evolutionWithExperience(
+  const { evolution: e, app, sessions, domain } = evolutionWithExperience(
     w,
     new ExecutionDriver(new PlanningDriver(), "aux-workflow", "双贡献组合"),
   );
@@ -101,12 +102,106 @@ async function awaitingApplyDual(t: TestContext) {
     before,
     e,
     app,
+    domain,
     ready,
     done,
     candidate: candidate!,
     formalTaskId: formalTask.task!.id,
   };
 }
+
+test("宿主恢复或不可用时体验预检可重试，不作废冻结；恢复后仍拒绝真实事实变化", async (t) => {
+  const entered = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  let hold = false;
+  let fail = false;
+  const { w, e, app, domain, before, done, candidate } = await awaitingApplyDual(t, {
+    async launch(version) {
+      if (hold) {
+        entered.resolve();
+        await released.promise;
+      }
+      if (fail) throw new Error("受控运行时启动失败");
+      return Runtime.start(version);
+    },
+  });
+  const post = (type: "experience" | "apply", operationId: string) => app.request("/api/assistant/commands", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type, operationId, runId: done.id, candidateId: candidate.id,
+      ...(type === "apply" ? { evidenceHash: candidate.evidenceHash, compositionRevision: before.revision } : {}) }),
+  });
+  const opened = await post("experience", "before-recovery");
+  assert.equal(opened.status, 200);
+  const initial = (await e.observe()).run;
+  assert.equal(initial?.status, "awaiting-apply");
+  if (initial?.status !== "awaiting-apply") throw new Error("expected awaiting-apply");
+  const unchanged = async () => {
+    const snapshot = await e.observe();
+    const run = snapshot.run;
+    assert.equal(run?.status, "awaiting-apply");
+    if (run?.status !== "awaiting-apply") throw new Error("expected awaiting-apply");
+    assert.equal(run.staleReason, undefined);
+    assert.deepEqual(run.plan, initial.plan);
+    assert.deepEqual(snapshot.candidates?.find(c => c.id === candidate.id), candidate);
+    assert.equal(run.budget?.callsUsed, initial.budget?.callsUsed);
+    assert.equal(run.experienceSession?.id, initial.experienceSession?.id);
+    assert.equal(w.activeVersion().id, before.versionId);
+    assert.equal(w.composition().revision, before.revision);
+  };
+  hold = true;
+  const recovery = w.restart();
+  try {
+    await entered.promise;
+    assert.equal(w.composition().status, "recovering");
+    for (const type of ["experience", "apply"] as const) {
+      const response = await post(type, `during-recovery-${type}`);
+      assert.equal(response.status, 503);
+      assert.equal((await response.json()).code, "UNAVAILABLE");
+    }
+    await unchanged();
+  } finally {
+    hold = false;
+    released.resolve();
+    await recovery;
+  }
+  // Reuse the rejected operation ID: no successful operation or model response was consumed.
+  assert.equal((await post("experience", "during-recovery-experience")).status, 200);
+  await unchanged();
+
+  fail = true;
+  await w.restart();
+  assert.equal(w.composition().status, "unavailable");
+  const unavailable = await post("experience", "after-failed-recovery");
+  assert.equal(unavailable.status, 503);
+  assert.equal((await unavailable.json()).code, "UNAVAILABLE");
+  await unchanged();
+  fail = false;
+  await w.restart();
+  assert.equal((await post("experience", "after-failed-recovery")).status, 200);
+  await unchanged();
+
+  const admission = domain.admission.bind(domain);
+  domain.admission = context => {
+    const inputs = admission(context);
+    return { ...inputs, facts: inputs.facts.map((fact, i) => i === 0 ? { ...fact, evidenceHash: "changed-fact" } : fact) };
+  };
+  const stale = await post("experience", "changed-fact");
+  assert.equal(stale.status, 409);
+  assert.equal((await stale.json()).code, "PLAN_STALE");
+  assert.equal(w.activeVersion().id, before.versionId);
+  const diagnostics = (await e.observe()).events?.filter(event => event.tool === "host:plan-preflight")
+    .map(event => JSON.parse(event.detail!) as {
+      reason: string; runtimeStatus: string;
+      checks?: { factsAndSourcesBound: boolean }; changedFacts?: unknown[];
+    }) ?? [];
+  assert.deepEqual(diagnostics.map(detail => [detail.reason, detail.runtimeStatus]), [
+    ["runtime-not-ready", "recovering"], ["runtime-not-ready", "recovering"],
+    ["runtime-not-ready", "unavailable"], ["admission-invalid", "ready"],
+  ]);
+  assert.equal(diagnostics.at(-1)?.checks?.factsAndSourcesBound, false);
+  assert.equal(diagnostics.at(-1)?.changedFacts?.length, 1);
+});
 
 test("非 awaiting-apply 状态不能创建体验会话", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "cordis-exp-ready-"));

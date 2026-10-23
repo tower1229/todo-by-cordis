@@ -158,7 +158,7 @@ export function scheduledPreparationFailures(
       } catch (error) {
         failures.push({
           caseId: browserCase.id,
-          reason: `定时浏览器案例 ${step.caseId} 不可执行：${error instanceof Error ? error.message : String(error)}`,
+          reason: `定时浏览器案例 ${step.caseId} 不可执行：${error instanceof Error ? error.message : String(error)}；目标前置 ${JSON.stringify({ state: source.state, fields: source.fields })}。须提供从空任务经非到期动作到达此前置的冻结 commit 路径，不能仅提供已有字段的修改案例或注入准备数据`,
         });
       }
     }

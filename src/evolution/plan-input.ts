@@ -79,7 +79,11 @@ export const businessExpectationsSchema = list(
   {
     anyOf: [
       object({ kind: kind("behavior", "preserve-ui") }),
-      object({kind:kind("schedule-policy"),action:text,policies:{...list(kind(...Object.keys(schedulePolicySemantics)),Object.keys(schedulePolicySemantics).length),minItems:1}}),
+      object({
+        kind: kind("schedule-policy"),
+        action: { ...text, description: "辅助成员的到期触发动作（schedule.onFire），不是设置或清除时间的动作。该动作须有唯一 commit 案例，以 scheduledAt 对应前置计时字段，产生可观察字段变化；前置须能从空任务经其他冻结成功操作到达。" },
+        policies: { ...list(kind(...Object.keys(schedulePolicySemantics)), Object.keys(schedulePolicySemantics).length), minItems: 1 },
+      }),
       object(
         { kind: kind("field"), field: text, initial, examples: list(text, 8) },
         ["kind", "field"],
