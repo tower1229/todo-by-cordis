@@ -31,6 +31,20 @@ export function useAssistant(onCompleted: () => Promise<void>) {
   useEffect(() => {
     localStorage.setItem("assistant-draft", draft);
   }, [draft]);
+  const refreshCompleted = useCallback(
+    async (result: AssistantSnapshot, request: number) => {
+      const run = result.run;
+      if (
+        (run?.status === "succeeded" || run?.status === "awaiting-apply") &&
+        completed.current !== `${run.id}:${run.status}`
+      ) {
+        await onCompletedRef.current();
+        if (request === sequence.current)
+          completed.current = `${run.id}:${run.status}`;
+      }
+    },
+    [],
+  );
   const observe = useCallback(async () => {
     if (locked.current || observing.current) return;
     observing.current = true;
@@ -41,6 +55,8 @@ export function useAssistant(onCompleted: () => Promise<void>) {
         ? `?runId=${encodeURIComponent(id)}&after=${eventCursor.current}`
         : "";
       const result = await api<AssistantSnapshot>(`/assistant${query}`);
+      if (request !== sequence.current) return;
+      await refreshCompleted(result, request);
       if (request !== sequence.current) return;
       if (result.run?.id && result.run.id !== runId.current) {
         runId.current = result.run.id;
@@ -67,7 +83,7 @@ export function useAssistant(onCompleted: () => Promise<void>) {
     } finally {
       observing.current = false;
     }
-  }, []);
+  }, [refreshCompleted]);
   useEffect(() => {
     void observe();
     return () => {
@@ -82,20 +98,12 @@ export function useAssistant(onCompleted: () => Promise<void>) {
     }, 1500);
     return () => clearInterval(timer);
   }, [working, error, observe]);
-  useEffect(() => {
-    const run = snapshot?.run;
-    if (
-      (run?.status === "succeeded" || run?.status === "awaiting-apply") &&
-      completed.current !== `${run.id}:${run.status}`
-    ) {
-      completed.current = `${run.id}:${run.status}`;
-      void onCompletedRef.current();
-    }
-  }, [snapshot]);
-  async function command(input: CommandInput): Promise<AssistantSnapshot | false> {
+  async function command(
+    input: CommandInput,
+  ): Promise<AssistantSnapshot | false> {
     if (locked.current) return false;
     locked.current = true;
-    sequence.current++;
+    const request = ++sequence.current;
     setBusy(true);
     setError("");
     try {
@@ -103,7 +111,8 @@ export function useAssistant(onCompleted: () => Promise<void>) {
         "/assistant/commands",
         input,
       );
-      sequence.current++;
+      await refreshCompleted(result, request);
+      if (request !== sequence.current) return false;
       if (result.run?.id) {
         if (result.run.id !== runId.current || input.type === "start") {
           events.current = result.events ?? [];

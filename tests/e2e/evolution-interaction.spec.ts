@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import type { TaskList } from "../../src/shared/contracts.js";
 test.use({ baseURL: "http://127.0.0.1:4520" });
 test("真实服务中的预算暂停、刷新、追加、验收、体验和显式应用", async ({
   page,
@@ -85,4 +86,26 @@ test("真实服务中的预算暂停、刷新、追加、验收、体验和显�
   expect(
     (await (await request.get("/api/composition")).json()).versionId,
   ).not.toBe(before.versionId);
+  await page.getByRole("button", { name: "继续修改", exact: true }).waitFor();
+  await page.getByRole("button", { name: "关闭改进应用", exact: true }).click();
+  await page.getByRole("textbox", { name: "添加任务", exact: true }).fill("应用就绪验收任务");
+  await page.getByRole("textbox", { name: "添加任务", exact: true }).press("Enter");
+  await page.getByRole("button", { name: "完成 应用就绪验收任务", exact: true }).click();
+  const form = page.locator('form[data-action-form="complete"]');
+  await expect(form).toBeVisible();
+  await form.getByRole("textbox", { name: "复盘", exact: true }).fill("完整流程验收🙂");
+  await form.getByRole("button", { name: "完成", exact: true }).click();
+  await expect.poll(async () => {
+    const tasks = await (await request.get("/api/tasks?category=done")).json() as TaskList;
+    return tasks.tasks.find((task) => task.title === "应用就绪验收任务")?.fields.reflection;
+  }).toBe("完整流程验收🙂");
+  await info.attach("applied-task-evidence", {
+    body: Buffer.from(JSON.stringify({
+      assistant: await (await request.get("/api/assistant")).json(),
+      composition: await (await request.get("/api/composition")).json(),
+      tasks: await (await request.get("/api/tasks?category=done")).json(),
+      model: "controlled fixture; zero external calls",
+    }, null, 2)),
+    contentType: "application/json",
+  });
 });

@@ -87,9 +87,10 @@ function App() {
       ),
       api<Composition>("/composition"),
     ]);
-    if (request !== latest.current) return;
+    if (request !== latest.current) return false;
     setComposition(next);
     setList({ ...pages[0], tasks: pages.flatMap((page) => page.tasks) });
+    return true;
   }, [category, search, offset]);
   // Async writes may finish after the user changes filters. Refresh that view.
   const currentRefresh = useRef(refresh);
@@ -101,7 +102,10 @@ function App() {
       setError(`已保存，但列表暂时无法刷新：${errorMessage(error)}`);
     }
   }, []);
-  const assistant = useAssistant(refreshAfterWrite);
+  const assistant = useAssistant(async () => {
+    // A filter change may supersede a response without updating the view.
+    while (!(await currentRefresh.current())) { /* refresh the current view */ }
+  });
   useEffect(() => {
     const timer = setTimeout(
       () => {
@@ -707,7 +711,7 @@ function App() {
           />
         )}
         {panel?.kind === "workspace" && (
-          <WorkspacePanel composition={composition} refreshed={refresh} />
+          <WorkspacePanel composition={composition} refreshed={async () => { await refresh(); }} />
         )}
       </Sheet>
       {undo && (
