@@ -239,6 +239,9 @@ export const contract = `// Plugin below is the primary workflow contract. Auxil
 export type Task = { id:string; title:string; description:string; state:string; revision:number; createdAt:string; updatedAt:string; deletedAt:string|null; fields:Record<string,string> };
 export type Field = { key:string; label:string; type:"text"; required?:boolean; description?:string };
 export type WorkflowDefinition = { id:string; name:string; version:string; initialState:string; states:Record<string,{label:string;category:"open"|"done"}>; actions:{id:string;label:string;from:string[]}[]; fields:Field[] };
+// For a valid action's required fields, omitted keys, "" and trim-empty values
+// return input-required with that action's declared form fields, even when task.fields has history.
+// Check action/state first; reject is for other invalid input or unavailable actions.
 export type WorkflowDecision = {kind:"reject";message:string}|{kind:"input-required";fields:Field[]}|{kind:"commit";state:string;fields:Record<string,string>};
 export type Workflow = { definition: WorkflowDefinition; decide(task:Task,action:string,input:Record<string,string>):WorkflowDecision };
 export type MissPolicy = "skip"|"run-once";
@@ -626,7 +629,7 @@ export default plugin;`,
           "宿主仅向已授权的主工作流 business/* 构建注入 business/contract.ts；成员源码不接受契约注入",
       },
       instruction: `实现冻结 change/3 规格。submit_candidate 只提交 files:[{path,content}] 与 members:[{pluginId,source}] 的实际业务改动；无改动用 []。宿主选择当前失败候选为修正基础、继承未改文件并计算全部身份与差异摘要。不得提交 baseVersion/baseHash/requirementSeal/parentCandidateId/before 或验证报告。
-${owner === "host" ? "主工作流严格 TypeScript，从 ./contract.js 导入 WorkflowBusiness 类型；宿主提供冻结 describe、标准完成/重开、缺失必填表单、trim 和 Unicode 长度协议。decide 可选，用于自定义业务动作、标准动作的业务决策或拒绝文案；返回 undefined 使用标准协议。业务结果仍须满足全部冻结验收，宿主不修正业务代码产生的错误结果。" : "主工作流严格 TypeScript，从 ./contract.js 导入 Plugin 类型及宿主 frozenWorkflow 值；describe 返回 frozenWorkflow，decide 实现冻结业务规则。"}只提交入口及授权业务模块，view.ts/config.json/compatibility.json 由宿主生成，不提交重复字段定义。禁止 any、enum、类型抑制、依赖和 IO。辅助成员为独立自包含模块，无任何导入，export default contribute/decide，声明 commands，输入缺失用 input-required。只支持 task.detail UI 贡献。辅助改动 files=[] 精确继承主工作流。范围或保护变更用 report_blocker。构建、后端与真实浏览器全部通过仍等待独立应用确认。`,
+${owner === "host" ? "主工作流严格 TypeScript，从 ./contract.js 导入 WorkflowBusiness 类型；宿主提供冻结 describe、标准完成/重开、缺失必填表单、trim 和 Unicode 长度协议。decide 可选，用于自定义业务动作、标准动作的业务决策或拒绝文案；返回 undefined 使用标准协议。业务结果仍须满足全部冻结验收，宿主不修正业务代码产生的错误结果。" : "主工作流严格 TypeScript，从 ./contract.js 导入 Plugin 类型及宿主 frozenWorkflow 值；describe 返回 frozenWorkflow，decide 实现冻结业务规则，必填输入遵循 WorkflowDecision 注明的表单返回约定。"}只提交入口及授权业务模块，view.ts/config.json/compatibility.json 由宿主生成，不提交重复字段定义。禁止 any、enum、类型抑制、依赖和 IO。辅助成员为独立自包含模块，无任何导入，export default contribute/decide，声明 commands，输入缺失用 input-required。只支持 task.detail UI 贡献。辅助改动 files=[] 精确继承主工作流。范围或保护变更用 report_blocker。构建、后端与真实浏览器全部通过仍等待独立应用确认。`,
     };
   }
   readMember(pluginId: string, versionId: string) {
