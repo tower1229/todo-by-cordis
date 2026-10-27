@@ -560,6 +560,7 @@ test("browser planning corrects bad guide arguments and rejects an unsent catalo
   const dir = mkdtempSync(join(tmpdir(), "cordis-guide-browser-"));
   const workspace = await Workspace.open(join(dir, "workspace.db"));
   const base = new PlanningDriver();
+  const unsentGuide = "guide/task.events";
   let phase = 0;
   const driver: Driver = {
     async generate(request: ModelRequest, signal) {
@@ -582,8 +583,8 @@ test("browser planning corrects bad guide arguments and rejects an unsent catalo
                 ...reply.calls[0].args,
                 evidence: [
                   {
-                    ref: "guide/command.register",
-                    hash: hash(capabilityGuides["guide/command.register"]),
+                    ref: unsentGuide,
+                    hash: hash(capabilityGuides[unsentGuide]),
                   },
                 ],
               },
@@ -632,9 +633,14 @@ test("browser planning corrects bad guide arguments and rejects an unsent catalo
     expect(snapshot.run.protocolFailures[1].problems.join(";")).toContain("evidence");
     expect(
       snapshot.run.plan.binding.materials.some(
-        (item: { ref: string }) => item.ref === "guide/command.register",
+        (item: { ref: string }) => item.ref === unsentGuide,
       ),
     ).toBe(false);
+    expect(
+      snapshot.run.plan.binding.materials.some(
+        (item: { ref: string }) => item.ref === "guide/command.register",
+      ),
+    ).toBe(true);
     await expect(
       page.getByRole("region", { name: "待确认方案" }),
     ).toBeVisible();

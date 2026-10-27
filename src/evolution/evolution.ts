@@ -1438,7 +1438,9 @@ export class Evolution {
     if (!("ref" in initial)) throw new Error("应用调查失败");
     const baseline = [{ref: initial.ref, hash: initial.hash, content: initial.content}, ...(initial.documents ?? []),
       ...Object.entries(context.guideHashes)
-        .filter(([ref])=>context.capabilities.some(c=>c.ready && c.installed && c.enabled && c.authorized && ref === `guide/${c.interfaceId}`))
+        // New auxiliary actions need their protocol before they are registered/ready.
+        // Delivering the guide does not change the capability's runtime status.
+        .filter(([ref])=>context.capabilities.some(c=>(c.ready || c.interfaceId === "command.register") && c.installed && c.enabled && c.authorized && ref === `guide/${c.interfaceId}`))
         .map(([ref,digest])=>{
         const content = capabilityGuides[ref];
         if (content === undefined || hash(content) !== digest) throw new AppError("PLAN_STALE","能力指南与调查目录不一致",409);

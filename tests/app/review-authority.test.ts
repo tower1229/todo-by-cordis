@@ -19,6 +19,7 @@ import {
 import { modelPolicy } from "../../src/evolution/model-policy.js";
 import { Workspace } from "../../src/server/workspace.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
+import { capabilityGuides } from "../../src/server/capability-guides.js";
 import { Evolution } from "./evolution-adapter.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import {
@@ -568,7 +569,10 @@ test("真实规划调用交付唯一的复核规格投影，保持义务、来�
       assert.equal(preparation.previousPlans,undefined);
       assert.equal(preparation.baselineFacts,undefined);
       assert.ok(preparation.materials.documents.some((d:{ref:string})=>d.ref==="guide/workflow.provide"));
-      assert.ok(!preparation.materials.documents.some((d:{ref:string})=>d.ref==="guide/command.register"));
+      const commandGuide = preparation.materials.documents.find((d:{ref:string})=>d.ref==="guide/command.register");
+      assert.equal(commandGuide?.content, capabilityGuides["guide/command.register"]);
+      assert.equal(commandGuide.hash, hash(commandGuide.content));
+      assert.equal(Object.hasOwn(input, "materials"), false, "规划资料不注入独立复核投影");
       assert.deepEqual(review.history, []);
       assert.equal(review.tools, undefined);
       assert.ok(input.acceptance.length);
