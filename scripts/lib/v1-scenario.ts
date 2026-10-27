@@ -231,7 +231,7 @@ export async function runV1Acceptance(options: V1Options) {
       if (phase === 3) {
         const addedRules = ready.plan.workflowRules.filter((rule) =>
           (!base.workflow.fields.some((field) => field.key === rule.key) ||
-            ready.plan.acceptanceChanges.some((change) => change.rule === rule.key)) &&
+            (ready.plan.acceptanceChanges ?? []).some((change) => change.rule === rule.key)) &&
           rule.required && rule.minLength === 1 && rule.maxLength === 5000,
         );
         assert.equal(addedRules.length, 1, "复盘需求须绑定唯一新增或经确认修订的必填 1–5000 字规则");

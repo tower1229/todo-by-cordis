@@ -5,6 +5,7 @@
     "noEmit": true
   },
   "include": [
+    "scripts/accept-v1.ts",
     "scripts/accept-interaction.ts",
     "scripts/accept-stability-baseline.ts",
     "scripts/lib/stability-eval/**/*.ts"
