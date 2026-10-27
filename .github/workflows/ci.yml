@@ -11,7 +11,8 @@ jobs:
       - run: npm install -g pnpm@12.3.4
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm test
+      # Application tests already exercise the built frontend in Chromium.
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test
       - run: pnpm test:e2e

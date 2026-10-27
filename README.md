@@ -36,9 +36,9 @@ pnpm start
 
 ```sh
 pnpm typecheck
-pnpm test
 pnpm build
 pnpm exec playwright install chromium
+pnpm test
 pnpm test:e2e
 pnpm bench:m1
 # 真实模型验收（需要 .env，会调用 DeepSeek 并产生 usage）
@@ -52,7 +52,7 @@ pnpm accept:stability-baseline
 # pnpm accept:stability-baseline --authorize-real-model
 ```
 
-浏览器测试与基准使用生产构建，运行前先 `pnpm build`。浏览器测试监听 4518，使用临时数据库，截图和失败证据写入忽略的 `test-results/`。覆盖 320、390、768、1280 宽度、任务操作、草稿、幂等重试，以及 AI 前端契约。
+应用测试、浏览器测试与基准使用生产构建；应用和浏览器测试还依赖 Chromium，因此构建与浏览器安装必须在 `pnpm test` 之前完成。浏览器测试监听 4518，使用临时数据库，截图和失败证据写入忽略的 `test-results/`。覆盖 320、390、768、1280 宽度、任务操作、草稿、幂等重试，以及 AI 前端契约。
 
 已移除 M0 的重复实验运行器、对应探针、示例数据按钮、手写流程切换界面和 `/api/releases` 演示接口。保留正式 Workspace/Runtime 的崩溃恢复、超时、版本切换及数据保留回归。旧数据库仍可加载已有复盘流程，设置中的版本恢复保留历史字段；兼容插件不再提供安装入口。
 

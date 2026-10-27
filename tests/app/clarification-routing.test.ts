@@ -27,7 +27,7 @@ async function setup(t: test.TestContext, driver: Driver) {
   const w = await Workspace.open(join(dir, "workspace.db"));
   const e = new Evolution(w.db, driver, new EvolutionDomain(w));
   t.after(async () => {
-    e.close();
+    await e.close();
     await w.close();
     await rm(dir, { recursive: true, force: true });
   });
@@ -438,17 +438,23 @@ test("复核生成的未要求初始呈现问题也必须审查，原意见保�
 });
 
 test("统一澄清审查取消后迟到回复不能恢复planning或提出问题",async t=>{
-  const fixture=new PlanningDriver();let release!:()=>void,enter!:()=>void;
-  const entered=new Promise<void>(r=>{enter=r;});
+  const fixture=new PlanningDriver();let release:(()=>void)|undefined;
   const e=await setup(t,{async generate(request,signal){
     const audit=auditInput(request);
-    if(audit){enter();return new Promise<ReturnType<typeof auditReply>>(r=>{release=()=>r(auditReply(audit,"business-ambiguity"));});}
+    if(audit){return new Promise<ReturnType<typeof auditReply>>(r=>{release=()=>r(auditReply(audit,"business-ambiguity"));});}
     const reply=await fixture.generate(request,signal);
     if(reply.calls[0]?.name==="propose_plan")return {...toolReply("request_clarification",{question:"复盘是否必填？"}),history:request.history};
     return reply;
   }});
   await e.command({type:"request",text:"复盘是否必填尚未决定",operationId:"request"});
-  await entered;const run=(await e.observe()).run!;
+  // A preflight failure cannot enter the model callback; report it instead of hanging CI.
+  for(let n=0;!release&&n<1000;n++){
+    const current=(await e.observe()).run;
+    assert.equal(current?.status,"planning",`澄清审查未启动：${current?.status}`);
+    await new Promise(r=>setTimeout(r,10));
+  }
+  assert.ok(release,"澄清审查在模型桩等待期限内未启动");
+  const run=(await e.observe()).run!;
   await e.command({type:"cancel",runId:run.id,operationId:"cancel"});release();
   await new Promise(r=>setTimeout(r,30));
   assert.equal((await e.observe()).run?.status,"cancelled");
