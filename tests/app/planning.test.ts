@@ -1719,6 +1719,51 @@ test("first business bundle requires its four paths before ready and can correct
     });
 });
 
+test("前置缺口的定位变化不能绕过同证据重复错误门禁", async (t) => {
+  const { PlanningDriver } = await import("./planning-fixture.js");
+  const directory = mkdtempSync(join(tmpdir(), "cordis-precondition-repeat-"));
+  const w = await Workspace.open(join(directory, "workspace.db"));
+  const fixture = new PlanningDriver();
+  const source = "新增计数，详情展示计数，其他行为不变";
+  let proposals = 0;
+  const feedback: string[] = [];
+  const e = new Evolution(w.db, {
+    async generate(request) {
+      if (JSON.stringify(request.history).includes("前置路径诊断"))
+        feedback.push(JSON.stringify(request.history));
+      const response = await fixture.generate(request);
+      if (response.calls[0]?.name === "propose_plan") {
+        proposals++;
+        response.calls[0].args = {
+          requirements: [{ quote: source, type: "interface", expectations: [{ kind: "field", field: "count" }] }],
+          changes: [{ target: "counter", features: ["commands", "fields", "detail"], cases: [
+            { name: "first", state: "open", fields: {}, action: "increment", input: {}, expected: { kind: "commit", state: "open", fields: { count: "1" } } },
+            { name: `third-${proposals}`, state: "open", fields: { count: "2" }, action: "increment", input: {}, expected: { kind: "commit", state: "open", fields: { count: "3" } } },
+          ] }],
+        };
+      }
+      return response;
+    },
+  }, new EvolutionDomain(w));
+  t.after(async () => {
+    await e.close();
+    await w.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const before = w.composition();
+  await e.command({ type: "request", operationId: "precondition-repeat", text: source });
+  for (let i = 0; i < 300 && (await e.observe()).run?.status === "planning"; i++)
+    await new Promise(resolve => setTimeout(resolve, 10));
+  const run = (await e.observe()).run!;
+  assert.equal(proposals, 2, "修改案例名称不能让同一前置缺口继续消耗纠错调用");
+  assert.equal(run.status, "blocked");
+  assert.equal(run.stop?.code, "plan-compilation");
+  assert.ok(feedback.some(message => message.includes("third-1") && message.includes("initial")), "模型须收到定位和操作路径说明");
+  assert.equal(run.plans?.length ?? 0, 0);
+  assert.equal(run.candidates?.length ?? 0, 0);
+  assert.deepEqual(w.composition(), before);
+});
+
 for (const repair of [false, true])
   test(`existing member capability requires frozen cases before ready: repair=${repair}`, async (t) => {
     const { activateDual } = await import("./dual-composition-fixture.js");

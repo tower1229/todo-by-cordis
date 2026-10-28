@@ -22,6 +22,12 @@ type PreparedAction = {
   input: Record<string, string>;
 };
 
+const unreachablePreparation = "字段断言的前置状态无法从冻结候选操作唯一确定可达路径，不能注入字段或伪造历史准备";
+/** Diagnostic detail must not change the existing repeated-rejection identity. */
+export class OperationPreparationError extends Error {
+  readonly rejectionReason = unreachablePreparation;
+}
+
 /** Candidate actions prepare candidate assertions; they never certify baseline history. */
 export function operationPreparation(
   cases: OperationCase[],
@@ -117,8 +123,21 @@ export function operationPreparation(
     ).size === 1
   )
     return [];
-  throw new Error(
-    "字段断言的前置状态无法从冻结候选操作唯一确定可达路径，不能注入字段或伪造历史准备",
+  if (!field) throw new Error(unreachablePreparation);
+  const preview = (state: string, fields: Record<string, string>) => ({
+    state: state.slice(0, 160),
+    fields: Object.fromEntries(ordered(fields).slice(0, 8).map(([key, value]) => [key.slice(0, 160), value.slice(0, 160)])),
+  });
+  const diagnostic = JSON.stringify({
+    member: target.member?.slice(0, 160),
+    case: target.name?.slice(0, 160),
+    field: field?.slice(0, 160),
+    wanted: preview(target.state, projected(target.fields)),
+    reachable: queue.slice(0, 8).map(node => preview(node.state, node.fields)),
+  }).slice(0, 2400);
+  throw new OperationPreparationError(
+    unreachablePreparation +
+    `；前置路径诊断（有界摘要）：${diagnostic}。保留目标案例，补齐从空任务到目标前置的中间 commit 案例；修改 initial 不会准备前置字段。`,
   );
 }
 

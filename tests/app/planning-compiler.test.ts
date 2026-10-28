@@ -36,7 +36,7 @@ import {
 import { DeepSeek } from "../../src/evolution/deepseek.js";
 import { modelPolicy } from "../../src/evolution/model-policy.js";
 import { hash } from "../../src/release/storage.js";
-import { deriveFieldObligations } from "../../src/evolution/obligation-derivation.js";
+import { deriveFieldObligations, operationPreparation } from "../../src/evolution/obligation-derivation.js";
 import type { BrowserStep } from "../../src/shared/browser-cases.js";
 import type { Requirement } from "../../src/shared/assistant.js";
 
@@ -122,6 +122,54 @@ test("新字段的非空前置案例由宿主从冻结候选动作推导，不�
   assert.deepEqual(compilePlanInput(advisory,context,[{id:"request:1",text:source}]),draft,"辅助字段样例不能筛除已冻结的成功案例或另立期望来源");
   assert.throws(()=>compilePlanInput({...input,changes:[{...input.changes[0],cases:[cases[1]]}]},context,[{id:"request:1",text:source}]),/前置|可达|冻结.*路径/);
   assert.throws(()=>compilePlanInput({...input,changes:[{...input.changes[0],cases:[cases[0],{...cases[0],expected:{kind:"commit",state:"open",fields:{count:"9"}}}]}]},context,[{id:"request:1",text:source}]),/不唯一|冲突/);
+});
+
+test("字段前置缺口反馈定位目标与可达状态，补齐中间操作后保留连续断言", () => {
+  const source = "新增计数，详情展示计数，其他行为不变";
+  const first = { name: "first", state: "open", fields: {}, action: "increment", input: {}, expected: { kind: "commit", state: "open", fields: { count: "1" } } };
+  const third = { name: "third", state: "open", fields: { count: "2", retained: "历史字段" }, action: "increment", input: {}, expected: { kind: "commit", state: "open", fields: { count: "3", retained: "历史字段" } } };
+  for (const initial of [undefined, { kind: "baseline" }]) {
+    const input = {
+      requirements: [{ quote: source, type: "interface", expectations: [{ kind: "field", field: "count", ...(initial ? { initial } : {}) }] }],
+      changes: [{ target: "counter", features: ["commands", "fields", "detail"], cases: [first, third] }],
+    };
+    assert.throws(() => compilePlanInput(input, context, [{ id: "request:1", text: source }]), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      for (const detail of ["counter", "third", '"count":"2"', '"count":"1"', "commit", "initial"])
+        assert.ok(error.message.includes(detail), `反馈缺少 ${detail}：${error.message}`);
+      return true;
+    });
+    const second = { name: "second", state: "open", fields: { count: "1" }, action: "increment", input: {}, expected: { kind: "commit", state: "open", fields: { count: "2" } } };
+    input.changes[0].cases.splice(1, 0, second);
+    const draft = compilePlanInput(input, context, [{ id: "request:1", text: source }]);
+    const field = draft.requirements[0].obligations.find(o => o.kind === "field");
+    assert.ok(field?.kind === "field");
+    assert.deepEqual((field.scenarios as { value: string; steps: unknown[] }[]).map(s => [s.value, s.steps.length]), [["1", 1], ["2", 2], ["3", 3]]);
+    assert.deepEqual(draft.memberCases?.find(c => c.member === "counter" && c.name === "third")?.fields, third.fields);
+  }
+});
+
+test("前置诊断有界且只说明本成员可达状态，不借其他成员的案例准备字段", () => {
+  const first = { member: "progress", name: "begin", state: "open", fields: {}, action: "advance", input: {}, expected: { kind: "commit" as const, state: "open", fields: { level: "started" } } };
+  const target = { ...first, name: "finish", fields: { level: "ready", unrelated: "不应在字段投影出现" }, expected: { kind: "commit" as const, state: "open", fields: { level: "finished" } } };
+  const bridge = { ...first, name: "prepare", fields: { level: "started" }, expected: { kind: "commit" as const, state: "open", fields: { level: "ready" } } };
+  const cases = [first, target, { ...bridge, member: "other" }];
+  const original = structuredClone(cases);
+  assert.throws(() => operationPreparation(cases, target, "open", "level"), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /progress.*finish.*level/);
+    assert.ok(!error.message.includes("unrelated"));
+    return true;
+  });
+  assert.deepEqual(cases, original);
+  assert.equal(operationPreparation([...cases, bridge], target, "open", "level").length, 2);
+  const longTarget = { ...target, fields: { level: "x".repeat(5000) } };
+  assert.throws(() => operationPreparation([first, longTarget], longTarget, "open", "level"), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.ok(error.message.length < 3000);
+    assert.ok(!error.message.includes("x".repeat(161)));
+    return true;
+  });
 });
 
 test("计划已声明界面能力时，宿主从冻结计数案例生成连续浏览器义务", async (t) => {

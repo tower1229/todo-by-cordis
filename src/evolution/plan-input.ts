@@ -85,7 +85,12 @@ export const businessExpectationsSchema = list(
         policies: { ...list(kind(...Object.keys(schedulePolicySemantics)), Object.keys(schedulePolicySemantics).length), minItems: 1 },
       }),
       object(
-        { kind: kind("field"), field: text, initial, examples: list(text, 8) },
+        {
+          kind: kind("field"),
+          field: { ...text, description: "字段动作后断言从空任务经冻结 commit 案例准备；若依赖该字段已有值，须保留目标案例并补齐中间成功操作。不能注入前置字段，initial 仅检查初始呈现，不能替代操作路径。" },
+          initial,
+          examples: list(text, 8),
+        },
         ["kind", "field"],
       ),
       object({ kind: kind("history"), field: text }),

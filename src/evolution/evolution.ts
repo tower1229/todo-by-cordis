@@ -40,6 +40,7 @@ import type { Driver, ModelReply, ModelRequest } from "./driver.js";
 import { ModelTransportError } from "./driver.js";
 import { transportFailure } from "./transport-failure.js";
 import { HistoricalPreparationBlocked } from "./historical-preparation.js";
+import { OperationPreparationError } from "./obligation-derivation.js";
 import type {
   CandidateAttempt,
   AssistantCommand,
@@ -1670,7 +1671,7 @@ export class Evolution {
             } catch (error) {
               const diagnostic =
                 error instanceof Error ? error.message : "计划结构无效";
-              const rejection = hash({ diagnostic, evidence: r.run.evidence });
+              const rejection = hash({ diagnostic: error instanceof OperationPreparationError ? error.rejectionReason : diagnostic, evidence: r.run.evidence });
               if (error instanceof HistoricalPreparationBlocked || rejections.has(rejection) || r.calls >= this.runLimits(r).calls) {
                 r.run = {
                   ...this.base(r),
