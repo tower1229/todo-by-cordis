@@ -116,6 +116,358 @@ test("browser observes schedule fire after host clock advance", async ({
   expect(done?.state).toBe("done");
 });
 
+for (const scenario of [
+  { name: "先到期后打开详情 1280px", mode: "before", width: 1280 },
+  { name: "先到期后打开详情 320px", mode: "before", width: 320 },
+  { name: "详情打开后到期仍拒绝旧动作", mode: "after-open", width: 1280 },
+  {
+    name: "表单打开后到期仍拒绝旧提交并保留草稿",
+    mode: "after-form",
+    width: 390,
+  },
+  {
+    name: "读取失败禁止旧快照写入，重试后恢复",
+    mode: "read-failure",
+    width: 390,
+  },
+  { name: "关闭读取后迟到结果不能覆盖其他面板", mode: "dismiss", width: 320 },
+] as const)
+  test(`任务修订：${scenario.name}`, async ({ page }, info) => {
+    const { serve } = await import("@hono/node-server");
+    const { serveStatic } = await import("@hono/node-server/serve-static");
+    const { mkdtemp, rm, readFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { Workspace } = await import("../../src/server/workspace.js");
+    const { createApp } = await import("../../src/server/app.js");
+    const { createControllableClock } = await import(
+      "../../src/server/host/clock.js"
+    );
+    const { dueAutoExpireSource } = await import(
+      "../../src/server/capability-guides.js"
+    );
+    const { dualWorkflowDefinition } = await import(
+      "../app/dual-composition-fixture.js"
+    );
+    const directory = await mkdtemp(join(tmpdir(), "cordis-revision-race-"));
+    const clock = createControllableClock(
+      Date.parse("2030-01-01T00:00:00.000Z"),
+    );
+    const workspace = await Workspace.open(join(directory, "workspace.db"), {
+      clock,
+    });
+    const workflowCode = await readFile(
+      new URL("../fixtures/aux-workflow.mjs", import.meta.url),
+      "utf8",
+    );
+    const due = workspace.release.record({
+      pluginId: "due",
+      name: "截止",
+      service: "plugin:due",
+      contractVersion: "extensions/1",
+      source: dueAutoExpireSource,
+      code: dueAutoExpireSource,
+      definition: { id: "due" },
+      evidence: { passed: true, origin: "revision-test" },
+    });
+    const version = workspace.release.record({
+      pluginId: "aux-workflow",
+      name: "工作流",
+      service: "workflow",
+      contractVersion: "workflow/1",
+      source: workflowCode,
+      code: workflowCode,
+      definition: dualWorkflowDefinition,
+      evidence: { passed: true, origin: "revision-test" },
+      members: [
+        { pluginId: "aux-workflow", role: "workflow", enabled: true },
+        {
+          pluginId: "due",
+          versionId: due.id,
+          role: "auxiliary",
+          enabled: true,
+        },
+      ],
+    });
+    await workspace.activate(
+      {
+        versionId: version.id,
+        compositionRevision: workspace.composition().revision,
+        operationId: crypto.randomUUID(),
+      },
+      () => undefined,
+    );
+    const title = `定时器与列表修订竞争 ${scenario.mode}`;
+    const created = await workspace.command({
+      type: "create",
+      title,
+      compositionRevision: workspace.composition().revision,
+      operationId: crypto.randomUUID(),
+    });
+    const scheduled = await workspace.command({
+      type: "action",
+      taskId: created.task!.id,
+      actionId: "setDue",
+      input: { dueAt: new Date(clock.now() + 5_000).toISOString() },
+      expectedRevision: created.task!.revision,
+      compositionRevision: workspace.composition().revision,
+      operationId: crypto.randomUUID(),
+    });
+    const oldRevision = scheduled.task!.revision;
+    const app = createApp(workspace, undefined, undefined, {
+      testClock: clock,
+    });
+    app.use("/*", serveStatic({ root: "./dist/web" }));
+    app.get("*", serveStatic({ path: "./dist/web/index.html" }));
+    const server = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 });
+    const evidence: Record<string, unknown> = {
+      mode: scenario.mode,
+      oldRevision,
+      realTimer: true,
+      fabricatedResponse: false,
+    };
+    const actionRequests: {
+      expectedRevision: number;
+      input?: Record<string, string>;
+    }[] = [];
+    page.on("request", (request) => {
+      if (
+        request.method() === "POST" &&
+        new URL(request.url()).pathname === "/api/commands"
+      ) {
+        const command = request.postDataJSON() as {
+          type: string;
+          taskId: string;
+          expectedRevision: number;
+          input?: Record<string, string>;
+        };
+        if (command.type === "action" && command.taskId === created.task!.id)
+          actionRequests.push(command);
+      }
+    });
+    try {
+      if (!server.listening)
+        await new Promise<void>((resolve) => server.once("listening", resolve));
+      const address = server.address();
+      if (!address || typeof address === "string")
+        throw new Error("Missing server address");
+      await page.setViewportSize({ width: scenario.width, height: 900 });
+      await page.goto(`http://127.0.0.1:${address.port}`);
+      const edit = page.getByRole("button", {
+        name: `编辑 ${title}`,
+        exact: true,
+      });
+      await expect(edit).toBeVisible();
+      const readTask = () =>
+        workspace
+          .query("", "all")
+          .tasks.find((t) => t.id === created.task!.id)!;
+      const advance = async () => {
+        await clock.advance(5_000);
+        await expect.poll(() => readTask().fields.expired).toBe("true");
+        expect(readTask().revision).toBe(oldRevision + 1);
+      };
+      if (scenario.mode === "dismiss") {
+        let release = () => {};
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        let started = () => {};
+        const reading = new Promise<void>((resolve) => {
+          started = resolve;
+        });
+        await page.route(`**/api/tasks/${created.task!.id}`, async (route) => {
+          const response = await route.fetch();
+          started();
+          await held;
+          await route.fulfill({ response });
+        });
+        await edit.click();
+        await reading;
+        await expect(
+          page.getByRole("status", { name: "正在读取任务详情" }),
+        ).toBeVisible();
+        await expect(page.locator("[data-task-editor]")).toHaveCount(0);
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+        await expect(edit).toBeFocused();
+        await page
+          .getByRole("button", { name: "更多选项", exact: true })
+          .click();
+        await page
+          .getByRole("menuitem", { name: "工作区设置", exact: true })
+          .click();
+        const response = page.waitForResponse(
+          (r) => new URL(r.url()).pathname === `/api/tasks/${created.task!.id}`,
+        );
+        release();
+        await (await response).finished();
+        await page.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve()),
+              ),
+            ),
+        );
+        await expect(
+          page
+            .getByRole("dialog")
+            .getByRole("heading", { name: "工作区设置", exact: true }),
+        ).toBeVisible();
+        await expect(page.locator("[data-task-editor]")).toHaveCount(0);
+        expect(actionRequests).toHaveLength(0);
+        return;
+      }
+      if (scenario.mode === "read-failure") {
+        let reads = 0;
+        await page.route(`**/api/tasks/${created.task!.id}`, async (route) => {
+          reads++;
+          if (reads === 1) return route.abort("failed");
+          await route.continue();
+        });
+        await edit.click();
+        await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+        await expect(page.locator("[data-task-editor]")).toHaveCount(0);
+        expect(actionRequests).toHaveLength(0);
+        await page
+          .getByRole("button", { name: "重试读取", exact: true })
+          .click();
+        await expect(page.getByLabel("任务名称", { exact: true })).toHaveValue(
+          title,
+        );
+        expect(reads).toBe(2);
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+        await expect(edit).toBeFocused();
+        return;
+      }
+      if (scenario.mode === "before") {
+        let delayed = false;
+        await page.route("**/api/tasks?*", async (route) => {
+          if (delayed) return route.continue();
+          delayed = true;
+          const response = await route.fetch();
+          const body = (await response.json()) as {
+            tasks: { id: string; revision: number }[];
+          };
+          evidence.listRevision = body.tasks.find(
+            (t) => t.id === created.task!.id,
+          )!.revision;
+          await advance();
+          evidence.timerRevision = readTask().revision;
+          await route.fulfill({ response });
+        });
+        const listResponse = page.waitForResponse(
+          (r) => new URL(r.url()).pathname === "/api/tasks",
+        );
+        await page
+          .locator('[data-filter="all"]')
+          .filter({ visible: true })
+          .click();
+        await listResponse;
+        expect(evidence.listRevision).toBe(oldRevision);
+        expect(evidence.timerRevision).toBe(oldRevision + 1);
+      }
+      await edit.click();
+      await expect(page.locator("[data-task-editor]")).toBeVisible();
+      const detail = (await (
+        await page.request.get(
+          new URL(`/api/tasks/${created.task!.id}`, page.url()).toString(),
+        )
+      ).json()) as { revision: number };
+      evidence.backendRevision = detail.revision;
+      expect(detail.revision).toBe(
+        scenario.mode === "before" ? oldRevision + 1 : oldRevision,
+      );
+      if (scenario.mode === "before")
+        await expect(
+          page
+            .getByRole("article", { name: "截止与过期" })
+            .getByText("true", { exact: true }),
+        ).toBeVisible();
+      if (scenario.mode === "after-open") await advance();
+      const [response] = await Promise.all([
+        page.waitForResponse(
+          (r) =>
+            r.request().method() === "POST" &&
+            new URL(r.url()).pathname === "/api/commands",
+        ),
+        page
+          .getByRole("article", { name: "截止与过期" })
+          .getByRole("button", { name: `设截止 ${title}`, exact: true })
+          .click(),
+      ]);
+      evidence.action = response.request().postDataJSON() as unknown;
+      evidence.status = response.status();
+      evidence.result = (await response.json()) as unknown;
+      if (scenario.mode === "after-open") {
+        expect(response.status()).toBe(409);
+        expect(response.request().postDataJSON().expectedRevision).toBe(
+          oldRevision,
+        );
+        await expect(page.getByRole("alert")).toContainText("任务已在别处修改");
+        await expect(page.locator("[data-action-form]")).toHaveCount(0);
+        expect(actionRequests).toHaveLength(1);
+        expect(readTask().revision).toBe(oldRevision + 1);
+        return;
+      }
+      expect(response.status()).toBe(200);
+      const viewedRevision =
+        scenario.mode === "before" ? oldRevision + 1 : oldRevision;
+      expect(response.request().postDataJSON().expectedRevision).toBe(
+        viewedRevision,
+      );
+      const field = page.getByLabel("截止时间", { exact: true });
+      await expect(field).toBeVisible();
+      const dueAt = new Date(clock.now() + 60_000).toISOString();
+      await field.fill(dueAt);
+      if (scenario.mode === "after-form") await advance();
+      const [submitted] = await Promise.all([
+        page.waitForResponse(
+          (r) =>
+            r.request().method() === "POST" &&
+            new URL(r.url()).pathname === "/api/commands",
+        ),
+        page
+          .getByRole("dialog")
+          .getByRole("button", { name: "设截止", exact: true })
+          .click(),
+      ]);
+      evidence.submitStatus = submitted.status();
+      expect(submitted.request().postDataJSON().expectedRevision).toBe(
+        viewedRevision,
+      );
+      expect(actionRequests).toHaveLength(2);
+      if (scenario.mode === "after-form") {
+        expect(submitted.status()).toBe(409);
+        await expect(page.getByRole("alert")).toContainText("任务已在别处修改");
+        await expect(field).toHaveValue(dueAt);
+        expect(readTask().fields.dueAt).toBe(scheduled.task!.fields.dueAt);
+        expect(readTask().fields.expired).toBe("true");
+        expect(readTask().revision).toBe(oldRevision + 1);
+      } else {
+        expect(submitted.status()).toBe(200);
+        await expect(page.locator("[data-task-editor]")).toBeVisible();
+        expect(readTask().fields.dueAt).toBe(dueAt);
+        expect(readTask().fields.expired).toBeUndefined();
+      }
+    } finally {
+      evidence.actionRequests = actionRequests;
+      await info.attach("revision-race", {
+        body: Buffer.from(JSON.stringify(evidence, null, 2)),
+        contentType: "application/json",
+      });
+      await page.close();
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      });
+      await workspace.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
 test("browser reconnects to a scheduled result after closing and host restart", async ({
   page,
   request,

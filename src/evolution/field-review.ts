@@ -52,24 +52,27 @@ export function fieldReviewTargets(
 export function fieldReviewSchema(
   plan: Pick<InvestigatedPlan, "requirements">,
 ) {
-  const count = fieldReviewTargets(plan).length;
+  const targets = fieldReviewTargets(plan);
+  const decision = (index: number, sourceCount: number) => ({
+    type: "object",
+    additionalProperties: false,
+    required: ["target", "source", "sourceQuote", "initial"],
+    properties: {
+      target: { type: "integer", enum: [index + 1] },
+      source: { type: "integer", minimum: 1, maximum: sourceCount },
+      sourceQuote: { type: "string" },
+      initial: initialMeaningSchema,
+    },
+  });
   return {
     type: "array",
-    minItems: count,
-    maxItems: count,
-    items: {
-      type: "object",
-      additionalProperties: false,
-      required: ["target", "source", "sourceQuote", "initial"],
-      properties: {
-        target: { type: "integer", minimum: 1, maximum: Math.max(count, 1) },
-        source: { type: "integer", minimum: 1 },
-        sourceQuote: { type: "string" },
-        initial: initialMeaningSchema,
-      },
-    },
+    minItems: targets.length,
+    maxItems: targets.length,
+    items: targets.length
+      ? { anyOf: targets.map((target, index) => decision(index, target.sources.length)) }
+      : decision(0, 1),
     description:
-      "逐个 fieldReviewTargets 独立解释用户来源的初始呈现要求；state 只表示业务逻辑初始值，由宿主视为没有额外初始呈现要求；没有要求时用 unspecified，只有真实未决业务选择才用 undetermined。target/source 为各目录一基序号，不能从计划初始值反推用户要求。宿主比较该解释与可执行义务，issues=[]不能替代这些判断。",
+      "逐个 fieldReviewTargets 独立解释用户来源的初始呈现要求；state 只表示业务逻辑初始值，由宿主视为没有额外初始呈现要求；没有要求时用 unspecified，只有真实未决业务选择才用 undetermined。target 是 fieldReviewTargets 一基序号；source 只选该目标 sources 中的 source 值，由 sourceRevision 查找完整原文，不使用顶层 sources 的全局位置。不能从计划初始值反推用户要求。宿主比较该解释与可执行义务，issues=[]不能替代这些判断。",
   };
 }
 function row(v: unknown): Record<string, unknown> {

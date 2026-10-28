@@ -6,6 +6,23 @@ import { browserSteps } from "../../src/shared/browser-contract.js";
 import type { BrowserStep } from "../../src/shared/browser-cases.js";
 import { businessExpectationsSchema } from "../../src/evolution/plan-input.js";
 
+test("公开字段和历史预期使用精确字段键，不能用中文显示名替换", () => {
+  const parameters = planningTools.find(tool => tool.name === "propose_plan")!.parameters;
+  for (const kind of ["field", "history"]) {
+    const branch = businessExpectationsSchema.items.anyOf.find(
+      branch => branch.properties.kind.enum.includes(kind),
+    )!;
+    assert.ok("field" in branch.properties);
+    const field = branch.properties.field;
+    assert.ok(field && typeof field === "object" && "description" in field);
+    assert.equal(typeof field.description, "string");
+    const description = String(field.description);
+    for (const word of ["字段键", "显示名", "key", "expected.fields", "新字段"])
+      assert.ok(description.includes(word), `公开 ${kind} 契约缺少 ${word}`);
+    assert.ok(JSON.stringify(parameters).includes(description));
+  }
+});
+
 test("公开字段契约说明真实操作前置，initial 不能替代准备路径", () => {
   const parameters = planningTools.find(tool => tool.name === "propose_plan")!.parameters;
   const field = businessExpectationsSchema.items.anyOf.find(

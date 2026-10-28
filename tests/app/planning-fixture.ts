@@ -38,15 +38,15 @@ export function admissionFixture(request: ModelRequest) {
 /** Model-stub interpretation; real acceptance uses Gemini's independent source interpretation. */
 export function fieldDecisionsFixture(input: {
   requirements?: { obligations?: AcceptanceObligation[] }[];
-  sources?: { text: string }[];
-  fieldReviewTargets?: { obligationId: string; sources: { quote?: string; source?: number }[] }[];
+  sources?: { id?: string; text: string }[];
+  fieldReviewTargets?: { obligationId: string; sources: { quote?: string; sourceRevision?: string }[] }[];
 }) {
   return (input.fieldReviewTargets ?? []).map((target, index) => {
     const o = input.requirements
       ?.flatMap((r) => r.obligations ?? [])
       .find((o) => o.id === target.obligationId);
     if (o?.kind !== "field") throw new Error("模型桩缺少字段解释目标");
-    const quote = target.sources[0].quote ?? input.sources?.[target.sources[0].source! - 1]?.text;
+    const quote = target.sources[0].quote ?? input.sources?.find(s => s.id !== undefined && s.id === target.sources[0].sourceRevision)?.text;
     if (!quote) throw new Error("模型桩缺少字段来源");
     return {
       target: index + 1,
@@ -59,13 +59,13 @@ export function fieldDecisionsFixture(input: {
 /** Model stub only; source interpretation is tested independently with adversarial decisions. */
 export function errorDecisionsFixture(input: {
   requirements?: { obligations?: AcceptanceObligation[] }[];
-  sources?: { text: string }[];
-  errorReviewTargets?: { obligationId: string; sources: { quote?: string; source?: number }[] }[];
+  sources?: { id?: string; text: string }[];
+  errorReviewTargets?: { obligationId: string; sources: { quote?: string; sourceRevision?: string }[] }[];
 }) {
   return (input.errorReviewTargets ?? []).map((target, index) => {
     const o = input.requirements?.flatMap(r => r.obligations ?? []).find(o => o.id === target.obligationId);
     if (o?.kind !== "feedback" && (o?.kind !== "assertion" || o.expected.kind !== "error")) throw new Error("模型桩缺少错误解释目标");
-    const quote = target.sources[0].quote ?? input.sources?.[target.sources[0].source! - 1]?.text;
+    const quote = target.sources[0].quote ?? input.sources?.find(s => s.id !== undefined && s.id === target.sources[0].sourceRevision)?.text;
     if (!quote) throw new Error("模型桩缺少错误来源");
     return {target:index+1,source:1,sourceQuote:quote,feedback:"required",effectQuote:quote,text:o.kind==="feedback"?o.text:o.expected.kind==="error"?o.expected.text:""};
   });
@@ -107,11 +107,11 @@ export class PlanningDriver implements Driver {
     }
     if (request.schema) {
       const input = JSON.parse(request.message ?? "{}") as {
-        sources: { text: string }[];
+        sources: { id: string; text: string }[];
         requirements: { id: string; obligations?: AcceptanceObligation[] }[];
         fieldReviewTargets?: {
           obligationId: string;
-          sources: { source: number }[];
+          sources: { source: number; sourceRevision: string }[];
         }[];
         reviewLedger?: {
           findings: {

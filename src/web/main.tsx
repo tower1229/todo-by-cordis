@@ -45,7 +45,11 @@ const filters = [
 ] as const;
 type Category = (typeof filters)[number]["id"];
 type Panel =
-  | { kind: "task"; task: Task }
+  | {
+      kind: "task";
+      task: Task;
+      read?: { status: "loading" } | { status: "failed"; message: string };
+    }
   | { kind: "action"; form: ActionForm; returnTask?: Task }
   | { kind: "assistant" }
   | { kind: "workspace" }
@@ -168,6 +172,25 @@ function App() {
     returnFocus.current = trigger;
     if (next.kind === "task") setContributionError("");
     setPanel(next);
+  }
+  function openTask(task: Task, trigger: HTMLElement | null) {
+    const reading: Panel = { kind: "task", task, read: { status: "loading" } };
+    openPanel(reading, trigger);
+    void api<Task>(`/tasks/${task.id}`).then(
+      (currentTask) =>
+        setPanel((current) =>
+          current === reading ? { kind: "task", task: currentTask } : current,
+        ),
+      (error: unknown) =>
+        setPanel((current) =>
+          current === reading
+            ? {
+                ...reading,
+                read: { status: "failed", message: errorMessage(error) },
+              }
+            : current,
+        ),
+    );
   }
   async function write(operation: () => Promise<void>) {
     if (locked.current) return;
@@ -508,7 +531,7 @@ function App() {
                         data-task-open
                         aria-label={`编辑 ${task.title}`}
                         onClick={(e) =>
-                          openPanel({ kind: "task", task }, e.currentTarget)
+                          openTask(task, e.currentTarget)
                         }
                       >
                         <span
@@ -638,7 +661,27 @@ function App() {
           )
         }
       >
-        {panel?.kind === "task" && (
+        {panel?.kind === "task" && panel.read && (
+          <div className="space-y-4 p-5">
+            {panel.read.status === "loading" ? (
+              <div
+                role="status"
+                aria-label="正在读取任务详情"
+                className="flex items-center gap-2 text-sm text-muted"
+              >
+                <Spinner />正在读取任务详情
+              </div>
+            ) : (
+              <>
+                <ErrorMessage message={panel.read.message} />
+                <Button onClick={() => openTask(panel.task, returnFocus.current)}>
+                  重试读取
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+        {panel?.kind === "task" && !panel.read && (
           <Editor
             workflowId={composition?.workflow.id}
             key={panel.task.id}

@@ -6,6 +6,9 @@ import { tmpdir } from "node:os";
 import { compileReferences } from "../../src/evolution/references.js";
 import { recordReview } from "../../src/evolution/review.js";
 import { compileSpec } from "../../src/evolution/specification.js";
+import { requirementReviewInput } from "../../src/evolution/review-input.js";
+import { schemaProblems } from "../../src/evolution/model-protocol.js";
+import { errorReviewSchema, parseErrorDecisions } from "../../src/evolution/error-review.js";
 import {
   adjudicateTechnicalReview,
   technicalFacts,
@@ -25,6 +28,7 @@ import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { PlanningDriver } from "./planning-fixture.js";
 import {
   fieldReviewTargets,
+  fieldReviewSchema,
   parseFieldDecisions,
 } from "../../src/evolution/field-review.js";
 import { panelMemberCases } from "./member-case-fixtures.js";
@@ -90,6 +94,106 @@ function plan() {
   } as unknown as InvestigatedPlan;
 }
 
+function localSourcePlan() {
+  const p = plan();
+  const refs = [
+    { id: "old:1", text: "原有标记保持" },
+    { id: "new:1", text: "新增标记，详情显示" },
+    { id: "answer:2", text: "补充说明：标记初始显示沿用宿主" },
+  ];
+  const original = p.requirements![0];
+  p.requirements = [refs[1], refs[2], refs[0]].map((source, index) => ({
+    ...structuredClone(original),
+    id: `r:${index}`,
+    sourceRevision: source.id,
+    sourceQuote: source.text,
+    description: source.text,
+  }));
+  p.requirements[2].obligations![0].id += ":old";
+  p.changeSpec = compileSpec(p, "run", "source-hash");
+  return { p, refs };
+}
+
+test("复核目标来源展示局部编号及精确修订，不再把全局位置当成 source", () => {
+  const { p, refs } = localSourcePlan();
+  const before = hash({ p, refs });
+  const input = requirementReviewInput(p, refs);
+  assert.deepEqual(input.fieldReviewTargets.map(t => t.sources), [
+    [
+      { requirementId: "r:0", source: 1, sourceRevision: "new:1" },
+      { requirementId: "r:1", source: 2, sourceRevision: "answer:2" },
+    ],
+    [{ requirementId: "r:2", source: 1, sourceRevision: "old:1" }],
+  ]);
+  const reversed = requirementReviewInput(p, [...refs].reverse());
+  assert.deepEqual(reversed.fieldReviewTargets, input.fieldReviewTargets);
+  const receipt = reversed.fieldReviewTargets.map((target, index) => {
+    const source = target.sources.at(-1)!;
+    return {
+      target: index + 1, source: source.source,
+      sourceQuote: reversed.sources.find(s => s.id === source.sourceRevision)!.text,
+      initial: { kind: "unspecified" },
+    };
+  });
+  assert.deepEqual(schemaProblems(receipt, fieldReviewSchema(p)), []);
+  assert.deepEqual(parseFieldDecisions(receipt, p, refs).decisions.map(d => d.sourceRevision), ["answer:2", "old:1"]);
+  assert.equal(hash({ p, refs }), before, "投影不能改写来源及冻结规格");
+});
+
+test("逐目标来源契约拒绝全局编号，局部编号回执绑定原修订且保留独立核对", () => {
+  const { p, refs } = localSourcePlan();
+  const valid = [
+    { target: 1, source: 2, sourceQuote: refs[2].text, initial: { kind: "unspecified" } },
+    { target: 2, source: 1, sourceQuote: refs[0].text, initial: { kind: "unspecified" } },
+  ];
+  const schema = fieldReviewSchema(p);
+  assert.deepEqual(schemaProblems(valid, schema), []);
+  const decisions = parseFieldDecisions(valid, p, refs);
+  assert.deepEqual(decisions.decisions.map(d => d.sourceRevision), ["answer:2", "old:1"]);
+  assert.deepEqual(decisions.issues, []);
+  for (const [index, source] of [[0, 3], [1, 2]]) {
+    const invalid = structuredClone(valid);
+    invalid[index].source = source;
+    assert.ok(schemaProblems(invalid, schema).length, "来源上限必须按目标限定");
+    assert.throws(() => parseFieldDecisions(invalid, p, refs), /来源不存在/);
+  }
+  const otherQuote = structuredClone(valid);
+  otherQuote[0].sourceQuote = refs[0].text;
+  assert.throws(() => parseFieldDecisions(otherQuote, p, refs), /来源不存在/);
+  assert.throws(() => parseFieldDecisions([valid[0], valid[0]], p, refs), /引用无效或重复/);
+  const blank = structuredClone(valid);
+  Object.assign(blank[0].initial, { kind: "blank", conditionQuote: refs[2].text, effectQuote: refs[2].text });
+  assert.ok(parseFieldDecisions(blank, p, refs).issues.length, "有效引用不能免除来源与计划语义比较");
+  assert.deepEqual(schemaProblems([], fieldReviewSchema({ requirements: [] })), []);
+});
+
+test("共用来源投影的错误反馈复核保持相同局部编号与原文绑定", () => {
+  const { p, refs } = localSourcePlan();
+  for (const r of p.requirements!) {
+    const id = r.obligations![0].id;
+    r.obligations = [{
+      id, version: 1, kind: "feedback", action: { kind: "action", member: "panel", action: "markNote" },
+      text: "", resolution: "pending", scenarios: [], unavailable: [],
+    }];
+  }
+  p.changeSpec = compileSpec(p, "run", "source-hash");
+  const input = requirementReviewInput(p, refs);
+  assert.deepEqual(input.errorReviewTargets[0].sources, [
+    { requirementId: "r:0", source: 1, sourceRevision: "new:1" },
+    { requirementId: "r:1", source: 2, sourceRevision: "answer:2" },
+  ]);
+  const valid = [
+    { target: 1, source: 2, sourceQuote: refs[2].text, feedback: "not-requested", text: "", effectQuote: "" },
+    { target: 2, source: 1, sourceQuote: refs[0].text, feedback: "not-requested", text: "", effectQuote: "" },
+  ];
+  assert.deepEqual(schemaProblems(valid, errorReviewSchema(p)), []);
+  assert.deepEqual(parseErrorDecisions(valid, p, refs).decisions.map(d => d.sourceRevision), ["answer:2", "old:1"]);
+  const invalid = structuredClone(valid);
+  invalid[1].source = 2;
+  assert.ok(schemaProblems(invalid, errorReviewSchema(p)).length);
+  assert.throws(() => parseErrorDecisions(invalid, p, refs), /独立错误文案解释不完整/);
+});
+
 test("宿主初始展示是独立保护事实；相同字段矩阵由宿主复用，不能产生额外业务初始限制", () => {
   const c = compile([requirement("display"), requirement("persist")]);
   assert.equal(c.browserCases.length, 4);
@@ -154,6 +258,17 @@ test("独立历史义务只产生已有任务检查，不能把旧ok当成全新
     field: "noteMark",
     value: "ok",
   });
+});
+
+test("历史义务同样绑定字段键，显示名与未知键仍被拒绝", () => {
+  const valid = compile([requirement("legacy", [{ kind: "history", field: "noteMark" }])]);
+  for (const key of ["备注标记", "missingKey"]) {
+    assert.throws(
+      () => compile([requirement("legacy", [{ kind: "history", field: key }])]),
+      /浏览器业务引用不存在或身份不唯一/,
+    );
+  }
+  assert.equal(valid.requirements[0].obligations[0].kind, "history");
 });
 
 test("历史义务排在展示义务之前，不能误把同字段的新任务初始检查当成历史检查", () => {

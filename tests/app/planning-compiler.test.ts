@@ -107,6 +107,23 @@ test("规划说明由宿主绑定来源，模型自由描述不能另立初值�
   for (const r of first.requirements) assert.equal(r.description, r.sourceQuote);
 });
 
+test("字段显示名不能替代冻结案例中的键，修正引用后不改动案例或推测别名", () => {
+  const input = structuredClone(archive.proposals.addition);
+  const source = archive.requests.find(r => r.id === "addition")!.request;
+  const refs = [{ id: "request:1", text: source }];
+  const valid = compilePlanInput(input, context, refs);
+  const casesHash = hash(input.changes);
+  for (const r of input.requirements)
+    for (const e of r.expectations)
+      if (e.kind === "field") e.field = "评审备注";
+  assert.throws(() => compilePlanInput(input, context, refs), /字段 评审备注 没有可推导的冻结成功操作/);
+  assert.equal(hash(input.changes), casesHash);
+  for (const r of input.requirements)
+    for (const e of r.expectations)
+      if (e.kind === "field") e.field = "reviewNote";
+  assert.deepEqual(compilePlanInput(input, context, refs), valid);
+});
+
 test("新字段的非空前置案例由宿主从冻结候选动作推导，不能把第二次增加误编译为第一次", () => {
   const source="新增计数，详情展示计数，其他行为不变";
   const cases=[

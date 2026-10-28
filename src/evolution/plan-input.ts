@@ -31,6 +31,10 @@ const optionalList = <T extends Record<string, unknown>>(items: T, maxItems = 50
   type: ["array", "null"],
 });
 const dictionary = { type: "object", additionalProperties: text };
+const fieldKey = {
+  ...text,
+  description: "使用精确字段键，不使用显示名或 label。已有字段沿用目录的 key/field；新字段先选定字段键，并在案例 fields、expected.fields 及全部字段预期中一致使用；不能从中文显示名猜测或另立别名。",
+};
 const expected = {
   anyOf: [
     object({ kind: kind("reject") }),
@@ -87,13 +91,13 @@ export const businessExpectationsSchema = list(
       object(
         {
           kind: kind("field"),
-          field: { ...text, description: "字段动作后断言从空任务经冻结 commit 案例准备；若依赖该字段已有值，须保留目标案例并补齐中间成功操作。不能注入前置字段，initial 仅检查初始呈现，不能替代操作路径。" },
+          field: { ...fieldKey, description: fieldKey.description + "字段动作后断言从空任务经冻结 commit 案例准备；若依赖该字段已有值，须保留目标案例并补齐中间成功操作。不能注入前置字段，initial 仅检查初始呈现，不能替代操作路径。" },
           initial,
           examples: list(text, 8),
         },
         ["kind", "field"],
       ),
-      object({ kind: kind("history"), field: text }),
+      object({ kind: kind("history"), field: fieldKey }),
       object({
         kind: kind("action-visible"),
         action: text,

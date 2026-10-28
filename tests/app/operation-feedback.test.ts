@@ -401,10 +401,10 @@ for (const required of [false, true])
               issues: [],
               fieldDecisions: fieldDecisionsFixture(input),
               errorDecisions: input.errorReviewTargets.map(
-                (target: { sources: { source: number }[] }, index: number) => ({
+                (target: { sources: { sourceRevision: string }[] }, index: number) => ({
                   target: index + 1,
                   source: 1,
-                  sourceQuote: input.sources[target.sources[0].source - 1].text,
+                  sourceQuote: input.sources.find((s: { id: string }) => s.id === target.sources[0].sourceRevision).text,
                   feedback: required ? "required" : "not-requested",
                   effectQuote: required ? "必须显示错误。" : "",
                   text: "",

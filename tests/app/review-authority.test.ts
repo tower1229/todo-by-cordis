@@ -576,6 +576,13 @@ test("真实规划调用交付唯一的复核规格投影，保持义务、来�
           r.phase === "review" && JSON.parse(r.message ?? "{}").requirements,
       )!;
       const input = JSON.parse(review.message!);
+      assert.match(review.instruction, /均为该目标内局部一基编号/);
+      assert.ok(!review.instruction.includes("sources.source 是 sources 一基序号"));
+      for (const target of input.fieldReviewTargets)
+        for (const [index, source] of target.sources.entries()) {
+          assert.equal(source.source, index + 1);
+          assert.ok(input.sources.some((s: { id: string }) => s.id === source.sourceRevision));
+        }
       assert.equal(
         Object.hasOwn(input, "changeSpec"),
         false,

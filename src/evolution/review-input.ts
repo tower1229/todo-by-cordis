@@ -54,10 +54,10 @@ export function requirementReviewInput(
   ) =>
     targets.map(({ sources: refs, ...target }) => ({
       ...target,
-      sources: refs.map(({ requirementId, revision }) => {
-        const source = sources.findIndex((s) => s.id === revision) + 1;
-        if (!source) throw new Error("复核投影缺少来源修订：" + revision);
-        return { requirementId, source };
+      sources: refs.map(({ requirementId, revision }, index) => {
+        if (!sources.some((s) => s.id === revision))
+          throw new Error("复核投影缺少来源修订：" + revision);
+        return { requirementId, source: index + 1, sourceRevision: revision };
       }),
     }));
   const technicalTargets = technicalReviewTargets(plan);

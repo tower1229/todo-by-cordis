@@ -53,36 +53,39 @@ export function errorReviewTargets(
 export function errorReviewSchema(
   plan: Pick<InvestigatedPlan, "requirements">,
 ) {
-  const count = errorReviewTargets(plan).length;
+  const targets = errorReviewTargets(plan);
+  const decision = (index: number, sourceCount: number) => ({
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "target",
+      "source",
+      "sourceQuote",
+      "feedback",
+      "effectQuote",
+      "text",
+    ],
+    properties: {
+      target: { type: "integer", enum: [index + 1] },
+      source: { type: "integer", minimum: 1, maximum: sourceCount },
+      sourceQuote: { type: "string", minLength: 1 },
+      feedback: {
+        type: "string",
+        enum: ["required", "not-requested", "undetermined"],
+      },
+      effectQuote: { type: "string", maxLength: 10000 },
+      text: { type: "string", maxLength: 10000 },
+    },
+  });
   return {
     type: "array",
-    minItems: count,
-    maxItems: count,
-    items: {
-      type: "object",
-      additionalProperties: false,
-      required: [
-        "target",
-        "source",
-        "sourceQuote",
-        "feedback",
-        "effectQuote",
-        "text",
-      ],
-      properties: {
-        target: { type: "integer", minimum: 1, maximum: Math.max(1, count) },
-        source: { type: "integer", minimum: 1 },
-        sourceQuote: { type: "string", minLength: 1 },
-        feedback: {
-          type: "string",
-          enum: ["required", "not-requested", "undetermined"],
-        },
-        effectQuote: { type: "string", maxLength: 10000 },
-        text: { type: "string", maxLength: 10000 },
-      },
-    },
+    minItems: targets.length,
+    maxItems: targets.length,
+    items: targets.length
+      ? { anyOf: targets.map((target, index) => decision(index, target.sources.length)) }
+      : decision(0, 1),
     description:
-      "逐项独立解释页面错误反馈是否来自用户要求。feedback=required 时 effectQuote 引用要求页面反馈的连续原文；只说不可执行或后端拒绝不能推出页面报错，未要求页面反馈用 not-requested，真实歧义用 undetermined。后两者 effectQuote/text 为空。required 且未限定具体文字时 text 为空，只检查可见错误；明确限定时返回原文字面文字。不能由计划反推来源、把字段标签当提示或用按钮隐藏代替后端拒绝。target/source 为一基序号。",
+      "逐项独立解释页面错误反馈是否来自用户要求。feedback=required 时 effectQuote 引用要求页面反馈的连续原文；只说不可执行或后端拒绝不能推出页面报错，未要求页面反馈用 not-requested，真实歧义用 undetermined。后两者 effectQuote/text 为空。required 且未限定具体文字时 text 为空，只检查可见错误；明确限定时返回原文字面文字。不能由计划反推来源、把字段标签当提示或用按钮隐藏代替后端拒绝。target 是 errorReviewTargets 一基序号；source 只选该目标 sources 中的 source 值，由 sourceRevision 查找完整原文，不使用顶层 sources 的全局位置。",
   };
 }
 export function parseErrorDecisions(
