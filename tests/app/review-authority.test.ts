@@ -119,6 +119,39 @@ function review(p: InvestigatedPlan, issues: unknown[]) {
   });
 }
 
+test("独立复核收到冻结能力要求，默认决策不能看不到生成阶段必须实现的接口", () => {
+  const p = plan();
+  p.capabilityChanges = [{
+    capability: "ui.slot",
+    provider: "member:labels",
+    consumers: ["src/web/TaskEditor.tsx"],
+    change: "呈现辅助字段",
+  }];
+  p.defaults = [{
+    id: "default-detail",
+    scope: "辅助字段呈现",
+    behavior: "不新增 uiSlots，依靠普通字段展示",
+    basis: "待复核的 Agent 默认",
+    impact: "影响详情呈现",
+  }];
+  p.requiredCapabilities = [{
+    interfaceId: "fields.register",
+    providerId: "labels",
+    verification: "candidate",
+  }];
+  p.changeSpec = compileSpec(p, "run", "source-hash");
+  const input = requirementReviewInput(p, sources);
+  assert.deepEqual(input.capabilityChanges, p.changeSpec.definition.capabilityChanges);
+  assert.deepEqual(input.defaults, p.defaults);
+  assert.deepEqual(input.requiredCapabilities, p.changeSpec.definition.requiredCapabilities);
+  assert.deepEqual(requirementReviewInput(plan(), sources).requiredCapabilities, []);
+  assert.match(input.defaultPolicy, /capabilityChanges\/requiredCapabilities.*conflict/);
+  input.capabilityChanges[0].capability = "fields.register";
+  assert.equal(p.changeSpec.definition.capabilityChanges[0].capability, "ui.slot");
+  p.capabilityChanges[0].capability = "fields.register";
+  assert.throws(() => requirementReviewInput(p, sources), /冻结需求/);
+});
+
 test("只读宿主事实随统一规格冻结；收窄复核选项不能丢失真实交互与执行事实", () => {
   const p = plan();
   const input = requirementReviewInput(p, sources);

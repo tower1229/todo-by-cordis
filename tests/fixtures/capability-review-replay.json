@@ -1,0 +1,190 @@
+{
+  "origin": {
+    "pairId": "9f9a305e-ab8b-477e-87a2-ce44da9c7248",
+    "commit": "08766257535f8a095b6009e542f89c16f3c3901c",
+    "proposalSha256": "b784a8860a725f93dbc25a0c0a6c33106d24c89eaa66380acc588ca17d92e426",
+    "scope": "Archived synthetic request and unedited model proposal; replay is zero-paid evidence, not a new real-model run."
+  },
+  "request": "请增加标签插件：给任务设置一个文本标签，保存时去掉首尾空格，拒绝空白标签，保留大小写；其他行为不变。",
+  "proposal": {
+    "changes": [
+      {
+        "cases": [
+          {
+            "action": "setTag",
+            "expected": {
+              "fields": {
+                "tag": "Release V1"
+              },
+              "kind": "commit",
+              "state": "open"
+            },
+            "fields": {},
+            "input": {
+              "tag": "  Release V1  "
+            },
+            "name": "设置标签去首尾空格并保留大小写",
+            "state": "open"
+          },
+          {
+            "action": "setTag",
+            "expected": {
+              "fields": {
+                "kept": "历史内容",
+                "tag": "项目 A"
+              },
+              "kind": "commit",
+              "state": "open"
+            },
+            "fields": {
+              "kept": "历史内容"
+            },
+            "input": {
+              "tag": " 项目 A "
+            },
+            "name": "设置标签保留任务其他字段",
+            "state": "open"
+          },
+          {
+            "action": "setTag",
+            "expected": {
+              "kind": "reject"
+            },
+            "fields": {},
+            "input": {
+              "tag": "   "
+            },
+            "name": "仅含空白的标签被拒绝",
+            "state": "open"
+          }
+        ],
+        "features": [
+          "commands",
+          "fields"
+        ],
+        "name": "标签",
+        "target": "tags"
+      }
+    ],
+    "defaults": [
+      {
+        "basis": "既有组合以独立成员承载扩展能力；guide/command.register 的辅助成员示例。",
+        "behavior": "新增辅助成员 pluginId=tags、名称「标签」，作为独立成员进入组合；主工作流成员沿用现有版本与身份，不提升版本号。",
+        "impact": "仅新增可停用成员，主工作流状态与动作不变。",
+        "scope": "辅助成员身份与命名"
+      },
+      {
+        "basis": "用户只要求文本标签；宿主字段类型目前仅 text，旧任务既有字段与未知字段沿用既有保留规则。",
+        "behavior": "注册任务字段 key=tag、label=标签、type=text；注册时非必填，旧任务未写入该字段时沿用宿主既有缺失字段呈现。",
+        "impact": "任务上多一个可读文本字段，既有字段值不受影响。",
+        "scope": "标签字段"
+      },
+      {
+        "basis": "guide/command.register 参考实现与 workspace.ts 既有 decide/input-required 流程。",
+        "behavior": "动作 id=setTag、label=设置标签，open 与 done 状态均可执行；未提供 tag 键时返回 input-required 由宿主表单收集，提交时以 {...task.fields, tag} 合并，保留标题、备注、状态与其他字段。",
+        "impact": "不改变 complete/reopen 的状态转换与既有字段值。",
+        "scope": "设置标签动作"
+      },
+      {
+        "basis": "用户明确要求保存时去掉首尾空格、拒绝空白标签、保留大小写。",
+        "behavior": "对已提交的 tag 值执行 trim；trim 后为空则拒绝该动作，错误提示由宿主沿用既有提示机制呈现；只去除首尾空白，不做大小写转换或其他字符规范化。",
+        "impact": "可逆，无外部副作用。",
+        "scope": "空白与大小写"
+      },
+      {
+        "basis": "用户未指定界面形态；宿主 TaskEditor 与动作表单已覆盖字段展示和输入。",
+        "behavior": "不新增 uiSlots 详情面板；动作按宿主既有动作按钮呈现，标签值按宿主既有任务字段展示与读取。",
+        "impact": "界面布局与既有贡献保持不变。",
+        "scope": "标签界面呈现"
+      },
+      {
+        "basis": "guide/command.register 参考实现的防御性默认。",
+        "behavior": "decide 对非 setTag 动作一律返回拒绝，不经手其他成员的动作。",
+        "impact": "不影响主流程动作按提供者分派。",
+        "scope": "动作分派边界"
+      },
+      {
+        "basis": "workspace.ts 的输入长度校验。",
+        "behavior": "不额外限制标签长度，沿用宿主对单个输入值 5000 字符的统一校验。",
+        "impact": "超长输入由宿主统一拒绝。",
+        "scope": "标签长度"
+      }
+    ],
+    "intent": "improve",
+    "requirements": [
+      {
+        "description": "新增辅助插件，为任务提供可设置的文本标签字段与设置动作",
+        "expectations": [
+          {
+            "field": "tag",
+            "kind": "field"
+          },
+          {
+            "action": "setTag",
+            "kind": "action-visible",
+            "state": "open",
+            "visible": true
+          },
+          {
+            "kind": "behavior"
+          }
+        ],
+        "quote": "请增加标签插件：给任务设置一个文本标签",
+        "type": "behavior"
+      },
+      {
+        "description": "保存标签时去除首尾空白，只保留内容本身",
+        "expectations": [
+          {
+            "kind": "behavior"
+          }
+        ],
+        "quote": "保存时去掉首尾空格",
+        "type": "behavior"
+      },
+      {
+        "description": "去除首尾空白后为空的标签必须被拒绝，任务标签不能留空",
+        "expectations": [
+          {
+            "kind": "behavior"
+          },
+          {
+            "action": "setTag",
+            "kind": "operation-rejected"
+          }
+        ],
+        "quote": "拒绝空白标签",
+        "type": "behavior"
+      },
+      {
+        "description": "标签只做去空白，不做大小写或其他规范化",
+        "expectations": [
+          {
+            "kind": "behavior"
+          }
+        ],
+        "quote": "保留大小写",
+        "type": "behavior"
+      },
+      {
+        "description": "主工作流状态、动作及既有任务数据保持原样",
+        "expectations": [
+          {
+            "kind": "preserve-ui"
+          },
+          {
+            "kind": "behavior"
+          }
+        ],
+        "quote": "其他行为不变",
+        "type": "compatibility"
+      }
+    ],
+    "uses": [
+      {
+        "feature": "workflow",
+        "member": "workflow"
+      }
+    ]
+  }
+}
