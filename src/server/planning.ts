@@ -89,6 +89,39 @@ function checkerVersion(id: string): string | undefined {
     : undefined;
 }
 
+/** Published Agent choices are context, never new user statements or host invariants. */
+export function reviewedBaselineDefaults(
+  context: Pick<Investigation, "versionId" | "files">,
+): PlanBinding["baselineDefaults"] {
+  const evidence = context.files["active-acceptance"];
+  if (!evidence || hash(evidence.content) !== evidence.hash)
+    throw new Error("已发布默认的基线资料摘要不一致");
+  const active = JSON.parse(evidence.content) as {
+    passed?: boolean;
+    changeSpec?: import("../shared/change-spec.js").ChangeSpec;
+    requirementGate?: RequirementGate;
+  };
+  if (!active.passed) return undefined;
+  if (!active.requirementGate?.review) return undefined;
+  const reviews = active.requirementGate.review.defaultReviews ?? [];
+  const proposed = active.changeSpec?.definition?.defaults ?? [];
+  if (!Array.isArray(reviews) || !Array.isArray(proposed)) return undefined;
+  const approved = proposed.filter(
+    d => reviews.some(r => r.id === d.id && r.verdict === "safe-default"),
+  );
+  const prior = active.changeSpec?.definition?.binding?.baselineDefaults;
+  const defaults = [...new Map([...(prior?.defaults ?? []), ...approved].map(d => [d.id, d])).values()];
+  if (!defaults.length) return undefined;
+  return {
+    baseVersion: context.versionId,
+    evidenceHash: evidence.hash,
+    reviewHash: prior ? hash([prior.reviewHash, reviews]) : hash(reviews),
+    origin: "reviewed-agent-default",
+    policy: "这些是已发布基线携带的已审 Agent 选择记录，不是用户原话或宿主保护规则。用户本轮明确修改要求优先，已确认修订同属明确要求，均优先于默认；数组中较新选择在后。只继承不与有效明确要求或较新选择冲突的既有选择，不因旧原文未逐字说明而重新默认或追问。动作输入约束不能扩为所有任务的字段存在性约束。任何替代仍须正常需求修订及独立复核。",
+    defaults: structuredClone(defaults),
+  };
+}
+
 export function bindPlan(
   plan: Pick<
     InvestigatedPlan,
@@ -170,10 +203,12 @@ export function bindPlan(
       .map((item) => item.checker)
       .filter((item): item is string => !!item),
   ]);
+  const baselineDefaults = reviewedBaselineDefaults(context);
   return {
     ...(context.workflowProtocol ? {workflowProtocol:structuredClone(context.workflowProtocol)} : {}),
     ...(context.actionAvailability?{actionAvailability:structuredClone(context.actionAvailability)}:{}),
     fieldIdentities: baselineFields(context),
+    ...(baselineDefaults ? { baselineDefaults } : {}),
     browser: context.environment.browser
       ? {
           frontendHash: context.environment.browser.frontendHash,
@@ -250,6 +285,8 @@ export function planBindingFailure(
       current.checkerVersions[item.id] !== item.version
     )
       return `检查器已变化：${item.id}；请重新调查并确认`;
+  if (hash(binding.baselineDefaults) !== hash(reviewedBaselineDefaults(current)))
+    return "已审默认的基线资料已变化，请重新规划";
   return undefined;
 }
 

@@ -46,6 +46,14 @@ export type WorkflowRule = {
 };
 export type PlanEvidence = { ref: string; hash: string };
 export type PlanBinding = {
+  baselineDefaults?: {
+    baseVersion: string;
+    evidenceHash: string;
+    reviewHash: string;
+    origin: "reviewed-agent-default";
+    policy: string;
+    defaults: import("./evolution-interaction.js").DefaultDecision[];
+  };
   workflowProtocol?: {
     owner: import("./workflow-protocol.js").WorkflowProtocolOwner;
     implementationHash: string;

@@ -65,6 +65,7 @@ import type {
 } from "../server/planning.js";
 import {
   compositionIntentLabel,
+  reviewedBaselineDefaults,
 } from "../server/planning.js";
 import {
   ProtectedCandidateError,
@@ -1391,6 +1392,9 @@ export class Evolution {
     const history = r.history;
     try {
       const request = clarificationRequest(questions,sources,facts,targets,admissionTargets);
+      const context = this.domain.context();
+      if (context.versionId !== r.run.baseVersion) throw new AppError("PLAN_STALE", "基础版本已变化，请重新规划", 409);
+      request.message = JSON.stringify({...JSON.parse(request.message!),baselineDefaults:reviewedBaselineDefaults(context)});
       const parse = (text:string) => parseClarificationReview(text,questions,sources,facts,admissionTargets,targets);
       const reply = await this.call(r,request,signal,"review",reply => parse(reply.text));
       signal.throwIfAborted();
@@ -1472,7 +1476,7 @@ export class Evolution {
           const prior = semanticReuse((r.run.requestAdmissions??[]).filter(admissionResolved),sourceCatalog);
           const intake = admissionRequest(sourceCatalog,admissionContext.facts,prior);
           intake.instruction += "\nansweredQuestions 是宿主的问题对应记录，question 不是用户声明，answer 才是对应来源的用户回答。";
-          intake.message = JSON.stringify({...JSON.parse(intake.message ?? "{}"),answeredQuestions:this.answeredQuestions(r)});
+          intake.message = JSON.stringify({...JSON.parse(intake.message ?? "{}"),answeredQuestions:this.answeredQuestions(r),baselineDefaults:reviewedBaselineDefaults(context)});
           const response = await this.call(r,intake,signal,"admission",reply=>parseAdmission(reply.text,context.versionId,sourceCatalog,admissionContext.facts));
           try { admitted = parseAdmission(response.text,context.versionId,sourceCatalog,admissionContext.facts); }
           catch (error) {throw new ModelProtocolError("需求预检未通过：" + (error instanceof Error ? error.message : "无效来源解释"));}
