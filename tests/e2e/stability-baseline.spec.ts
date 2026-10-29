@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, rm, readFile, cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -11,10 +11,66 @@ import { computeStabilityMetrics } from "../../scripts/lib/stability-eval/metric
 import type { ScenarioRunRecord } from "../../scripts/lib/stability-eval/metrics.js";
 import { currentManifest } from "../../scripts/lib/stability-eval/current.js";
 import { evaluateSuite } from "../../scripts/lib/stability-eval/report.js";
+import { BudgetExhaustedError } from "../../src/evolution/budget.js";
+import { runStabilityBrowserPath, type BrowserPathResult } from "../../scripts/lib/stability-eval/browser.js";
+import { stabilityDriverFor } from "../../scripts/lib/stability-eval/driver-fixture.js";
 
 test.describe.configure({ mode: "serial" });
 
 const records: ScenarioRunRecord[] = [];
+
+for (const phase of ["planning", "generation"] as const)
+  test(`预算暂停即归档真实状态，不继续等待候选：${phase}`, async ({}, testInfo) => {
+    test.setTimeout(45_000);
+    const directory = await mkdtemp(join(tmpdir(), `cordis-budget-observation-${phase}-`));
+    const current = currentManifest("a".repeat(40));
+    const scenario = current.scenarios.find(s => s.id === "tags-add")!;
+    const fixture = stabilityDriverFor(scenario.id, scenario);
+    const manifest = freezeManifest({ ...current, scenarios: [scenario], runs: { ...current.runs, independentRunsPerScenario: 1 } });
+    let stoppedCalls = 0;
+    try {
+      const result = await runStabilityScenario({
+        directory, scenario, manifest, evidenceKind: "model-stub",
+        driver: { async generate(request, signal, onTransport) {
+          if (request.phase === phase) {
+            stoppedCalls++;
+            throw new BudgetExhaustedError("合成阶段时间窗口耗尽，保留验收时间", "milliseconds", phase);
+          }
+          return fixture.generate(request, signal, onTransport);
+        } },
+        // Test only the observer deadline; the native host keeps the frozen budget.
+        browserRun: input => runStabilityBrowserPath({ ...input, budgetMs: 0 }),
+      });
+      const events = (await readFile(result.eventsPath, "utf8")).trim().split("\n").map(line => JSON.parse(line) as {
+        type: string;
+        run?: { status: string; budget: { grants: unknown[] } };
+        browser?: BrowserPathResult;
+      });
+      const settled = events.find(event => event.type === "settled");
+      if (!settled?.run || !settled.browser) throw new Error("缺少真实暂停及浏览器归档");
+      expect(settled.run.status).toBe("awaiting-budget");
+      expect(settled.browser.observedRunStatus).toBe("awaiting-budget");
+      expect(settled.browser.message).toContain("合成阶段时间窗口耗尽");
+      expect(settled.browser.message).not.toContain("Timeout");
+      expect(settled.browser.confirmedPlan ?? false).toBe(phase === "generation");
+      expect(settled.browser.status).toBe("failed");
+      expect(stoppedCalls).toBe(1);
+      expect(settled.run.budget.grants).toEqual([]);
+      expect(result.record.fullPathSucceeded).toBe(false);
+      expect(result.record.evidenceComplete).toBe(true);
+      expect(result.record.resources?.candidates).toBe(0);
+      expect(settled.browser.applied ?? false).toBe(false);
+      expect(result.record.terminal?.stop?.code).toBe("phase-time-reserve");
+      const archive = JSON.parse(await readFile(join(directory, "workspace-evidence.json"), "utf8")) as {
+        database: Record<string, unknown[]>;
+      };
+      expect(archive.database.evolution_requirement_freezes).toHaveLength(phase === "generation" ? 1 : 0);
+      expect(archive.database.evolution_candidates).toHaveLength(0);
+    } finally {
+      await cp(directory, testInfo.outputPath("budget-evidence"), { recursive: true });
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 
 for (const scenario of STABILITY_EVAL_MANIFEST.scenarios) {
   test(`稳定性基线桩层浏览器路径：${scenario.id}`, async () => {

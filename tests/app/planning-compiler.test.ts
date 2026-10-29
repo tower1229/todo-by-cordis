@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   compilePlanInput,
+  planSchemaFor,
   type PlanInput,
 } from "../../src/evolution/plan-input.js";
 import {
@@ -124,6 +125,28 @@ test("字段显示名不能替代冻结案例中的键，修正引用后不改�
   assert.deepEqual(compilePlanInput(input, context, refs), valid);
 });
 
+test("操作案例字段在提案契约中直接说明可达前置，不能被当作浏览器注入数据", () => {
+  const descriptions: string[] = [];
+  const visit = (value: unknown) => {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) { value.forEach(visit); return; }
+    const node = value as Record<string, unknown>;
+    const properties = node.properties as Record<string, unknown> | undefined;
+    if (properties?.action && properties.expected && properties.state && properties.fields)
+      descriptions.push((properties.fields as { description?: string }).description ?? "");
+    Object.values(node).forEach(visit);
+  };
+  visit(planSchemaFor(context));
+  assert.ok(descriptions.length >= 2, "主工作流与辅助成员均须携带操作契约");
+  for (const description of descriptions) {
+    assert.match(description, /后端/);
+    assert.match(description, /浏览器.*不能.*注入/);
+    assert.match(description, /空任务.*commit/);
+    assert.match(description, /中间/);
+    assert.match(description, /8/);
+  }
+});
+
 test("新字段的非空前置案例由宿主从冻结候选动作推导，不能把第二次增加误编译为第一次", () => {
   const source="新增计数，详情展示计数，其他行为不变";
   const cases=[
@@ -164,6 +187,30 @@ test("字段前置缺口反馈定位目标与可达状态，补齐中间操作�
     assert.deepEqual((field.scenarios as { value: string; steps: unknown[] }[]).map(s => [s.value, s.steps.length]), [["1", 1], ["2", 2], ["3", 3]]);
     assert.deepEqual(draft.memberCases?.find(c => c.member === "counter" && c.name === "third")?.fields, third.fields);
   }
+});
+
+test("计数 4 到 5 的原断言保留，补齐三次中间操作才能从空任务准备前置", () => {
+  const source = "新增计数，详情展示计数，其他行为不变";
+  const step = (value: number) => ({
+    name: `increment-${value}`, state: "open", fields: value ? { count: String(value) } : {},
+    action: "increment", input: {},
+    expected: { kind: "commit", state: "open", fields: { count: String(value + 1) } },
+  });
+  const target = { ...step(4), fields: { count: "4", tags: "保留标签", legacy: "旧数据" },
+    expected: { kind: "commit", state: "open", fields: { count: "5", tags: "保留标签", legacy: "旧数据" } } };
+  const input = { requirements: [{ quote: source, type: "interface", expectations: [{ kind: "field", field: "count", initial: { kind: "baseline" } }] }],
+    changes: [{ target: "counter", features: ["commands", "fields", "detail"], cases: [step(0), target] }] };
+  const compile = () => compilePlanInput(input, context, [{ id: "request:1", text: source }]);
+  assert.throws(compile, /"count":"4"/);
+  input.changes[0].cases.splice(1, 0, step(1), step(2), step(3));
+  const draft = compile();
+  const field = draft.requirements[0].obligations.find(o => o.kind === "field");
+  assert.ok(field?.kind === "field");
+  assert.ok((field.scenarios as { value: string; steps: unknown[] }[])
+    .some(s => s.value === "5" && s.steps.length === 5));
+  const retained = draft.memberCases?.find(c => c.name === target.name);
+  assert.deepEqual(retained?.fields, target.fields);
+  assert.deepEqual(retained?.expected, target.expected);
 });
 
 test("前置诊断有界且只说明本成员可达状态，不借其他成员的案例准备字段", () => {

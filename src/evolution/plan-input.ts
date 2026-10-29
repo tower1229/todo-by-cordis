@@ -45,7 +45,10 @@ const businessCase = object(
   {
     name: text,
     state: text,
-    fields: dictionary,
+    fields: {
+      ...dictionary,
+      description: "后端案例的完整前置字段；浏览器不能把这些字段直接注入任务。字段断言若依赖该字段已有值，须从空任务经同一成员的冻结 commit 案例逐步到达，最多 8 步；补齐中间案例并保留原目标，不能以 initial 替代操作准备。既有历史前置仍由精确基线准备验证。",
+    },
     action: text,
     input: dictionary,
     expected,

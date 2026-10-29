@@ -123,6 +123,17 @@ export async function runStabilityBrowserPath(input: {
     pageErrors: errors,
   };
   let bindings: ExperienceBindings | undefined;
+  const finishBudgetPause = async () => {
+    const run = readRun();
+    if (!page || run?.status !== "awaiting-budget") return false;
+    result.observedRunStatus = run.status;
+    result.message = run.pause.message;
+    await expect(page.getByRole("button", { name: "继续进行", exact: true }))
+      .toBeVisible({ timeout: remaining() });
+    await page.screenshot({ path: screenshot, fullPage: true });
+    assert.deepEqual(errors, []);
+    return true;
+  };
   try {
     if (!server.listening)
       await new Promise<void>((resolve, reject) => {
@@ -180,6 +191,7 @@ export async function runStabilityBrowserPath(input: {
         .not.toBe("waiting");
 
       throwIfRunFailed();
+      if (await finishBudgetPause()) return result;
       if (await isBlocked(page))
         return await finishBlocked(page, result, screenshot, errors);
 
@@ -238,6 +250,7 @@ export async function runStabilityBrowserPath(input: {
       }
 
       throwIfRunFailed();
+      if (await finishBudgetPause()) return result;
       if (await isBlocked(page))
         return await finishBlocked(page, result, screenshot, errors);
 
@@ -264,16 +277,18 @@ export async function runStabilityBrowserPath(input: {
 
       await expect
         .poll(
-          async () =>
-            latestRun &&
-            ["failed", "interrupted", "cancelled"].includes(latestRun.status)
-              ? "failed"
-              : detectExecutionState(page!),
+          async () => {
+            if (latestRun?.status === "awaiting-budget") return latestRun.status;
+            if (latestRun && ["failed", "interrupted", "cancelled"].includes(latestRun.status))
+              return "failed";
+            return detectExecutionState(page!);
+          },
           { timeout: remaining() },
         )
-        .toMatch(/awaiting-apply|blocked|failed/);
+        .toMatch(/awaiting-apply|awaiting-budget|blocked|failed/);
 
       throwIfRunFailed();
+      if (await finishBudgetPause()) return result;
       if (await isBlocked(page))
         return await finishBlocked(page, result, screenshot, errors);
     } else {
@@ -385,6 +400,7 @@ async function detectPlanningState(
   page: Page,
   status: string,
 ): Promise<string> {
+  if (status === "awaiting-budget") return status;
   if (await isBlocked(page)) return "blocked";
   if (
     await page
