@@ -33,3 +33,31 @@ test("未指定期望终态时仍返回真实失败，不能补造通过记录",
   const port = { async observe(): Promise<AssistantSnapshot> { return { availability: "ready", run: actual }; } };
   assert.equal(await settleEvolution(port), actual);
 });
+
+test("意外终态保留原生预检差异，避免临时库清理后只剩笼统阻塞", async () => {
+  const detail = JSON.stringify({
+    reason: "admission-invalid",
+    checks: { factsAndSourcesBound: false },
+    changedFacts: [{ id: "host-fact:effect:online-schedule", frozenHash: "before", currentHash: "after" }],
+  });
+  const snapshot: AssistantSnapshot = {
+    availability: "ready",
+    run: { ...run("planning"), status: "blocked", message: "需求预检事实或来源已变化，请重新规划",
+      userMessage: "请重新规划", blockReason: "investigation" },
+    events: [{ sequence: 1, stepId: "preflight", attempt: 1,
+      label: "方案预检未通过", status: "failed", tool: "host:plan-preflight", detail, at: "2026-10-30T00:00:00Z" }],
+  };
+  let calls = 0;
+  await assert.rejects(settleEvolution({ async observe(): Promise<AssistantSnapshot> {
+    return ++calls === 1 ? { availability: "ready", run: run("planning") } : snapshot;
+  } }, "awaiting-apply"),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /unexpected host terminal/);
+      assert.ok(error.message.includes("host:plan-preflight"));
+      assert.ok(error.message.includes("admission-invalid"));
+      assert.ok(error.message.includes("frozenHash"));
+      return true;
+    });
+  assert.equal(calls, 2, "已知阻塞应立即失败并保留诊断，不继续等待六十秒");
+});

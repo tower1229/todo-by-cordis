@@ -1,7 +1,7 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdtemp, rm, cp } from "node:fs/promises";
+import { join, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { Workspace } from "../../src/server/workspace.js";
 import {
@@ -26,6 +26,7 @@ import { importCompositionVersions } from "../../src/server/workspace-acceptance
 import {currentManifest} from "../../scripts/lib/stability-eval/current.js";
 import {checkIndependentPlan} from "../../scripts/lib/stability-eval/oracle.js";
 import {hash} from "../../src/release/storage.js";
+import { materialIdentity } from "../../src/evolution/investigation.js";
 
 const quote =
   "增加截止调度：未完成任务允许直接设置过去截止时间并自动补标；修改或清除截止时清除原过期标记；过期后完成保留过期标记；截止前完成不标记，截止后重新打开自动补标；其他行为不变";
@@ -97,6 +98,8 @@ async function fixture(t: TestContext) {
   const workspace = await Workspace.open(join(directory, "workspace.db"));
   t.after(async () => {
     await workspace.close();
+    if (!t.passed && process.env.CORDIS_MATERIAL_EVIDENCE)
+      await cp(directory, join(process.env.CORDIS_MATERIAL_EVIDENCE, basename(directory)), {recursive:true});
     await rm(directory, { recursive: true, force: true });
   });
   await activateWorkflowOnly(workspace);
@@ -108,7 +111,7 @@ test("时序动作错绑的纠错信息定位动作和冲突案例，不自动�
   const context = capture(workspace);
   const initial = readInvestigation("inspect_application", {}, context, []);
   assert.ok("ref" in initial);
-  const seen = [initial, ...(initial.documents ?? [])].map(({ ref, hash }) => ({ ref, hash }));
+  const seen = [initial, ...(initial.documents ?? [])].map(materialIdentity);
   const draft = structuredClone(plan);
   const setter = structuredClone(draft.changes[0].cases[0]);
   setter.name = "reset";
@@ -141,7 +144,7 @@ test("独立计划评测接受冻结真实调度的完成保护，不额外要�
   const draft = structuredClone(plan);
   const rejected = draft.changes[0].cases.find(c => c.state === "done")!;
   Object.assign(rejected, {name: "missing-scheduledAt", state: "open", input: {}});
-  const parsed = compilePlanDraft(draft, context, [initial, ...(initial.documents ?? [])].map(({ref, hash}) => ({ref, hash})), [{id: "due-plan:1", text: quote}]);
+  const parsed = compilePlanDraft(draft, context, [initial, ...(initial.documents ?? [])].map(materialIdentity), [{id: "due-plan:1", text: quote}]);
   assert.deepEqual(parsed.blockers, []);
   const p = {...parsed.plan, id: "due-plan", requestRevision: 1};
   p.changeSpec = compileSpec(p, "due-plan", context.files["active-source"].hash);
@@ -172,10 +175,7 @@ test("时序义务由宿主绑定案例、检查器与来源；没有真实效�
   const context = capture(workspace);
   const initial = readInvestigation("inspect_application", {}, context, []);
   if (!("ref" in initial)) throw new Error(initial.message);
-  const seen = [initial, ...(initial.documents ?? [])].map(({ ref, hash }) => ({
-    ref,
-    hash,
-  }));
+  const seen = [initial, ...(initial.documents ?? [])].map(materialIdentity);
   const sources = [{ id: "policy-run:1", text: quote }];
   const parsed = compilePlanDraft(plan, context, seen, sources);
   assert.deepEqual(parsed.blockers, []);
@@ -359,6 +359,8 @@ test("模型桩经完整候选门禁执行真实时序与浏览器验收，删�
   );
   t.after(async () => {
     await nextWorkspace.close();
+    if (!t.passed && process.env.CORDIS_MATERIAL_EVIDENCE)
+      await cp(nextDirectory, join(process.env.CORDIS_MATERIAL_EVIDENCE, basename(nextDirectory)), {recursive:true});
     await rm(nextDirectory, { recursive: true, force: true });
   });
   importCompositionVersions(workspace, nextWorkspace, version);
@@ -412,13 +414,11 @@ test("模型桩经完整候选门禁执行真实时序与浏览器验收，删�
       ],
     },
     context,
-    [initial, ...(initial.documents ?? [])].map(({ ref, hash }) => ({
-      ref,
-      hash,
-    })),
+    [initial, ...(initial.documents ?? [])].map(materialIdentity),
     [...ready.plan.requirementGate!.sources, { id: "next:1", text: nextQuote }],
   );
   assert.deepEqual(next.blockers, []);
+  assert.ok(next.plan.binding?.materials.some(item=>item.source?.ref==="active-acceptance"),"后续计划须冻结真实发布基线的来源与视图身份");
   assert.ok(
     next.plan.requirements?.some((r) =>
       r.obligations?.some((o) => o.kind === "schedule-policy"),

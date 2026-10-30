@@ -6,7 +6,7 @@ import { resolveErrorFeedback, feedbackConflicts } from "./error-review.js";
 import { planSchemaFor } from "./plan-input.js";
 import { assembleCandidate, boundCandidateSchema, candidateDifference, deltaBasis } from "./candidate-delta.js";
 import { BudgetScheduler, BudgetExhaustedError, type ModelPhase } from "./budget.js";
-import { InvestigationStore } from "./investigation.js";
+import { InvestigationStore, materialIdentity } from "./investigation.js";
 import { modelInput, modelInputEncoding } from "./model-input.js";
 import { changeDefinition, compileSpec } from "./specification.js";
 import { recordReview, reviewEvidence } from "./review.js";
@@ -758,6 +758,11 @@ export class Evolution {
       if (run.status !== "awaiting-budget" || run.pause.revision !== command.pauseRevision || !record.initialLimits) throw new AppError("BUDGET_PAUSE_STALE", "追加请求已过期，请刷新当前进度", 409);
       const context = this.domain.context();
       if (context.versionId !== run.baseVersion || context.pluginId !== run.capabilityId) throw new AppError("PLAN_STALE", "基础版本已变化，请结束本次改进后重新规划", 409);
+      if (record.investigation?.materials.some(material=>material.source || material.ref.startsWith("model-view/"))) {
+        if (context.runtimeStatus !== "ready") throw new AppError("UNAVAILABLE","宿主尚未恢复就绪，请稍后重试",503);
+        // Check captured source/view identity and archive integrity before granting resources.
+        this.materials.documents(record.investigation,this.planningMaterials(context).valid);
+      }
       if (run.pause.resume === "execute") this.checkPlan(record, record.target!, (record.plan as InvestigatedPlan).compositionRevision, record.plan as InvestigatedPlan);
       const limits = this.runLimits(record);
       for (const resource of ["calls", "candidates", "milliseconds"] as const) {
@@ -1428,6 +1433,26 @@ export class Evolution {
   private answeredQuestions(r:RecordRun) {
     return (r.run.revisions ?? []).flatMap(revision => (revision.answers ?? []).map(answer => ({...answer,sourceRevision:`${r.run.id}:${revision.revision}`})));
   }
+  private planningMaterials(context: Investigation, state?: InvestigationState) {
+    const initial = this.domain.read("inspect_application", {}, context, []);
+    if (!("ref" in initial)) throw new Error("应用调查失败");
+    const baseline: InvestigationDocument[] = [{...materialIdentity(initial),content:initial.content}, ...(initial.documents ?? []),
+      ...Object.entries(context.guideHashes)
+        // Delivering a protocol does not change runtime capability status.
+        .filter(([ref])=>context.capabilities.some(c=>(c.ready || c.interfaceId === "command.register") && c.installed && c.enabled && c.authorized && ref === `guide/${c.interfaceId}`))
+        .map(([ref,digest])=>{
+          const content = capabilityGuides[ref];
+          if (content === undefined || hash(content) !== digest) throw new AppError("PLAN_STALE","能力指南与调查目录不一致",409);
+          return {ref,hash:digest,content};
+        })];
+    const valid = [...Object.entries(context.files).map(([ref,file])=>({ref,hash:file.hash})),
+      ...baseline.map(materialIdentity),...Object.entries(context.guideHashes).map(([ref,hash])=>({ref,hash}))];
+    // Never upgrade a persisted raw-only checkpoint to a view it has not received.
+    const compatible = baseline.map(doc=>doc.source && state?.materials.some(item=>item.ref===doc.source!.ref) &&
+      !state.materials.some(item=>item.source?.ref===doc.source!.ref)
+      ? {ref:doc.source.ref,...context.files[doc.source.ref]} : doc);
+    return {baseline:compatible,valid};
+  }
   private async plan(r: RecordRun, signal: AbortSignal) {
     const context = this.domain.context();
     if (
@@ -1439,25 +1464,11 @@ export class Evolution {
     r.run.baseVersion = context.versionId;
     r.run.capabilityId = context.pluginId;
     r.investigation ??= {version: 2, baseVersion: context.versionId, materials: [], deliveries: []};
-    const initial = this.domain.read("inspect_application", {}, context, []);
-    if (!("ref" in initial)) throw new Error("应用调查失败");
-    const baseline = [{ref: initial.ref, hash: initial.hash, content: initial.content}, ...(initial.documents ?? []),
-      ...Object.entries(context.guideHashes)
-        // New auxiliary actions need their protocol before they are registered/ready.
-        // Delivering the guide does not change the capability's runtime status.
-        .filter(([ref])=>context.capabilities.some(c=>(c.ready || c.interfaceId === "command.register") && c.installed && c.enabled && c.authorized && ref === `guide/${c.interfaceId}`))
-        .map(([ref,digest])=>{
-        const content = capabilityGuides[ref];
-        if (content === undefined || hash(content) !== digest) throw new AppError("PLAN_STALE","能力指南与调查目录不一致",409);
-        return {ref,hash:digest,content};
-      })];
-    const valid = [...Object.entries(context.files).map(([ref, file]) => ({ref, hash: file.hash})),
-      ...baseline.map(({ref, hash}) => ({ref, hash})),
-      ...Object.entries(context.guideHashes).map(([ref, hash]) => ({ref, hash}))];
+    const {baseline,valid} = this.planningMaterials(context,r.investigation);
     const reused = this.materials.documents(r.investigation, valid);
-    this.materials.capture(r.investigation, baseline);
+    this.materials.capture(r.investigation, baseline, context.files);
     const documents = [...reused.filter(d => !baseline.some(b => b.ref === d.ref)), ...baseline];
-    r.run.evidence = documents.map(({ref, hash}) => ({ref, hash}));
+    r.run.evidence = documents.map(materialIdentity);
     r.pendingMaterials = r.run.evidence;
     this.save(r);
     const inheritedSources = (JSON.parse(context.files["active-acceptance"].content) as {requirementGate?: RequirementGate}).requirementGate?.sources ?? [];
@@ -2032,14 +2043,14 @@ export class Evolution {
         if ("ref" in result) {
           const delivered = [result, ...(result.documents ?? [])];
           const stored = delivered.filter(d => d.ref !== "read_guides" && !("reused" in d && d.reused));
-          this.materials.capture(r.investigation!, stored);
-          r.pendingMaterials = [...(r.pendingMaterials ?? []), ...stored.map(({ref, hash}) => ({ref, hash}))];
+          this.materials.capture(r.investigation!, stored, context.files);
+          r.pendingMaterials = [...(r.pendingMaterials ?? []), ...stored.map(materialIdentity)];
           const deliveredRefs = new Set(
             delivered.map((document) => document.ref),
           );
           r.run.evidence = [
             ...(r.run.evidence ?? []).filter((e) => !deliveredRefs.has(e.ref)),
-            ...delivered.map(({ ref, hash }) => ({ ref, hash })),
+            ...delivered.map(materialIdentity),
           ];
         }
         parts.push({
@@ -2131,12 +2142,12 @@ export class Evolution {
     // The store verifies content hashes; checkPlan already checked live bindings.
     for (const doc of reused.values())
       if (!documents.some((item) => item.ref === doc.ref))
-        deliver(doc.ref, doc.content);
+        documents.push(doc);
     this.materials.capture(r.investigation!, documents);
     const executionDocuments = documents.filter(d =>
       d.ref === generationMaterialRefs.source || d.ref === generationMaterialRefs.contract || d.ref === generationMaterialRefs.scaffold ||
       Object.hasOwn(capabilityGuides, d.ref) || d.ref.startsWith("member-") || d.ref.startsWith("business/"));
-    r.pendingMaterials = executionDocuments.map(({ref, hash}) => ({ref, hash}));
+    r.pendingMaterials = executionDocuments.map(materialIdentity);
     let history: unknown[] = [];
     let message: string | undefined = JSON.stringify(modelInput({
       kind: "candidate-task/1",

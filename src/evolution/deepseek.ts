@@ -107,7 +107,6 @@ export class DeepSeek implements Driver {
         this.endpoint.startsWith("https://api.deepseek.com/")
       )
         transport.network = configureModelNetwork();
-      publish();
       const body = {
         model: DEEPSEEK_MODEL,
         messages: [
@@ -129,6 +128,9 @@ export class DeepSeek implements Driver {
         ...(tools ? { tools, tool_choice: functionMode } : {}),
         ...(schema ? { response_format: { type: "json_object" } } : {}),
       };
+      const requestBody = JSON.stringify(body);
+      transport.http!.requestBodyBytes = Buffer.byteLength(requestBody, "utf8");
+      publish();
       const result = await this.http(this.endpoint, {
         method: "POST",
         signal,
@@ -136,7 +138,7 @@ export class DeepSeek implements Driver {
           "content-type": "application/json",
           authorization: "Bearer " + this.key,
         },
-        body: JSON.stringify(body),
+        body: requestBody,
       });
       httpStatus = result.ok ? undefined : result.status;
       const progress = transport.http!;

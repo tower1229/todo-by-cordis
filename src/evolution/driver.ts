@@ -27,6 +27,8 @@ export type ModelReply = {
       firstByteMs?: number;
       firstContentMs?: number;
       bodyBytes: number;
+      /** UTF-8 JSON body handed to HTTP; not proof of provider receipt or billed tokens. */
+      requestBodyBytes?: number;
       whitespaceBytes: number;
     };
   };

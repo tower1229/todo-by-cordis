@@ -86,6 +86,9 @@ export type StabilityRunOptions = {
   resumeExistingCandidate?: boolean;
   trialId?: string;
   responsibilityExperiment?: FrozenResponsibilityExperiment;
+  /** Evaluator-only read adapter. Never changes the native planner or acceptance gates. */
+  configureDomain?: (domain: EvolutionDomain) => void;
+  retainWorkspace?: boolean;
 };
 
 export type StabilityScenarioResult = {
@@ -315,6 +318,13 @@ async function runScenarioInEnvironment(
     },
   };
   const domain = new EvolutionDomain(w);
+  try {
+    options.configureDomain?.(domain);
+  } catch (error) {
+    await sessions.close();
+    await w.close();
+    throw error;
+  }
   const initialContext = options.scenario.oracle ? domain.context() : undefined;
   if (fault) {
     const environment = domain.context().environment;
@@ -446,6 +456,7 @@ async function runScenarioInEnvironment(
           );
           const candidate = w.release.get(composition.versionId);
           let actual;
+          const independentStarted = performance.now();
           try {
             const evidence = await verifyBrowser(
               w,
@@ -475,6 +486,8 @@ async function runScenarioInEnvironment(
               );
               actual = checkIndependentBrowser(cases, error.evidence);
             } else throw error;
+          } finally {
+            recordEvent({type:"timing",phase:"independent-browser",durationMs:performance.now()-independentStarted});
           }
           recordOracle([actual]);
         }
@@ -959,7 +972,7 @@ async function runScenarioInEnvironment(
   recordEvent({ type: "metrics-record", record });
   writeVerifiedJson(join(options.directory, "record.json"), record);
   // Both evidence and metrics must be verified before deleting the synthetic source.
-  if (archiveComplete) {
+  if (archiveComplete && !options.retainWorkspace) {
     try {
       rmSync(join(options.directory, "workspace.db"), { force: true });
       rmSync(join(options.directory, "artifacts"), {

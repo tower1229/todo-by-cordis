@@ -15,6 +15,93 @@ import {
 import type { StabilityScenario } from "./manifest.js";
 import { dueAutoExpireSource } from "../../../src/server/capability-guides.js";
 import { admissionSourceReviewContract } from "../../../src/evolution/request-admission.js";
+import { DeepSeek } from "../../../src/evolution/deepseek.js";
+import { v1Requests } from "../v1-scenario.js";
+
+/** Zero-paid A/B rehearsal only. Uses native SDK encoding, never a provider or a real-model path. */
+export function materialExperimentStubDriver(
+  delegate: Driver,
+  capture: (value: { request: ModelRequest; body: unknown }) => void,
+): Driver {
+  let ordinal = 0;
+  return {
+    async generate(request, signal, onTransport) {
+      const reply = await delegate.generate(request, signal, onTransport);
+      let text = reply.text;
+      if (request.schema) {
+        const input = JSON.parse(request.message ?? "{}") as {
+          kind?: string;
+          sources?: { id: string; text: string }[];
+          errorReviewTargets?: { sources: { sourceRevision: string }[] }[];
+        };
+        if (input.kind === "requirement-review/2") {
+          // The frozen synthetic requests reject blank tags; neither asks for visible error feedback.
+          // Generic legacy fixtures infer feedback from the candidate, which is not source interpretation.
+          const result = JSON.parse(text) as Record<string, unknown>;
+          result.errorDecisions = (input.errorReviewTargets ?? []).map(
+            (target, index) => {
+              const source = input.sources?.find(
+                (s) => s.id === target.sources[0]?.sourceRevision,
+              );
+              if (!source || source.text !== v1Requests[0])
+                throw new Error("A/B模型桩遇到未预注册的反馈来源");
+              return {
+                target: index + 1,
+                source: 1,
+                sourceQuote: source.text,
+                feedback: "not-requested",
+                effectQuote: "",
+                text: "",
+              };
+            },
+          );
+          text = JSON.stringify(result);
+        }
+      }
+      const current = ++ordinal;
+      const native = new DeepSeek(
+        "zero-paid-synthetic-key",
+        async (_url, init) => {
+          capture({
+            request: structuredClone(request),
+            body: JSON.parse(String(init?.body)) as unknown,
+          });
+          return new Response(
+            JSON.stringify({
+              model: "zero-paid-stub",
+              choices: [
+                {
+                  finish_reason: "stop",
+                  message: {
+                    role: "assistant",
+                    content: request.schema
+                      ? JSON.stringify({ result: JSON.parse(text) })
+                      : text || null,
+                    reasoning_content: "zero-paid fixture",
+                    ...(reply.calls.length
+                      ? {
+                          tool_calls: reply.calls.map((call, i) => ({
+                            id: call.id ?? `stub-${current}-${i}`,
+                            type: "function",
+                            function: {
+                              name: call.name,
+                              arguments: JSON.stringify(call.args),
+                            },
+                          })),
+                        }
+                      : {}),
+                  },
+                },
+              ],
+            }),
+          );
+        },
+        "https://zero-paid.invalid/chat/completions",
+      );
+      return native.generate(request, signal, onTransport);
+    },
+  };
+}
 
 const tagsSource = (lower: boolean) =>
   `export default {

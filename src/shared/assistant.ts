@@ -44,7 +44,12 @@ export type WorkflowRule = {
   minLength: number;
   maxLength: number;
 };
-export type PlanEvidence = { ref: string; hash: string };
+export type PlanEvidence = {
+  ref: string;
+  hash: string;
+  /** Present only for a derived view; never attests delivery of the raw source. */
+  source?: { ref: string; hash: string };
+};
 export type PlanBinding = {
   baselineDefaults?: {
     baseVersion: string;
