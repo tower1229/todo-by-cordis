@@ -47,7 +47,7 @@ export type DefaultDecision = {
 };
 export type DefaultReview = {
   id: string;
-  verdict: "safe-default" | "requires-choice" | "conflict";
+  verdict: "safe-default" | "requires-choice" | "conflict" | "out-of-scope";
   detail: string;
   targets: string[];
 };

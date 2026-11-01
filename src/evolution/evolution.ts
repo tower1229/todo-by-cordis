@@ -1836,6 +1836,7 @@ export class Evolution {
                 parsed.blockers.push(...plan.requirementCoverage.flatMap(c=>c.reasons.map(reason=>`需求 ${c.requirementId}：${reason}`)));
                 if(feedbackConflicts(plan).some(c=>plan.requirements?.some(r=>r.obligations?.some(o=>o.id===c.obligationId&&o.kind==="feedback"&&o.resolution==="required"))) || result.errorDecisions?.some(d=>d.feedback==="undetermined")) parsed.retryable=false;
                 plan.defaultReviews = structuredClone(result.defaultReviews ?? []);
+                parsed.blockers.push(...(result.defaultReviews ?? []).filter(d => d.verdict === "out-of-scope").map(d => `默认处理超出需求范围：${d.id}：${d.detail}。请撤回该额外行为及仅为它新增的断言；保留全部用户要求、既有规则和必要能力，重新提交完整方案供独立复核。`));
                 const undecidedDefaults = (result.defaultReviews ?? []).filter(d => d.verdict === "requires-choice");
                 if (undecidedDefaults.length) {
                   const source = sources.at(-1)!;

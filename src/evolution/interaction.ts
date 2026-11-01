@@ -11,6 +11,8 @@ import { schemaProblems } from "./model-protocol.js";
 const text = { type: "string", minLength: 1, maxLength: 2000 };
 export const defaultsSchema = {
   type: "array",
+  description:
+    "仅补全当前需求所需的低影响、可逆且有惯例支持的细节，明确记录为 Agent 默认；不主动扩展未要求的数据修复、权限或外部副作用。",
   maxItems: 20,
   items: {
     type: "object",
@@ -51,11 +53,13 @@ export function defaultReviewSchema(
         },
         verdict: {
           type: "string",
-          enum: ["safe-default", "requires-choice", "conflict"],
+          enum: ["safe-default", "requires-choice", "conflict", "out-of-scope"],
         },
         detail: text,
         targets: {
           type: "array",
+          description:
+            "覆盖的业务选择；out-of-scope 必须为空，不能撤回已绑定的业务选择。",
           uniqueItems: true,
           items: {
             type: "string",
@@ -78,6 +82,8 @@ export function parseDefaultReviews(
   const reviews = raw as DefaultReview[];
   if (new Set(reviews.map((r) => r.id)).size !== defaults.length)
     throw new Error("默认处理复核重复或遗漏");
+  if (reviews.some((r) => r.verdict === "out-of-scope" && r.targets.length))
+    throw new Error("额外范围裁决不能移除已绑定的业务选择");
   return reviews;
 }
 export function defaultAuthorizes(

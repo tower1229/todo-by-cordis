@@ -1,0 +1,78 @@
+{
+  "provenance": {
+    "kind": "minimal-projection-of-real-failure-not-new-model-success",
+    "calls": [147, 148],
+    "closure": "7f56518ca5e00e65e9e9e628729c633320fd5c23b3143293d4eccb05d1a6fe29",
+    "sha256": {
+      "call-147-request.json": "fe10a7cf482ef9b5299e3bac025d3f49e3004b1ce2808d2f6deeda603eef44f5",
+      "call-147-reply.json": "1a8e9a62eaac0af89539bc428eac28796cebec975f20cdbf6fa43f688ac2cf88",
+      "call-148-request.json": "d8e4b09a88cc948f280c4de705bfe6d46441ba541ea0c7dd84d4fe3b0a8e4ff5",
+      "call-148-reply.json": "3c725fe34b2bcfaf959f77919da58ff7143e5e77d42c3357d3ed3659d97bf965"
+    }
+  },
+  "request": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。保留已有标签及其他行为。",
+  "defaults": [
+    {
+      "scope": "计数字段的存储形态与初始逻辑值",
+      "behavior": "计数以文本字段 count 保存十进制整数；任务尚无计数值时按 0 起算，首次“计数加一”保存为 \"1\"，再次执行保存为 \"2\"。",
+      "basis": "字段契约只提供 text 类型（src/server/business/contracts.ts）；来源说明计数初始为零；既有 tags 字段同样以文本保存。",
+      "impact": "仅新增 count 字段值，不改写其他字段；详情中的初始呈现沿用宿主对缺失辅助字段的既有保护。"
+    },
+    {
+      "scope": "计数动作的可用状态与拒绝",
+      "behavior": "“计数加一”仅在未完成状态可用；已完成任务调用该动作返回拒绝且不写入任何字段，未知动作同样拒绝。",
+      "basis": "来源明确要求未完成任务可以加一、已完成任务不能增加；沿用 default 工作流既有 open/done 状态语义。",
+      "impact": "已完成任务保持原状态与原字段值，已有计数与标签不被修改。"
+    },
+    {
+      "scope": "历史计数值的解析",
+      "behavior": "若历史数据中的 count 不是可解析的整数，按 0 起算后加一并保存为十进制整数，不因历史值异常拒绝操作。",
+      "basis": "count 为文本字段，可能带入任意历史文本；沿用 tags 插件对历史字段容错而非拒绝的成熟惯例。",
+      "impact": "只影响异常历史计数值的加一结果；正常整数计数值与其余字段不受影响。"
+    },
+    {
+      "scope": "计数在任务详情的呈现与操作入口",
+      "behavior": "通过 task.detail 贡献只读展示计数，并提供“计数加一”动作入口；该动作不需要用户填写输入。",
+      "basis": "宿主字段交互事实为详情只读展示、编辑经显式动作（host-fact:field-interaction）；既有 tags 贡献采用同一形态。",
+      "impact": "仅新增一个详情区块与动作按钮，不改变主工作流动作和其他贡献的呈现。"
+    },
+    {
+      "scope": "既有成员与数据保留",
+      "behavior": "default 主工作流与 tags 插件的精确版本及启用状态保持不变，已有标签值在计数操作后原样保留。",
+      "basis": "来源要求保留已有标签及其他行为；组合显式继承未改成员，未知字段由宿主保留约束保护。",
+      "impact": "不需要升级或停用现有成员；任务数据原地保留，仅新增计数变更。"
+    }
+  ],
+  "defaultReviews": [
+    {
+      "id": "default-5d8fade421e9433dbdf8f619",
+      "verdict": "safe-default",
+      "detail": "计数以 text 字段 count 保存十进制整数，缺失时按 0 起算；首次加一保存 \"1\"、再次保存 \"2\"，与来源“初始为零”和加一要求一致，且不改写标签等字段。",
+      "targets": []
+    },
+    {
+      "id": "default-12c07510a38e5ebec508fc9b",
+      "verdict": "safe-default",
+      "detail": "计数加一仅在任务未完成时可用，已完成任务拒绝且不写入字段；来源明确“已完成任务不能增加”，未知动作沿用既有拒绝语义，不改变其他行为。",
+      "targets": []
+    },
+    {
+      "id": "default-ee9012fa94347cb5e33d60d0",
+      "verdict": "requires-choice",
+      "detail": "历史 count 无法解析时直接按 0 起算并覆盖保存为十进制整数，会丢失原历史文本且不可逆；来源只说明初始为零，未授权该异常历史处理，需由用户选择保留/拒绝还是重置。",
+      "targets": []
+    },
+    {
+      "id": "default-7c9118395e7db6be81ba0259",
+      "verdict": "safe-default",
+      "detail": "宿主字段交互规定详情只读展示、编辑经显式动作；为计数增加只读区块和无需输入的“计数加一”动作入口，是低影响且与既有 tags 贡献形态一致的默认。",
+      "targets": []
+    },
+    {
+      "id": "default-4eb845119b8d3c8563f0d041",
+      "verdict": "safe-default",
+      "detail": "来源明确要求保留已有标签及其他行为；保持 default 主工作流和 tags 成员版本及启用状态不变，并依靠未知字段保留保护，符合要求。",
+      "targets": []
+    }
+  ]
+}

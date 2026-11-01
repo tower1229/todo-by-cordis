@@ -77,7 +77,7 @@ export function requirementReviewInput(
     answerPolicy: "question是宿主问题记录而不是用户新增声明；answer才是对应sourceRevision的用户回答。不能把问题中的假设或备选项当成用户要求。",
     defaults: plan.defaults ?? [],
     baselineDefaults: spec.definition.binding?.baselineDefaults,
-    defaultPolicy: "优先遵循明确要求及既有规则；仅低影响、可逆且有惯例支持的细节可为 safe-default。改变业务目的、外部副作用、数据损失、权限放宽必须 requires-choice，冲突为 conflict。capabilityChanges/requiredCapabilities 是统一规格中执行和验收必须满足的接口要求，不是用户原话；默认不能取消这些要求，与之冲突须为 conflict。逐项复核并绑定其覆盖的业务选择 targetId，不能以默认免除独立验收。",
+    defaultPolicy: "优先遵循明确要求、既有规则及已审基线默认；仅低影响、可逆且有惯例支持的细节可为 safe-default。先判断默认是否属于本次需求：仅 Agent 自行扩展、可以整体撤回而不减少用户要求、既有规则及必要能力的额外行为为 out-of-scope，targets 必须为空并说明需撤回的范围；宿主退回完整规划纠错，不会自动删除规格或执行该行为。满足需求所必需的重大未决分支，涉及业务目的、外部副作用、数据损失或权限放宽时必须 requires-choice，冲突为 conflict。capabilityChanges/requiredCapabilities 是统一规格中执行和验收必须满足的接口要求，不是用户原话；默认不能取消这些要求，与之冲突须为 conflict。逐项复核并绑定其覆盖的业务选择 targetId，不能以默认免除独立验收。",
     capabilityChanges: spec.definition.capabilityChanges,
     requiredCapabilities: spec.definition.requiredCapabilities ?? [],
     requirementOrigins: spec.requirementOrigins,
