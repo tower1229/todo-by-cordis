@@ -82,13 +82,16 @@ for (const { visible, valid } of [
             return reply;
           }
           const reply = await planner.generate(input);
-          const context = JSON.parse(input.message ?? "{}");
+          const context = JSON.parse(input.message ?? "{}") as {
+            sources?: { id: string; text: string }[];
+            designTargets?: { target: number }[];
+          };
           if (context.designTargets) {
             const result = JSON.parse(reply.text);
             result.designDecisions = context.designTargets.map(
               (target: { target: number }) => ({
                 target: target.target,
-                source: 1,
+                sourceRevision: context.sources!.find(s => s.text === request)!.id,
                 quote: "完成后显示或隐藏标签编辑动作都可以，由实现自行选择",
                 permission: "delegated",
               }),

@@ -1,0 +1,286 @@
+{
+  "provenance": {
+    "sourceCommit": "ed4c8807a285731c56523b204b9e9537823b803a",
+    "callOrdinal": 143,
+    "requestSha256": "54f4ce457a75888da35c2853c1ec0880d8576819660f490ec62e022deb1be1fd",
+    "replySha256": "7cab2a1897cc827d6209a783fbb3f7d0f800f1aaeac4bc21492d008870356785",
+    "scope": "原始来源、设计授权回执和可见性目标的最小投影；只重放来源解析，不作为历史运行复核批准。"
+  },
+  "sources": [
+    {
+      "id": "15931604-6938-4280-aecd-882578e048e9:1",
+      "text": "请增加标签插件：给任务设置一个文本标签，保存时去掉首尾空格，拒绝空白标签，保留大小写；其他行为不变。"
+    },
+    {
+      "id": "96dc1018-e5af-4715-bb93-a5bc86c139a6:1",
+      "text": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。保留已有标签及其他行为。"
+    }
+  ],
+  "plan": {
+    "workflowRules": [],
+    "requirements": [
+      {
+        "id": "requirement-88b3ca79c4ca5cbe0deccae2",
+        "description": "未完成任务可以将计数加一，初始为零",
+        "sourceRevision": "96dc1018-e5af-4715-bb93-a5bc86c139a6:1",
+        "sourceQuote": "未完成任务可以将计数加一，初始为零",
+        "type": "behavior",
+        "checks": [
+          {
+            "checker": "workflow/1",
+            "caseId": "workflow/1:1"
+          },
+          {
+            "checker": "workflow/1",
+            "caseId": "workflow/1:2"
+          },
+          {
+            "checker": "workflow/1",
+            "caseId": "workflow/1:3"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:tags:未完成任务设置带首尾空格的标签"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:tags:已完成任务修改标签保留大小写与既有字段"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:tags:仅含空格的标签被拒绝且原值不变"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:tags:空标签输入被拒绝"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:counter:未完成任务从零加一"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:counter:再次加一累计为二"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:counter:加一保留已有标签与其他字段"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:counter:已完成任务不能增加且计数不变"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "obligation-a2faefc8cd7b4116131973b1-existing"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "obligation-a2faefc8cd7b4116131973b1-new"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-0b3d019d9bf7a9f43d3a16f4-initial-host-existing"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-0b3d019d9bf7a9f43d3a16f4-after-6026b966cf42a3cc-existing"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-0b3d019d9bf7a9f43d3a16f4-initial-host-new"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-0b3d019d9bf7a9f43d3a16f4-after-6026b966cf42a3cc-new"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-0b3d019d9bf7a9f43d3a16f4-historical-5765967f8982-1da03c5ff4a3"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-6d2bb6a51952b1d635e8c01b-initial-host-existing"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-6d2bb6a51952b1d635e8c01b-after-6de465839c36c96a-existing"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-6d2bb6a51952b1d635e8c01b-after-01e1d911131b16df-existing"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-6d2bb6a51952b1d635e8c01b-initial-host-new"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-6d2bb6a51952b1d635e8c01b-after-6de465839c36c96a-new"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-6d2bb6a51952b1d635e8c01b-after-01e1d911131b16df-new"
+          }
+        ],
+        "obligations": [
+          {
+            "version": 1,
+            "id": "obligation-a2faefc8cd7b4116131973b1",
+            "kind": "assertion",
+            "steps": [],
+            "expected": {
+              "kind": "action-visible",
+              "action": "increment",
+              "visible": true,
+              "member": "counter"
+            }
+          }
+        ]
+      },
+      {
+        "id": "requirement-9bb62921e505ac06b400aa42",
+        "description": "已完成任务不能增加。",
+        "sourceRevision": "96dc1018-e5af-4715-bb93-a5bc86c139a6:1",
+        "sourceQuote": "已完成任务不能增加。",
+        "type": "behavior",
+        "checks": [
+          {
+            "checker": "workflow/1",
+            "caseId": "workflow/1:1"
+          },
+          {
+            "checker": "workflow/1",
+            "caseId": "workflow/1:2"
+          },
+          {
+            "checker": "workflow/1",
+            "caseId": "workflow/1:3"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:tags:未完成任务设置带首尾空格的标签"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:tags:已完成任务修改标签保留大小写与既有字段"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:tags:仅含空格的标签被拒绝且原值不变"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:tags:空标签输入被拒绝"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:counter:未完成任务从零加一"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:counter:再次加一累计为二"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:counter:加一保留已有标签与其他字段"
+          },
+          {
+            "checker": "workspace/1",
+            "caseId": "member:counter:已完成任务不能增加且计数不变"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "obligation-f339deb2997b6cc697aec184-existing"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "obligation-f339deb2997b6cc697aec184-new"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-0b3d019d9bf7a9f43d3a16f4-initial-host-existing"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-0b3d019d9bf7a9f43d3a16f4-after-6026b966cf42a3cc-existing"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-0b3d019d9bf7a9f43d3a16f4-initial-host-new"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-0b3d019d9bf7a9f43d3a16f4-after-6026b966cf42a3cc-new"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-0b3d019d9bf7a9f43d3a16f4-historical-5765967f8982-1da03c5ff4a3"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-6d2bb6a51952b1d635e8c01b-initial-host-existing"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-6d2bb6a51952b1d635e8c01b-after-6de465839c36c96a-existing"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-6d2bb6a51952b1d635e8c01b-after-01e1d911131b16df-existing"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-6d2bb6a51952b1d635e8c01b-initial-host-new"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-6d2bb6a51952b1d635e8c01b-after-6de465839c36c96a-new"
+          },
+          {
+            "checker": "browser/1",
+            "caseId": "field-6d2bb6a51952b1d635e8c01b-after-01e1d911131b16df-new"
+          }
+        ],
+        "obligations": [
+          {
+            "version": 1,
+            "id": "obligation-f339deb2997b6cc697aec184",
+            "kind": "assertion",
+            "steps": [
+              {
+                "kind": "action",
+                "action": "complete",
+                "member": "workflow"
+              }
+            ],
+            "expected": {
+              "kind": "action-visible",
+              "action": "increment",
+              "visible": false,
+              "member": "counter"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expectedTargetIds": [
+    "business-choice:action-availability:obligation-a2faefc8cd7b4116131973b1",
+    "business-choice:action-availability:obligation-f339deb2997b6cc697aec184"
+  ],
+  "legacyDecisions": [
+    {
+      "target": 1,
+      "source": 1,
+      "quote": "未完成任务可以将计数加一",
+      "permission": "not-delegated"
+    },
+    {
+      "target": 2,
+      "source": 1,
+      "quote": "已完成任务不能增加。",
+      "permission": "not-delegated"
+    }
+  ]
+}

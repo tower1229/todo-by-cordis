@@ -67,12 +67,12 @@ export function designDecisionSchema(
     items: {
       type: "object",
       additionalProperties: false,
-      required: ["target", "source", "quote", "permission"],
+      required: ["target", "sourceRevision", "quote", "permission"],
       description:
-        "只裁决原文明示的设计授权。delegated要求原文允许该作用域的两种可见性选择；未要求、没有禁止、技术事实和生成矩阵均不构成授权。",
+        "只裁决原文明示的设计授权。sourceRevision 精确引用顶层 sources 的 id，不使用 source 数字编号或字段/错误反馈的局部编号。delegated要求原文允许该作用域的两种可见性选择；未要求、没有禁止、技术事实和生成矩阵均不构成授权。",
       properties: {
         target: { type: "integer", minimum: 1, maximum: targets.length },
-        source: { type: "integer", minimum: 1, maximum: sources.length },
+        sourceRevision: { type: "string", enum: [...new Set(sources.map(s => s.id))] },
         quote: { type: "string", minLength: 1, maxLength: 10000 },
         permission: { type: "string", enum: ["delegated", "not-delegated"] },
       },
@@ -94,15 +94,17 @@ export function parseDesignDecisions(
   return (
     raw as {
       target: number;
-      source: number;
+      sourceRevision: string;
       quote: string;
       permission: DesignDecision["permission"];
     }[]
   ).map((d) => {
     const target = targets[d.target - 1],
-      source = sources[d.source - 1];
+      matching = sources.filter(s => s.id === d.sourceRevision),
+      source = matching[0];
     if (
       !target ||
+      matching.length !== 1 ||
       !source ||
       !source.text.includes(d.quote) ||
       !d.quote.trim() ||
@@ -260,7 +262,7 @@ export function authorityFailure(
     const replay = parseDesignDecisions(
       (review.designDecisions ?? []).map((d) => ({
         target: targets.findIndex((t) => t.id === d.targetId) + 1,
-        source: sources.findIndex((s) => s.id === d.sourceRevision) + 1,
+        sourceRevision: d.sourceRevision,
         quote: d.sourceQuote,
         permission: d.permission,
       })),

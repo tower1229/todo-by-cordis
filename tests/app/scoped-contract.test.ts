@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { parseAdmission } from "../../src/evolution/request-admission.js";
 import { sourceItems } from "../../src/evolution/source-items.js";
 import { technicalFacts } from "../../src/evolution/technical-facts.js";
@@ -9,6 +10,7 @@ import type { ReviewLedger } from "../../src/shared/change-spec.js";
 import type { InvestigatedPlan } from "../../src/shared/assistant.js";
 import {
   designTargets,
+  designDecisionSchema,
   parseDesignDecisions,
   compileAuthority,
   authorityFailure,
@@ -23,6 +25,7 @@ import { hash } from "../../src/release/storage.js";
 import { reviewEvidence } from "../../src/evolution/review.js";
 import { parseFieldDecisions } from "../../src/evolution/field-review.js";
 import { tagsTrimOnlyMemberCases } from "./member-case-fixtures.js";
+import { schemaProblems } from "../../src/evolution/model-protocol.js";
 
 const sources = [
   { id: "run:1", text: "增加任务标签，保存时拒绝空白标签；其他行为不变。" },
@@ -218,9 +221,76 @@ const authorizedSources = [
 ];
 const permission = (target = 1) => ({
   target,
-  source: 1,
+  sourceRevision: "run:1",
   quote: "完成后显示或隐藏标签编辑动作都可以，由实现自行选择",
   permission: "delegated",
+});
+
+const designSourceReplay = JSON.parse(
+  readFileSync(new URL("../fixtures/design-source-review-replay.json", import.meta.url), "utf8"),
+) as {
+  sources: { id: string; text: string }[];
+  plan: Pick<InvestigatedPlan, "requirements" | "workflowRules" | "binding">;
+  expectedTargetIds: string[];
+  legacyDecisions: { target: number; source: number; quote: string; permission: "not-delegated" }[];
+};
+
+test("设计授权来源：真实第143次响应仍因历史来源与计数引文不符而拒绝", () => {
+  const { plan, sources, expectedTargetIds, legacyDecisions } = designSourceReplay;
+  assert.deepEqual(designTargets(plan).map(t => t.id), expectedTargetIds);
+  for (const decision of legacyDecisions) {
+    assert.equal(sources[decision.source - 1].text.includes(decision.quote), false);
+    assert.equal(sources[1].text.includes(decision.quote), true);
+  }
+  assert.throws(() => parseDesignDecisions(legacyDecisions, plan, sources), /契约|来源/);
+});
+
+test("设计授权来源：schema只接受精确来源修订，不猜测局部或全局数字编号", () => {
+  const { plan, sources, legacyDecisions } = designSourceReplay;
+  const schema = designDecisionSchema(plan, sources);
+  const receipt = legacyDecisions.map(({ source: _source, ...decision }) => ({
+    ...decision, sourceRevision: sources[1].id,
+  }));
+  assert.deepEqual(schemaProblems(receipt, schema), []);
+  assert.ok(schemaProblems(legacyDecisions, schema).length);
+  assert.ok(schemaProblems([{ ...receipt[0], sourceRevision: "missing:1" }], schema).length);
+  assert.ok(schemaProblems([{ ...receipt[0], source: 2 }], schema).length);
+});
+
+test("设计授权来源：顶层顺序不改变回执，错误修订、引文、重复目标或重复修订仍拒绝", () => {
+  const { plan, sources, legacyDecisions } = designSourceReplay;
+  const receipt = legacyDecisions.map(({ source: _source, ...decision }) => ({
+    ...decision, sourceRevision: sources[1].id,
+  }));
+  const parsed = parseDesignDecisions(receipt, plan, sources);
+  assert.deepEqual(parseDesignDecisions(receipt, plan, [...sources].reverse()), parsed);
+  assert.deepEqual(parsed.map(d => d.sourceRevision), [sources[1].id, sources[1].id]);
+  assert.ok(parsed.every(d => d.permission === "not-delegated" && d.allowed.length === 0));
+  for (const invalid of [
+    [{ ...receipt[0], sourceRevision: sources[0].id }],
+    [{ ...receipt[0], quote: "不存在的原文" }],
+    [{ ...receipt[0], quote: " " }],
+    [receipt[0], receipt[0]],
+  ]) assert.throws(() => parseDesignDecisions(invalid, plan, sources));
+  assert.throws(() => parseDesignDecisions(receipt, plan, [...sources, sources[1]]));
+});
+
+test("设计授权来源：既有持久化回执按修订重放，不能用相同引文的其他来源替代冻结授权", () => {
+  const p = tagPlan();
+  const grant = { id: "grant:1", text: authorizedSources[0].text };
+  const allSources = [designSourceReplay.sources[0], authorizedSources[0], grant];
+  p.designDecisions = parseDesignDecisions([{
+    target: 1, sourceRevision: grant.id,
+    quote: "完成后显示或隐藏标签编辑动作都可以，由实现自行选择", permission: "delegated",
+  }], p, allSources);
+  p.changeSpec = compileSpec(p, "run", "source");
+  const persisted: InvestigatedPlan = JSON.parse(JSON.stringify(p));
+  const reviewed = { reviewedIds: ["tag"], issues: [], designDecisions: persisted.designDecisions };
+  assert.equal(specificationFailure(persisted), undefined);
+  assert.equal(authorityFailure(persisted, allSources, reviewed), undefined);
+  assert.equal(authorityFailure(persisted, [...allSources].reverse(), reviewed), undefined);
+  assert.match(authorityFailure(persisted, allSources.filter(s => s.id !== grant.id), reviewed)!, /来源|失效/);
+  assert.match(authorityFailure(persisted, allSources.map(s => s.id === grant.id ? { ...s, text: "未授权" } : s), reviewed)!, /来源|失效/);
 });
 
 test("同一明确设计授权允许显示和隐藏两种候选选择，实际选择随规格冻结", () => {
