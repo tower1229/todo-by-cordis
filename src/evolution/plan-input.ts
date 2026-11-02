@@ -43,7 +43,7 @@ const expected = {
 };
 const businessCase = object(
   {
-    name: text,
+    name: { ...text, description: "既有操作会沿用历史案例名作为兼容身份；名称不是业务规范，当前行为以原文及 expected 为准。" },
     state: text,
     fields: {
       ...dictionary,
@@ -205,6 +205,7 @@ export function planSchemaFor(
         object({
           description: text,
           quote: text,
+          revises: { ...text, minLength: 1, description: "仅在明确改变已接受的业务要求时提供：引用该旧要求的完整 sourceQuote，quote 提供较新的用户原文；新增要求省略。宿主沿用旧身份并保留历史，仍须 acceptanceReason、独立复核和验收修订确认。不能用来删除未改变的要求。" },
           type: kind("behavior", "interface", "compatibility", "constraint"),
           expectations: businessExpectationsSchema,
         }, ["quote", "type", "expectations"]),
@@ -265,6 +266,7 @@ type NormalizedInput = {
   requirements: {
     description: string;
     quote: string;
+    revises?: string;
     type: string;
     expectations: Expectation[];
   }[];
@@ -320,7 +322,7 @@ function normalizeInput(
     ...business,
     summary: [...new Set(claims.map(r => r.quote))].join("；").slice(0, 5000),
     requirements: claims
-      .filter((r,i)=>claims.findIndex(other=>hash({quote:other.quote,type:other.type,expectations:other.expectations})===hash({quote:r.quote,type:r.type,expectations:r.expectations}))===i)
+      .filter((r,i)=>claims.findIndex(other=>hash({quote:other.quote,revises:other.revises,type:other.type,expectations:other.expectations})===hash({quote:r.quote,revises:r.revises,type:r.type,expectations:r.expectations}))===i)
       .map(r => ({ ...r, description: r.quote })),
     workflow: null,
     members: [],
@@ -652,10 +654,17 @@ export function compilePlanInput(
       throw new Error("需求原文对应多个修订，请使用可唯一绑定的完整连续原文");
     const source = matches.at(-1)!;
     const old = (previous.requirements ?? []).filter(
-      (o) => o.sourceQuote === r.quote && o.type === r.type,
+      (o) => o.sourceQuote === (r.revises ?? r.quote) && o.type === r.type,
     );
+    if (r.revises !== undefined) {
+      if (!old.length) throw new Error("业务修订引用的既有要求不存在");
+      if (old.length !== 1) throw new Error("业务修订的既有要求不唯一，请使用精确原文与类别");
+      const priorSource = sources.findIndex(s => s.id === old[0].sourceRevision);
+      if (priorSource < 0 || source.index <= priorSource + 1)
+        throw new Error("业务修订须绑定较新的用户原文来源，不能用旧要求授权自身改写");
+    }
     const prior =
-      old.find((o) => o.description === r.description) ??
+      (r.revises !== undefined ? old[0] : old.find((o) => o.description === r.description)) ??
       (old.length === 1 ? old[0] : undefined);
     const id =
       prior?.id ??

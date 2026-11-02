@@ -55,18 +55,20 @@ export function v1FixtureDriver(
   let faultInjected = false;
   let planning: PlanningDriver;
   let planningRun: string | undefined;
+  let initialTagQuote: string | undefined;
   return new DeltaFixture({
     async generate(request) {
       if (request.schema) return planning.generate(request);
       if (!request.tools?.some((t) => t.name === "submit_candidate")) {
         const input = request.message
-          ? (JSON.parse(request.message) as { sources?: { id: string }[] })
+          ? (JSON.parse(request.message) as { sources?: { id: string; text: string }[] })
           : undefined;
         const source = input?.sources?.at(-1)?.id;
         const run = source?.slice(0, source.lastIndexOf(":"));
         if (run && run !== planningRun) {
           planningRun = run;
           phase++;
+          if (phase === 0) initialTagQuote = input?.sources?.at(-1)?.text;
           const memberCases =
             phase === 0
               ? [
@@ -203,7 +205,15 @@ export function v1FixtureDriver(
               : {}),
           });
         }
-        return planning.generate(request);
+        const reply = await planning.generate(request);
+        if (phase === 2 && initialTagQuote) {
+          for (const call of reply.calls) {
+            if (call.name !== "propose_plan") continue;
+            const requirements = call.args.requirements as Record<string, unknown>[];
+            requirements[0].revises = initialTagQuote;
+          }
+        }
+        return reply;
       }
       const documents = JSON.parse(request.message ?? "{}").materials?.documents as {ref:string;content:unknown}[] | undefined;
       const delivered = documents?.find(d => d.ref === "active-source")?.content;

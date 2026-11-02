@@ -744,7 +744,7 @@ const investigationTools = [
     parameters: obj({ message: text }),
   },
   {name: "report_blocker", description: "报告已调查确认的能力或环境阻断；不在计划中维护无/none等文本哨兵", parameters: obj({reason: text})},
-  {name:"propose_plan",description:"提交业务变更和逐项需求预期；宿主编译引用、能力、验收与写入范围",parameters:planInputSchema},
+  {name:"propose_plan",description:"提交业务变更和逐项需求预期；改变已接受要求时以 requirements.revises 引用旧业务原文、quote 引用新原文并说明 acceptanceReason。宿主编译引用、能力、验收与写入范围",parameters:planInputSchema},
 ];
 export const planningTools = investigationTools;
 
