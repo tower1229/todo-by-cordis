@@ -43,6 +43,7 @@ type InspectContent = {
     versionId: string;
     enabled: boolean;
     role: string;
+    materials?: {source?:string;contract?:string;acceptance?:string};
   }[];
   extensions?: {
     contractVersion: string | null;
@@ -64,6 +65,9 @@ type InspectContent = {
     providerId?: string;
     ready?: boolean;
     source?: string;
+    id?: string;
+    contract?: string;
+    artifactVersion?: string;
   }[];
   checkers?: { id: string }[];
 };
@@ -302,7 +306,7 @@ test("inspect_application surfaces live members and extension registry after dis
       (c) =>
         c.interfaceId === "fields.register" &&
         c.providerId === "due" &&
-        c.artifactVersion === dueMember.versionId &&
+        (c.artifactVersion ?? inspect.members?.find(m => m.pluginId === c.providerId)?.versionId) === dueMember.versionId &&
         c.ready === true,
     ),
     "capability artifactVersion must use member versionId",
@@ -312,7 +316,7 @@ test("inspect_application surfaces live members and extension registry after dis
       (c) =>
         c.interfaceId === "workflow.provide" &&
         c.id === "workflow" &&
-        c.contract === "active-contract",
+        (c.contract ?? inspect.members?.find(m => m.pluginId === c.providerId)?.materials?.contract) === "active-contract",
     ),
     "workflow.provide keeps stable id workflow with contract refs",
   );

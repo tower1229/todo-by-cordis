@@ -1,6 +1,7 @@
 import { hash } from "../release/storage.js";
 import { AppError } from "../shared/contracts.js";
 import type { InvestigationDocument } from "./planning.js";
+import { workspaceInterface } from "./host-interface.js";
 
 type Row = Record<string, unknown>;
 const row = (value: unknown): Row | undefined =>
@@ -8,7 +9,7 @@ const row = (value: unknown): Row | undefined =>
 
 /** One model-facing business definition. The original audit snapshot stays in the material store. */
 export function planningView(document: InvestigationDocument, baseVersion: string): InvestigationDocument | undefined {
-  if (document.ref !== "active-acceptance") return;
+  if (document.ref !== "active-acceptance") return workspaceInterface(document, baseVersion);
   if (hash(document.content) !== document.hash)
     throw new AppError("PLAN_STALE", "调查原文摘要已变化，请重新规划", 409);
   if (typeof document.content !== "string") return;

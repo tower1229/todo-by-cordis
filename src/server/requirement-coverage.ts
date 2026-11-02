@@ -911,6 +911,7 @@ function gateVersion() {
       "src/evolution/investigation.ts",
       "src/server/planning.ts",
       "src/server/planning-view.ts",
+      "src/server/host-interface.ts",
       "src/evolution/budget.ts",
       "src/evolution/interaction.ts",
       "src/shared/evolution-interaction.ts",

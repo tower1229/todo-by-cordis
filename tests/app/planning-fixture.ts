@@ -171,22 +171,20 @@ export class PlanningDriver implements Driver {
       return toolReply("inspect_application", {});
     if (!content.includes("active-source"))
       return {
-        ...toolReply("read_source", { ref: "active-source" }),
+        ...toolReply("read_materials", { refs: ["active-source"] }),
         calls: [
-          { name: "read_source", args: { ref: "active-source" } },
-          { name: "read_source", args: { ref: "src/web/ActionForm.tsx" } },
-          { name: "read_contract", args: { ref: "src/shared/contracts.ts" } },
+          { name: "read_materials", args: { refs: ["active-source"] } },
+          { name: "read_materials", args: { refs: ["src/web/ActionForm.tsx"] } },
+          { name: "read_materials", args: { refs: ["src/shared/contracts.ts"] } },
           {
-            name: "read_acceptance",
-            args: { ref: "src/server/evolution-domain.ts" },
+            name: "read_materials",
+            args: { refs: ["src/server/evolution-domain.ts"] },
           },
-          { name: "check_environment", args: {} },
-          { name: "read_contract", args: { ref: "active-contract" } },
-          { name: "read_acceptance", args: { ref: "active-acceptance" } },
-          { name: "describe_verification", args: { rules } },
+          { name: "read_materials", args: { refs: ["active-contract"] } },
+          { name: "read_materials", args: { refs: ["active-acceptance"] } },
           ...((this.finish.writableScope ?? []) as string[])
             .filter((ref) => ref.startsWith("business/"))
-            .map((ref) => ({ name: "read_source", args: { ref } })),
+            .map((ref) => ({ name: "read_materials", args: { refs: [ref] } })),
         ],
       };
     const messages = request.history as {

@@ -592,7 +592,7 @@ test("归档可见性误判离线重放：原有效目标现在由可信基线�
             text: "",
             calls: [
               {
-                name: "read_guides",
+                name: "read_materials",
                 args: {
                   refs: [
                     "guide/command.register",

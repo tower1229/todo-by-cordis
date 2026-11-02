@@ -1099,7 +1099,7 @@ test("mixed conclusion tools are retried internally instead of failing the run",
         return {
           ...result,
           calls: [
-            { name: "read_source", args: { ref: "active-source" } },
+            { name: "read_materials", args: { refs: ["active-source"] } },
             result.calls[0],
           ],
         };
@@ -1142,7 +1142,7 @@ test("unavailable catalog source is a diagnostic, never read evidence or a crash
         attempted = true;
         return {
           ...result,
-          calls: [{ name: "read_source", args: { ref: "../../.env" } }],
+          calls: [{ name: "read_materials", args: { refs: ["../../.env"] } }],
         };
       }
       return result;
@@ -1372,8 +1372,8 @@ test("misplaced supported action cases can be corrected with consumer investigat
                 history: request.history,
                 calls: [
                   {
-                    name: "read_source",
-                    args: { ref: "src/web/TaskEditor.tsx" },
+                    name: "read_materials",
+                    args: { refs: ["src/web/TaskEditor.tsx"] },
                   },
                 ],
                 usage: null,
@@ -1527,21 +1527,6 @@ test("inspection supplies exact baseline documents within the existing budget an
                 (doc) => doc.ref === ref && doc.hash && doc.content,
               ),
             );
-          if (!results.some((r) => r.ref === "verification-definition"))
-            return {
-              ...reply("describe_verification", {
-                rules: [
-                  {
-                    key: "reflection",
-                    label: "复盘",
-                    required: true,
-                    minLength: 1,
-                    maxLength: 5000,
-                  },
-                ],
-              }),
-              history: request.history,
-            };
           // Adapt the delivered material to the existing model fixture's input format.
           const response = await fixture.generate({
             ...request,
@@ -1596,7 +1581,7 @@ test("inspection supplies exact baseline documents within the existing budget an
       const ready = (await e.observe()).run!;
       assert.equal(ready.status, forgeUnread ? "blocked" : "ready", "message" in ready ? ready.message : ready.status);
       if (ready.status !== "ready") return;
-      assert.equal(ready.budget?.callsUsed, 5);
+      assert.equal(ready.budget?.callsUsed, 4);
       await e.command({
         type: "start",
         operationId: "generate",
@@ -1611,7 +1596,7 @@ test("inspection supplies exact baseline documents within the existing budget an
         await new Promise((resolve) => setTimeout(resolve, 10));
       const done = (await e.observe()).run!;
       assert.equal(done.status, "awaiting-apply");
-      assert.equal(done.budget?.callsUsed, 6, "冻结资料首轮交付，执行只用一次候选提交");
+      assert.equal(done.budget?.callsUsed, 5, "宿主编译验收，冻结资料首轮交付，执行只用一次候选提交");
     });
 });
 
@@ -1842,8 +1827,8 @@ for (const repair of [false, true])
     if (!repair) assert.match(run.message ?? "", /缺少冻结验收案例/);
   });
 
-for (const invalid of [{}, { rules: "invalid" }, { rules: [], extra: true }]) {
-  test(`invalid verification arguments remain correctable: ${JSON.stringify(invalid)}`, async (t) => {
+for (const invalid of [{}, { refs: "invalid" }, { refs: [], extra: true }]) {
+  test(`invalid material-read arguments remain correctable: ${JSON.stringify(invalid)}`, async (t) => {
     const dir = mkdtempSync(join(tmpdir(), "cordis-verification-args-"));
     const w = await Workspace.open(join(dir, "workspace.db"));
     const fixture = new PlanningDriver();
@@ -1859,11 +1844,11 @@ for (const invalid of [{}, { rules: "invalid" }, { rules: [], extra: true }]) {
           injected = true;
           return {
             ...result,
-            calls: [{ name: "describe_verification", args: invalid }],
+            calls: [{ name: "read_materials", args: invalid }],
           };
         }
         if (injected)
-          sawDiagnostic ||= JSON.stringify(request).includes("INVALID_VERIFICATION_ARGUMENTS") || JSON.stringify(request).includes("protocolCorrection");
+          sawDiagnostic ||= JSON.stringify(request).includes("REF_UNAVAILABLE") || JSON.stringify(request).includes("protocolCorrection");
         return result;
       },
     };
@@ -1892,14 +1877,14 @@ for (const invalid of [{}, { rules: "invalid" }, { rules: [], extra: true }]) {
   });
 }
 
-test("repeated invalid verification arguments stop after bounded protocol correction without evidence", async (t) => {
+test("repeated invalid material-read arguments stop after bounded protocol correction without evidence", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "cordis-verification-budget-"));
   const w = await Workspace.open(join(dir, "workspace.db"));
   const fixture = new PlanningDriver();
   const driver: Driver = {
     async generate(request) {
       const result = await fixture.generate(request);
-      return { ...result, calls: [{ name: "describe_verification", args: {} }] };
+      return { ...result, calls: [{ name: "read_materials", args: {} }] };
     },
   };
   const e = new Evolution(w.db, driver, new EvolutionDomain(w));

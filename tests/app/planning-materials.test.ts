@@ -51,7 +51,7 @@ async function capturePlanning(
           requests.length === 1 && !documents?.some((d) => d.ref === guide);
         return {
           ...toolReply(
-            needsRead ? "read_guides" : "report_blocker",
+            needsRead ? "read_materials" : "report_blocker",
             needsRead
               ? { refs: [guide] }
               : { reason: "synthetic capture completed" },

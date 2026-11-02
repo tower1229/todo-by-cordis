@@ -568,10 +568,10 @@ function dueCurrentStubDriver(): Driver {
       const reply = await planning.generate(request);
       if (
         reply.calls.some((c) => c.name === "propose_plan") &&
-        !JSON.stringify(request.history).includes("read_guides")
+        !JSON.stringify(request.history).includes("read_materials")
       )
         return {
-          ...toolReply("read_guides", { refs: ["guide/schedule.register"] }),
+          ...toolReply("read_materials", { refs: ["guide/schedule.register"] }),
           history: request.history,
         };
       return reply;

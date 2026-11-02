@@ -2043,7 +2043,7 @@ export class Evolution {
         );
         if ("ref" in result) {
           const delivered = [result, ...(result.documents ?? [])];
-          const stored = delivered.filter(d => d.ref !== "read_guides" && !("reused" in d && d.reused));
+          const stored = delivered.filter(d => !["read_guides","read_materials"].includes(d.ref) && !("reused" in d && d.reused));
           this.materials.capture(r.investigation!, stored, context.files);
           r.pendingMaterials = [...(r.pendingMaterials ?? []), ...stored.map(materialIdentity)];
           const deliveredRefs = new Set(

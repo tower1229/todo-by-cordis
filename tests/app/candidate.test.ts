@@ -517,13 +517,13 @@ test("new provider and consumer implement an additional action with frozen indep
     {
       async generate(request) {
         const reply = await nextFallback.generate(request);
-        if (reply.calls[0]?.name === "read_source")
+        if (reply.calls[0]?.name === "read_materials")
           reply.calls.push(
             ...[
               "business/counter.ts",
               "business/entry.ts",
               "business/view.ts",
-            ].map((ref) => ({ name: "read_source", args: { ref } })),
+            ].map((ref) => ({ name: "read_materials", args: { refs: [ref] } })),
           );
         if (reply.calls[0]?.name !== "submit_candidate") return reply;
         repairs++;

@@ -53,7 +53,7 @@ test("规划已用九次调用时，首轮精确资料支持直接修正，十�
         const reply = await planning.generate(request);
         if (reply.calls[0]?.name === "propose_plan" && padding++ < 6)
           return {
-            ...toolReply("read_source", { ref: "active-source" }),
+            ...toolReply("read_materials", { refs: ["active-source"] }),
             history: request.history,
           };
         return reply;
@@ -178,7 +178,7 @@ for (const stale of [false, true])
             if (reply.calls[0]?.name === "propose_plan" && !guideRead) {
               guideRead = true;
               return {
-                ...toolReply("read_guides", {
+                ...toolReply("read_materials", {
                   refs: ["guide/command.register"],
                 }),
                 history: request.history,

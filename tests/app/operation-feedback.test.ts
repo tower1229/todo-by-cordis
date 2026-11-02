@@ -419,7 +419,7 @@ for (const required of [false, true])
               text: "",
               calls: [
                 {
-                  name: "read_guides",
+                  name: "read_materials",
                   args: {
                     refs: [
                       "guide/command.register",

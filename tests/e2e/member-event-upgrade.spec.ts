@@ -210,7 +210,7 @@ function upgradeDriver(
           ...response,
           calls: [
             {
-              name: "read_guides",
+              name: "read_materials",
               args: { refs: ["guide/command.register", "guide/task.events"] },
             },
           ],

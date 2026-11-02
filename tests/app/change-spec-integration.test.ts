@@ -12,6 +12,7 @@ import { panelMemberCases } from "./member-case-fixtures.js";
 import { panelPluginCode } from "../fixtures/member-ui.js";
 import { hash } from "../../src/release/storage.js";
 import type { AssistantRun } from "../../src/shared/assistant.js";
+import type { InvestigationDocument } from "../../src/server/planning.js";
 
 async function settle(e: Evolution, timeout = 30000): Promise<AssistantRun> {
   const deadline = Date.now() + timeout;
@@ -56,12 +57,19 @@ test("正式新协议：需求预检、业务规格和独立复核后ready，派
   assert.equal(ready.plan.changeSpec?.requirementOrigins[0].origin, "request");
   assert.equal(driver.requests[0].history.length, 0);
   const materials = JSON.parse(driver.requests[0].message!).materials;
-  const supplied = materials.documents;
+  const supplied = materials.documents as InvestigationDocument[];
   assert.ok(supplied.some((d: { ref: string }) => d.ref === "active-source"));
-  for (const c of supplied.find((d: {ref: string}) => d.ref === "inspect_application").content.capabilityContracts)
-    for (const ref of c.consumers)
-      assert.ok(supplied.some((d: {ref: string; content: string}) => d.ref === ref && d.content.length), `目录消费者须实际交付：${ref}`);
-  assert.equal(supplied[0].documents, undefined, "资料不得通过嵌套再复制一次");
+  const context = new EvolutionDomain(w).context();
+  const inventory = supplied.find(d => d.ref === "inspect_application")!.content as {capabilityContracts:{consumers:string[]}[]};
+  for (const c of inventory.capabilityContracts)
+    for (const ref of c.consumers) {
+      const document = supplied.find(d => d.ref === ref || d.source?.ref === ref);
+      assert.ok(document, `目录消费者须交付精确原文或来源绑定接口：${ref}`);
+      assert.notEqual(document.content, null);
+      assert.equal(hash(document.content), document.hash);
+      if (document.source) assert.equal(document.source.hash, context.files[ref].hash);
+    }
+  assert.equal(Object.hasOwn(supplied[0], "documents"), false, "资料不得通过嵌套再复制一次");
   const stored = JSON.parse(
     String(
       w.db.prepare("SELECT body FROM evolution_runs WHERE id=?").get(ready.id)!
@@ -222,7 +230,9 @@ test("生成首轮交付完整精确资料且冻结规格不变", async (t) => {
       async generate(request, signal) {
         if (!request.tools?.some((tool) => tool.name === "submit_candidate"))
           return fixture.generate(request, signal);
-        assert.ok(JSON.parse(request.message!).materials.documents.length > 3);
+        const documents = JSON.parse(request.message!).materials.documents as InvestigationDocument[];
+        assert.ok(documents.length > 3);
+        assert.equal(documents.find(d => d.ref === "active-source")?.content, w.release.get(member.versionId).source);
         assert.deepEqual(request.tools?.map(t => t.name).sort(), ["report_blocker", "submit_candidate"]);
         return toolReply("report_blocker", { reason: "收集交付回执后停止" });
       },
@@ -264,10 +274,18 @@ test("生成首轮交付完整精确资料且冻结规格不变", async (t) => {
       "candidate-contract",
       "active-source",
       "candidate-scaffold",
-      `member-source/${member.pluginId}@${member.versionId}`,
-      `member-contract/${member.pluginId}@${member.versionId}`,
       `member-acceptance/${member.pluginId}@${member.versionId}`,
     ]) assert.ok(refs.includes(ref), ref);
+  const context = new EvolutionDomain(w).context();
+  for (const [alias, canonical] of [
+    [`member-source/${member.pluginId}@${member.versionId}`, "active-source"],
+    [`member-contract/${member.pluginId}@${member.versionId}`, "active-contract"],
+  ]) {
+    assert.equal(context.files[alias].hash, context.files[canonical].hash);
+    assert.equal(refs.includes(alias), false, "重复身份不冒充已交付");
+    assert.ok(ready.plan.binding!.materials.some(d => d.ref === canonical && d.hash === context.files[alias].hash));
+    assert.ok(w.db.prepare("SELECT body FROM evolution_materials WHERE hash=?").get(context.files[alias].hash), "完整原文仍归档");
+  }
   for (const ref of Object.keys(ready.plan.binding!.guideCatalog)) assert.ok(refs.includes(ref), ref);
 });
 
@@ -282,7 +300,7 @@ test("澄清直接等待用户，回答沿同一运行和预算复用已验证�
       async generate(request, signal) {
         if (phase++ === 0)
           return {
-            ...toolReply("read_guides", { refs: ["guide/command.register"] }),
+            ...toolReply("read_materials", { refs: ["guide/command.register"] }),
             history: request.history,
           };
         if (phase === 2)

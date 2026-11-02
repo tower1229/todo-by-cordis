@@ -11,7 +11,7 @@ type Input = {
 };
 type History = {role?:string;parts?:{
   text?:string;
-  functionResponse?:{name:string;response:{result:{ref?:string;content?:unknown;error?:string}}};
+  functionResponse?:{name:string;response:{result:{ref?:string;content?:unknown;error?:string;documents?:{ref:string}[]}}};
 }[]}[];
 const input = (text: string): Input => { try { return JSON.parse(text) as Input; } catch { return {}; } };
 
@@ -31,7 +31,7 @@ export class PlanningViewDriver implements Driver {
       const task=current.kind==="candidate-task/1"?current:inputs.findLast(value=>value.kind==="candidate-task/1");
       if(!task?.plan)throw new Error("fixture lost native candidate context");
       const minimum=task.plan.workflowRules[0]?.minLength??1;
-      const viewBound=task.plan.binding?.materials.some(material=>material.source);
+      const viewBound=task.plan.binding?.materials.some(material=>material.source?.ref==="active-acceptance");
       const alreadyFailed=responses.some(response=>response.name==="submit_candidate"&&response.response.result.error);
       const content=this.options.badViewCandidate&&viewBound&&!alreadyFailed
         ? "const broken: string = 42; export default broken;"
@@ -42,9 +42,9 @@ export class PlanningViewDriver implements Driver {
     if(request.schema) return new PlanningDriver().generate(request);
     const seed=current.materials?current:inputs.findLast(value=>value.materials&&value.sources);
     if(!seed?.sources)throw new Error("fixture lost native planning context");
-    const view=seed.materials?.documents.find(doc=>doc.source);
-    const rawRead=responses.some(response=>response.name==="read_acceptance"&&response.response.result.ref===view?.source?.ref);
-    if(view && !rawRead) return {...toolReply("read_acceptance",{ref:view.source!.ref}),history};
+    const view=seed.materials?.documents.find(doc=>doc.source?.ref==="active-acceptance");
+    const rawRead=responses.some(response=>response.name==="read_materials"&&response.response.result.documents?.some(document=>document.ref===view?.source?.ref));
+    if(view && !rawRead) return {...toolReply("read_materials",{refs: [view.source!.ref]}),history};
     if(view && this.options.invalidConclusion) return {...toolReply("propose_plan",{}),history};
     if(view && this.options.inspectAfterRaw && !responses.some(response=>response.name==="inspect_application"))
       return {...toolReply("inspect_application",{}),history};
