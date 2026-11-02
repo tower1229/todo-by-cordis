@@ -78,7 +78,10 @@ export class DeepSeek implements Driver {
       policy.tokenScope !== "reasoning-and-answer" ||
       policy.truncation !== "block" ||
       !(
-        (policy.thinking === "enabled" && policy.reasoningEffort === "max") ||
+        // A maintainer may inject high for a measured comparison. Production
+        // still uses modelPolicy; model-authored requests cannot select effort.
+        (policy.thinking === "enabled" &&
+          (policy.reasoningEffort === "max" || policy.reasoningEffort === "high")) ||
         (policy.thinking === "disabled" && policy.reasoningEffort === "none")
       )
     )

@@ -9,7 +9,7 @@ export type ModelOutputPolicy = {
   truncation: "block";
   hash: string;
 } & (
-  | { thinking: "enabled"; reasoningEffort: "max" }
+  | { thinking: "enabled"; reasoningEffort: "max" | "high" }
   | { thinking: "disabled"; reasoningEffort: "none" }
 );
 

@@ -133,7 +133,7 @@ test("思考强度属于宿主冻结策略，不接受不一致参数或篡改�
         const { hash: _hash, ...body } = modelPolicy(phase);
         const altered = {
           ...body,
-          ...(change === "effort" ? { reasoningEffort: "high" } : {}),
+          ...(change === "effort" ? { reasoningEffort: "low" } : {}),
           ...(change === "tokens" ? { maxTokens: 65536 } : {}),
           ...(change === "scope" ? { tokenScope: "answer-only" } : {}),
           ...(change === "phase" ? { phase: "admission" } : {}),
@@ -155,4 +155,57 @@ test("思考强度属于宿主冻结策略，不接受不一致参数或篡改�
     );
   }
   assert.equal(requests, 0);
+});
+
+test("维护者注入 high 仅改变思考强度，生产默认、完整历史及工具校验不变", async () => {
+  const request = {
+    phase: "planning" as const,
+    instruction: "fixture",
+    message: "synthetic request",
+    history: [{ role: "assistant", content: "prior", reasoning_content: "prior reasoning" }],
+    tools: [{ name: "inspect_application", description: "fixture", parameters: { type: "object", additionalProperties: false, properties: {} } }],
+  };
+  const bodies: Record<string, unknown>[] = [];
+  const http: typeof fetch = async (_url, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return Response.json({ model: "deepseek-flash", choices: [{ finish_reason: "stop", message: {
+      content: null,
+      tool_calls: [{ id: "fixture-call", type: "function", function: { name: "inspect_application", arguments: "{}" } }],
+    } }] });
+  };
+  const policy = (phase: Parameters<typeof modelPolicy>[0]): ModelOutputPolicy => {
+    const { hash: _hash, ...base } = modelPolicy(phase);
+    const body = { ...base, thinking: "enabled" as const, reasoningEffort: "high" as const };
+    return { ...body, hash: hash(body) };
+  };
+  const baseline = await new DeepSeek("synthetic-key", http).generate(request, new AbortController().signal);
+  const experiment = await new DeepSeek("synthetic-key", http, "https://example.invalid", policy).generate(request, new AbortController().signal);
+  assert.deepEqual(bodies[1], { ...bodies[0], reasoning_effort: "high" });
+  assert.deepEqual(replyProblems(request, baseline), []);
+  assert.deepEqual(replyProblems(request, experiment), []);
+  assert.equal(experiment.transport?.outputPolicy?.hash, policy("planning").hash);
+  assert.notEqual(experiment.transport?.outputPolicy?.hash, baseline.transport?.outputPolicy?.hash);
+  assert.equal(modelPolicy("planning").reasoningEffort, "max");
+});
+
+test("high 实验仍阻止截断响应，且关闭思考时不能声明 high", async () => {
+  let dispatched = 0;
+  for (const thinking of ["enabled", "disabled"] as const) {
+    const driver = new DeepSeek("synthetic-key", async () => {
+      dispatched++;
+      return Response.json({ choices: [{ finish_reason: "length", message: { content: "partial" } }] });
+    }, "https://example.invalid", phase => {
+      const { hash: _hash, ...base } = modelPolicy(phase);
+      const body = { ...base, thinking, reasoningEffort: "high" };
+      // Deliberately inject an invalid combination to exercise the runtime boundary.
+      return { ...body, hash: hash(body) } as ModelOutputPolicy;
+    });
+    const request = { phase: "review" as const, instruction: "fixture", history: [] };
+    if (thinking === "disabled") await assert.rejects(driver.generate(request, new AbortController().signal), /宿主模型输出策略无效/);
+    else {
+      const reply = await driver.generate(request, new AbortController().signal);
+      assert.ok(reply.protocolErrors?.some(error => error.includes("length")));
+    }
+  }
+  assert.equal(dispatched, 1);
 });
