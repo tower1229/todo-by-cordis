@@ -403,7 +403,7 @@ export function stabilityDriverFor(
     return {
       async generate(request, signal, onTransport) {
         const input = JSON.parse(request.message ?? "{}") as {
-          kind?: string; sources?: { text: string }[]; questions?: string[];
+          kind?: string; sources?: { id:string; text: string }[]; questions?: string[];
           sourceItems?: {text:string}[];
           admissionTargets?: ({choice:unknown}|null)[];
         };
@@ -422,7 +422,19 @@ export function stabilityDriverFor(
           return { text: JSON.stringify(value), calls: [], history: [], usage: null,
             raw: { fixture: "source-bound-clarification" } };
         }
-        return original.generate(request, signal, onTransport);
+        const reply = await original.generate(request, signal, onTransport);
+        if (input.kind === "requirement-review/2" &&
+            !input.sources?.some(s => s.text === scenario?.clarification?.answer)) {
+          const schema = request.schema as {properties:{unresolvedChoices:{items:{properties:{targetId:{enum:string[]}}}}}};
+          const targets = schema.properties.unresolvedChoices.items.properties.targetId.enum
+            .filter(id => id.startsWith("business-choice:input-required:"));
+          const source = input.sources?.find(s => s.text === scenario?.request) ?? input.sources?.[0];
+          if (targets.length !== 1 || !source) throw new Error("澄清模型桩缺少唯一的宿主必填性目标和原始来源");
+          reply.text = JSON.stringify({...JSON.parse(reply.text),unresolvedChoices:[{
+            targetId:targets[0],sourceRevision:source.id,sourceQuote:quote,
+          }]});
+        }
+        return reply;
       },
     };
   }

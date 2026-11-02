@@ -6,6 +6,18 @@ import type { ReviewLedger } from "../shared/change-spec.js";
 import { hash } from "../release/storage.js";
 import { technicalFacts } from "./technical-facts.js";
 
+/** The independently reviewed business definition, shared with evidence replay. */
+export function reviewDefinitionHash(plan: InvestigatedPlan) {
+  return hash({
+    requirements: plan.requirements,
+    browserCases: plan.browserCases,
+    cases: plan.cases,
+    memberCases: plan.memberCases,
+    extensions: plan.extensions,
+    workflowRules: plan.workflowRules,
+  });
+}
+
 /** Progress is evidence for this claim, never an unrelated edit to the whole plan. */
 export function reviewEvidence(
   plan: InvestigatedPlan,

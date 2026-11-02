@@ -10,7 +10,7 @@ import { BudgetScheduler, BudgetExhaustedError, type ModelPhase } from "./budget
 import { InvestigationStore, materialIdentity } from "./investigation.js";
 import { modelInput, modelInputEncoding } from "./model-input.js";
 import { changeDefinition, compileSpec } from "./specification.js";
-import { recordReview, reviewEvidence } from "./review.js";
+import { recordReview, reviewEvidence, reviewDefinitionHash } from "./review.js";
 import { requirementReviewInput } from "./review-input.js";
 import { clarificationRequest, parseClarificationReview, clarificationBlockers, type ClarificationDecision } from "./clarification-review.js";
 import { admissionRequest, admissionKey, parseAdmission, admissionQuestionState, questionReviewKey, admissionReviewRequest, adjudicateAdmission, admissionResolved } from "./request-admission.js";
@@ -1879,14 +1879,7 @@ export class Evolution {
                   ledger,
                   result,
                   plan.requestRevision,
-                  hash({
-                    requirements: plan.requirements,
-                    browserCases: plan.browserCases,
-                    cases: plan.cases,
-                    memberCases: plan.memberCases,
-                    extensions: plan.extensions,
-                    workflowRules: plan.workflowRules,
-                  }),
+                  reviewDefinitionHash(plan),
                   issue=>reviewEvidence(plan,sources,issue),
                 );
                 parsed.blockers.push(...recorded.blockers);
@@ -1907,7 +1900,9 @@ export class Evolution {
                   const decision=choiceDecisions.find(d=>d.choice?.id===choice?.id)?.decision ?? await this.auditQuestion(r,question,sources,technicalFacts(plan),signal);
                   if(decision.kind === "business-ambiguity" && !clarificationBlockers(decision).length) {
                     this.scheduler(r).requireClarification(r.calls, false, this.remainingTime(r));
-                    r.run={...this.base(r),status:"awaiting-input",stop:{kind:"clarification",phase:"review",code:"business-answer-required",evidence:["run.question","run.clarificationReviews"]},question};this.save(r);return;
+                    plan.questionAdjudications=structuredClone(r.run.clarificationReviews ?? []);
+                    plan.changeSpec=compileSpec(plan,r.run.id,context.files["active-source"].hash,JSON.parse(context.files["active-contract"].content));
+                    r.run={...this.base(r),plans:[...(r.run.plans ?? []),plan],status:"awaiting-input",stop:{kind:"clarification",phase:"review",code:"business-answer-required",evidence:["run.question","run.clarificationReviews","run.plans"]},question};this.save(r);return;
                   }
                   if(clarificationBlockers(decision).length) {parsed.retryable=false;parsed.blockers.push(...clarificationBlockers(decision));}
                   parsed.blockers.push("复核问题已由统一澄清审查裁决，保留原意见并纠正规格或停止："+JSON.stringify(decision));
