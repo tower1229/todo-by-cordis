@@ -382,6 +382,8 @@ export function stabilityDriverFor(
 ): Driver {
   if (scenario?.oracle?.kind === "block" && scenario.oracle.reason === "offline-delivery")
     return { async generate(request) {
+      if (request.tools?.some(tool => tool.name === "report_blocker"))
+        return toolReply("report_blocker", {reason:"合成需求要求外部与离线交付，请按完整来源独立核实宿主能力缺口"});
       const input = JSON.parse(request.message ?? "{}");
       const value = input.kind === "request-admission/2" ? {
         effects: [
@@ -427,6 +429,8 @@ export function stabilityDriverFor(
   if (scenarioId === "unsupported-blank-presentation")
     return {
       async generate(request) {
+        if (request.tools?.some(tool => tool.name === "report_blocker"))
+          return toolReply("report_blocker", {reason:"合成需求要求尚未填写时显示空白，请独立核实原文和呈现能力"});
         const input = JSON.parse(request.message ?? "{}") as {
           kind?: string;
           sources?: { text: string }[];

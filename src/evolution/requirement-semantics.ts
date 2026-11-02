@@ -288,6 +288,9 @@ export function compileSemantics(
           (d) => d.obligationId === o.id,
         );
         const initial = decision?.initial;
+        if (decision?.meaning?.kind === "state")
+          add({subject,aspect:"initial-state"},"specified","requirement",decision.meaning.value,
+            [{sourceRevision:decision.sourceRevision,sourceQuote:decision.sourceQuote}]);
         const status =
           initial?.kind === "undetermined"
             ? "undetermined"

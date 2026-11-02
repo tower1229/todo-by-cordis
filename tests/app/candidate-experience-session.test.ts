@@ -193,13 +193,13 @@ test("宿主恢复或不可用时体验预检可重试，不作废冻结；恢�
   const diagnostics = (await e.observe()).events?.filter(event => event.tool === "host:plan-preflight")
     .map(event => JSON.parse(event.detail!) as {
       reason: string; runtimeStatus: string;
-      checks?: { factsAndSourcesBound: boolean }; changedFacts?: unknown[];
+      checks?: { factsBound: boolean }; changedFacts?: unknown[];
     }) ?? [];
   assert.deepEqual(diagnostics.map(detail => [detail.reason, detail.runtimeStatus]), [
     ["runtime-not-ready", "recovering"], ["runtime-not-ready", "recovering"],
-    ["runtime-not-ready", "unavailable"], ["admission-invalid", "ready"],
+    ["runtime-not-ready", "unavailable"], ["source-review-invalid", "ready"],
   ]);
-  assert.equal(diagnostics.at(-1)?.checks?.factsAndSourcesBound, false);
+  assert.equal(diagnostics.at(-1)?.checks?.factsBound, false);
   assert.equal(diagnostics.at(-1)?.changedFacts?.length, 1);
 });
 

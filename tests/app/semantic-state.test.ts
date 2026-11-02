@@ -7,6 +7,30 @@ import {
 } from "../../src/evolution/request-admission.js";
 import { technicalFacts } from "../../src/evolution/technical-facts.js";
 import type { InvestigatedPlan } from "../../src/shared/assistant.js";
+import { parseFieldDecisions } from "../../src/evolution/field-review.js";
+import { compileSemantics } from "../../src/evolution/requirement-semantics.js";
+
+test("合并后的独立字段复核分别冻结逻辑零与显示零，不需要前置准入收据", () => {
+  for (const kind of ["state","literal"] as const) {
+    const text=kind==="state"?"计数初始逻辑值为0":"计数初始显示0";
+    const sources=[{id:"s:1",text}];
+    const plan={workflowRules:[],requirements:[{id:"r",description:text,type:"interface" as const,
+      sourceRevision:"s:1",sourceQuote:text,checks:[],obligations:[{
+        version:1 as const,id:"initial",kind:"field" as const,member:"counter",field:"count",
+        initialOrigin:kind==="state"?"host" as const:"requirement" as const,
+        initial:kind==="state"?{kind:"absent" as const}:{kind:"visible" as const,value:"0"},scenarios:[],
+      }]}]};
+    const reviewed=parseFieldDecisions([{target:1,source:1,sourceQuote:text,
+      initial:{kind,value:"0",conditionQuote:"初始",effectQuote:"0"}}],plan,sources);
+    assert.deepEqual(reviewed.issues,[]);
+    const semantics=compileSemantics(plan,sources,{reviewedIds:["r"],issues:[],fieldDecisions:reviewed.decisions});
+    const logic=semantics.entries.find(entry=>entry.target.aspect==="initial-state");
+    const display=semantics.entries.find(entry=>entry.target.aspect==="initial-display")!;
+    assert.equal(logic?.value,kind==="state"?"0":undefined);
+    assert.equal(display.status,kind==="state"?"unspecified":"specified");
+    if(kind==="literal") assert.deepEqual(display.value,{kind:"visible",value:"0"});
+  }
+});
 
 test("宿主派生字段和已确定必填性不自行生成待澄清项", () => {
   const plan = {

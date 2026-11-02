@@ -285,7 +285,7 @@ export function technicalFacts(
       checkers: plan.binding?.checkers ?? [],
       rules: plan.workflowRules,
     }),
-  })),...availabilityFacts(plan.binding?.actionAvailability??plan.actionAvailability),...fieldFacts(plan.binding?.fieldIdentities??plan.fieldIdentities??[]),...(plan.capabilities ? capabilityFacts(plan.capabilities) : plan.requestAdmission?.factsSnapshot.filter(f => f.id.startsWith("host-fact:effect:")) ?? capabilityFacts())];
+  })),...availabilityFacts(plan.binding?.actionAvailability??plan.actionAvailability),...fieldFacts(plan.binding?.fieldIdentities??plan.fieldIdentities??[]),...(plan.capabilities ? capabilityFacts(plan.capabilities) : plan.binding?.hostEffects ?? plan.requestAdmission?.factsSnapshot.filter(f => f.id.startsWith("host-fact:effect:")) ?? capabilityFacts())];
 }
 
 /** The host binds each property once; reviewers cannot construct fact/property pairs. */

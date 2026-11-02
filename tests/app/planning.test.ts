@@ -618,7 +618,7 @@ test("clarification and revision keep one run, retained plans and remaining budg
   assert.equal(ready.status, "ready");
   assert.equal(ready.id, first.id);
   assert.equal(ready.requestRevision, 2);
-  assert.equal(ready.budget.callsUsed, 6);
+  assert.equal(ready.budget.callsUsed, 4);
   const calls = fixture.requests.length;
   const exact = await (
     await app.request(`/api/assistant?runId=${first.id}`)
@@ -635,7 +635,7 @@ test("clarification and revision keep one run, retained plans and remaining budg
   assert.equal(revised.status, "ready");
   assert.equal(revised.plans.length, 2);
   assert.equal(revised.revisions.length, 3);
-  assert.equal(revised.budget.callsUsed, 9);
+  assert.equal(revised.budget.callsUsed, 6);
   const rejected = await app.request("/api/assistant/commands", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -687,7 +687,7 @@ for (const selector of ["latest", "run-id", "revise"] as const)
         if(state.run?.status!=="planning"){
           assert.equal(state.run?.status,"ready",JSON.stringify(state.run));
           assert.equal(state.run?.requestRevision,2);
-          assert.equal(state.run?.budget?.callsUsed,6);
+          assert.equal(state.run?.budget?.callsUsed,4);
           return;
         }
         await new Promise(resolve=>setTimeout(resolve,10));
@@ -806,7 +806,7 @@ test("bounded planning, cancellation and model errors never publish or silently 
   const run = (await e.observe()).run!;
   assert.equal(run.status, "failed");
   if (run.status === "failed") assert.equal(run.message, "model disconnected");
-  assert.equal(run.budget?.callsUsed, 2);
+  assert.equal(run.budget?.callsUsed, 1);
   assert.equal(w.composition().revision, 1);
 });
 
@@ -1079,7 +1079,7 @@ test("rejected proposal returns diagnostics so the same bounded investigation ca
     await new Promise((r) => setTimeout(r, 10));
   const run = (await e.observe()).run!;
   assert.equal(run.status, "ready");
-  assert.equal(run.budget?.callsUsed, 4);
+  assert.equal(run.budget?.callsUsed, 3);
   assert.equal(run.plans?.length, 1);
   assert.equal(w.composition().revision, 1);
   assert.equal(w.release.all().length, 2);
@@ -1247,7 +1247,7 @@ test("malformed plan lists return bounded diagnostics without losing the investi
         await new Promise((resolve) => setTimeout(resolve, 10));
       const run = (await e.observe()).run!;
       assert.equal(run.status, repeated ? "blocked" : "ready");
-      assert.equal(run.budget?.callsUsed, repeated ? 3 : 4);
+      assert.equal(run.budget?.callsUsed, repeated ? 2 : 3);
       assert.ok(JSON.stringify(fixture.requests).includes("protocolCorrection"));
       assert.equal(w.composition().revision, 1);
     });
@@ -1307,7 +1307,7 @@ test("invalid plan step dependencies return bounded diagnostics before ready", a
           repeated ? "blocked" : "ready",
           JSON.stringify(run),
         );
-        assert.equal(run.budget?.callsUsed, repeated ? 3 : 4);
+        assert.equal(run.budget?.callsUsed, repeated ? 2 : 3);
         assert.equal(run.plans?.length, repeated ? 0 : 1);
         if (!repeated) assert.deepEqual(run.plans?.[0].steps.map(step => step.id), ["build", "verify", "experience"]);
         assert.ok(
@@ -1428,7 +1428,7 @@ test("misplaced supported action cases can be corrected with consumer investigat
       );
       assert.equal(
         run.budget?.callsUsed,
-        mode === "correct" ? 5 : 3,
+        mode === "correct" ? 4 : 2,
       );
       assert.equal(run.plans?.length, mode === "correct" ? 1 : 0);
       if (mode === "correct") {
@@ -1581,7 +1581,7 @@ test("inspection supplies exact baseline documents within the existing budget an
       const ready = (await e.observe()).run!;
       assert.equal(ready.status, forgeUnread ? "blocked" : "ready", "message" in ready ? ready.message : ready.status);
       if (ready.status !== "ready") return;
-      assert.equal(ready.budget?.callsUsed, 4);
+      assert.equal(ready.budget?.callsUsed, 3);
       await e.command({
         type: "start",
         operationId: "generate",
@@ -1596,7 +1596,7 @@ test("inspection supplies exact baseline documents within the existing budget an
         await new Promise((resolve) => setTimeout(resolve, 10));
       const done = (await e.observe()).run!;
       assert.equal(done.status, "awaiting-apply");
-      assert.equal(done.budget?.callsUsed, 5, "宿主编译验收，冻结资料首轮交付，执行只用一次候选提交");
+      assert.equal(done.budget?.callsUsed, 4, "宿主编译验收，冻结资料首轮交付，执行只用一次候选提交");
     });
 });
 
@@ -1684,7 +1684,7 @@ test("first business bundle requires its four paths before ready and can correct
       );
       assert.deepEqual(w.composition(), before);
       if (ready.status !== "ready") return;
-      assert.equal(ready.budget?.callsUsed, 4);
+      assert.equal(ready.budget?.callsUsed, 3);
       await e.command({
         type: "start",
         operationId: "start-first-bundle",
@@ -1699,7 +1699,7 @@ test("first business bundle requires its four paths before ready and can correct
         await new Promise((resolve) => setTimeout(resolve, 10));
       const done = (await e.observe()).run!;
       assert.equal(done.status, "awaiting-apply", JSON.stringify(done));
-      assert.equal(done.budget?.callsUsed, 5, "冻结资料首轮交付，执行只用一次候选提交");
+      assert.equal(done.budget?.callsUsed, 4, "冻结资料首轮交付，执行只用一次候选提交");
       assert.deepEqual(w.composition(), before);
     });
 });
@@ -1872,7 +1872,7 @@ for (const invalid of [{}, { refs: "invalid" }, { refs: [], extra: true }]) {
     const run = (await e.observe()).run!;
     assert.equal(run.status, "ready");
     assert.ok(sawDiagnostic);
-    assert.equal(run.budget?.callsUsed, 4);
+    assert.equal(run.budget?.callsUsed, 3);
     assert.equal(w.composition().revision, 1);
   });
 }
@@ -1906,7 +1906,7 @@ test("repeated invalid material-read arguments stop after bounded protocol corre
     await new Promise((r) => setTimeout(r, 10));
   const run = (await e.observe()).run!;
   assert.equal(run.status, "blocked");
-  assert.equal(run.budget?.callsUsed, 3);
+  assert.equal(run.budget?.callsUsed, 2);
   assert.equal(
     run.evidence?.some((x) => x.ref === "verification-definition"),
     false,

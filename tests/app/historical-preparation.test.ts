@@ -1,3 +1,5 @@
+import { compileSemantics } from "../../src/evolution/requirement-semantics.js";
+import { sourceReviewReceiptFixture } from "./planning-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -278,12 +280,13 @@ test("同步替换义务与案例的旧值仍不能绕过原冻结身份检查",
       checkers: [{ id: "browser/1", version: "fixture" }],
     },
   };
+  p.semanticState = compileSemantics(p,sources);
   p.changeSpec = compileSpec(p, "run", hash("base"));
   p.requirementGate = freezeRequirements(
     p,
     sources,
     "request",
-    { reviewedIds: p.requirements!.map((r) => r.id), issues: [] },
+    { reviewedIds: p.requirements!.map((r) => r.id), issues: [], sourceReview: sourceReviewReceiptFixture(p,sources) },
     ["browser/1"],
   );
   const trusted = structuredClone(p.requirementGate);

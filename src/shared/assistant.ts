@@ -51,6 +51,8 @@ export type PlanEvidence = {
   source?: { ref: string; hash: string };
 };
 export type PlanBinding = {
+  preflight?: {factsHash:string;facts:{id:string;hash:string}[]};
+  hostEffects?: import("../evolution/technical-facts.js").TechnicalFact[];
   baselineDefaults?: {
     baseVersion: string;
     evidenceHash: string;
@@ -181,6 +183,7 @@ export type Requirement = {
   obligations?: import("./acceptance-obligations.js").AcceptanceObligation[];
 };
 export type RequirementReview = {
+  sourceReview?: import("../evolution/capability-admission.js").SourceReview;
   defaultReviews?: import("./evolution-interaction.js").DefaultReview[];
   designDecisions?: import("../evolution/contract-authority.js").DesignDecision[];
   resolutionEvidence?: { issueId: string; kind: "source-revision" | "specification-change" | "design-authorization" | "source-adjudication"; before: string; after: string }[];

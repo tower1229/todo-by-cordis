@@ -49,12 +49,11 @@ async function capturePlanning(
         // A controlled planner reads the missing protocol, then stops after capturing it.
         const needsRead =
           requests.length === 1 && !documents?.some((d) => d.ref === guide);
+        if(!needsRead)throw new Error("synthetic capture completed");
         return {
           ...toolReply(
-            needsRead ? "read_materials" : "report_blocker",
-            needsRead
-              ? { refs: [guide] }
-              : { reason: "synthetic capture completed" },
+            "read_materials",
+            { refs: [guide] },
           ),
           history: request.history,
         };
@@ -109,8 +108,8 @@ test("原生规划首轮交付未注册的基础动作指南，避免仅为取�
     1,
     "已有精确资料时不需要受控规划器额外读取指南",
   );
-  assert.equal(run.budget?.callsUsed, 2, "需求预检与规划照常计数");
-  assert.equal(run.status, "blocked", "捕获桩不构成 ready 或验收通过");
+  assert.equal(run.budget?.callsUsed, 1, "捕获桩只消费实际发起的一次规划调用");
+  assert.equal(run.status, "failed", "捕获桩主动终止，不构成 ready 或验收通过");
   assert.equal(
     documents.some(
       (d) =>

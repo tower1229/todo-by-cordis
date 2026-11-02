@@ -120,7 +120,7 @@ test("已知计数事实不问用户：审查和规划共享12次预算，原运
   });
   const ready = await settle(e);
   assert.equal(ready.status, "ready");
-  assert.equal(ready.budget?.callsUsed, 5);
+  assert.equal(ready.budget?.callsUsed, 4);
   assert.equal(ready.budget!.callsUsed + ready.budget!.callsRemaining, 12);
   assert.equal(ready.revisions!.length, 1);
   assert.equal(ready.clarificationReviews!.length, 1);
@@ -173,8 +173,8 @@ for (const kind of ["scope-reduction", "technical"])
     });
     const run = await settle(e);
     assert.equal(run.status, "blocked");
-    assert.equal(run.budget?.callsUsed, 3);
-    assert.equal(run.budget!.callsRemaining, 9);
+    assert.equal(run.budget?.callsUsed, 2);
+    assert.equal(run.budget!.callsRemaining, 10);
     assert.equal((await e.observe()).candidates?.length ?? 0, 0);
     assert.equal(run.clarificationReviews![0].decision.kind, kind);
   });
@@ -206,7 +206,7 @@ test("真正业务歧义仍进入原澄清流程，内部审查记录与计数�
   });
   const waiting = await settle(e);
   assert.equal(waiting.status, "awaiting-input");
-  assert.equal(waiting.budget?.callsUsed, 3);
+  assert.equal(waiting.budget?.callsUsed, 2);
   await answerCurrent(e, {
     type: "answer",
     runId: waiting.id,
@@ -216,7 +216,7 @@ test("真正业务歧义仍进入原澄清流程，内部审查记录与计数�
   const ready = await settle(e);
   assert.equal(ready.status, "ready");
   assert.equal(ready.id, waiting.id);
-  assert.equal(ready.budget?.callsUsed, 6);
+  assert.equal(ready.budget?.callsUsed, 4);
   assert.equal(ready.clarificationReviews!.length, 1);
 });
 
@@ -380,7 +380,7 @@ test("来源未要求的初始限制退回同一规划循环，不增加用户�
   const ready = await settle(e);
   assert.equal(ready.status, "ready");
   assert.equal(ready.revisions!.length, 1);
-  assert.equal(ready.budget?.callsUsed, 5);
+  assert.equal(ready.budget?.callsUsed, 4);
   assert.equal(ready.budget!.callsUsed + ready.budget!.callsRemaining, 12);
 });
 
@@ -430,7 +430,7 @@ test("复核生成的未要求初始呈现问题也必须审查，原意见保�
     return reply;
   }});
   await e.command({type:"request",text:source,operationId:"request"});
-  const ready=await settle(e);assert.equal(ready.status,"ready");assert.equal(ready.budget?.callsUsed,6);assert.equal(ready.revisions!.length,1);assert.equal(audits,1);
+  const ready=await settle(e);assert.equal(ready.status,"ready");assert.equal(ready.budget?.callsUsed,5);assert.equal(ready.revisions!.length,1);assert.equal(audits,1);
   assert.equal(ready.clarificationReviews![0].decision.kind,"unnecessary");
   assert.equal(ready.reviewLedger!.attempts.length,2);
   assert.ok(ready.reviewLedger!.attempts[0].review.issues.length);
@@ -480,7 +480,7 @@ test("独立来源审查在同一复核中消解派生未决选择，不重做�
   }});
   await e.command({type:"request",text:"完成前复盘必填，其他行为不变",operationId:"request"});
   const ready=await settle(e);
-  assert.equal(ready.status,"ready");assert.equal(reviews,1);assert.equal(audits,1);assert.equal(ready.budget?.callsUsed,4);
+  assert.equal(ready.status,"ready");assert.equal(reviews,1);assert.equal(audits,1);assert.equal(ready.budget?.callsUsed,3);
   assert.equal(ready.revisions!.length,1);
   assert.equal(ready.reviewLedger!.attempts.length,1);
   if(ready.status==="ready"){

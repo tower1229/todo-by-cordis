@@ -1020,11 +1020,15 @@ for (const endBeforeFire of [true, false]) {
         },
       ],
     };
-    const {admissionReceiptFixture} = await import("../app/planning-fixture.js");
-    const requestAdmission=admissionReceiptFixture(capture(workspace),[{id:"fixture:1",text:requirement.sourceQuote}]);
+    const {sourceReviewReceiptFixture} = await import("../app/planning-fixture.js");
+    const domain = new EvolutionDomain(workspace);
+    const context = capture(workspace);
+    const {facts} = domain.admission(context);
+    const binding = bindPlan({...planDraft, cases: [{given: "体验任务含未来截止", when: "退出体验或等待到期", then: "定时器按体验生命周期释放或触发", checker: "schedule/1"}]}, context, []);
+    binding.preflight = {factsHash:hash(facts),facts:facts.map(fact=>({id:fact.id,hash:hash(fact)}))};
+    binding.hostEffects = facts.filter(fact=>fact.id.startsWith("host-fact:effect:"));
     const planDefinition = {
       ...planDraft,
-      requestAdmission,
       requirements: [requirement],
       browserCases: [],
       cases: [
@@ -1035,7 +1039,7 @@ for (const endBeforeFire of [true, false]) {
           checker: "schedule/1",
         },
       ],
-      binding: bindPlan({...planDraft, cases: [{given: "体验任务含未来截止", when: "退出体验或等待到期", then: "定时器按体验生命周期释放或触发", checker: "schedule/1"}]}, capture(workspace), []),
+      binding,
     };
     // This is an authored lifecycle fixture, not real-model semantic review.
     // It receives actual Chromium receipts instead of bypassing the new gate.
@@ -1056,7 +1060,7 @@ for (const endBeforeFire of [true, false]) {
         specification,
         [{ id: "fixture:1", text: requirement.sourceQuote }],
         hash(undefined),
-        { reviewedIds: [requirement.id], issues: [] },
+        { reviewedIds: [requirement.id], issues: [], sourceReview:sourceReviewReceiptFixture(specification,[{id:"fixture:1",text:requirement.sourceQuote}]) },
         ["schedule/1", "browser/1"],
       ),
     };
@@ -1097,10 +1101,8 @@ for (const endBeforeFire of [true, false]) {
       versionId: verified.id,
       sourceHash: "fixture",
     };
-    const domain = new EvolutionDomain(workspace);
     const run = {
       id: "schedule-run",
-      requestAdmissions: [requestAdmission],
       request: "体验调度候选",
       updatedAt: new Date().toISOString(),
       status: "awaiting-apply",

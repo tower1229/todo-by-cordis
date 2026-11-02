@@ -16,7 +16,7 @@ import { Workspace } from "../../src/server/workspace.js";
 import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { bindPlan, capture } from "../../src/server/planning.js";
-import { PlanningDriver, admissionReceiptFixture } from "./planning-fixture.js";
+import { PlanningDriver, sourceReviewReceiptFixture } from "./planning-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
 import { hash } from "../../src/release/storage.js";
 import type { InvestigatedPlan } from "../../src/shared/assistant.js";
@@ -130,7 +130,9 @@ async function certifyFixture(
       ],
     },
   ];
-  plan.requestAdmission = admissionReceiptFixture(capture(w),[{id:"fixture:1",text:plan.summary}]);
+  const {facts}=new EvolutionDomain(w).admission(capture(w));
+  plan.binding!.preflight={factsHash:hash(facts),facts:facts.map(fact=>({id:fact.id,hash:hash(fact)}))};
+  plan.binding!.hostEffects=facts.filter(fact=>fact.id.startsWith("host-fact:effect:"));
   plan.browserCases = [];
   plan.semanticState=compileSemantics(plan,[{id:"fixture:1",text:plan.summary}]);
   plan.changeSpec = compileSpec(plan, runId, hash(w.release.get(plan.baseVersion!).source));
@@ -138,7 +140,7 @@ async function certifyFixture(
     plan,
     [{ id: "fixture:1", text: plan.summary }],
     hash(undefined),
-    { reviewedIds: ["fixture-enabled"], issues: [] },
+    { reviewedIds: ["fixture-enabled"], issues: [], sourceReview:sourceReviewReceiptFixture(plan,[{id:"fixture:1",text:plan.summary}]) },
     ["host-member-enabled/1", "browser/1"],
   );
   w.db.exec(

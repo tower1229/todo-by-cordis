@@ -3,8 +3,15 @@ import type { AcceptanceObligation } from "../../src/shared/acceptance-obligatio
 import { parseAdmission } from "../../src/evolution/request-admission.js";
 import { technicalFacts } from "../../src/evolution/technical-facts.js";
 import {baselineFields} from "../../src/evolution/field-identity.js";
-import { hostEffectIds } from "../../src/evolution/capability-admission.js";
+import { hostEffectIds, parseSourceReview } from "../../src/evolution/capability-admission.js";
 export const noEffectsFixture = () => hostEffectIds.map(effect => ({effect,verdict:"not-requested"}));
+/** Explicit synthetic source judgment for control-flow fixtures without protected host effects. */
+export const sourceReviewFixture = (input: {sources:{id:string}[]}) => ({
+  reviewedSources:input.sources.map(source=>source.id),effects:noEffectsFixture(),
+});
+/** Synthetic host-bound receipt for direct freeze unit fixtures; never upgrades archived evidence. */
+export const sourceReviewReceiptFixture = (plan: Parameters<typeof technicalFacts>[0], sources:{id:string;text:string}[]) =>
+  parseSourceReview(sourceReviewFixture({sources}),sources,technicalFacts(plan));
 export function clarificationPayloadFixture(decisions:unknown|unknown[]) {
   return {effects:noEffectsFixture(),decisions:Array.isArray(decisions)?decisions:[decisions]};
 }
@@ -123,6 +130,7 @@ export class PlanningDriver implements Driver {
       };
       return {
         text: JSON.stringify({
+          sourceReview: sourceReviewFixture(input),
           defaultReviews: (JSON.parse(request.message!).defaults ?? []).map((d: {id:string}) => ({id:d.id,verdict:"safe-default",detail:"模型桩逐项确认低影响可逆且无冲突",targets:[]})),
           reviewedIds: input.requirements.map((r) => r.id),
           issues: [],
@@ -141,13 +149,15 @@ export class PlanningDriver implements Driver {
         raw: { fixture: "independent-review" },
       };
     }
-    if (request.message) {
-      const input = JSON.parse(request.message) as {
+    const contextTexts = [...request.history.flatMap(message => (message as {parts?:{text?:string}[]}).parts?.flatMap(part=>typeof part.text==="string"?[part.text]:[])??[]),...(request.message?[request.message]:[])];
+    for (const context of contextTexts) {
+      let input: {
         sources?: { id: string; text: string }[];
       };
+      try { input=JSON.parse(context); } catch { continue; }
       if (input.sources) {
         this.sources = input.sources;
-        this.delivered = request.message;
+        this.delivered = context;
       }
     }
     const toolReply = (name: string, args: Record<string, unknown>) => ({

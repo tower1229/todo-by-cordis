@@ -26,10 +26,10 @@ function reviewHistory(ledger?: ReviewLedger) {
       issueRef: remember(issue),
     })),
     attempts: ledger.attempts.map(({ review, ...attempt }) => {
-      const { issues: claims, ...result } = review;
+      const { issues: claims, sourceReview, ...result } = review;
       return {
         ...attempt,
-        review: { ...result, issueRefs: claims.map(remember) },
+        review: { ...result, ...(sourceReview ? {sourceReview:{reviewedSources:sourceReview.reviewedSources,effects:sourceReview.effects.intents}} : {}), issueRefs: claims.map(remember) },
       };
     }),
     issues,
@@ -89,7 +89,8 @@ export function requirementReviewInput(
     hostInvariants: spec.invariants,
     contractAuthority: spec.authority,
     designTargets: designTargets(plan).map((target, index) => ({ target: index + 1, ...target })),
-    hostFacts: spec.hostFacts,
+    hostFacts: spec.hostFacts.filter(fact => !fact.id.startsWith("host-fact:effect:")),
+    sourceReviewPolicy: "逐项覆盖全部 sources，并独立判断完整宿主效果矩阵。初始逻辑值、初始显示、名称和动作后值分别解释；不能根据计划期望或当前支持性改写原意。宿主在解释完成后判断实际支持性。遗漏原文要求须报告 omission，不能仅复核已列入提案的项目。",
     hostRules: spec.hostRules.map(
       ({ factId, property, value: _value, ...rule }) => ({
         ...rule,
@@ -105,24 +106,10 @@ export function requirementReviewInput(
       ...sources.map((s) => s.id),
     ],
     requirements: plan.requirements,
-    requestAdmission: plan.requestAdmission
-      ? {
-          contract: plan.requestAdmission.contract,
-          key: plan.requestAdmission.key,
-          receiptHash: hash(plan.requestAdmission),
-          baseVersion: plan.requestAdmission.baseVersion,
-          sourceHash: plan.requestAdmission.sourceHash,
-          factsHash: plan.requestAdmission.factsHash,
-          claims: plan.requestAdmission.claims,
-          semanticReview: plan.requestAdmission.semanticReview,
-          technicalChecks: plan.requestAdmission.technicalChecks,
-          capabilityChecks: plan.requestAdmission.capabilityChecks,
-          initialStates: plan.requestAdmission.initialStates,
-          blockers: plan.requestAdmission.blockers,
-        }
-      : undefined,
-    questionAdjudications: plan.questionAdjudications ?? [],
-    technicalTargets,
+    questionAdjudications: (plan.questionAdjudications ?? []).map(({decision:{effects:_effects,...decision},...receipt})=>({...receipt,decision})),
+    technicalTargets: technicalTargets.map(({actual,evidenceHash,...target})=>({
+      ...target,...(!target.factId.startsWith("host-fact:effect:") ? {actual,evidenceHash} : {}),
+    })),
     businessChoices: businessChoices(plan),
     semanticState: plan.semanticState,
     fieldReviewTargets: sourceTargets(fieldReviewTargets(plan, sources)),

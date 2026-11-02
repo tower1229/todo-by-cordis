@@ -22,6 +22,8 @@ import type {
   RequirementReview,
 } from "../../src/shared/assistant.js";
 import { panelMemberCases } from "./member-case-fixtures.js";
+import { compileSemantics } from "../../src/evolution/requirement-semantics.js";
+import { sourceReviewReceiptFixture } from "./planning-fixture.js";
 
 const sources = [
   {
@@ -187,12 +189,13 @@ test("宿主强制生成初始及动作后 × 新旧任务 × 刷新重启矩阵
 
 test("义务与案例双写篡改及需求修订不能绕过冻结证据", () => {
   const p = plan();
+  p.semanticState=compileSemantics(p,sources);
   p.changeSpec = compileSpec(p, "run", hash("base"));
   p.requirementGate = freezeRequirements(
     p,
     sources,
     "original-request",
-    { reviewedIds: p.requirements!.map((r) => r.id), issues: [] },
+    { reviewedIds: p.requirements!.map((r) => r.id), issues: [], sourceReview:sourceReviewReceiptFixture(p,sources) },
     ["browser/1"],
   );
   const trusted = structuredClone(p.requirementGate);
@@ -206,7 +209,7 @@ test("义务与案例双写篡改及需求修订不能绕过冻结证据", () =>
     p,
     sources,
     "original-request",
-    { reviewedIds: p.requirements!.map((r) => r.id), issues: [] },
+    { reviewedIds: p.requirements!.map((r) => r.id), issues: [], sourceReview:sourceReviewReceiptFixture(p,sources) },
     ["browser/1"],
   );
   assert.ok(gateFailure(p, trusted, "original-request"));

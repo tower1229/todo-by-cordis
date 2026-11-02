@@ -45,6 +45,21 @@ const reply = (value: unknown) => ({
 });
 const empty = () => ({ effects: [], initials: [], questions: [] });
 const input = (r: ModelRequest) => JSON.parse(r.message ?? "{}");
+/** Exercise the real conditional source audit after a model proposes an early blocker. */
+function blockerProbe(driver: Driver): Driver {
+  const probed = new Set<string>();
+  return {generate(request,signal) {
+    const value=input(request);
+    if(request.phase==="planning" && value.sources) {
+      const key=hash(value.sources);
+      if(!probed.has(key)) {
+        probed.add(key);
+        return Promise.resolve({...reply({}),text:"",history:[...request.history,{role:"user",parts:[{text:request.message!}]}],calls:[{name:"report_blocker",args:{reason:"模型桩提出前置阻断，须独立核对原文后决定是否继续"}}]});
+      }
+    }
+    return driver.generate(request,signal);
+  }};
+}
 test("业务初始值经独立分层后不接受渲染器裁决，显式初始显示仍受同一门禁保护", () => {
   const sources = [{ id: "s:1", text: "计数初始为零，未完成任务可以加一" }];
   const facts = technicalFacts({ workflowRules: [], binding: undefined });
@@ -95,7 +110,7 @@ test("澄清的能力矩阵不能遗漏、重复、伪造来源或篡改宿主�
   assert.throws(()=>parseAdmission(JSON.stringify({presentations:[],effects:[],questions:[]}),"base",sources,facts),/initials|未授权/);
 });
 test("已证实的外部和离线交付缺口先于渠道澄清，在原预算内阻塞且无候选", async t => {
-  const { e } = await setup(t, { async generate(request) {
+  const { e } = await setup(t, blockerProbe({ async generate(request) {
     const v = input(request);
     if (v.kind === "request-admission/2") return reply({ ...empty(), effects: [
       { source: 1, sourceQuote: "向外部推送通知", effect: "external-delivery" },
@@ -105,19 +120,19 @@ test("已证实的外部和离线交付缺口先于渠道澄清，在原预算�
     return reply({ decisions: v.claims.map((c: { sourceQuote: string }, i: number) => ({
       claim: i + 1, source: 1, sourceQuote: c.sourceQuote, layer: "capability", verdict: "entailed", detail: "用户明确要求外部交付和离线保证",
     })) });
-  } });
+  } }));
   await e.command({ type: "request", text: "任务到期时向外部推送通知（邮件或短信），离线时仍保证送达", operationId: "request" });
   const run = await settle(e);
   assert.equal(run.status, "blocked");
-  assert.equal(run.budget?.callsUsed, 2);
-  assert.equal(run.budget?.callsRemaining, 10);
+  assert.equal(run.budget?.callsUsed, 3);
+  assert.equal(run.budget?.callsRemaining, 9);
   assert.equal(run.clarificationReviews?.length ?? 0, 0);
   assert.equal((await e.observe()).candidates?.length, 0);
   assert.equal(run.requestAdmissions?.[0].capabilityChecks.length, 2);
   assert.equal(run.stop?.code, "unsupported-host-effect");
 });
 test("预检遗漏能力也不能通过澄清绕过：独立来源能力矩阵先裁决再决定提问", async t => {
-  const { e } = await setup(t, { async generate(request) {
+  const { e } = await setup(t, blockerProbe({ async generate(request) {
     const v = input(request);
     if (v.kind === "request-admission/2") return reply({ ...empty(), questions: [{source:1,sourceQuote:"邮件或短信",question:"选择邮件还是短信？"}] });
     assert.equal(v.kind,"clarification-review/2");
@@ -126,17 +141,17 @@ test("预检遗漏能力也不能通过澄清绕过：独立来源能力矩阵�
       {effect:"offline-delivery",verdict:"required",source:1,sourceQuote:"离线时仍保证送达"},
       {effect:"online-schedule",verdict:"not-requested"},
     ] });
-  } });
+  } }));
   await e.command({type:"request",text:"任务到期时向外部推送通知（邮件或短信），离线时仍保证送达",operationId:"request"});
   const run=await settle(e);
   assert.equal(run.status,"blocked");
   assert.equal(run.stop?.kind,"capability");
-  assert.equal(run.budget?.callsUsed,2);
+  assert.equal(run.budget?.callsUsed,3);
 });
 
 test("宿主已有只读详情和显式动作表单不再交给用户选择，真正业务歧义仍保留", async t => {
   const fixture = new PlanningDriver();
-  const { e } = await setup(t, { async generate(request, signal) {
+  const { e } = await setup(t, blockerProbe({ async generate(request, signal) {
     const v = input(request);
     if (v.kind === "request-admission/2") return reply({ ...empty(), questions: [{ source: 1,
       sourceQuote: "重新打开保留复盘", question: "重新打开后保留的复盘是只读展示还是直接编辑？" }] });
@@ -144,17 +159,17 @@ test("宿主已有只读详情和显式动作表单不再交给用户选择，�
       sourceQuote: "重新打开保留复盘", detail: "只规定保留数据，未要求改变宿主详情与输入交互",
       fact: v.facts.findIndex((f: {id:string}) => f.id === "host-fact:field-interaction") + 1, property: "detail" }));
     return fixture.generate(request, signal);
-  } });
+  } }));
   await e.command({ type: "request", text: "完成前必填复盘，重新打开保留复盘，其他行为不变", operationId: "request" });
   const run = await settle(e);
   assert.equal(run.status, "ready");
   assert.equal(run.stop, undefined);
-  assert.equal(run.budget?.callsUsed, 4);
+  assert.equal(run.budget?.callsUsed, 5);
   assert.equal(run.clarificationReviews?.[0].decision.fact?.actual, "read-only-display");
 });
 test("来源标签误判经独立裁决后继续必要澄清，完整原文及争议随同一运行和预算保留", async (t) => {
   const fixture = new PlanningDriver();
-  const { e, w } = await setup(t, { async generate(r, signal) {
+  const { e, w } = await setup(t, blockerProbe({ async generate(r, signal) {
     const v = input(r);
     if (v.kind === "request-admission/2") return reply(v.sources.length === 1 ? {
       ...empty(),
@@ -167,17 +182,17 @@ test("来源标签误判经独立裁决后继续必要澄清，完整原文及�
       return reply({ decisions: [{ claim: 1, source: 1, sourceQuote: "完成前填写复盘", layer: "initial-display", verdict:"not-requested", detail: "复盘是待填写的字段，原文没有要求该字样作为初始值" }] });
     }
     return fixture.generate(r, signal);
-  } });
+  } }));
   await e.command({ type: "request", text: "完成前填写复盘，是否必填尚未决定", operationId: "request" });
   const waiting = await settle(e); assert.equal(waiting.status, "awaiting-input");
-  assert.equal(waiting.budget?.callsUsed, 3);
+  assert.equal(waiting.budget?.callsUsed, 4);
   assert.equal(waiting.requestAdmissions?.[0].claims.length, 1);
   assert.equal(waiting.requestAdmissions?.[0].semanticReview?.decisions[0].verdict, "not-requested");
   await answerCurrent(e, { type: "answer", runId: waiting.id, text: "复盘必填，其他行为不变", operationId: "answer" });
   const ready = await settle(e); assert.equal(ready.status, "ready");
-  assert.equal(ready.budget?.callsUsed, 6); assert.equal(ready.budget!.callsRemaining, 6);
+  assert.equal(ready.budget?.callsUsed, 8); assert.equal(ready.budget!.callsRemaining, 4);
   assert.equal(ready.requestAdmissions?.length, 2);
-  assert.equal(w.db.prepare("SELECT count(*) n FROM evolution_calls").get()!.n, 6);
+  assert.equal(w.db.prepare("SELECT count(*) n FROM evolution_calls").get()!.n, 8);
 });
 
 test("来源裁决不能漏项、重复、伪造原文或将未裁决争议标为已解决", () => {
@@ -199,29 +214,29 @@ test("来源裁决不能漏项、重复、伪造原文或将未裁决争议标�
 
 test("需求预检的额外问题必须独立审查；不必要问题不打断规划，原问题和裁决随计划冻结",async(t)=>{
  const fixture=new PlanningDriver();
- const {w,e}=await setup(t,{async generate(r,s){
+ const {w,e}=await setup(t,blockerProbe({async generate(r,s){
    const value=input(r);
    if(value.kind==="request-admission/2")return reply({...empty(),questions:[{source:1,sourceQuote:"已有数据不自动更改",question:"显式完成动作能否更新已有值？"}]});
    if(value.kind==="clarification-review/2")return reply(clarificationPayloadFixture({kind:"unnecessary",source:1,sourceQuote:"已有数据不自动更改",detail:"自动迁移与显式完成动作属于不同作用范围，未要求改变既有动作规则"}));
    return fixture.generate(r,s);
- }});
+ }}));
  await e.command({type:"request",text:"完成前必须填写复盘，已有数据不自动更改",operationId:"request"});
  const run=await settle(e);assert.equal(run.status,"ready");if(run.status!=="ready")return;
- assert.equal(run.budget?.callsUsed,4);assert.equal(run.requestAdmissions?.[0].questions.length,1);
+ assert.equal(run.budget?.callsUsed,5);assert.equal(run.requestAdmissions?.[0].questions.length,1);
  assert.equal(run.clarificationReviews?.[0].decision.kind,"unnecessary");
  assert.deepEqual(run.plan.questionAdjudications,run.clarificationReviews);
- assert.equal(w.db.prepare("SELECT count(*) n FROM evolution_calls").get()!.n,4);
+ assert.equal(w.db.prepare("SELECT count(*) n FROM evolution_calls").get()!.n,5);
 });
 
 test("多项预检问题一次合批审查，只向用户展示仍未决定的业务问题",async(t)=>{
- const {e}=await setup(t,{async generate(r){const v=input(r);
+ const {e}=await setup(t,blockerProbe({async generate(r){const v=input(r);
    if(v.kind==="request-admission/2")return reply({...empty(),questions:[{source:1,sourceQuote:"必填尚未决定",question:"复盘是否必填？"},{source:1,sourceQuote:"其他行为不变",question:"是否修改其他行为？"}]});
    assert.equal(v.kind,"clarification-review/2");assert.deepEqual(r.history,[]);assert.equal(r.tools,undefined);
    return reply(clarificationPayloadFixture([{kind:"business-ambiguity",source:1,sourceQuote:"必填尚未决定",detail:"尚未决定"},{kind:"unnecessary",source:1,sourceQuote:"其他行为不变",detail:"用户已明确"}]));
- }});
+ }}));
  await e.command({type:"request",text:"必填尚未决定，其他行为不变",operationId:"request"});
  const run=await settle(e);assert.equal(run.status,"awaiting-input");if(run.status==="awaiting-input")assert.equal(run.question,"复盘是否必填？");
- assert.equal(run.budget?.callsUsed,2);assert.equal(run.clarificationReviews?.length,2);
+ assert.equal(run.budget?.callsUsed,3);assert.equal(run.clarificationReviews?.length,2);
 });
 
 test("预检问题的裁决绑定精确来源与事实；伪造键、旧来源及冲突裁决不能清除待审问题",()=>{
@@ -406,7 +421,7 @@ test("预检不存在状态只提交kind，空值由宿主派生；禁止混入�
 test("JSON合法但来源绑定非法时也在同一交换内有界纠正，不重开运行或丢弃usage", async (t) => {
   const fixture = new PlanningDriver();
   let attempts = 0;
-  const { w, e } = await setup(t, {
+  const { w, e } = await setup(t, blockerProbe({
     async generate(request, signal) {
       if (input(request).kind === "request-admission/2") {
         if (++attempts === 1)
@@ -428,7 +443,7 @@ test("JSON合法但来源绑定非法时也在同一交换内有界纠正，不�
       }
       return fixture.generate(request, signal);
     },
-  });
+  }));
   await e.command({
     type: "request",
     text: "完成前填写复盘",
@@ -436,11 +451,11 @@ test("JSON合法但来源绑定非法时也在同一交换内有界纠正，不�
   });
   const r = await settle(e);
   assert.equal(r.status, "ready");
-  assert.equal(r.budget?.callsUsed, 4);
+  assert.equal(r.budget?.callsUsed, 5);
   assert.equal(r.protocolFailures?.length, 1);
   assert.equal(
     w.db.prepare("SELECT count(*) AS n FROM evolution_calls").get()!.n,
-    4,
+    5,
   );
 });
 
@@ -505,7 +520,7 @@ for (const twice of [false, true])
   test(`空对象复核由协议模块统一处理，共用原预算且有界：${twice ? "重复阻塞" : "一次纠正"}`, async (t) => {
     const fixture = new PlanningDriver();
     let intake = 0;
-    const { w, e } = await setup(t, {
+    const { w, e } = await setup(t, blockerProbe({
       async generate(r, s) {
         if (input(r).kind === "request-admission/2") {
           intake++;
@@ -515,7 +530,7 @@ for (const twice of [false, true])
         }
         return fixture.generate(r, s);
       },
-    });
+    }));
     await e.command({
       type: "request",
       text: "完成前填写复盘",
@@ -523,7 +538,7 @@ for (const twice of [false, true])
     });
     const run = await settle(e);
     assert.equal(run.status, twice ? "blocked" : "ready");
-    assert.equal(run.budget?.callsUsed, twice ? 2 : 4);
+    assert.equal(run.budget?.callsUsed, twice ? 3 : 5);
     assert.equal(run.protocolFailures?.length, twice ? 2 : 1);
     assert.equal(run.budget!.callsUsed + run.budget!.callsRemaining, 12);
     const calls = w.db
@@ -532,7 +547,7 @@ for (const twice of [false, true])
       .map((r) => JSON.parse(String(r.body)));
     assert.equal(calls.length, run.budget!.callsUsed);
     assert.deepEqual(
-      calls.slice(0, 2).map((c) => c.usage.totalTokenCount),
+      calls.slice(1, 3).map((c) => c.usage.totalTokenCount),
       [7, 7],
     );
     if (!twice) assert.equal(run.requestAdmissions?.length, 1);
@@ -566,12 +581,12 @@ for (const malformed of ["empty", "unknown-tool"])
     });
     const run = await settle(e);
     assert.equal(run.status, "ready");
-    assert.equal(run.budget?.callsUsed, 4);
+    assert.equal(run.budget?.callsUsed, 3);
     assert.equal(run.protocolFailures?.length, 1);
   });
 
-test("已知字段明确但无法支持的空白初始呈现在源码调查前阻塞，不能改成降级提问", async (t) => {
-  const { w, e } = await setup(t, {
+test("已知字段明确但无法支持的空白初始呈现经提前阻塞核验确认，不能改成降级提问", async (t) => {
+  const { w, e } = await setup(t, blockerProbe({
     async generate(r) {
       const v = input(r);
       if (v.kind === admissionSourceReviewContract) {
@@ -599,7 +614,7 @@ test("已知字段明确但无法支持的空白初始呈现在源码调查前�
         ],
       });
     },
-  });
+  }));
   const fixture=await memberUiReleaseInput("intake-known-field");
   w.release.record(fixture.panel);
   const version=w.release.record(fixture.composition);
@@ -615,7 +630,7 @@ test("已知字段明确但无法支持的空白初始呈现在源码调查前�
   });
   const run = await settle(e);
   assert.equal(run.status, "blocked");
-  assert.equal(run.budget?.callsUsed, 2);
+  assert.equal(run.budget?.callsUsed, 3);
   assert.match("message" in run ? run.message : "", /维护者.*不能替换/);
   assert.equal((await e.observe()).candidates?.length, 0);
   assert.equal(
@@ -625,13 +640,17 @@ test("已知字段明确但无法支持的空白初始呈现在源码调查前�
   const stored = JSON.parse(
     String(w.db.prepare("SELECT body FROM evolution_runs").get()!.body),
   );
-  assert.deepEqual(stored.investigation.deliveries, []);
+  assert.equal(stored.investigation.deliveries.length,1,"提前报告阻塞仅消费默认资料，无需额外读取");
+  assert.equal(stored.investigation.deliveries[0].phase,"planning");
+  assert.equal(stored.investigation.deliveries[0].call,1);
+  assert.ok(stored.investigation.deliveries[0].materials.some((material:{ref:string})=>material.ref==="inspect_application"));
+  assert.ok(!(await e.observe()).events?.some(event=>event.tool==="read_materials"));
 });
 
-test("必要澄清经过独立审查，回答使旧预检失效，同一运行5次调用ready", async (t) => {
+test("提前阻塞核验中的必要澄清独立审查，回答使旧裁决失效，同一运行继续", async (t) => {
   const fixture = new PlanningDriver();
   const seen: ModelRequest[] = [];
-  const { e } = await setup(t, {
+  const { e } = await setup(t, blockerProbe({
     async generate(r, s) {
       seen.push(r);
       const v = input(r);
@@ -651,7 +670,7 @@ test("必要澄清经过独立审查，回答使旧预检失效，同一运行5�
         });
       return fixture.generate(r, s);
     },
-  });
+  }));
   await e.command({
     type: "request",
     text: "复盘是否必填尚未决定",
@@ -659,7 +678,7 @@ test("必要澄清经过独立审查，回答使旧预检失效，同一运行5�
   });
   const waiting = await settle(e);
   assert.equal(waiting.status, "awaiting-input");
-  assert.equal(waiting.budget?.callsUsed, 2);
+  assert.equal(waiting.budget?.callsUsed, 3);
   await answerCurrent(e, {
     type: "answer",
     runId: waiting.id,
@@ -669,7 +688,7 @@ test("必要澄清经过独立审查，回答使旧预检失效，同一运行5�
   const ready = await settle(e);
   assert.equal(ready.id, waiting.id);
   assert.equal(ready.status, "ready");
-  assert.equal(ready.budget?.callsUsed, 5);
+  assert.equal(ready.budget?.callsUsed, 7);
   assert.equal(ready.requestAdmissions?.length, 2);
   assert.notEqual(
     ready.requestAdmissions![0].sourceHash,
@@ -685,7 +704,7 @@ test("必要澄清经过独立审查，回答使旧预检失效，同一运行5�
 
 test("来源条目澄清经生产调用链绑定独立复核，回答后同预算继续且旧契约不能开始",async(t)=>{
   const fixture=new PlanningDriver();
-  const {e,w}=await setup(t,{async generate(request,signal){
+  const {e,w}=await setup(t,blockerProbe({async generate(request,signal){
     const value=input(request);
     if(value.kind==="request-admission/2"){
       const index=value.sourceItems.findIndex((item:{text:string})=>item.text==="复盘是否必填尚未决定");
@@ -700,11 +719,11 @@ test("来源条目澄清经生产调用链绑定独立复核，回答后同预�
       return reply(clarificationPayloadFixture({kind:"business-ambiguity",detail:"完整原文明确将该项留待用户决定"}));
     }
     return fixture.generate(request,signal);
-  }});
+  }}));
   await e.command({type:"request",text:"完成前填写复盘，复盘是否必填尚未决定，请先集中问我这一项",operationId:"request"});
   const waiting=await settle(e);
   assert.equal(waiting.status,"awaiting-input");
-  assert.equal(waiting.budget?.callsUsed,2);
+  assert.equal(waiting.budget?.callsUsed,3);
   const target=waiting.requestAdmissions![0].questions[0];
   assert.ok(target.choice);
   assert.deepEqual(waiting.clarificationReviews![0].admissionChoice,{id:target.choice.id,hash:hash(target.choice)});
@@ -713,14 +732,14 @@ test("来源条目澄清经生产调用链绑定独立复核，回答后同预�
   const ready=await settle(e);
   assert.equal(ready.status,"ready");
   assert.equal(ready.id,waiting.id);
-  assert.equal(ready.budget?.callsUsed,5);
-  assert.equal(ready.budget?.callsRemaining,7);
+  assert.equal(ready.budget?.callsUsed,7);
+  assert.equal(ready.budget?.callsRemaining,5);
   assert.equal(ready.budget?.candidatesRemaining,3);
-  assert.equal(w.db.prepare("SELECT count(*) n FROM evolution_calls").get()!.n,5);
+  assert.equal(w.db.prepare("SELECT count(*) n FROM evolution_calls").get()!.n,7);
   if(ready.status!=="ready")return;
   const stored=JSON.parse(String(w.db.prepare("SELECT body FROM evolution_runs WHERE id=?").get(ready.id)!.body));
   const original=w.composition();
-  stored.run.plan.requestAdmission.contract="host-admission/9";
+  delete stored.run.plan.requirementGate.review.sourceReview;
   w.db.prepare("UPDATE evolution_runs SET body=? WHERE id=?").run(JSON.stringify(stored),ready.id);
   await assert.rejects(e.command({type:"start",runId:ready.id,planId:ready.plan.id,operationId:"start"}),/预检|重新规划/);
   assert.deepEqual(w.composition(),original);
@@ -730,7 +749,7 @@ test("来源条目澄清经生产调用链绑定独立复核，回答后同预�
 test("澄清预留包含回答后的预检，未达到完整路径预算即阻塞且不提问", async (t) => {
   const { e } = await setup(
     t,
-    {
+    blockerProbe({
       async generate() {
         return reply({
           ...empty(),
@@ -739,7 +758,7 @@ test("澄清预留包含回答后的预检，未达到完整路径预算即阻�
           ],
         });
       },
-    },
+    }),
     6,
   );
   await e.command({
@@ -828,7 +847,7 @@ test("预检不能伪造来源和技术事实；环境缺失在模型调用前�
 test("回答只修改必填性，重复标签误读通过同一语义契约纠正；旧判断可调查复用但旧通过证据失效",async t=>{
   const fixture=new PlanningDriver();
   let reused=0;
-  const {w,e}=await setup(t,{async generate(request,signal){
+  const {w,e}=await setup(t,blockerProbe({async generate(request,signal){
     const v=input(request);
     if(v.kind==="request-admission/2"){
       const source=v.sources.length,quote=source===1?"完成前填写复盘":"复盘必填";
@@ -840,12 +859,12 @@ test("回答只修改必填性，重复标签误读通过同一语义契约纠�
       return reply({decisions:[{claim:1,source,sourceQuote:quote,layer: "initial-display", verdict:"not-requested",detail:"填写对象或必填字段名称，不是初始内容"}]});
     }
     return fixture.generate(request,signal);
-  }});
+  }}));
   await e.command({type:"request",text:"完成前填写复盘，是否必填尚未决定",operationId:"request"});
   const waiting=await settle(e);assert.equal(waiting.status,"awaiting-input");
   await answerCurrent(e, {type:"answer",runId:waiting.id,text:"复盘必填",operationId:"answer"});
   const ready=await settle(e);assert.equal(ready.status,"ready","message" in ready?ready.message:ready.status);
-  assert.equal(ready.id,waiting.id);assert.equal(ready.budget?.callsUsed,7);assert.equal(reused,1);
+  assert.equal(ready.id,waiting.id);assert.equal(ready.budget?.callsUsed,9);assert.equal(reused,1);
   assert.notEqual(ready.requestAdmissions![0].key,ready.requestAdmissions![1].key);
   if(ready.status!=="ready")return;
   assert.equal(ready.plan.semanticState!.entries.filter(e=>e.target.aspect==="initial-display").length,1);

@@ -22,7 +22,7 @@ test("原生视图规划、原文补读、跨重启预算续行和冻结；过�
   let domain=new EvolutionDomain(w);
   let driver=new PlanningViewDriver({invalidConclusion:true});
   let sessions=new ExperienceSessionHost(w);
-  let e=new Evolution(w.db,driver,domain,sessions,{calls:7,candidates:3,milliseconds:600000});
+  let e=new Evolution(w.db,driver,domain,sessions,{calls:6,candidates:3,milliseconds:600000});
   t.after(async()=>{
     await e.close();await sessions.close();await w.close();
     if(!t.passed&&process.env.CORDIS_MATERIAL_EVIDENCE)
@@ -42,7 +42,7 @@ test("原生视图规划、原文补读、跨重启预算续行和冻结；过�
     await writeFile(join(process.env.CORDIS_MATERIAL_EVIDENCE,`published-baseline-${randomUUID()}.json`),JSON.stringify(w.activeVersion().evidence,null,2));
   await command({type:"continue",operationId:randomUUID(),runId:done.id,baseVersion:base.versionId,text:"复盘至少三个字，其他行为不变"});
   const paused=await settleEvolution(e,"awaiting-budget");if(paused.status!=="awaiting-budget")throw new Error("not paused");
-  assert.equal(paused.pause.resume,"plan");assert.equal(paused.budget?.callsUsed,3);
+  assert.equal(paused.pause.resume,"plan");assert.equal(paused.budget?.callsUsed,2);
   const stored=()=>JSON.parse(String(w.db.prepare("SELECT body FROM evolution_runs WHERE id=?").get(paused.id)!.body)) as {run:AssistantRun;investigation:InvestigationState};
   const before=stored();
   if(process.env.CORDIS_MATERIAL_EVIDENCE)
@@ -84,13 +84,13 @@ test("原生视图规划、原文补读、跨重启预算续行和冻结；过�
   const snapshot=await command(resume);assert.deepEqual(await command(resume),snapshot);
   const reviewed=await settleEvolution(e,"awaiting-acceptance");
   if(reviewed.status!=="awaiting-acceptance")throw new Error("missing rule confirmation");
-  assert.equal(reviewed.id,paused.id);assert.equal(reviewed.budget?.callsUsed,5);
-  assert.equal(reviewed.budget?.efficiencyTarget,7);assert.equal(reviewed.budget?.authorized?.calls,13);
+  assert.equal(reviewed.id,paused.id);assert.equal(reviewed.budget?.callsUsed,4);
+  assert.equal(reviewed.budget?.efficiencyTarget,6);assert.equal(reviewed.budget?.authorized?.calls,12);
   assert.equal(reviewed.budget?.grants?.length,1);
   assert.ok(reviewed.plan.binding!.materials.some(material=>hash(material)===hash(view)));
   assert.ok(reviewed.plan.binding!.materials.some(material=>material.ref==="active-acceptance"&&material.hash===view.source!.hash));
   assert.equal(driver.requests.filter(request=>request.phase==="review").length,1);
-  assert.equal(driver.requests.some(request=>request.phase==="admission"),false,"已完成准入不能重放");
+  assert.equal(driver.requests.some(request=>request.phase==="admission"),false,"普通路径不应引入前置准入调用");
   assert.equal(driver.requests.filter(request=>request.phase==="planning").length,1,"已完成原文补读不能重放");
   assert.equal(gateFailure(reviewed.plan,reviewed.plan.requirementGate,undefined,reviewed.reviewLedger),undefined);
   for(const mutation of ["view-hash","source-hash","missing-source"] as const){

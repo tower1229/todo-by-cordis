@@ -51,7 +51,8 @@ test("规划已用九次调用时，首轮精确资料支持直接修正，十�
       requests.push(request);
       if (!request.tools?.some((tool) => tool.name === "submit_candidate")) {
         const reply = await planning.generate(request);
-        if (reply.calls[0]?.name === "propose_plan" && padding++ < 6)
+        // Keep the original nine-call budget pressure using counted read exchanges.
+        if (reply.calls[0]?.name === "propose_plan" && padding++ < 7)
           return {
             ...toolReply("read_materials", { refs: ["active-source"] }),
             history: request.history,
@@ -138,7 +139,7 @@ test("规划已用九次调用时，首轮精确资料支持直接修正，十�
   domain.verifyAcceptance(candidates[1].versionId!, ready.plan);
   assert.equal(finished.budget?.callsUsed, 11);
   assert.equal(finished.budget?.callsRemaining, 1);
-  assert.equal(requests.length + 1, 11, "独立预检由夹具适配器计入同一运行预算");
+  assert.equal(requests.length, 11, "每次真实模型桩交换都与宿主调用台账一一对应");
   assert.deepEqual({ composition: w.composition(), tasks: w.query() }, before);
 });
 

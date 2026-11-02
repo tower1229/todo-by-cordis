@@ -3,6 +3,42 @@ import assert from "node:assert/strict";
 import { currentManifest } from "../../scripts/lib/stability-eval/current.js";
 import { stabilityDriverFor } from "../../scripts/lib/stability-eval/driver-fixture.js";
 import { admissionRequest } from "../../src/evolution/request-admission.js";
+import { Workspace } from "../../src/server/workspace.js";
+import { Evolution } from "../../src/evolution/evolution.js";
+import { EvolutionDomain } from "../../src/server/evolution-domain.js";
+import { settleEvolution } from "./evolution-adapter.js";
+import type { ModelRequest } from "../../src/evolution/driver.js";
+
+for (const id of ["missing-capability-push", "unsupported-blank-presentation"])
+  test(`边界模型桩从规划报告阻断，经原生独立来源审查才阻塞：${id}`, async t => {
+    const directory = await mkdtemp(join(tmpdir(), "cordis-boundary-driver-"));
+    const workspace = await Workspace.open(join(directory, "workspace.db"));
+    const scenario = currentManifest("a".repeat(40)).scenarios.find(s => s.id === id)!;
+    const fixture = stabilityDriverFor(id, scenario);
+    const requests: ModelRequest[] = [];
+    const evolution = new Evolution(workspace.db, {async generate(request, signal) {
+      requests.push(structuredClone(request));
+      return fixture.generate(request, signal);
+    }}, new EvolutionDomain(workspace));
+    t.after(async () => {
+      await evolution.close();
+      await workspace.close();
+      await rm(directory, {recursive:true,force:true});
+    });
+    const before = {composition:workspace.composition(),tasks:workspace.query()};
+    await evolution.command({type:"request",operationId:"boundary",text:scenario.request});
+    const run = await settleEvolution(evolution);
+    assert.equal(run.status, "blocked", JSON.stringify(run));
+    assert.deepEqual(requests.map(request => request.phase), ["planning", "admission", "review"]);
+    assert.equal(requests[2].tools, undefined);
+    assert.deepEqual(requests[2].history, []);
+    assert.equal(run.budget?.callsUsed, 3);
+    assert.ok(run.requestAdmissions?.at(-1)?.semanticReview);
+    assert.equal(workspace.db.prepare("SELECT count(*) n FROM evolution_calls").get()!.n, 3);
+    assert.equal(workspace.db.prepare("SELECT count(*) n FROM evolution_requirement_freezes").get()!.n, 0);
+    assert.equal((await evolution.observe()).candidates?.length, 0);
+    assert.deepEqual({composition:workspace.composition(),tasks:workspace.query()}, before);
+  });
 
 test("当前澄清模型桩在来源预检阶段提出已冻结的未决项，回答后不再次提问", async () => {
   const scenario = currentManifest("a".repeat(40)).scenarios.find(s => s.id === "clarification-reflection")!;

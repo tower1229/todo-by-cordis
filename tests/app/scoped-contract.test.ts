@@ -26,6 +26,7 @@ import { reviewEvidence } from "../../src/evolution/review.js";
 import { parseFieldDecisions } from "../../src/evolution/field-review.js";
 import { tagsTrimOnlyMemberCases } from "./member-case-fixtures.js";
 import { schemaProblems } from "../../src/evolution/model-protocol.js";
+import { sourceReviewFixture } from "./planning-fixture.js";
 
 const sources = [
   { id: "run:1", text: "增加任务标签，保存时拒绝空白标签；其他行为不变。" },
@@ -343,6 +344,7 @@ test("不存在授权时保留业务未决；授权不能跨动作、准备路�
     reviewedIds: ["tag"],
     issues: [],
     fieldDecisions: [],
+    sourceReview: sourceReviewFixture({sources}),
     unresolvedChoices: [unresolved],
   };
   assert.equal(parseReview(JSON.stringify(raw), p, sources).issues.length, 1);
@@ -381,6 +383,7 @@ test("同一复核不能同时声称该作用域已授权且仍未决定，授�
     reviewedIds: ["tag"],
     issues: [],
     fieldDecisions: [],
+    sourceReview: sourceReviewFixture({sources:authorizedSources}),
     designDecisions: [permission()],
     unresolvedChoices: [
       {
@@ -437,6 +440,7 @@ test("设计授权消解生成宿主证据；无关修改不能消解同一动�
     reviewedIds: ["tag"],
     issues: [],
     fieldDecisions: [],
+    sourceReview: sourceReviewFixture({sources:authorizedSources}),
     resolutions: [
       {
         issueId: ledger.findings[0].id,
