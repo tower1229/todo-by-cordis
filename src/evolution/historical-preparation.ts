@@ -79,8 +79,11 @@ export function historicalPreparation(
       }
       if (
         c.member === target.member &&
+        !Object.hasOwn(node.fields, target.field) &&
         Object.hasOwn(c.expected.fields, target.field)
       ) {
+        // Updates keep using the established history; they are not new seeds.
+        // Continue traversing below so later frozen contradictions still block.
         const recipe: BaselinePreparation = {
           baseVersion,
           sourceHash: hash(origins),
