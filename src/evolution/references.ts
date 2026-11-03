@@ -412,6 +412,7 @@ export function compileReferences(
         memberCases as import("../shared/acceptance-cases.js").MemberAcceptanceCase[], rules,
         steps=>bindSteps(steps,requirement.id), [], renderable(requirement), lifecycle.existing,
         scheduledMembers(draft as Pick<InvestigatedPlan,"capabilityChanges"|"requiredCapabilities">),
+        true, // Compare the explicit field against every frozen update, not just fresh saves.
       ).filter((o): o is FieldObligation => o.kind === "field" && sameFieldIdentity(field,o));
       const samples = (o: FieldObligation) => hash(o.scenarios.map(s=>hash({steps:s.steps,value:s.value})).sort());
       if (projected.length !== 1 || hash(field.initial) !== hash(projected[0].initial) ||

@@ -272,6 +272,7 @@ export function deriveFieldObligations(
   }) => boolean = () => true,
   existing: (target: { member: string; field: string }) => boolean = () => true,
   scheduleProviders: ReadonlySet<string> = new Set(),
+  includeExistingUpdates = false,
 ): AcceptanceObligation[] {
   const projections: {
     field: string;
@@ -341,7 +342,8 @@ export function deriveFieldObligations(
         o.field === target.field &&
         o.contribution === target.contribution,
     );
-    if (p.seeded && existing(target) && !declared.length) continue;
+    if (p.seeded && existing(target) && !declared.length && !includeExistingUpdates)
+      continue;
     if (!renderable(target) && !declared.length) continue;
     if (
       (requirement.obligations ?? []).some(

@@ -709,14 +709,13 @@ export function compilePlanInput(
             value: value.trim(),
           }));
         } else
-          // These are independent fresh-task field probes. Backend cases retain
-          // their complete historical fields and expectations; no fields are seeded here.
+          // Project every changed field outcome, including updates to existing values.
+          // operationPreparation replays the frozen path; no fields are seeded here.
           scenarios = operations
             .filter(
               (c) =>
                 c.expected.kind === "commit" &&
                 c.state === workflow.initialState &&
-                (!Object.keys(c.fields).length||!existingFields.has(e.field)) &&
                 Object.hasOwn(c.expected.fields, e.field) &&
                 c.expected.fields[e.field] !== c.fields[e.field],
             )
