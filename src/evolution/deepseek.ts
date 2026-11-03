@@ -238,6 +238,8 @@ export class DeepSeek implements Driver {
         const decoded: unknown = parseToolArguments(String(fn.arguments));
         if (!decoded || typeof decoded !== "object" || Array.isArray(decoded))
           throw new Error("工具参数不是对象");
+        // Rejected objects are correction context; protocolErrors still block execution.
+        args = row(decoded);
         const schema = request.tools?.find(
           (t) => t.name === fn.name,
         )?.parameters;
@@ -245,7 +247,6 @@ export class DeepSeek implements Driver {
           const problems = schemaProblems(decoded, schema);
           if (problems.length) throw new Error(problems.join("；"));
         }
-        args = row(decoded);
       } catch (error) {
         protocolErrors.push(
           "工具参数不符合 JSON 业务契约：" +
