@@ -1,0 +1,80 @@
+{
+  "plan": {
+    "requirements": [
+      {
+        "id": "requirement-b094ce1197e0933a5d26f78e",
+        "description": "请增加标签插件：给任务设置一个文本标签",
+        "sourceRevision": "a9785eca-78d0-4154-b0a3-436cd735cc5e:1",
+        "sourceQuote": "请增加标签插件：给任务设置一个文本标签",
+        "type": "behavior",
+        "checks": [],
+        "obligations": [
+          {
+            "version": 1,
+            "id": "obligation-4d509b90b502aaa1e0d9b4ef",
+            "kind": "field",
+            "member": "tags",
+            "contribution": "tag-detail",
+            "field": "tag",
+            "initialOrigin": "requirement",
+            "initial": {
+              "kind": "visible",
+              "value": "（空）"
+            },
+            "scenarios": [
+              {
+                "id": "8c9ee487ca8d1a17",
+                "steps": [
+                  {
+                    "kind": "action",
+                    "action": "setTags",
+                    "input": {
+                      "tag": "  Release 候选  "
+                    },
+                    "member": "tags"
+                  }
+                ],
+                "value": "Release 候选"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "workflowRules": []
+  },
+  "sources": [
+    {
+      "id": "a9785eca-78d0-4154-b0a3-436cd735cc5e:1",
+      "text": "请增加标签插件：给任务设置一个文本标签，保存时去掉首尾空格，拒绝空白标签，保留大小写；其他行为不变。"
+    }
+  ],
+  "rawReview": {
+    "reviewedIds": [
+      "requirement-b094ce1197e0933a5d26f78e"
+    ],
+    "issues": [
+      {
+        "kind": "extra-constraint",
+        "sourceRevision": "a9785eca-78d0-4154-b0a3-436cd735cc5e:1",
+        "sourceQuote": "请增加标签插件：给任务设置一个文本标签，保存时去掉首尾空格，拒绝空白标签，保留大小写；其他行为不变。",
+        "detail": "原文只要求新增标签并处理保存时的去空白、拒绝空白和保留大小写，没有要求新标签初始显示“（空）”。当前 obligation-4d509b90b502aaa1e0d9b4ef 以 initialOrigin=requirement 绑定 initial visible“（空）”，把宿主对缺失辅助字段的默认呈现误归因为用户业务要求；应改为宿主默认/无业务初始呈现要求。",
+        "target": {
+          "subject": "requirement-b094ce1197e0933a5d26f78e",
+          "aspect": "visibility"
+        },
+        "stance": "forbidden"
+      }
+    ],
+    "fieldDecisions": [
+      {
+        "target": 1,
+        "source": 1,
+        "sourceQuote": "请增加标签插件：给任务设置一个文本标签",
+        "initial": {
+          "kind": "unspecified"
+        }
+      }
+    ]
+  }
+}

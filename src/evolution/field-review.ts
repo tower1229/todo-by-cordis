@@ -144,7 +144,7 @@ export function parseFieldDecisions(
             sourceQuote: decision.sourceQuote,
             sourceDecision: { kind: "field-initial", obligationId: o.id, interpretationHash: hash(decision) },
             target: { subject: requirement.id, aspect: "visibility" },
-            stance: "required",
+            stance: initial.kind === "unspecified" ? "forbidden" : "required",
             detail: `宿主比较独立来源解释与字段义务不一致：${o.field}；来源初始语义 ${JSON.stringify(initial)}，计划 ${o.initialOrigin}:${JSON.stringify(o.initial)}`,
           });
       }
