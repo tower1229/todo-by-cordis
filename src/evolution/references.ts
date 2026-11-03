@@ -78,6 +78,9 @@ export function inheritBrowserCases(
   return {browserCases,changes,blockers};
 }
 type Row = Record<string, unknown>;
+type FieldObligation = Extract<NonNullable<Requirement["obligations"]>[number], {kind:"field"}>;
+const sameFieldIdentity = (a: FieldObligation, b: FieldObligation) =>
+  a.member === b.member && a.field === b.field && a.contribution === b.contribution;
 function row(value: unknown): Row {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("需求引用结构无效");
@@ -393,6 +396,33 @@ export function compileReferences(
       requirement.obligations!.push({version:1,id:"workflow-input-"+hash(workflow.id).slice(0,16),kind:"workflow-input",rules:structuredClone(inputs)});
   };
   for (const requirement of requirements) inputObligation(requirement);
+  // Reuse the accepted host projection only when a declaration has exactly the
+  // same initial state and operation/value samples. Source authority stays on
+  // each requirement; explicit initial values and different samples stay distinct.
+  for (const requirement of requirements) {
+    for (const field of requirement.obligations) {
+      if (field.kind !== "field" || field.derivation || field.initialOrigin !== "host") continue;
+      const previous = new Map((inherited.requirements ?? []).flatMap(r => r.obligations ?? [])
+        .filter((o): o is FieldObligation => o.kind === "field" && !!o.derivation && sameFieldIdentity(field,o))
+        .map(o => [hash(o),o]));
+      if (previous.size !== 1) continue;
+      const prior = [...previous.values()][0];
+      const projected = deriveFieldObligations(
+        {...requirement,obligations:requirement.obligations.filter(o=>o!==field)},
+        memberCases as import("../shared/acceptance-cases.js").MemberAcceptanceCase[], rules,
+        steps=>bindSteps(steps,requirement.id), [], renderable(requirement), lifecycle.existing,
+        scheduledMembers(draft as Pick<InvestigatedPlan,"capabilityChanges"|"requiredCapabilities">),
+      ).filter((o): o is FieldObligation => o.kind === "field" && sameFieldIdentity(field,o));
+      const samples = (o: FieldObligation) => hash(o.scenarios.map(s=>hash({steps:s.steps,value:s.value})).sort());
+      if (projected.length !== 1 || hash(field.initial) !== hash(projected[0].initial) ||
+          samples(field) !== samples(projected[0]) ||
+          (field.history && prior.history && hash(field.history) !== hash(prior.history))) continue;
+      field.id = prior.id;
+      field.derivation = structuredClone(projected[0].derivation);
+      field.scenarios = structuredClone(projected[0].scenarios);
+      if (prior.history) field.history = structuredClone(prior.history);
+    }
+  }
   for (const requirement of requirements)
     requirement.obligations.push(
       ...deriveFieldObligations(
@@ -438,7 +468,7 @@ export function compileReferences(
   for (const old of inherited.requirements ?? []) {
     if (requirements.some((r) => r.id === old.id)) continue;
     const derived =
-      old.obligations?.filter((o) => o.kind === "field" && o.derivation) ?? [];
+      old.obligations?.filter((o): o is FieldObligation => o.kind === "field" && !!o.derivation) ?? [];
     if (!derived.length && !old.obligations?.some(o=>o.kind==="workflow-input")) continue;
     const replacement = {
       ...structuredClone(old),
@@ -467,15 +497,26 @@ export function compileReferences(
       renderable(replacement),
       lifecycle.existing,
     );
-    if (derived.some((old) => !regenerated.some((next) => next.id === old.id)))
+    const reboundFields = derived.map((prior) => {
+      const matches = regenerated.filter((next): next is FieldObligation =>
+        next.kind === "field" && sameFieldIdentity(prior,next));
+      return matches.length === 1 && derived.filter(other => sameFieldIdentity(prior,other)).length === 1
+        ? matches[0] : undefined;
+    });
+    if (reboundFields.some((next) => !next))
       throw new Error(
         "既有字段的宿主派生义务无法重新绑定；须显式修订原要求，不能删除旧断言",
       );
-    for (const o of regenerated) {
-      const prior = derived.find((old) => old.id === o.id);
-      if (o.kind === "field" && prior?.kind === "field" && prior.history)
-        o.history = structuredClone(prior.history);
+    for (const [index,prior] of derived.entries()) {
+      const next = reboundFields[index]!;
+      // A canonical declaration can supply new samples without changing the
+      // inherited host projection's identity, provenance, or baseline history.
+      next.id = prior.id;
+      next.derivation = structuredClone(prior.derivation);
+      if (prior.history) next.history = structuredClone(prior.history);
     }
+    const priorCaseIds = new Set(derived.flatMap(o=>obligationCases(o).map(c=>c.id)));
+    replacement.checks = replacement.checks.filter(c=>c.checker!=="browser/1"||!priorCaseIds.has(c.caseId));
     replacement.obligations.push(...regenerated);
     requirements.push(replacement);
   }
