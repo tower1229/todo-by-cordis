@@ -41,6 +41,7 @@ import type { Driver, ModelReply, ModelRequest } from "./driver.js";
 import { ModelTransportError } from "./driver.js";
 import { transportFailure } from "./transport-failure.js";
 import { HistoricalPreparationBlocked } from "./historical-preparation.js";
+import { inheritBrowserCases } from "./references.js";
 import { OperationPreparationError } from "./obligation-derivation.js";
 import type {
   CandidateAttempt,
@@ -1754,28 +1755,10 @@ export class Evolution {
                     });
                 }
               }
-              for (const old of inherited.browserCases ?? []) {
-                const replacement = plan.browserCases?.find(
-                  (item) => item.id === old.id,
-                );
-                if (!replacement) (plan.browserCases ??= []).push(old);
-                else if (hash(replacement) !== hash(old)) {
-                  if (
-                    typeof call.args.acceptanceReason !== "string" ||
-                    !call.args.acceptanceReason.trim()
-                  )
-                    parsed.blockers.push(
-                      `既有浏览器案例 ${old.id} 改变，须说明验收修订原因`,
-                    );
-                  else
-                    (plan.acceptanceChanges ??= []).push({
-                      rule: `浏览器案例 ${old.id}`,
-                      before: JSON.stringify(old),
-                      after: JSON.stringify(replacement),
-                      reason: call.args.acceptanceReason,
-                    });
-                }
-              }
+              const browsers = inheritBrowserCases(plan,inherited,call.args.acceptanceReason);
+              plan.browserCases = browsers.browserCases;
+              if (browsers.changes.length) (plan.acceptanceChanges ??= []).push(...browsers.changes);
+              parsed.blockers.push(...browsers.blockers);
             }
             plan.requirements = plan.requirements?.map(requirement => ({...requirement,
               id: requirement.sourceRevision.startsWith(r.run.id + ":") && !(inherited.requirements ?? []).some(old => old.id === requirement.id) && !(r.run.plans ?? []).some(p => p.requirements?.some(old => old.id === requirement.id && old.sourceRevision === requirement.sourceRevision))

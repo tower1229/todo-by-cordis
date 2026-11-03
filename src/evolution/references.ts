@@ -8,6 +8,7 @@ import {
   HistoricalPreparationBlocked,
 } from "./historical-preparation.js";
 import type { Requirement } from "../shared/assistant.js";
+
 import {
   fieldLifecycle,
   deriveFieldObligations,
@@ -18,6 +19,64 @@ import { historicalPreparation } from "./historical-preparation.js";
 import {bindAvailability,type ActionAvailability} from "./action-availability.js";
 import { schedulePolicyChecks } from "../shared/schedule-policy.js";
 
+/** Inherit accepted browser cases and report every explicit revision to the caller. */
+export function inheritBrowserCases(
+  plan: Pick<InvestigatedPlan, "requirements" | "browserCases">,
+  inherited: Pick<InvestigatedPlan, "requirements" | "browserCases">,
+  reason: unknown,
+) {
+  const compiled = plan.browserCases ?? [];
+  const browserCases = [...compiled];
+  const changes: NonNullable<InvestigatedPlan["acceptanceChanges"]> = [];
+  const blockers: string[] = [];
+  const reboundFieldCase = (old: BrowserCase) => {
+    if (old.classification !== "frozen-business" || !old.obligationId) return;
+    const matches: BrowserCase[] = [];
+    for (const owner of inherited.requirements ?? []) {
+      const previous = owner.obligations?.find(o => o.id === old.obligationId);
+      const current = plan.requirements?.find(r => r.id === owner.id);
+      if (previous?.kind !== "field" || !current || hash(current) === hash(owner)) continue;
+      const scopes = new Set((plan.requirements ?? []).flatMap(r => r.obligations ?? [])
+        .filter(o => o.kind === "field" && o.member === previous.member && o.field === previous.field)
+        .map(o => o.kind === "field" ? o.contribution : undefined));
+      if (!previous.contribution && scopes.size !== 1) continue;
+      const fields = (current.obligations ?? []).filter(o => o.kind === "field" &&
+        o.member === previous.member && o.field === previous.field &&
+        (!previous.contribution || o.contribution === previous.contribution));
+      if (fields.length !== 1 || fields[0].kind !== "field") continue;
+      const field = fields[0];
+      // An old unqualified field may acquire its unique host-bound UI scope.
+      // Preserve every operation, input, other field, and refresh/restart check.
+      const changesValue = old.steps.some(s =>
+        (s.kind === "action" || s.kind === "case-action") && s.member === previous.member);
+      const shape = (steps: BrowserStep[]) => steps.map(s => s.kind === "field" &&
+        s.member === field.member && s.field === field.field &&
+        (!s.contribution || s.contribution === field.contribution)
+        ? {...s,contribution:field.contribution,...(changesValue ? {value:undefined} : {})} : s);
+      for (const candidate of compiled) {
+        if (candidate.classification !== "frozen-business" || candidate.task !== old.task ||
+          candidate.obligationId !== field.id ||
+          (old.prepare && hash(old.prepare) !== hash(candidate.prepare)) ||
+          (!changesValue && !old.prepare && candidate.prepare) ||
+          hash(shape(old.steps)) !== hash(shape(candidate.steps))) continue;
+        if (!matches.some(c => c.id === candidate.id)) matches.push(candidate);
+      }
+    }
+    return matches.length === 1 ? matches[0] : undefined;
+  };
+  for (const old of inherited.browserCases ?? []) {
+    const replacement = compiled.find(item => item.id === old.id) ?? reboundFieldCase(old);
+    if (!replacement) browserCases.push(structuredClone(old));
+    else if (hash(replacement) !== hash(old)) {
+      if (typeof reason !== "string" || !reason.trim()) {
+        blockers.push(`既有浏览器案例 ${old.id} 改变，须说明验收修订原因`);
+        if (replacement.id !== old.id) browserCases.push(structuredClone(old));
+      }
+      else changes.push({rule:`浏览器案例 ${old.id}`,before:JSON.stringify(old),after:JSON.stringify(replacement),reason});
+    }
+  }
+  return {browserCases,changes,blockers};
+}
 type Row = Record<string, unknown>;
 function row(value: unknown): Row {
   if (!value || typeof value !== "object" || Array.isArray(value))
