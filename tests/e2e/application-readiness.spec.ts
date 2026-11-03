@@ -116,12 +116,14 @@ const test = base.extend<{
   },
 });
 
+// Register the existing test budget before the host fixture starts.
+test.describe.configure({ timeout: 90000 });
+
 for (const width of [1360, 320]) {
   test(`应用成功提示必须等待实际组合刷新，随后可立即操作 ${width}px`, async ({
     page,
     host,
   }) => {
-    test.setTimeout(90000);
     await page.setViewportSize({ width, height: 850 });
     const original = host.workspace.composition();
     const held = deferred();
@@ -171,7 +173,6 @@ for (const width of [1360, 320]) {
     page,
     host,
   }) => {
-    test.setTimeout(90000);
     await page.setViewportSize({ width, height: 850 });
     const original = host.workspace.composition();
     const before = host.workspace.read(host.taskId);
@@ -239,7 +240,6 @@ for (const width of [1360, 320]) {
     page,
     host,
   }) => {
-    test.setTimeout(90000);
     await page.setViewportSize({ width, height: 850 });
     const original = host.workspace.composition();
     const before = host.workspace.read(host.taskId);
@@ -285,7 +285,6 @@ for (const width of [1360, 320]) {
     page,
     host,
   }) => {
-    test.setTimeout(90000);
     await page.setViewportSize({ width, height: 850 });
     const original = host.workspace.composition();
     const oldHeld = deferred();
