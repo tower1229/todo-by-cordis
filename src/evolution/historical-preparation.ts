@@ -7,6 +7,16 @@ import type { BrowserCase, BrowserStep } from "../shared/browser-cases.js";
 import { hash } from "../release/storage.js";
 
 export class HistoricalPreparationBlocked extends Error {}
+
+/** Multiple reachable histories stay blocked as a plan defect. The same call ceiling may carry one corrected submission; repeating the defect or exhausting calls stops. */
+export function planningStructureTerminal(input: {
+  historical: boolean;
+  rejectionSeen: boolean;
+  calls: number;
+  callLimit: number;
+}): boolean {
+  return input.rejectionSeen || input.calls >= input.callLimit;
+}
 type Target = { member: string; field: string; contribution?: string };
 type HistoricalObligation = Extract<AcceptanceObligation, { kind: "history" }>;
 

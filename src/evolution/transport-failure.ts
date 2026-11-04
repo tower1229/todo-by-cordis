@@ -66,3 +66,17 @@ export function transportFailure(
                 : "unknown";
   return { kind, elapsedMs: Math.round(elapsedMs), causes };
 }
+
+/** One more dispatch after a recorded transport timeout, still inside the existing call ceiling. */
+export function transportTimeoutRetryable(input: {
+  kind?: string;
+  attempt: number;
+  calls: number;
+  callLimit: number;
+}): boolean {
+  return (
+    input.kind === "timeout" &&
+    input.attempt === 0 &&
+    input.calls < input.callLimit
+  );
+}

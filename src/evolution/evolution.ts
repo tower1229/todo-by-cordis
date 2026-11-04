@@ -16,7 +16,7 @@ import { clarificationRequest, parseClarificationReview, clarificationBlockers, 
 import { admissionRequest, admissionKey, parseAdmission, admissionQuestionState, questionReviewKey, admissionReviewRequest, adjudicateAdmission, admissionResolved } from "./request-admission.js";
 import { admissionChoiceProof, type AdmissionQuestionTarget } from "./source-items.js";
 import { technicalPremiseContext, technicalPremiseBasis, technicalPremiseRequest, parseTechnicalPremises, technicalPremisesResolved } from "./technical-premise.js";
-import { ModelProtocolError, ModelResourceError, replyProblems } from "./model-protocol.js";
+import { ModelProtocolError, ModelResourceError, protocolCorrectionExhausted, replyProblems } from "./model-protocol.js";
 import { stopForError } from "./run-stop.js";
 import {
   adjudicateTechnicalReview,
@@ -39,8 +39,8 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { Driver, ModelReply, ModelRequest } from "./driver.js";
 import { ModelTransportError } from "./driver.js";
-import { transportFailure } from "./transport-failure.js";
-import { HistoricalPreparationBlocked } from "./historical-preparation.js";
+import { transportFailure, transportTimeoutRetryable } from "./transport-failure.js";
+import { HistoricalPreparationBlocked, planningStructureTerminal } from "./historical-preparation.js";
 import { inheritBrowserCases } from "./references.js";
 import { OperationPreparationError } from "./obligation-derivation.js";
 import type {
@@ -1186,8 +1186,32 @@ export class Evolution {
     const memoKey = phase === "review" || phase === "admission" ? hash(request) : undefined;
     if (memoKey && r.memoReplies?.[memoKey]) return structuredClone(r.memoReplies[memoKey]);
     const original = request;
-    for (let attempt = 0; ; attempt++) {
-      const reply = await this.callOnce(r, request, signal, phase);
+    for (let protocolAttempt = 0, timeoutAttempt = 0; ;) {
+      let reply: ModelReply;
+      try {
+        reply = await this.callOnce(r, request, signal, phase);
+      } catch (error) {
+        if (
+          error instanceof ModelTransportError &&
+          transportTimeoutRetryable({
+            kind: error.transport.failure?.kind,
+            attempt: timeoutAttempt,
+            calls: r.calls,
+            callLimit: this.runLimits(r).calls,
+          })
+        ) {
+          timeoutAttempt++;
+          (r.run.transportFailures ??= []).push({
+            phase,
+            call: r.calls,
+            kind: "timeout",
+            attempt: timeoutAttempt,
+          });
+          this.save(r);
+          continue;
+        }
+        throw error;
+      }
       if(reply.transport?.finishReason==="length") {
         (r.run.resourceFailures??=[]).push({phase,call:r.calls,kind:"output-budget",requestHash:hash(original),responseHash:hash(reply.raw),finishReason:"length",usage:reply.usage});
         this.save(r);
@@ -1202,15 +1226,17 @@ export class Evolution {
         if (memoKey) { (r.memoReplies ??= {})[memoKey] = structuredClone(reply); this.save(r); }
         return reply;
       }
+      const previousProblems = r.run.protocolFailures?.at(-1)?.problems;
       (r.run.protocolFailures ??= []).push({phase,call:r.calls,requestHash:hash(original),responseHash:hash(reply.raw),problems});
       this.save(r);
-      if (attempt || r.run.protocolFailures.length > 2)
+      if (protocolCorrectionExhausted({attempt:protocolAttempt,calls:r.calls,callLimit:this.runLimits(r).calls,previousProblems,problems}))
         throw new ModelProtocolError("模型协议未收敛，保留原始响应与用量：" + problems.join("；"));
-      // A single budgeted protocol correction at this seam, never a new run or transport retry.
+      protocolAttempt++;
+      // Budgeted protocol corrections stay inside this run. They are not a new run or a transport retry.
       let input: Record<string,unknown>;
       try { input = JSON.parse(original.message ?? "{}"); }
       catch { input = {originalMessage:original.message}; }
-      request = {...original, message:JSON.stringify({...input,protocolCorrection:{problems,rejected:{text:reply.text,calls:reply.calls},attempt:attempt+1,budget:this.base(r).budget}})};
+      request = {...original, message:JSON.stringify({...input,protocolCorrection:{problems,rejected:{text:reply.text,calls:reply.calls},attempt:protocolAttempt+1,budget:this.base(r).budget}})};
     }
   }
   private remainingTime(r: RecordRun) {
@@ -1691,7 +1717,7 @@ export class Evolution {
               const diagnostic =
                 error instanceof Error ? error.message : "计划结构无效";
               const rejection = hash({ diagnostic: error instanceof OperationPreparationError ? error.rejectionReason : diagnostic, evidence: r.run.evidence });
-              if (error instanceof HistoricalPreparationBlocked || rejections.has(rejection) || r.calls >= this.runLimits(r).calls) {
+              if (planningStructureTerminal({historical:error instanceof HistoricalPreparationBlocked,rejectionSeen:rejections.has(rejection),calls:r.calls,callLimit:this.runLimits(r).calls})) {
                 r.run = {
                   ...this.base(r),
                   status: "blocked",

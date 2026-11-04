@@ -236,6 +236,7 @@ type Run = {
   resourceFailures?: {phase:string;call:number;kind:"output-budget";requestHash:string;responseHash:string;finishReason:"length";usage:unknown}[];
   requestAdmissions?: import("../evolution/request-admission.js").RequestAdmission[];
   protocolFailures?: {phase: string;call: number;requestHash: string;responseHash: string;problems: string[]}[];
+  transportFailures?: {phase: string;call: number;kind: "timeout";attempt: number}[];
   clarificationReviews?: {key: string; question: string; call: number; choice?:{id:string;hash:string}; admissionChoice?: import("../evolution/source-items.js").AdmissionChoiceProof; decision: import("../evolution/clarification-review.js").ClarificationDecision}[];
   reviewLedger?: ReviewLedger;
   staleReason?: string;

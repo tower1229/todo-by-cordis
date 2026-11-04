@@ -167,6 +167,7 @@ export function recordReview(
     const opposite = previous.find(
       (f) =>
         (f.revision === revision || f.status !== "resolved") &&
+        f.issue.kind === issue.kind &&
         f.issue.stance &&
         issue.stance &&
         f.issue.stance !== "undetermined" &&
