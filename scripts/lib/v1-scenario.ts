@@ -18,6 +18,10 @@ import type {
   Task,
 } from "../../src/shared/contracts.js";
 import type { ExperienceSessionSnapshot } from "../../src/server/experience-session.js";
+import type {
+  BudgetPause,
+  ResourceAmounts,
+} from "../../src/shared/evolution-interaction.js";
 
 export const v1Requests = [
   "请增加标签插件：给任务设置一个文本标签，保存时去掉首尾空格，拒绝空白标签，保留大小写；其他行为不变。",
@@ -29,6 +33,30 @@ export const v1Requests = [
 ] as const;
 
 export type V1Event = Record<string, unknown>;
+
+/** Real six-step chains may spend the pause minimum from the shared call ceiling.
+ * Production admission is unchanged. Suggested grants stay unused: they floor at 6. */
+export const realChainCallGrantLimit = 4;
+
+export function realChainCallGrant(
+  pause: BudgetPause,
+  grantsAlready: number,
+): ResourceAmounts | undefined {
+  if (pause.resource !== "calls") return undefined;
+  if (
+    !Number.isSafeInteger(grantsAlready) ||
+    grantsAlready < 0 ||
+    grantsAlready >= realChainCallGrantLimit
+  )
+    return undefined;
+  if (!Number.isSafeInteger(pause.minimum.calls) || pause.minimum.calls < 1)
+    return undefined;
+  return {
+    calls: pause.minimum.calls,
+    candidates: pause.minimum.candidates,
+    milliseconds: pause.minimum.milliseconds,
+  };
+}
 export type V1Options = {
   directory: string;
   driver: Driver;
@@ -211,6 +239,32 @@ export async function runV1Acceptance(options: V1Options) {
             },
       );
       let snapshot = await settled();
+      let callGrants = 0;
+      while (
+        options.mode === "real-model-full-six-step" &&
+        snapshot.run?.status === "awaiting-budget"
+      ) {
+        const amounts = realChainCallGrant(snapshot.run.pause, callGrants);
+        if (!amounts) break;
+        record({
+          type: "budget-grant",
+          phase,
+          pauseRevision: snapshot.run.pause.revision,
+          resource: snapshot.run.pause.resource,
+          amounts,
+          grantIndex: callGrants + 1,
+          note: "Minimum pause grant from the shared remaining calls. Suggested grant is not used.",
+        });
+        await command({
+          type: "resume-budget",
+          operationId: randomUUID(),
+          runId: snapshot.run.id,
+          pauseRevision: snapshot.run.pause.revision,
+          amounts,
+        });
+        callGrants++;
+        snapshot = await settled();
+      }
       assert.deepEqual(fingerprint(), before);
       if (snapshot.run?.status === "awaiting-acceptance") {
         const run = snapshot.run;
