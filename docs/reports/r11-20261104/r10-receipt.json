@@ -1,0 +1,33 @@
+{
+  "schema": "cordis.r10-archive-receipt/1",
+  "verifiedAt": "2026-11-04T08:52:00Z",
+  "sha256": {
+    "r10-part00.gz": "21d8e85e389dd24d14ba9fcd20f1a4453e841bfe4c204e8f6e68fdb3b8b0bf9a",
+    "r10-part01.gz": "8544660774d9a27c8ef90fbea7bd46f961b6ad4581d06957371ecf8538ae5756",
+    "r10-part02.gz": "9adaafbba1e7d817f2e3a9448345cb2d439d6d59d4870a36170dee41af0273c6",
+    "r10-part03.gz": "ddf4ed85bd70cd8af5369d3b57be7ce772a4d16ed3a24aac118b2ad05b9d0074"
+  },
+  "sha256sum": "all four OK",
+  "extract": "cat r10-part0*.gz | tar -xzf - -C .runtime/",
+  "extractedRoot": ".runtime/continuous-revision-study-20261104-r10",
+  "fileCount": 1707,
+  "gitignored": true,
+  "committed": false,
+  "permissionsAfterInspection": "read-only",
+  "r10RealDirectoriesReopened": false,
+  "auditorsPresent": [
+    "audit-outbound-payload.mjs",
+    "audit-targeted-v2.py",
+    "audit-real-study-v2.py"
+  ],
+  "sealedCohortCommit": "608280eb46e096b6539040146e046c374b35bc7a",
+  "sealedCumulativeOccupied": 292,
+  "sealedRemaining": 113,
+  "absentFromArchive": {
+    "priorPaidLedgerFiles": 30,
+    "absoluteDependencyFiles": 6580,
+    "upgradeBaselineDatabaseSha256": "76b1da827ae853280f15f610c0a8c4a05bfedad17a00f73a7dc507d376bfc08d",
+    "counterBaselineDatabaseSha256": "93fa8ce2921a1b36cb298b0598114fa6619cec0d61b3295516f980ef0fceed4b",
+    "environmentFile": "absent; hash recorded in r10 config was not used to reconstruct it"
+  }
+}

@@ -4,10 +4,8 @@
   "keyRead": false,
   "experimentDirectoriesCreated": false,
   "missing": [
-    ".runtime/continuous-revision-study-20261104-r10/prepaid-validation-sha256.json",
-    ".runtime/continuous-revision-study-20261104-r10/audit-targeted-v2.py",
-    ".runtime/continuous-revision-study-20261104-r10/audit-real-study-v2.py",
-    ".runtime/continuous-revision-study-20261104-r10/real-chains-failure-sha256.json",
+    ".runtime/continuous-revision-study-20261103/upgrade-baseline/workspace.db",
+    ".runtime/continuous-revision-study-20261103/counter-baseline/workspace.db",
     "docs/reports/r11-20261104/prepaid-rehearsal-audit.json"
   ]
 }
