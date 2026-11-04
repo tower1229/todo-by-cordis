@@ -384,17 +384,24 @@ export function compileReferences(
     return { ...requirement, obligations };
   });
   const canonical = requirements.flatMap((r) => r.obligations);
+  const frozenFields = inherited.requirementGate
+    ? (inherited.requirements ?? []).flatMap(r => r.obligations ?? [])
+        .filter((o): o is FieldObligation => o.kind === "field")
+    : [];
   // Unchanged accepted auxiliary fields already have complete operation samples.
   // Reuse them for implicit projections; a new declaration or changed member
   // cases must still pass the ordinary revision and independent review gates.
-  const acceptedFields = inherited.requirementGate
-    ? (inherited.requirements ?? []).flatMap(r => r.obligations ?? []).filter(
-        (o): o is FieldObligation => o.kind === "field" && o.member !== "workflow" &&
-          !canonical.some(current => current.kind === "field" && current.member === o.member && current.field === o.field) &&
-          hash(memberCases.filter(c => c.member === o.member)) ===
-            hash((inherited.memberCases ?? []).filter(c => c.member === o.member)),
-      )
-    : [];
+  const acceptedFields = frozenFields.filter(
+    o => o.member !== "workflow" &&
+      !canonical.some(current => current.kind === "field" && current.member === o.member && current.field === o.field) &&
+      hash(memberCases.filter(c => c.member === o.member)) ===
+        hash((inherited.memberCases ?? []).filter(c => c.member === o.member)),
+  );
+  // Changed accepted fields need their update paths too. bindSteps has already
+  // proved a unique UI scope; a different explicit scope cannot authorize it.
+  const includeAcceptedUpdates = (target: {member: string; field: string; contribution?: string}) =>
+    frozenFields.some(o => o.member === target.member && o.field === target.field &&
+      (o.contribution === undefined || o.contribution === target.contribution));
   const renderable = (requirement: Requirement) => (target: {member: string; contribution?: string}) =>
     target.member === "workflow" || !!target.contribution ||
     (requirement.type === "interface" && Array.isArray(draft.capabilityChanges) && draft.capabilityChanges.some(value => {
@@ -423,7 +430,7 @@ export function compileReferences(
         memberCases as import("../shared/acceptance-cases.js").MemberAcceptanceCase[], rules,
         steps=>bindSteps(steps,requirement.id), [], renderable(requirement), lifecycle.existing,
         scheduledMembers(draft as Pick<InvestigatedPlan,"capabilityChanges"|"requiredCapabilities">),
-        true, // Compare the explicit field against every frozen update, not just fresh saves.
+        () => true, // Compare the explicit field against every frozen update, not just fresh saves.
       ).filter((o): o is FieldObligation => o.kind === "field" && sameFieldIdentity(field,o));
       const samples = (o: FieldObligation) => hash(o.scenarios.map(s=>hash({steps:s.steps,value:s.value})).sort());
       if (projected.length !== 1 || hash(field.initial) !== hash(projected[0].initial) ||
@@ -446,6 +453,7 @@ export function compileReferences(
         renderable(requirement),
         lifecycle.existing,
         scheduledMembers(draft as Pick<InvestigatedPlan, "capabilityChanges" | "requiredCapabilities">),
+        includeAcceptedUpdates,
       ),
     );
   const fields = requirements

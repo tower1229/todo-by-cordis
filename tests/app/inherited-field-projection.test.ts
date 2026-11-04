@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compileReferences } from "../../src/evolution/references.js";
+import { compileReferences, inheritBrowserCases } from "../../src/evolution/references.js";
 import { obligationCases } from "../../src/shared/acceptance-obligations.js";
 import type { AcceptanceObligation } from "../../src/shared/acceptance-obligations.js";
 import type { MemberAcceptanceCase } from "../../src/shared/acceptance-cases.js";
@@ -115,4 +115,75 @@ test("浏览器案例仍限制30条，超限反馈明确指出实际数量和上
   const cases = Array.from({ length: 31 }, (_, i) => ({ id: `case-${i}`, task: "new", steps: [{ kind: "refresh" }] }));
   assert.equal(parseBrowserCases(cases.slice(0, 30)).length, 30);
   assert.throws(() => parseBrowserCases(cases), /浏览器.*31.*30/);
+});
+
+function upgrade() {
+  const f = fixture();
+  f.draft.memberCases = structuredClone(f.inherited.memberCases);
+  f.draft.memberCases[1].expected = { kind: "commit", state: "open", fields: { tag: "beta" } };
+  f.draft.memberCases.push({ ...structuredClone(f.draft.memberCases[1]), name: "fresh-save", fields: {} });
+  f.draft.requirements = [{ ...f.draft.requirements[0], id: "accepted-tags" }];
+  return f;
+}
+
+test("已接受字段的隐式更新投影保留覆盖前置，额外单次保存案例不能取代两次保存", () => {
+  const f = upgrade(), before = structuredClone(f), compiled = compile(f);
+  const field = compiled.requirements[0].obligations!.find((o): o is Field => o.kind === "field")!;
+  assert.deepEqual(field.scenarios.map(s => [s.steps.length, s.value]), [[1, "Alpha"], [2, "beta"], [1, "beta"]]);
+  const result = inheritBrowserCases(compiled, f.inherited, "明确修订标签保存后的大小写");
+  const oldOverwrite = f.inherited.browserCases.filter(c => c.id.includes("after-overwrite"));
+  assert.equal(oldOverwrite.length, 2);
+  for (const old of oldOverwrite) {
+    const change = result.changes.find(c => c.rule === `浏览器案例 ${old.id}`);
+    assert.ok(change, "连续操作进入显式修订，不继承过时的结果预期");
+    const after = JSON.parse(change.after);
+    assert.deepEqual(after.steps.filter((s: { kind: string }) => s.kind === "action"), old.steps.filter(s => s.kind === "action"));
+    assert.ok(after.steps.filter((s: { kind: string }) => s.kind === "field").every((s: { value: string }) => s.value === "beta"));
+    assert.equal(after.steps.filter((s: { kind: string }) => s.kind === "refresh" || s.kind === "restart").length, 2);
+    assert.ok(!result.browserCases.some(c => c.id === old.id));
+  }
+  for (const old of f.inherited.browserCases.filter(c => c.classification === "system-protection"))
+    assert.deepEqual(result.browserCases.find(c => c.id === old.id), old);
+  assert.deepEqual(f, before);
+});
+
+test("隐式更新有完整操作路径仍须提供修订原因，旧冻结断言不能静默消失", () => {
+  const f = upgrade(), result = inheritBrowserCases(compile(f), f.inherited, undefined);
+  assert.ok(result.blockers.some(b => b.includes("after-overwrite") && b.includes("修订原因")));
+  for (const old of f.inherited.browserCases.filter(c => c.id.includes("after-overwrite")))
+    assert.deepEqual(result.browserCases.find(c => c.id === old.id), old);
+});
+
+test("已接受字段的隐式更新前置不可达时必须阻断，不能退回单次保存以省略覆盖", () => {
+  const f = upgrade();
+  f.draft.memberCases[1].fields = { tag: "unreachable" };
+  f.draft.memberCases[1].action = "appendTag";
+  assert.throws(() => compile(f), /前置状态.*无法|可达/);
+});
+
+test("没有冻结基线时不扩大隐式既有字段更新范围", () => {
+  const f = upgrade(), { requirementGate: _gate, ...unfrozen } = f.inherited;
+  const result = compileReferences(f.draft, sources, [], workflow, unfrozen);
+  const field = result.requirements[0].obligations!.find((o): o is Field => o.kind === "field")!;
+  assert.ok(field.scenarios.every(s => s.steps.length === 1));
+});
+
+test("有明确不同贡献作用域的冻结字段不授权当前作用域的隐式更新", () => {
+  const f = upgrade();
+  f.field.contribution = "another-detail";
+  const field = compile(f).requirements[0].obligations!.find((o): o is Field => o.kind === "field")!;
+  assert.ok(field.scenarios.every(s => s.steps.length === 1));
+});
+
+test("一个冻结字段不扩大其他已有字段的隐式更新范围", () => {
+  const f = upgrade();
+  f.inherited.uiContributions.push({ id: "count-detail", providerId: "counter", fields: [{ key: "count" }], actions: [{ commandId: "increment" }] });
+  f.inherited.fieldIdentities.push({ member: "counter", field: "count", label: "计数", contribution: "count-detail" });
+  f.draft.memberCases.push(
+    { member: "counter", name: "first", state: "open", fields: {}, action: "increment", input: {}, expected: { kind: "commit", state: "open", fields: { count: "1" } } },
+    { member: "counter", name: "second", state: "open", fields: { count: "1" }, action: "increment", input: {}, expected: { kind: "commit", state: "open", fields: { count: "2" } } },
+  );
+  f.draft.requirements[0].checks.push({ kind: "member", index: 4 }, { kind: "member", index: 5 });
+  const field = compile(f).requirements[0].obligations!.find((o): o is Field => o.kind === "field" && o.member === "counter")!;
+  assert.deepEqual(field.scenarios.map(s => [s.steps.length, s.value]), [[1, "1"]]);
 });

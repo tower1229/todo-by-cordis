@@ -272,7 +272,11 @@ export function deriveFieldObligations(
   }) => boolean = () => true,
   existing: (target: { member: string; field: string }) => boolean = () => true,
   scheduleProviders: ReadonlySet<string> = new Set(),
-  includeExistingUpdates = false,
+  includeExistingUpdates: (target: {
+    member: string;
+    field: string;
+    contribution?: string;
+  }) => boolean = () => false,
 ): AcceptanceObligation[] {
   const projections: {
     field: string;
@@ -344,7 +348,7 @@ export function deriveFieldObligations(
         // unqualified canonical field keeps its accepted identity and cases.
         (o.contribution === target.contribution || o.contribution === undefined),
     );
-    if (p.seeded && existing(target) && !declared.length && !includeExistingUpdates)
+    if (p.seeded && existing(target) && !declared.length && !includeExistingUpdates(target))
       continue;
     if (!renderable(target) && !declared.length) continue;
     if (
