@@ -3,9 +3,7 @@
   "beforeKeyLoad": true,
   "keyRead": false,
   "experimentDirectoriesCreated": false,
-  "missing": [
-    ".runtime/continuous-revision-study-20261103/upgrade-baseline/workspace.db",
-    ".runtime/continuous-revision-study-20261103/counter-baseline/workspace.db",
-    "docs/reports/r11-20261104/prepaid-rehearsal-audit.json"
-  ]
+  "missing": [],
+  "realDirectoryAuthorization": false,
+  "reason": "real-directory-authorization-not-present"
 }

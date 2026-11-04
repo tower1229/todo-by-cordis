@@ -2,8 +2,10 @@
 /**
  * r11 paid-phase gate.
  * Missing evidence refuses before any provider key is read and before
- * real/targeted or real/chains is created. This file never reads
- * DEEPSEEK_API_KEY and never writes into an older batch directory.
+ * real/targeted or real/chains is created. Even when every listed file
+ * exists, directories stay uncreated unless the process is invoked with
+ * --authorize-real-directories. This file never reads DEEPSEEK_API_KEY
+ * and never writes into an older batch directory.
  */
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -37,7 +39,10 @@ if (existsSync(targeted) || existsSync(chains)) {
   );
   process.exit(3);
 }
-if (missing.length > 0) {
+const authorizeDirectories = process.argv.includes(
+  "--authorize-real-directories",
+);
+if (missing.length > 0 || !authorizeDirectories) {
   console.log(
     JSON.stringify(
       {
@@ -46,6 +51,10 @@ if (missing.length > 0) {
         keyRead: false,
         experimentDirectoriesCreated: false,
         missing,
+        realDirectoryAuthorization: authorizeDirectories,
+        reason: missing.length > 0
+          ? "required-evidence-missing"
+          : "real-directory-authorization-not-present",
       },
       null,
       2,
