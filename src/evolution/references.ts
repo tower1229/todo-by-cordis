@@ -81,6 +81,18 @@ type Row = Record<string, unknown>;
 type FieldObligation = Extract<NonNullable<Requirement["obligations"]>[number], {kind:"field"}>;
 const sameFieldIdentity = (a: FieldObligation, b: FieldObligation) =>
   a.member === b.member && a.field === b.field && a.contribution === b.contribution;
+/** Callers prove a unique host binding before reusing a legacy projection. */
+function reuseFieldIdentity(next: FieldObligation, prior: FieldObligation) {
+  next.id = prior.id;
+  if (prior.contribution === undefined) delete next.contribution;
+  // Only complete, unchanged operation paths keep an accepted case identity.
+  // Value changes still require an explicit acceptance revision.
+  next.scenarios = next.scenarios.map(scenario => {
+    const matches = prior.scenarios.filter(old => hash(old.steps) === hash(scenario.steps));
+    return matches.length === 1 ? { ...scenario, id: matches[0].id } : scenario;
+  });
+  if (prior.history) next.history = structuredClone(prior.history);
+}
 function row(value: unknown): Row {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("需求引用结构无效");
@@ -421,7 +433,9 @@ export function compileReferences(
     for (const field of requirement.obligations) {
       if (field.kind !== "field" || field.derivation || field.initialOrigin !== "host") continue;
       const previous = new Map((inherited.requirements ?? []).flatMap(r => r.obligations ?? [])
-        .filter((o): o is FieldObligation => o.kind === "field" && !!o.derivation && sameFieldIdentity(field,o))
+        .filter((o): o is FieldObligation => o.kind === "field" && !!o.derivation &&
+          o.member === field.member && o.field === field.field &&
+          (o.contribution === undefined || o.contribution === field.contribution))
         .map(o => [hash(o),o]));
       if (previous.size !== 1) continue;
       const prior = [...previous.values()][0];
@@ -436,10 +450,9 @@ export function compileReferences(
       if (projected.length !== 1 || hash(field.initial) !== hash(projected[0].initial) ||
           samples(field) !== samples(projected[0]) ||
           (field.history && prior.history && hash(field.history) !== hash(prior.history))) continue;
-      field.id = prior.id;
       field.derivation = structuredClone(projected[0].derivation);
       field.scenarios = structuredClone(projected[0].scenarios);
-      if (prior.history) field.history = structuredClone(prior.history);
+      reuseFieldIdentity(field, prior);
     }
   }
   for (const requirement of requirements)
@@ -485,6 +498,8 @@ export function compileReferences(
   // Recompile host-generated samples when authoritative rules/cases change.
   // Evolution still compares old/new definitions through its original explicit
   // acceptance revision gate; business definitions are never rewritten here.
+  // Rebound copies must not become competing definitions for later owners.
+  const currentDefinitions = requirements.flatMap(r => r.obligations);
   for (const old of inherited.requirements ?? []) {
     if (requirements.some((r) => r.id === old.id)) continue;
     const derived =
@@ -513,14 +528,17 @@ export function compileReferences(
       memberCases as import("../shared/acceptance-cases.js").MemberAcceptanceCase[],
       rules,
       (steps) => bindSteps(steps, old.id),
-      requirements.flatMap((r) => r.obligations),
+      currentDefinitions,
       renderable(replacement),
       lifecycle.existing,
     );
     const reboundFields = derived.map((prior) => {
       const matches = regenerated.filter((next): next is FieldObligation =>
-        next.kind === "field" && sameFieldIdentity(prior,next));
-      return matches.length === 1 && derived.filter(other => sameFieldIdentity(prior,other)).length === 1
+        next.kind === "field" && next.member === prior.member && next.field === prior.field &&
+        // deriveFieldObligations already bound a unique current UI target.
+        // An unqualified legacy projection may follow it; an explicit scope may not change.
+        (prior.contribution === undefined || next.contribution === prior.contribution));
+      return matches.length === 1 && derived.filter(other => other.member === prior.member && other.field === prior.field).length === 1
         ? matches[0] : undefined;
     });
     if (reboundFields.some((next) => !next))
@@ -531,9 +549,8 @@ export function compileReferences(
       const next = reboundFields[index]!;
       // A canonical declaration can supply new samples without changing the
       // inherited host projection's identity, provenance, or baseline history.
-      next.id = prior.id;
       next.derivation = structuredClone(prior.derivation);
-      if (prior.history) next.history = structuredClone(prior.history);
+      reuseFieldIdentity(next, prior);
     }
     const priorCaseIds = new Set(derived.flatMap(o=>obligationCases(o).map(c=>c.id)));
     replacement.checks = replacement.checks.filter(c=>c.checker!=="browser/1"||!priorCaseIds.has(c.caseId));

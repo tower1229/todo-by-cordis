@@ -187,3 +187,98 @@ test("一个冻结字段不扩大其他已有字段的隐式更新范围", () =>
   const field = compile(f).requirements[0].obligations!.find((o): o is Field => o.kind === "field" && o.member === "counter")!;
   assert.deepEqual(field.scenarios.map(s => [s.steps.length, s.value]), [[1, "1"]]);
 });
+
+for (const qualified of [false, true])
+  test(`复制已接受字段的隐式投影保留派生来源，作用域=${qualified}`, () => {
+    const f = fixture(qualified), before = structuredClone(f), result = compile(f);
+    const owner = result.requirements.find(r => r.id === "accepted-tags")!;
+    const projection = result.requirements.find(r => r.id === "counter-request")!
+      .obligations!.find((o): o is Field => o.kind === "field")!;
+    assert.deepEqual(projection.derivation, { checker: "workspace/1" });
+    assert.equal(projection.id, f.field.id);
+    assert.deepEqual(projection.scenarios, f.field.scenarios);
+    assert.deepEqual(owner.obligations, [f.field], "原明确业务定义仍保持独立权威");
+    assert.deepEqual(f, before);
+  });
+
+function projectedUpgrade(qualified: boolean) {
+  const f = fixture(qualified);
+  const first = compileReferences({ ...f.draft, requirements: [
+    ...f.draft.requirements,
+    { ...f.draft.requirements[0], id: "counter-preserve", sourceQuote: "已有标签不变", description: "已有标签不变" },
+  ] }, sources, [], workflow, f.inherited);
+  const inherited = { ...f.inherited, memberCases: f.draft.memberCases,
+    requirements: first.requirements, browserCases: first.browserCases };
+  const memberCases = structuredClone(inherited.memberCases);
+  memberCases[1].expected = { kind: "commit", state: "open", fields: { tag: "beta" } };
+  const draft = { ...f.draft, memberCases, requirements: [{ id: "accepted-tags", source: 3,
+    sourceQuote: "保存标签统一小写，保留计数", description: "保存标签统一小写，保留计数", type: "behavior",
+    checks: f.draft.requirements[0].checks, obligations: [
+      { kind: "backend" } as Record<string, unknown>,
+      { kind: "field", field: "tag", initial: { kind: "baseline" }, scenarios: [
+        { steps: [{ kind: "action", action: "setTag", input: { tag: " Alpha " } }], value: "Alpha" },
+        { steps: [{ kind: "action", action: "setTag", input: { tag: " Alpha " } }, { kind: "action", action: "setTag", input: { tag: " Beta " } }], value: "beta" },
+      ] },
+    ] }] };
+  const nextSources = [...sources, { id: "request:3", text: "保存标签统一小写，保留计数" }];
+  return { f, inherited, draft, nextSources };
+}
+
+for (const qualified of [false, true])
+  test(`仅修订业务所有者即可刷新其他要求的派生字段，作用域=${qualified}`, () => {
+    const p = projectedUpgrade(qualified), before = structuredClone(p);
+    const result = compileReferences(p.draft, p.nextSources, [], workflow, p.inherited);
+    const fields = result.requirements.flatMap(r => r.obligations ?? []).filter(o => o.kind === "field" && o.member === "tags");
+    assert.deepEqual([...new Set(fields.map(o => o.id))], [p.f.field.id], "同一字段不因旧作用域产生重复案例");
+    const preserved = result.requirements.find(r => r.id === "counter-request")!;
+    const old = p.inherited.requirements.find(r => r.id === preserved.id)!;
+    assert.equal(preserved.sourceQuote, old.sourceQuote);
+    assert.equal(preserved.sourceRevision, old.sourceRevision);
+    const field = preserved.obligations!.find((o): o is Field => o.kind === "field" && o.member === "tags")!;
+    assert.deepEqual(field.scenarios.map(s => [s.steps.length, s.value]), [[1, "Alpha"], [2, "beta"]]);
+    assert.equal(field.id, p.f.field.id);
+    assert.equal(field.contribution, p.f.field.contribution);
+    assert.deepEqual(field.derivation, { checker: "workspace/1" });
+    const browsers = inheritBrowserCases(result, p.inherited, "按新要求修订标签保存结果");
+    assert.deepEqual(browsers.blockers, []);
+    for (const oldCase of p.inherited.browserCases.filter(c => c.classification === "system-protection"))
+      assert.deepEqual(browsers.browserCases.find(c => c.id === oldCase.id), oldCase);
+    assert.ok(browsers.changes.some(c => c.before.includes('Beta') && c.after.includes('beta')));
+    assert.deepEqual(p, before);
+  });
+
+test("旧冻结字段副本没有派生来源时仍须显式修订，不能猜测降级为投影", () => {
+  const p = projectedUpgrade(false);
+  const old = p.inherited.requirements.find(r => r.id === "counter-request")!;
+  for (const o of old.obligations ?? []) if (o.kind === "field") delete o.derivation;
+  const before = structuredClone(p);
+  assert.throws(() => compileReferences(p.draft, p.nextSources, [], workflow, p.inherited), /同一字段.*冲突/);
+  assert.deepEqual(p, before);
+});
+
+test("遗漏原明确业务所有者的修订时，不能以其他要求的派生投影替代它", () => {
+  const p = projectedUpgrade(true);
+  p.draft.requirements[0].id = "new-tag-request";
+  assert.throws(() => compileReferences(p.draft, p.nextSources, [], workflow, p.inherited), /同一字段.*冲突/);
+});
+
+test("派生副本具有不同明确作用域时，不能借无作用域兼容规则重新绑定", () => {
+  const p = projectedUpgrade(false);
+  const old = p.inherited.requirements.find(r => r.id === "counter-request")!;
+  for (const o of old.obligations ?? []) if (o.kind === "field") o.contribution = "another-detail";
+  assert.throws(() => compileReferences(p.draft, p.nextSources, [], workflow, p.inherited), /无法重新绑定/);
+});
+
+test("派生新场景缩短操作路径时，旧连续操作断言及修订原因门禁仍保留", () => {
+  const p = projectedUpgrade(false);
+  const field = p.draft.requirements[0].obligations[1] as { scenarios: { steps: unknown[]; value: string }[] };
+  field.scenarios[1].steps.shift();
+  const result = compileReferences(p.draft, p.nextSources, [], workflow, p.inherited);
+  const browsers = inheritBrowserCases(result, p.inherited, undefined);
+  for (const old of p.inherited.browserCases.filter(c => c.id.includes("after-overwrite")))
+    assert.deepEqual(browsers.browserCases.find(c => c.id === old.id), old);
+  const unchanged = projectedUpgrade(false);
+  const replacement = compileReferences(unchanged.draft, unchanged.nextSources, [], workflow, unchanged.inherited);
+  const missingReason = inheritBrowserCases(replacement, unchanged.inherited, undefined);
+  assert.ok(missingReason.blockers.some(b => b.includes("after-overwrite") && b.includes("修订原因")));
+});

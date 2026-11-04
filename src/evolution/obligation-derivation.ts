@@ -361,14 +361,13 @@ export function deriveFieldObligations(
     )
       continue;
     if (declared.length) {
-      for (const d of declared)
-        if (!result.some((o) => hash(o) === hash(d)))
-          result.push(
-            structuredClone(d) as Extract<
-              AcceptanceObligation,
-              { kind: "field" }
-            >,
-          );
+      for (const d of declared) {
+        if (d.kind !== "field") continue;
+        // This requirement projects a canonical definition; it does not gain
+        // independent business authority over a copy of that definition.
+        const projection = { ...structuredClone(d), derivation: d.derivation ?? { checker: p.checker } };
+        if (!result.some((o) => hash(o) === hash(projection))) result.push(projection);
+      }
       continue;
     }
     const id =
