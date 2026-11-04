@@ -1,0 +1,61 @@
+#!/usr/bin/env node
+/**
+ * r11 paid-phase gate.
+ * Missing evidence refuses before any provider key is read and before
+ * real/targeted or real/chains is created. This file never reads
+ * DEEPSEEK_API_KEY and never writes into an older batch directory.
+ */
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+
+const batch =
+  process.argv[2] ?? "docs/reports/r11-20261104";
+const sealedRoot = ".runtime/continuous-revision-study-20261104-r10";
+const required = [
+  join(sealedRoot, "prepaid-validation-sha256.json"),
+  join(sealedRoot, "audit-targeted-v2.py"),
+  join(sealedRoot, "audit-real-study-v2.py"),
+  join(sealedRoot, "real-chains-failure-sha256.json"),
+  join(batch, "ci-gate.json"),
+  join(batch, "source-freeze.json"),
+  join(batch, "prepaid-rehearsal-audit.json"),
+  join(batch, "incident-observation.json"),
+];
+const missing = required.filter((path) => !existsSync(path));
+const targeted = join(batch, "real", "targeted");
+const chains = join(batch, "real", "chains");
+if (existsSync(targeted) || existsSync(chains)) {
+  console.error(
+    JSON.stringify({
+      decision: "refused",
+      reason: "paid experiment directories already exist",
+      keyRead: false,
+    }),
+  );
+  process.exit(3);
+}
+if (missing.length > 0) {
+  console.log(
+    JSON.stringify(
+      {
+        decision: "refused",
+        beforeKeyLoad: true,
+        keyRead: false,
+        experimentDirectoriesCreated: false,
+        missing,
+      },
+      null,
+      2,
+    ),
+  );
+  process.exit(2);
+}
+mkdirSync(targeted, { recursive: true });
+mkdirSync(chains, { recursive: true });
+console.log(
+  JSON.stringify({
+    decision: "gates-present",
+    experimentDirectoriesCreated: true,
+    note: "directory creation is not a model call",
+  }),
+);

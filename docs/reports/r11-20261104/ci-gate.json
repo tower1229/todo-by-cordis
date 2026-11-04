@@ -1,0 +1,61 @@
+{
+  "schema": "cordis.r11-ci-gate/1",
+  "observedAt": "2026-11-04T08:41:30Z",
+  "currentHead": {
+    "commit": "54b1ba3dda7819ee001ccbc71575c2f1d973a126",
+    "runId": 41793691114,
+    "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/41793691114",
+    "event": "push",
+    "status": "completed",
+    "conclusion": "success",
+    "updatedAt": "2026-11-04T08:35:39Z",
+    "workflow": "M1 checks",
+    "node": "24.18.0",
+    "typecheck": "step completed before build; job conclusion success",
+    "build": {
+      "vite": "8.2.4",
+      "assets": [
+        "dist/web/index.html 0.45 kB",
+        "dist/web/assets/index-DfJr-pP8.css 26.62 kB",
+        "dist/web/assets/index-OoB24DdB.js 392.24 kB"
+      ]
+    },
+    "applicationTests": {
+      "tests": 857,
+      "pass": 857,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "durationMs": 1972846.441471
+    },
+    "e2e": {
+      "discovered": 111,
+      "passed": 111,
+      "duration": "23.3m"
+    }
+  },
+  "sourceCommitStillRunning": {
+    "commit": "80e0487e956d9eb56a51281f94906ad178fd7d5c",
+    "runId": 41792902839,
+    "url": "https://github.com/tower1229/todo-by-cordis/actions/runs/41792902839",
+    "status": "in_progress",
+    "conclusion": null,
+    "updatedAt": "2026-11-04T07:31:55Z",
+    "completedSteps": [
+      "setup",
+      "checkout",
+      "setup-node",
+      "pnpm",
+      "install",
+      "typecheck",
+      "build",
+      "playwright install",
+      "pnpm test"
+    ],
+    "currentStep": "pnpm test:e2e",
+    "applicationTestCount": "log unavailable while the run is in progress; count not copied from 54b1ba3",
+    "fullSuitePassed": false
+  },
+  "note": "54b1ba3 is documentation on top of 80e0487. Its green suite covers that source plus the documentation commit. 80e0487 remains an unfinished run and is not recorded as passed."
+}
