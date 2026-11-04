@@ -340,7 +340,9 @@ export function deriveFieldObligations(
         o.kind === "field" &&
         o.member === target.member &&
         o.field === target.field &&
-        o.contribution === target.contribution,
+        // bind() has already proved the current UI scope is unique. A legacy
+        // unqualified canonical field keeps its accepted identity and cases.
+        (o.contribution === target.contribution || o.contribution === undefined),
     );
     if (p.seeded && existing(target) && !declared.length && !includeExistingUpdates)
       continue;

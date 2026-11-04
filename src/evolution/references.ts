@@ -384,6 +384,17 @@ export function compileReferences(
     return { ...requirement, obligations };
   });
   const canonical = requirements.flatMap((r) => r.obligations);
+  // Unchanged accepted auxiliary fields already have complete operation samples.
+  // Reuse them for implicit projections; a new declaration or changed member
+  // cases must still pass the ordinary revision and independent review gates.
+  const acceptedFields = inherited.requirementGate
+    ? (inherited.requirements ?? []).flatMap(r => r.obligations ?? []).filter(
+        (o): o is FieldObligation => o.kind === "field" && o.member !== "workflow" &&
+          !canonical.some(current => current.kind === "field" && current.member === o.member && current.field === o.field) &&
+          hash(memberCases.filter(c => c.member === o.member)) ===
+            hash((inherited.memberCases ?? []).filter(c => c.member === o.member)),
+      )
+    : [];
   const renderable = (requirement: Requirement) => (target: {member: string; contribution?: string}) =>
     target.member === "workflow" || !!target.contribution ||
     (requirement.type === "interface" && Array.isArray(draft.capabilityChanges) && draft.capabilityChanges.some(value => {
@@ -431,7 +442,7 @@ export function compileReferences(
         memberCases as import("../shared/acceptance-cases.js").MemberAcceptanceCase[],
         rules,
         (steps) => bindSteps(steps, requirement.id),
-        canonical,
+        [...canonical, ...acceptedFields],
         renderable(requirement),
         lifecycle.existing,
         scheduledMembers(draft as Pick<InvestigatedPlan, "capabilityChanges" | "requiredCapabilities">),

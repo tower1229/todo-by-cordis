@@ -89,6 +89,8 @@ export function parseRequirements(value: unknown): Requirement[] {
   });
 }
 export function parseBrowserCases(value: unknown): BrowserCase[] {
+  if (Array.isArray(value) && value.length > 30)
+    throw new Error(`浏览器验收案例超出上限：${value.length} 条，最多 30 条`);
   const cases = array(value ?? [], 30).map((item) => {
     const c = record(item);
     if (
