@@ -312,6 +312,7 @@ test("继承和新生成的 browserCases 按内容去重，防止累积超过 30
   for (const original of baseCases) {
     assert.ok(result.browserCases.some(c => c.id === original.id), `Original case ID ${original.id} should be preserved`);
   }
+  assertNoDanglingBrowserChecks(result);
 });
 
 test("停用成员后多继承投影仍不超 30 案例上限（beca405 round-7 disable-tags 路径）", () => {
@@ -364,5 +365,71 @@ test("停用成员后多继承投影仍不超 30 案例上限（beca405 round-7 
     "所有去重后的案例内容应唯一");
   
   // Should not throw on parseBrowserCases
+  assert.doesNotThrow(() => parseBrowserCases(result.browserCases));
+  assertNoDanglingBrowserChecks(result);
+});
+
+function assertNoDanglingBrowserChecks(result: {
+  requirements: { id: string; checks: { checker: string; caseId: string }[]; obligations?: AcceptanceObligation[] }[];
+  browserCases: { id: string }[];
+}) {
+  const dangling = result.requirements.flatMap((r) =>
+    r.checks
+      .filter(
+        (c) =>
+          c.checker === "browser/1" &&
+          !result.browserCases.some((b) => b.id === c.caseId),
+      )
+      .map((c) => `${r.id}:${c.caseId}`),
+  );
+  assert.deepEqual(dangling, [], `悬空案例引用: ${dangling.join(",")}`);
+  const missingGenerated = result.requirements.flatMap((r) =>
+    (r.obligations ?? []).flatMap((o) =>
+      obligationCases(o)
+        .filter((c) => !result.browserCases.some((b) => b.id === c.id))
+        .map((c) => `${r.id}:${o.kind}:${c.id}`),
+    ),
+  );
+  assert.deepEqual(
+    missingGenerated,
+    [],
+    `义务生成案例缺失: ${missingGenerated.join(",")}`,
+  );
+}
+
+test("同一字段身份的派生副本不能另起 after-action ID，去重后检查仍指向存活案例", () => {
+  const f = fixture();
+  const first = compile(f);
+  const owner = first.requirements.find((r) => r.id === "accepted-tags");
+  assert.ok(owner);
+  const field = owner.obligations?.find((o) => o.kind === "field");
+  assert.ok(field && field.kind === "field");
+  const derivedReq = {
+    ...structuredClone(owner),
+    id: "derived-copy",
+    obligations: [
+      { ...structuredClone(field), derivation: { checker: "workspace/1" as const } },
+    ],
+  };
+  const result = compileReferences(
+    f.draft,
+    sources,
+    [],
+    workflow,
+    {
+      ...f.inherited,
+      requirements: [...first.requirements, derivedReq],
+      browserCases: first.browserCases,
+    },
+  );
+  assertNoDanglingBrowserChecks(result);
+  const afterIds = (cases: { id: string }[]) =>
+    [...new Set(cases.filter((c) => c.id.startsWith(`${f.field.id}-after-`)).map((c) => c.id))].sort();
+  assert.deepEqual(
+    afterIds(result.browserCases),
+    afterIds(first.browserCases),
+    "派生副本不得另编一套 after-action 案例 ID",
+  );
+  assert.ok(result.browserCases.length <= 30);
   assert.doesNotThrow(() => parseBrowserCases(result.browserCases));
 });

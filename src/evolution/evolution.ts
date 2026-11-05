@@ -42,6 +42,10 @@ import { ModelTransportError } from "./driver.js";
 import { transportFailure, transportTimeoutRetryable } from "./transport-failure.js";
 import { HistoricalPreparationBlocked, planningStructureTerminal } from "./historical-preparation.js";
 import { inheritBrowserCases } from "./references.js";
+import {
+  dedupeBrowserCases,
+  remapBrowserChecks,
+} from "./browser-case-content.js";
 import { OperationPreparationError } from "./obligation-derivation.js";
 import type {
   CandidateAttempt,
@@ -1782,20 +1786,16 @@ export class Evolution {
                 }
               }
               const browsers = inheritBrowserCases(plan,inherited,call.args.acceptanceReason);
-              // Deduplicate after inheritance to prevent accumulated cases from exceeding 30.
-              // Use same strategy as compileReferences: include obligationId for historical cases
-              // (with prepare) to keep distinct obligation types separate, exclude for others.
-              const caseContentHash = (c: typeof browsers.browserCases[number]) => hash({
-                task: c.task,
-                steps: c.steps,
-                prepare: c.prepare,
-                classification: c.classification,
-                ...(c.prepare ? { obligationId: c.obligationId } : {}),
-              });
-              plan.browserCases = browsers.browserCases.filter(
-                (c, index, all) =>
-                  all.findIndex((other) => caseContentHash(other) === caseContentHash(c)) === index,
+              const { cases: deduplicated, aliases } = dedupeBrowserCases(
+                browsers.browserCases,
               );
+              plan.browserCases = deduplicated;
+              if (aliases.size)
+                for (const requirement of plan.requirements ?? [])
+                  requirement.checks = remapBrowserChecks(
+                    requirement.checks,
+                    aliases,
+                  );
               if (browsers.changes.length) (plan.acceptanceChanges ??= []).push(...browsers.changes);
               parsed.blockers.push(...browsers.blockers);
             }

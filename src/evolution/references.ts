@@ -18,6 +18,10 @@ import {
 import { historicalPreparation } from "./historical-preparation.js";
 import {bindAvailability,type ActionAvailability} from "./action-availability.js";
 import { schedulePolicyChecks } from "../shared/schedule-policy.js";
+import {
+  dedupeBrowserCases,
+  remapBrowserChecks,
+} from "./browser-case-content.js";
 
 /** Inherit accepted browser cases and report every explicit revision to the caller. */
 export function inheritBrowserCases(
@@ -620,16 +624,16 @@ export function compileReferences(
                 (r) => r.obligations ?? [],
               ),
             );
+        // Same field identity + same steps + same history must keep one after-action
+        // case ID. Derivation provenance must not mint a second scenario hash; that
+        // previously let content-hash dedupe drop the derived ID while checks and
+        // obligationCases still required it, forcing a retryable third planning round.
         obligation.scenarios = obligation.scenarios.map((s) => ({
           ...s,
-          id: hash(
-            obligation.derivation
-              ? { scenario: s.id, history: obligation.history!.baseVersion }
-              : {
-                  steps: s.steps,
-                  history: obligation.history!.baseVersion,
-                },
-          ).slice(0, 16),
+          id: hash({
+            steps: s.steps,
+            history: obligation.history!.baseVersion,
+          }).slice(0, 16),
         }));
       }
     }
@@ -668,26 +672,10 @@ export function compileReferences(
   const bound = browsers.map((c) =>
     bindHistoricalCase(c as BrowserCase, histories),
   );
-  // Deduplicate browserCases by content hash to prevent inherited and newly generated
-  // cases with identical content but different IDs from accumulating beyond the limit.
-  // Preserve the first occurrence (prioritizing frozen case IDs from inheritance).
-  // For historical cases (with prepare), include obligationId to keep history vs field
-  // obligations separate; for other cases, exclude obligationId to allow deduping
-  // same-content cases from multiple inherited field projections.
-  const caseContentHash = (c: BrowserCase) => hash({
-    task: c.task,
-    steps: c.steps,
-    prepare: c.prepare,
-    classification: c.classification,
-    // Include obligationId only for cases with historical preparation. This keeps
-    // distinct history vs field obligations separate while allowing same-field
-    // inheritance projections (initial/after-action cases) to dedupe.
-    ...(c.prepare ? { obligationId: c.obligationId } : {}),
-  });
-  const deduplicated = bound.filter(
-    (c, index, all) =>
-      all.findIndex((other) => caseContentHash(other) === caseContentHash(c)) === index,
-  );
+  const { cases: deduplicated, aliases } = dedupeBrowserCases(bound);
+  if (aliases.size)
+    for (const requirement of requirements)
+      requirement.checks = remapBrowserChecks(requirement.checks, aliases);
   return {
     requirements,
     browserCases: deduplicated,
