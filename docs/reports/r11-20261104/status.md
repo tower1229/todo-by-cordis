@@ -147,3 +147,39 @@ Node v24.18.0 本地构建的三个前端文件与 CI 资源名一致，sha256 �
 根因定位：`src/evolution/references.ts` line 504-560 的重新编译逻辑对所有有派生字段的旧需求都尝试用当前提案的 memberCases 重新生成。当添加新插件（counter）时，当前提案只包含新插件的案例，旧插件（tags）依赖的成员案例缺失，导致派生字段无法匹配而抛出门禁错误。
 
 修复：区分「需要重新绑定」和「可以保留」的派生字段。只对当前提案中触及且案例变化的成员进行重新绑定；对未触及或继承中的成员，直接保留原派生字段。提交 `e655fee` 包含修复代码和两项回归测试。`1dae482` 修复类型收窄（reboundFields 验证后显式转为 FieldObligation[]）。本地测试 field-reference-rebind.test.ts（15/15）、acceptance-obligations.test.ts（7/7）、historical-preparation.test.ts（7/7）通过，pnpm typecheck 通过。未跑真实模型验证。
+
+## 2026-11-05 Mac 最小有界付费探针（b7e9965）
+
+观察时间：2026-11-05 03:57Z（Asia/Shanghai 11:57）。分支 tip `b7e99651b9881ba359337eb1c8d08deb428bbd09`。本机 `zangtaodeMacBook-Pro.local`。
+
+### CI 门禁
+
+Push [41956504060](https://github.com/tower1229/todo-by-cordis/actions/runs/41956504060) 与 PR [41956509160](https://github.com/tower1229/todo-by-cordis/actions/runs/41956509160) 均 success（应用 866/866，E2E 111；push 完成 03:52:21Z，PR 完成 03:49:40Z）。付费前刷新了事故观察（Resolved）。
+
+### 账本
+
+探针开始前累计 403/405，剩余 2。已知用量估算 4.645160568 美元，未知预留 1.8874368 美元，保护占额 6.532597368 美元。缺席台账继承 309–394；afde277 证据 395–403 保留未覆盖。绑定：`.runtime/continuous-revision-study-20261104-r11/bounded-probe-b7e9965-bind.json`。
+
+### 探针结果
+
+有界真实路径：单次 `runV1Acceptance`（`real-model-full-six-step`），硬顶 **2** 次新调用（序号 404–405）。Node v24.18.0。未跑双六步 / accept:v1 / stock runner。
+
+| 项 | 值 |
+| --- | --- |
+| 证据目录 | `.runtime/continuous-revision-study-20261104-r11/real/bounded-probe-b7e9965-20261105T035722Z` |
+| 通过 | 否 |
+| 完整六步通过 | 否（仍为 0） |
+| 新调用 | 2（序号 404–405，用量均已知；404 planning，405 review） |
+| 累计 | 405/405，剩余 0 |
+| 本批已知增量 | 0.027025379999999544 美元 |
+| 已知用量估算 | 4.672185947999999 美元 |
+| 未知预留 | 1.8874368 美元 |
+| 保护占额 | 6.559622747999999 美元（仍低于 20） |
+| 实际模型 | deepseek-flash |
+| 停止原因 | **meter-exhaust / cumulative-ceiling**：请求第 406 次调用时 `ordinal <= 405` 断言失败。未到达 phase1 宿主派生重绑定门禁，也未完成六步。 |
+
+这是记录的非通过，不是伪造通过。先前 afde277 路径约需 9 次才碰到重绑定门禁；剩余 2 次不足以验证 e655fee/1dae482 修复。旧 `real/targeted`、`real/chains`、`real/bounded-probe-afde277-20261105T020119Z` 未重置、未覆盖。结果 JSON：`docs/reports/r11-20261104/bounded-probe-b7e9965-outcome.json`。供应商账单未知。没有生产部署。
+
+### 下一步阻塞
+
+调用天花板 **405** 已占满。若完整六步通过数仍为 0，在不提高天花板或另行授权更多调用之前，无法再跑付费六步探针。Routine `todo-by-cordis` 保持启用（完整六步仍未通过）。

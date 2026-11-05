@@ -1,0 +1,70 @@
+{
+  "schema": "cordis.r11-b7e9965-mini-probe-outcome/1",
+  "recordedAt": "2026-11-05T03:59:35.578003+00:00",
+  "commit": "b7e99651b9881ba359337eb1c8d08deb428bbd09",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-b7e9965-bind.json",
+  "evidenceDirectory": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-b7e9965-20261105T035722Z",
+  "passed": false,
+  "completeSixStepPass": false,
+  "paidCalls": 2,
+  "ordinals": {
+    "first": 404,
+    "last": 405
+  },
+  "cumulativeOccupied": 405,
+  "remainingCalls": 0,
+  "knownGoalEstimatedPeakUSD": 4.672185947999999,
+  "goalUnknownUsageReserveUSD": 1.8874368,
+  "goalFeeGuardOccupiedUSD": 6.559622747999999,
+  "currentCohortKnownEstimatedPeakUSD": 0.027025379999999544,
+  "currentCohortUnknownUsageReserveUSD": 0,
+  "actualModel": "deepseek-flash",
+  "fatalHead": "assert.ok(ordinal <= auth.cumulativeCeiling) \u2014 meter exhaust at call 406 / ceiling 405 after planning+review",
+  "stop": {
+    "kind": "meter-exhaust",
+    "phase": "after-review-before-next-dispatch",
+    "code": "cumulative-ceiling",
+    "detail": "assert.ok(ordinal <= auth.cumulativeCeiling) failed when requesting call 406; hard cap 2 new calls (404-405) and global ceiling 405 both reached. Did not reach phase1 host-derived rebind gate. Not a pass."
+  },
+  "accountingStyle": "absent-ledger inheritance for calls 309-394 (and fee totals through 394); afde277 395-403 present on Mac",
+  "weakerAudit": true,
+  "missingAttemptDirsNotOnMac": [
+    "chains-protocol-20261104T2104Z",
+    "chains-history-20261104T2113Z",
+    "chains-review-gate-20261104T2124Z",
+    "chains-disable-tag-review-20261104T2145Z",
+    "chains-timeout-phase3-20261104T2216Z",
+    "real/chains cloud continuation 371-381",
+    "real/performance 382-394"
+  ],
+  "notRun": [
+    "dual full six-step",
+    "pnpm accept:v1 --authorize-real-model",
+    "stock r11 runner --stage chains/performance"
+  ],
+  "ci": {
+    "pushRunId": 41956504060,
+    "prRunId": 41956509160,
+    "headSha": "b7e99651b9881ba359337eb1c8d08deb428bbd09",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-05T03:52:21Z",
+    "prCompletedAt": "2026-11-05T03:49:40Z",
+    "application": {
+      "tests": 866,
+      "pass": 866,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "prLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-b7e9965-pr-41956509160.log",
+    "pushLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-b7e9965-push-41956504060.log"
+  },
+  "tipRepairsExercised": [
+    "e655fee host-derived rebind preserve",
+    "1dae482 reboundFields type narrow",
+    "b7e9965 docs record of typecheck fix"
+  ],
+  "honestNonPass": true,
+  "note": "Prior afde277 needed ~9 calls to hit rebind gate. With only 2 remaining calls this mini probe exhausted the meter after planning+review and never reached the rebind gate or a complete six-step. Complete six-step pass count remains 0. Call ceiling 405 is the next blocker for any further paid six-step attempt without raising the ceiling."
+}
