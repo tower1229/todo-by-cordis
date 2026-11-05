@@ -6,6 +6,7 @@ import type { AcceptanceObligation } from "../../src/shared/acceptance-obligatio
 import type { MemberAcceptanceCase } from "../../src/shared/acceptance-cases.js";
 import type { Requirement, RequirementGate } from "../../src/shared/assistant.js";
 import { parseBrowserCases } from "../../src/server/requirement-coverage.js";
+import { hash } from "../../src/release/storage.js";
 
 type Field = Extract<AcceptanceObligation, { kind: "field" }>;
 const sources = [
@@ -281,4 +282,34 @@ test("派生新场景缩短操作路径时，旧连续操作断言及修订原�
   const replacement = compileReferences(unchanged.draft, unchanged.nextSources, [], workflow, unchanged.inherited);
   const missingReason = inheritBrowserCases(replacement, unchanged.inherited, undefined);
   assert.ok(missingReason.blockers.some(b => b.includes("after-overwrite") && b.includes("修订原因")));
+});
+
+test("继承和新生成的 browserCases 按内容去重，防止累积超过 30 条上限", () => {
+  // Regression test for phase-3 planning-gate failure: browserCases 34 > 30.
+  // When multiple phases inherit and generate obligations for the same fields,
+  // obligationCases can produce browser cases with identical content but different obligation IDs.
+  // Without deduplication, this accumulates beyond the 30-case limit.
+  const f = fixture();
+  const baseCases = f.inherited.browserCases;
+  // Duplicate the inherited cases with different IDs to simulate accumulation across phases (6 copies each)
+  const duplicated = baseCases.flatMap((c, i) => 
+    Array.from({ length: 6 }, (_, copy) => 
+      copy === 0 ? c : { ...structuredClone(c), id: `dup${copy}-${i}-${c.id}` }
+    )
+  );
+  // Each duplicate has the same content (steps, member, field, value) but a different ID
+  assert.ok(duplicated.length > 30, `Test setup should create > 30 cases: got ${duplicated.length}`);
+  f.inherited.browserCases = duplicated;
+  // compileReferences should deduplicate by content hash, keeping only unique cases
+  const result = compile(f);
+  assert.ok(result.browserCases.length <= 30, `browserCases should be deduplicated: got ${result.browserCases.length}, max 30`);
+  // Verify all deduplicated cases are unique by content
+  const hashes = new Set(result.browserCases.map(c => hash(c)));
+  assert.equal(hashes.size, result.browserCases.length, "All deduplicated browserCases should be unique by content");
+  // parseBrowserCases should accept the deduplicated result
+  assert.doesNotThrow(() => parseBrowserCases(result.browserCases));
+  // Verify that the first occurrence (by ID) is preserved
+  for (const original of baseCases) {
+    assert.ok(result.browserCases.some(c => c.id === original.id), `Original case ID ${original.id} should be preserved`);
+  }
 });

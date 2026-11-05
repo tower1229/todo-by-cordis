@@ -642,10 +642,18 @@ export function compileReferences(
         all.findIndex((other) => hash(other) === hash(c)) === index,
     );
   }
+  const bound = browsers.map((c) =>
+    bindHistoricalCase(c as BrowserCase, histories),
+  );
+  // Deduplicate browserCases by content hash to prevent inherited and newly generated
+  // cases with identical content but different IDs from accumulating beyond the limit.
+  // Preserve the first occurrence (prioritizing frozen case IDs from inheritance).
+  const deduplicated = bound.filter(
+    (c, index, all) =>
+      all.findIndex((other) => hash(other) === hash(c)) === index,
+  );
   return {
     requirements,
-    browserCases: browsers.map((c) =>
-      bindHistoricalCase(c as BrowserCase, histories),
-    ),
+    browserCases: deduplicated,
   };
 }
