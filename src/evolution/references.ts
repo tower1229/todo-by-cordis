@@ -636,12 +636,27 @@ export function compileReferences(
     bindAvailability([requirement],inherited.actionAvailability);
     for (const obligation of requirement.obligations) {
       for (const c of obligationCases(obligation)) {
-        const existing = browsers.find((b) => b.id === c.id);
-        if (existing && hash(existing) !== hash(c))
-          throw new Error(
-            "同一字段验收义务发生冲突，初始状态或相同操作不能要求不同结果",
-          );
-        if (!existing) browsers.push(c);
+        const existing = browsers.find((b) => b.id === c.id) as BrowserCase | undefined;
+        if (existing && hash(existing) !== hash(c)) {
+          // When workflow-input cases conflict with inherited system-protection cases,
+          // the workflow-input matrix supersedes the old assertion. This happens when
+          // upgrading from a workflow without fields to one with required fields:
+          // old system-protection expects complete with no input, new workflow-input
+          // requires complete WITH input per the frozen field contract.
+          const isWorkflowInputSuperseding =
+            obligation.kind === "workflow-input" &&
+            existing.classification === "system-protection";
+          if (isWorkflowInputSuperseding) {
+            const index = browsers.indexOf(existing);
+            browsers[index] = c;
+          } else {
+            throw new Error(
+              "同一字段验收义务发生冲突，初始状态或相同操作不能要求不同结果",
+            );
+          }
+        } else if (!existing) {
+          browsers.push(c);
+        }
         requirement.checks.push({ checker: "browser/1", caseId: c.id });
       }
     }
