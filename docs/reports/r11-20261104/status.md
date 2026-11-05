@@ -262,3 +262,42 @@ Push [41976774686](https://github.com/tower1229/todo-by-cordis/actions/runs/4197
 ### 下一步阻塞
 
 完整六步通过数仍为 0。调用天花板 650 仍剩余 209 次，费用护栏仍有余量。当前阻塞是 **业务修订引用的既有要求不存在**（phase-1 natural-flow fatal），不是调用天花板、费用护栏或模型时间窗口。本 docs 轮次不启动序号 442 付费；由 CloudAgent 走代码修复后再议续跑。
+
+## 2026-11-05 Mac round-3 延长时间窗付费探针（6bacd68）
+
+观察时间：2026-11-05 08:40–08:50Z（Asia/Shanghai 16:40–16:50）。分支 tip `6bacd68613e2dfc8da3d9dc07fb9aa07db9614a2`（= origin）。本机 `zangtaodeMacBook-Pro.local`。用户 t51u 授权付费验证且合理调用不设限；费用护栏仍约 20 美元。本轮在 6bacd68（缺失业务修订目标降级为新增要求）合入且双 CI 绿后，用探针本地 `v1-scenario-extended-ms`（1.8e6 ms + milliseconds pause grants）再跑单条六步，序号自 442 起。
+
+### CI 门禁
+
+Push [41987221871](https://github.com/tower1229/todo-by-cordis/actions/runs/41987221871) 与 PR [41987228498](https://github.com/tower1229/todo-by-cordis/actions/runs/41987228498) 均 success（应用 866/866，E2E 111；push 完成 08:39:49Z，PR 完成 08:32:43Z）。既有 wait-ci PID 3521 在双绿后一次性调用 `launch-round3-when-ci-green.sh`；未另开并行探针。付费前刷新了事故观察（Resolved，`incident-visible-20261105T0840Z.txt`；HTML 拉取失败时复用既有归档）。
+
+### 账本
+
+探针开始前累计 **441/650**，剩余 209。已知用量估算起点 5.821876355999996 美元，未知预留 2.359296 美元，保护占额起点 8.181172355999996 美元。缺席台账继承 309–394；afde277 395–403、b7e9965 404–405、4df0cf4 406–431、5ce3a43 432–441 证据保留未覆盖。绑定：`.runtime/continuous-revision-study-20261104-r11/bounded-probe-6bacd68-bind.json`。
+
+### 探针结果
+
+有界真实路径：单次探针本地 extended-ms `runV1Acceptance`（产品 `scripts/lib/v1-scenario.ts` 未改），Node v24.18.0。未跑双六步 / accept:v1 / stock runner。未启动序号 455 的下一轮付费。
+
+| 项 | 值 |
+| --- | --- |
+| 证据目录 | `.runtime/continuous-revision-study-20261104-r11/real/bounded-probe-6bacd68-20261105T084029Z` |
+| 通过 | 否 |
+| 完整六步通过 | 否（仍为 0） |
+| 新调用 | 13（序号 442–454，用量均已知） |
+| 累计 | 454/650，剩余 196 |
+| 本批已知增量 | 0.24945720000000016 美元 |
+| 已知用量估算 | 6.071333555999996 美元 |
+| 未知预留 | 2.359296 美元 |
+| 保护占额 | 8.430629555999996 美元（仍低于 20） |
+| 实际模型 | deepseek-flash |
+| 阶段截图 | phase-0-browser.png、phase-1-browser.png（phase-0/1 各 applied 1 次；phase-2 失败） |
+| 停止原因 | **planning-gate / plan-compilation**：诊断「历史准备无法由基础版本唯一推导：tag:tag」。`blockReason=maintainer-capability`。不是 meter-exhaust，不是 20 美元费用护栏，不是模型时间窗口，也不是 round-2 的「既有要求不存在」。 |
+
+相对 round-2（5ce3a43）：6bacd68 降级修复后 **未复现**「业务修订引用的既有要求不存在」；phase-0 与 phase-1 均已应用。相对 round-1（4df0cf4）：延长时间窗下未再撞 stage model time window。相对 afde277：未复现宿主派生重绑定致命。本轮新阻塞与更早 `chains-history`（`tags:tags`）/ `real/chains`（`counter:count`）同类：**历史准备不唯一（tag:tag）**，停在 phase-2 规划编译门禁。
+
+旧 `real/targeted`、`real/chains`、`real/bounded-probe-afde277-20261105T020119Z`、`real/bounded-probe-b7e9965-20261105T035722Z`、`real/bounded-probe-4df0cf4-20261105T051938Z`、`real/bounded-probe-5ce3a43-20261105T071122Z` 未重置、未覆盖。结果 JSON：`docs/reports/r11-20261104/bounded-probe-6bacd68-outcome.json`。供应商账单未知。没有生产部署。
+
+### 下一步阻塞
+
+完整六步通过数仍为 0。调用天花板 650 仍剩余 196 次，费用护栏仍有余量。当前阻塞是 **历史准备无法由基础版本唯一推导：tag:tag**（phase-2 planning-gate / plan-compilation / maintainer-capability），不是调用天花板、费用护栏、模型时间窗口或 round-2 缺失既有要求。本 docs 轮次不启动序号 455 付费；需代码/基线侧处理 tag 字段历史唯一性后再议续跑。
