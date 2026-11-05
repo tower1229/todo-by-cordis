@@ -671,9 +671,15 @@ export function compileReferences(
   // Deduplicate browserCases by content hash to prevent inherited and newly generated
   // cases with identical content but different IDs from accumulating beyond the limit.
   // Preserve the first occurrence (prioritizing frozen case IDs from inheritance).
+  const caseContentHash = (c: BrowserCase) => hash({
+    task: c.task,
+    steps: c.steps,
+    prepare: c.prepare,
+    classification: c.classification,
+  });
   const deduplicated = bound.filter(
     (c, index, all) =>
-      all.findIndex((other) => hash(other) === hash(c)) === index,
+      all.findIndex((other) => caseContentHash(other) === caseContentHash(c)) === index,
   );
   return {
     requirements,

@@ -313,3 +313,56 @@ test("继承和新生成的 browserCases 按内容去重，防止累积超过 30
     assert.ok(result.browserCases.some(c => c.id === original.id), `Original case ID ${original.id} should be preserved`);
   }
 });
+
+test("停用成员后多继承投影仍不超 30 案例上限（beca405 round-7 disable-tags 路径）", () => {
+  // Regression for bounded-probe-beca405 33>30 failure on disable-tags request.
+  // When a member (tags) is disabled but its frozen field obligations are inherited by other
+  // requirements (counter-preserve), obligationCases generates new cases with different
+  // obligation IDs. These accumulate with system-protection and other inherited cases.
+  // Strong content-hash dedupe must prevent this from exceeding 30.
+  const f = fixture(true);
+  const firstCompile = compileReferences({ ...f.draft, requirements: [
+    ...f.draft.requirements,
+    { ...f.draft.requirements[0], id: "counter-preserve", sourceQuote: "已有标签不变", description: "已有标签不变" },
+  ] }, sources, [], workflow, f.inherited);
+  
+  // Simulate multi-phase with more inherited requirements projecting the same field
+  const inherited = { 
+    ...f.inherited, 
+    memberCases: firstCompile.memberCases ?? f.draft.memberCases,
+    requirements: firstCompile.requirements, 
+    browserCases: firstCompile.browserCases,
+  };
+  
+  // Add more requirements that will inherit and project the tags field
+  const multiInherit = { 
+    ...f.draft, 
+    memberCases: inherited.memberCases,
+    requirements: [
+      { id: "req-1", source: 1, sourceQuote: "需求1", description: "需求1", type: "behavior",
+        checks: [{ kind: "member", index: 1 }], 
+        obligations: [{ kind: "backend" } as Record<string, unknown>] },
+      { id: "req-2", source: 1, sourceQuote: "需求2", description: "需求2", type: "behavior",
+        checks: [{ kind: "member", index: 2 }],
+        obligations: [{ kind: "backend" } as Record<string, unknown>] },
+      { id: "req-3", source: 1, sourceQuote: "需求3", description: "需求3", type: "behavior",
+        checks: [{ kind: "member", index: 3 }],
+        obligations: [{ kind: "backend" } as Record<string, unknown>] },
+    ]
+  };
+  
+  const result = compileReferences(multiInherit, sources, [], workflow, inherited);
+  
+  assert.ok(result.browserCases.length <= 30, 
+    `browserCases 在多成员继承路径应≤30，实际 ${result.browserCases.length}`);
+  
+  // Verify content uniqueness after dedupe
+  const contentHashes = new Set(result.browserCases.map(c => 
+    hash({ task: c.task, steps: c.steps, prepare: c.prepare, classification: c.classification })
+  ));
+  assert.equal(contentHashes.size, result.browserCases.length, 
+    "所有去重后的案例内容应唯一");
+  
+  // Should not throw on parseBrowserCases
+  assert.doesNotThrow(() => parseBrowserCases(result.browserCases));
+});
