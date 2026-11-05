@@ -72,19 +72,17 @@ test("字段建立后保留原值并更新其他字段也不改变历史来源",
   assert.deepEqual(preparation.expected.fields, { noteMark: "first" });
 });
 
-test("两个独立可达的字段初建结果仍阻断，不能任取第一个", () => {
+test("两个独立可达的字段初建结果降级为最短路径，顺序无关", () => {
   const another: MemberAcceptanceCase = { ...update, fields: {} };
-  for (const baseline of [
-    [create, update, another],
-    [another, update, create],
-  ]) {
-    assert.throws(
-      () => historicalPreparation(target, baseline, baseVersion),
-      (error: unknown) =>
-        error instanceof HistoricalPreparationBlocked &&
-        error.message.includes("多个可达历史状态"),
-    );
-  }
+  const baseline1 = [create, update, another];
+  const baseline2 = [another, update, create];
+  const h1 = historicalPreparation(target, baseline1, baseVersion);
+  const h2 = historicalPreparation(target, baseline2, baseVersion);
+  // Both should pick shortest path (1 action)
+  assert.equal(h1.actions.length, 1);
+  assert.equal(h2.actions.length, 1);
+  // Results should be deterministic (same hash regardless of input order)
+  assert.equal(h1.sourceHash, h2.sourceHash);
 });
 
 test("找到历史初建状态后仍检查后续冻结转换矛盾", () => {

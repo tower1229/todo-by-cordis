@@ -113,12 +113,17 @@ export function historicalPreparation(
       }
     }
   }
-  if (results.size !== 1)
-    blocked(
-      results.size
-        ? "目标字段存在多个可达历史状态"
-        : "没有可达的冻结成功动作产生目标字段",
-    );
+  if (results.size === 0)
+    blocked("没有可达的冻结成功动作产生目标字段");
+  if (results.size > 1) {
+    // Multiple reachable histories: degrade to shortest path with stable tie-break.
+    // This allows tag/counter fields to proceed instead of blocking on non-uniqueness.
+    const candidates = [...results.values()];
+    const shortest = Math.min(...candidates.map((r) => r.actions.length));
+    const viable = candidates.filter((r) => r.actions.length === shortest);
+    viable.sort((a, b) => a.sourceHash.localeCompare(b.sourceHash));
+    return viable[0];
+  }
   return [...results.values()][0];
 }
 
