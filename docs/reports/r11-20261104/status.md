@@ -421,3 +421,46 @@ Push [42028882002](https://github.com/tower1229/todo-by-cordis/actions/runs/4202
 
 完整六步通过数仍为 0。调用天花板 650 仍剩余 152 次，费用护栏仍有余量。当前阻塞是 **冻结验收自相冲突**（phase-3 planning-gate / plan-compilation；保护案例 obligation-5ffcbba71ad194ff8c8152b0 vs 必填复盘 input-required），不是调用天花板、费用护栏、模型时间窗口、同一字段验收义务冲突、browserCases 30 上限、tag:tag 历史不唯一或缺失既有要求。本 docs 轮次不启动序号 499 付费；需宿主再生该派生保护案例（complete 携带 review 输入）或调整其保护期望后再议续跑。
 
+
+
+## 2026-11-05 Mac round-7 延长时间窗付费探针（beca405）
+
+观察时间：UTC 2026-11-05T16:01:11.838Z → 2026-11-05T16:25:32.995610+00:00（Asia/Shanghai 2026-11-06 00:01–2026-11-06 00:25）。分支 tip `beca405cefaff970e4c320603f8c7f3bad85dc15`（= origin）。本机 `zangtaodeMacBook-Pro.local`。用户 t51u 授权付费验证且合理调用不设限；费用护栏仍约 20 美元。本轮在 beca405（workflow-input 可取代冲突的 system-protection）合入且双 CI 绿后，用探针本地 `v1-scenario-extended-ms`（1.8e6 ms + milliseconds pause grants）再跑单条六步，序号自 499 起。wait-ci 在双绿后一次性调用 `launch-round7-when-ci-green.sh`；未另开并行探针；未重开 CloudAgent bc-b309fb00。
+
+### CI 门禁
+
+Push [42046481904](https://github.com/tower1229/todo-by-cordis/actions/runs/42046481904) 与 PR [42046497095](https://github.com/tower1229/todo-by-cordis/actions/runs/42046497095) 均 success（应用 {'tests': 866, 'pass': 866, 'fail': 0, 'cancelled': 0, 'skipped': 0}, E2E 111；push 完成 2026-11-05T15:57:01Z，PR 完成 2026-11-05T15:32:26Z）。付费前刷新了事故观察（Resolved）。
+
+### 账本
+
+探针开始前累计 **498/650**，剩余 152。已知用量估算起点 7.146186396 美元，未知预留 2.359296 美元，保护占额起点 9.505482396 美元。缺席台账继承 309–394；afde277/b7e9965/4df0cf4/5ce3a43/6bacd68/8b18866/dad4a6f/1416f54 证据保留未覆盖。绑定：`.runtime/continuous-revision-study-20261104-r11/bounded-probe-beca405-bind.json`（boundAt 2026-11-05T16:01:00.356698+00:00）。
+
+### 探针结果
+
+有界真实路径：单次探针本地 extended-ms `runV1Acceptance`（产品 `scripts/lib/v1-scenario.ts` 未改），Node v24.18.0。未跑双六步 / accept:v1 / stock runner。未启动序号 524 的下一轮付费。
+
+| 项 | 值 |
+| --- | --- |
+| 证据目录 | `.runtime/continuous-revision-study-20261104-r11/real/bounded-probe-beca405-20261105T160111Z` |
+| 通过 | 否 |
+| 完整六步通过 | 否（仍为 0） |
+| 新调用 | 25（序号 499–523） |
+| 累计 | 523/650，剩余 127 |
+| 本批已知增量 | 0.8776006199999982 美元 |
+| 已知用量估算 | 8.023787015999998 美元 |
+| 未知预留 | 2.359296 美元 |
+| 保护占额 | 10.383083015999999 美元（对照 20） |
+| 实际模型 | deepseek-flash |
+| 阶段截图 | phase-0-browser.png, phase-1-browser.png, phase-2-browser.png, phase-3-browser.png |
+| 停止原因 | {"diagnostics":["浏览器验收案例超出上限：33 条，最多 30 条"],"acceptanceRevisions":[],"parentRunId":"43556660-8674-4ee2-8fd3-a29a0f73e3d3","baseVersion":"8766f431998e0428390f7bf19d6101aafebf41119ec5c7857c0d5b345ed1c3cc","capabilityId":"default","parent":{"status":"succeeded","budget":{"efficiencyTarget":12,"authorized":{"calls":12,"candidates":3,"milliseconds":1800000},"grants":[],"callsUsed":7,"callsRemaining":5,"candidatesRemaining":2,"millisecondsRemaining":1392380.6868330003}},"id":"47280855-5894-41da-b9c5-78d66057ae8f","request":"请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。","requestRevision":1,"revisions":[{"revision":1,"type":"request","text":"请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。","createdAt":"2026-11-05T16:24:03.348Z"}],"plans":[],"evidence":[{"ref":"inspect_application","hash":"3d7b411375bf0cf9c76c424cf1ebc6a92e73fed35b1ecdddb506a85b29f397cb"},{"ref":"active-source","hash":"13021d5456a761ac4d37d9d9cd2425f58203b3d5d7420a6a6174cff48a260037"},{"ref":"business/entry.ts","hash":"13021d5456a761ac4d37d9d9cd2425f58203b3d5d7420a6a6174cff48a260037"},{"ref":"business/view.ts","hash":"62dcd0f12892e72d019f20c7b64f4f42ed264bef4fbf61facfdb0ab7c81b074b"},{"ref":"business/config.json","hash":"c89a148be40e6752261e3038609a4b68de22fa3bfdaf32f884edffb8480b9bbe"},{"ref":"business/compatibility.json","hash":"8e3451c424803ea0632b31b4423abe0fcf90285b589cc0b70b615dd26cf17e73"},{"ref":"business/contract.ts","hash":"00825b03c2b28716ecb565549c871852e30cafd7c2b53ef66a859a5369ccec23"},{"ref":"active-contract","hash":"38c26641fd77228c7405b21a8572e0d83cf1b85ab2a46c459d4936202c8fd091"},{"ref":"model-view/active-acceptance","hash":"3a5d551a93c4141bc73847afbe0589f67aff236d32cb6780176e390a14b6953a","source":{"ref":"active-acceptance","hash":"9a8ce417c365bc5cdba20fbe06f9c30b0a7f89e71fa0ba3a4d2e528201cbf97c"}},{"ref":"member-acceptance/default@8766f431998e0428390f7bf19d6101aafebf41119ec5c7857c0d5b345ed1c3cc","hash":"23ea089a39a3ab5a9aba5c5ad8d09a4a498ea132d8544de2150ffb13419cb642"},{"ref":"member-source/tags@9e5620e2c0edf513e24c206b580154d361201179e71d5f7d97ab6e7460e53a07","hash":"65a762c5597bba8a3b39b5cd869dee134dd49336dd1470f8daebe26881f4355b"},{"ref":"member-contract/tags@9e5620e2c0edf513e24c206b580154d361201179e71d5f7d97ab6e7460e53a07","hash":"e94c82fbba93e19fd5157c5d03cb68a0fd354be0b99de5f55cceb9260194a13d"},{"ref":"member-acceptance/tags@9e5620e2c0edf513e24c206b580154d361201179e71d5f7d97ab6e7460e53a07","hash":"910d997e528b6a07c976a9074fc8994edebbad01552628b0d41e52f62291a81c"},{"ref":"member-source/counter@d24189dc1a00dd1c713549dd593cb2d12210d6bce35d386d6ba29a86e1bf28ca","hash":"b97529f188876c9937c2a026eebc9037ac9d41c5a7fef34d34f62b2fd0695c36"},{"ref":"member-contract/counter@d24189dc1a00dd1c713549dd593cb2d12210d6bce35d386d6ba29a86e1bf28ca","hash":"adec23d07ca463b2b4c9454017d69981dcfa7b505cb9bd0105fe3e3240f42248"},{"ref":"member-acceptance/counter@d24189dc1a00dd1c713549dd593cb2d12210d6bce35d386d6ba29a86e1bf28ca","hash":"4d5cac985b4bf31aa52390be4fbde0b3d0fded144818dbd4294db515b7e1b984"},{"ref":"src/shared/contracts.ts","hash":"c62db0016c86d46eacce3a8cd686704f4e3ca01c427318401674edf910a1a628"},{"ref":"src/server/business/contracts.ts","hash":"e81dccc9808a51d8e0c9f708d607825f40c018bed8bd01ba834b61d9a13fec65"},{"ref":"src/server/workflow-acceptance.ts","hash":"9b07a35834173a12cdffa5f435e25b64223a8ad559153e77fdc4edc859ebad43"},{"ref":"model-view/src/server/workspace.ts","hash":"4161bbf9a80b91ad4548a94fa65f9c1e9d1f15a49e1928a6814c688f76e43089","source":{"ref":"src/server/workspace.ts","hash":"4c8d3ddc80df2ec8914a2ce0fce630599b22033a137501dd67cb8f9842412cce"}},{"ref":"src/web/TaskEditor.tsx","hash":"f323da88e5958dabe7c8382dedc49067233dbbc14d5086ca0e1569a323a151bc"},{"ref":"src/web/ActionForm.tsx","hash":"4c2d8a103d04287d1d56b06a5a7a38850cfb246b302de9bbf4e0137c01d33290"},{"ref":"check_environment","hash":"f6921e96aa10bf32d7105e4b52f22b16baf28db66a207e27613278d7b958b5bc"},{"ref":"guide/command.register","hash":"318b8c2aee7ddee04ad0fd720935c7e379aeecc5ae1a149d551bc3bf14935044"},{"ref":"guide/workflow.provide","hash":"4603eacc4cbb02b2e6829252fdbbd14cbc8c9683905c4829fc58002dc36d8804"}],"budget":{"efficiencyTarget":12,"authorized":{"calls":12,"candidates":3,"milliseconds":1800000},"grants":[],"callsUsed":2,"callsRemaining":10,"candidatesRemaining":3,"millisecondsRemaining":1734561.8215},"updatedAt":"2026-11-05T16:25:08.866Z","status":"blocked","stop":{"kind":"planning-gate","phase":"planning","code":"plan-compilation","evidence":["model-call:2","run.evidence"]},"message":"浏览器验收案例超出上限：33 条，最多 30 条","blockReason":"other","userMessage":"当前还不能开始执行这次改进。请修改需求或放弃计划；技术细节可在下方展开查看。"}
+
+'blocked' !== 'ready'
+ |
+
+复现标记：frozenAcceptanceSelfConflictReappeared=False；sameField=False；browserCasesCap=True；tagTag=False；missingReq=False。
+
+旧 `real/targeted`、`real/chains`、以及既有 bounded-probe 证据目录未重置、未覆盖。结果 JSON：`docs/reports/r11-20261104/bounded-probe-beca405-outcome.json`。供应商账单未知。没有生产部署。
+
+### 下一步阻塞
+
+完整六步通过数=仍为 0。本 docs 轮次不启动序号 524 付费。
