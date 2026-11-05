@@ -1782,7 +1782,20 @@ export class Evolution {
                 }
               }
               const browsers = inheritBrowserCases(plan,inherited,call.args.acceptanceReason);
-              plan.browserCases = browsers.browserCases;
+              // Deduplicate after inheritance to prevent accumulated cases from exceeding 30.
+              // Use same strategy as compileReferences: include obligationId for historical cases
+              // (with prepare) to keep distinct obligation types separate, exclude for others.
+              const caseContentHash = (c: typeof browsers.browserCases[number]) => hash({
+                task: c.task,
+                steps: c.steps,
+                prepare: c.prepare,
+                classification: c.classification,
+                ...(c.prepare ? { obligationId: c.obligationId } : {}),
+              });
+              plan.browserCases = browsers.browserCases.filter(
+                (c, index, all) =>
+                  all.findIndex((other) => caseContentHash(other) === caseContentHash(c)) === index,
+              );
               if (browsers.changes.length) (plan.acceptanceChanges ??= []).push(...browsers.changes);
               parsed.blockers.push(...browsers.blockers);
             }
