@@ -301,3 +301,43 @@ Push [41987221871](https://github.com/tower1229/todo-by-cordis/actions/runs/4198
 ### 下一步阻塞
 
 完整六步通过数仍为 0。调用天花板 650 仍剩余 196 次，费用护栏仍有余量。当前阻塞是 **历史准备无法由基础版本唯一推导：tag:tag**（phase-2 planning-gate / plan-compilation / maintainer-capability），不是调用天花板、费用护栏、模型时间窗口或 round-2 缺失既有要求。本 docs 轮次不启动序号 455 付费；需代码/基线侧处理 tag 字段历史唯一性后再议续跑。
+
+## 2026-11-05 Mac round-4 延长时间窗付费探针（8b18866）
+
+观察时间：2026-11-05 10:13–10:26Z（Asia/Shanghai 18:13–18:26）。分支 tip `8b18866c417175f401788fe68064f5112990fea2`（= origin）。本机 `zangtaodeMacBook-Pro.local`。用户 t51u 授权付费验证且合理调用不设限；费用护栏仍约 20 美元。本轮在 8b18866（多历史最短路径降级）合入且双 CI 绿后，用探针本地 `v1-scenario-extended-ms`（1.8e6 ms + milliseconds pause grants）再跑单条六步，序号自 455 起。
+
+### CI 门禁
+
+Push [41998576331](https://github.com/tower1229/todo-by-cordis/actions/runs/41998576331) 与 PR [41998583566](https://github.com/tower1229/todo-by-cordis/actions/runs/41998583566) 均 success（应用 866/866，E2E 111；push 完成 10:12:19Z，PR 完成 09:57:54Z）。既有 wait-ci PID 21127 在双绿后一次性调用 `launch-round4-when-ci-green.sh`；未另开并行探针。付费前刷新了事故观察（Resolved，`incident-visible-20261105T1013Z.txt`）。
+
+### 账本
+
+探针开始前累计 **454/650**，剩余 196。已知用量估算起点 6.071333555999996 美元，未知预留 2.359296 美元，保护占额起点 8.430629555999996 美元。缺席台账继承 309–394；afde277 395–403、b7e9965 404–405、4df0cf4 406–431、5ce3a43 432–441、6bacd68 442–454 证据保留未覆盖。绑定：`.runtime/continuous-revision-study-20261104-r11/bounded-probe-8b18866-bind.json`（boundAt 2026-11-05T10:13:04.751176+00:00）。
+
+### 探针结果
+
+有界真实路径：单次探针本地 extended-ms `runV1Acceptance`（产品 `scripts/lib/v1-scenario.ts` 未改），Node v24.18.0，PID 38053。未跑双六步 / accept:v1 / stock runner。未启动序号 468 的下一轮付费。
+
+| 项 | 值 |
+| --- | --- |
+| 证据目录 | `.runtime/continuous-revision-study-20261104-r11/real/bounded-probe-8b18866-20261105T101315Z` |
+| 通过 | 否 |
+| 完整六步通过 | 否（仍为 0） |
+| 新调用 | 13（序号 455–467，用量均已知） |
+| 累计 | 467/650，剩余 183 |
+| 本批已知增量 | 0.3301473479999997 美元 |
+| 已知用量估算 | 6.401480903999996 美元 |
+| 未知预留 | 2.359296 美元 |
+| 保护占额 | 8.760776903999997 美元（仍低于 20） |
+| 实际模型 | deepseek-flash |
+| 阶段截图 | phase-0-browser.png、phase-1-browser.png、phase-2-browser.png（phase-0/1/2 各 applied 1 次；phase-3 失败） |
+| 停止原因 | **planning-gate / plan-compilation**：诊断「浏览器验收案例超出上限：34 条，最多 30 条」。`blockReason=other`。不是 meter-exhaust，不是 20 美元费用护栏，不是模型时间窗口，也不是 round-3 的 tag:tag 历史不唯一，也不是 round-2 的「既有要求不存在」。 |
+
+相对 round-3（6bacd68）：8b18866 最短路径降级后 **未复现**「历史准备无法由基础版本唯一推导：tag:tag」；phase-0/1/2 均已应用。相对 round-2（5ce3a43）：**未复现**「业务修订引用的既有要求不存在」。相对 round-1（4df0cf4）：延长时间窗下未再撞 stage model time window。本轮新阻塞是 phase-3 规划编译时 **浏览器验收案例 34>30**（硬上限见 `src/server/requirement-coverage.ts`）。
+
+旧 `real/targeted`、`real/chains`、`real/bounded-probe-afde277-20261105T020119Z`、`real/bounded-probe-b7e9965-20261105T035722Z`、`real/bounded-probe-4df0cf4-20261105T051938Z`、`real/bounded-probe-5ce3a43-20261105T071122Z`、`real/bounded-probe-6bacd68-20261105T084029Z` 未重置、未覆盖。结果 JSON：`docs/reports/r11-20261104/bounded-probe-8b18866-outcome.json`。供应商账单未知。没有生产部署。
+
+### 下一步阻塞
+
+完整六步通过数仍为 0。调用天花板 650 仍剩余 183 次，费用护栏仍有余量。当前阻塞是 **浏览器验收案例超出上限：34 条，最多 30 条**（phase-3 planning-gate / plan-compilation），不是调用天花板、费用护栏、模型时间窗口、tag:tag 历史不唯一或缺失既有要求。本 docs 轮次不启动序号 468 付费；需处理 browserCases 累计上限（合并/裁剪继承案例，或上调硬上限并配套测试）后再议续跑。
+
