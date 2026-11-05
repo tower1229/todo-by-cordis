@@ -1,0 +1,101 @@
+{
+  "schema": "cordis.r11-1416f54-round6-extended-ms-probe-outcome/1",
+  "recordedAt": "2026-11-05T14:22:08.264004+00:00",
+  "commit": "1416f54d0292c628f052858cd54bcf2d9855693c",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-1416f54-bind.json",
+  "evidenceDirectory": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-1416f54-20261105T135408Z",
+  "passed": false,
+  "completeSixStepPass": false,
+  "paidCalls": 20,
+  "ordinals": {
+    "first": 479,
+    "last": 498
+  },
+  "cumulativeOccupied": 498,
+  "remainingCalls": 152,
+  "ceiling": 650,
+  "knownGoalEstimatedPeakUSD": 7.146186396,
+  "goalUnknownUsageReserveUSD": 2.359296,
+  "goalFeeGuardOccupiedUSD": 9.505482396,
+  "currentCohortKnownEstimatedPeakUSD": 0.512063064000003,
+  "currentCohortUnknownUsageReserveUSD": 0,
+  "actualModel": "deepseek-flash",
+  "fatalHead": "冻结验收自相冲突，无法在只改 active-source 的授权范围内同时满足保护案例与必填复盘规则",
+  "honestNonPass": true,
+  "stop": {
+    "kind": "planning-gate",
+    "phase": 3,
+    "planningPhase": "planning",
+    "scope": "bounded-six-step-1",
+    "code": "plan-compilation",
+    "blockReason": "other",
+    "diagnostic": "冻结验收自相冲突，无法在只改 active-source 的授权范围内同时满足：系统保护案例 obligation-5ffcbba71ad194ff8c8152b0（complete 无 input 即提交）与本轮冻结必填复盘/input-required 规则",
+    "detail": "Round-6 extended-ms after 5476925 same-field obligation canPreserve vs regenerated filter (docs tip 1416f54): phase-0/1/2 applied; phase-3 planning blocked on frozen-acceptance self-conflict. Protected obligation-5ffcbba71ad194ff8c8152b0 steps are «workflow complete with no input → assert counter increment invisible» (baseline: complete without input submits), while frozen candidate-contract / workflow/1:1 / requirement-013651 / workflow-input matrix require input-required when review is omitted. Host must regenerate the protected derived browser case (complete with review input) or adjust protected expectation; beyond active-source-only write auth. Round-5 same-field obligation conflict did not reappear. Round-4 browserCases 34>30 did not reappear. Round-3 tag:tag did not reappear. Round-2 missing-existing-requirement did not reappear. Not meter-exhaust (498/650). Not fee-guard (~$9.51 < $20). Not model-time-window.",
+    "protectedObligationId": "obligation-5ffcbba71ad194ff8c8152b0",
+    "conflictClass": "frozen-acceptance-self-conflict"
+  },
+  "progress": {
+    "phaseBrowserScreenshots": [
+      "phase-0-browser.png",
+      "phase-1-browser.png",
+      "phase-2-browser.png"
+    ],
+    "appliedEvents": 3,
+    "experienceCheckedEvents": 3,
+    "settledEvents": 13,
+    "phasesReached": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "phase0Applied": true,
+    "phase1Applied": true,
+    "phase2Applied": true,
+    "phase3Applied": false,
+    "phase3Failed": true,
+    "extendedMsHarnessUsed": true,
+    "millisecondsAuthorized": 1800000,
+    "sameFieldObligationConflictReappeared": false,
+    "browserCasesCapExceededReappeared": false,
+    "tagTagHistoryNonUniquenessReappeared": false,
+    "missingExistingRequirementFatalReappeared": false,
+    "frozenAcceptanceSelfConflict": true
+  },
+  "ci": {
+    "pushRunId": 42028882002,
+    "prRunId": 42028890782,
+    "headSha": "1416f54d0292c628f052858cd54bcf2d9855693c",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-05T13:41:21Z",
+    "prCompletedAt": "2026-11-05T13:52:53Z",
+    "application": {
+      "tests": 866,
+      "pass": 866,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "prLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-1416f54-pr-42028890782.log",
+    "pushLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-1416f54-push-42028882002.log",
+    "note": "Both M1 checks success on tip 1416f54 before round-6 extended-ms paid probe. Fee guard $20; nextOrdinal 479."
+  },
+  "preserveExistingRealDirs": [
+    "real/targeted",
+    "real/chains",
+    "real/bounded-probe-afde277-20261105T020119Z",
+    "real/bounded-probe-b7e9965-20261105T035722Z",
+    "real/bounded-probe-4df0cf4-20261105T051938Z",
+    "real/bounded-probe-5ce3a43-20261105T071122Z",
+    "real/bounded-probe-6bacd68-20261105T084029Z",
+    "real/bounded-probe-8b18866-20261105T101315Z",
+    "real/bounded-probe-dad4a6f-20261105T120841Z",
+    "real/bounded-probe-1416f54-20261105T135408Z"
+  ],
+  "tipRepairsExercised": [
+    "5476925 same-field obligation canPreserve vs regenerated filter (docs 1416f54)"
+  ],
+  "note": "Round-6 single six-step after 5476925/1416f54. Wait-ci 70747 launched probe PID 65560 after dual CI green (push 42028882002, PR 42028890782). Calls 479-498. Fee ~$9.51/$20. Ceiling 498/650. Did not start next paid round. Dual six-step and accept:v1 not run. Vendor invoice unknown."
+}
