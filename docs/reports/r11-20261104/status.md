@@ -223,3 +223,42 @@ Push [41965019082](https://github.com/tower1229/todo-by-cordis/actions/runs/4196
 ### 下一步阻塞
 
 完整六步通过数仍为 0。调用天花板 650 仍剩余 219 次，费用护栏仍有余量。当前阻塞是验收阶段的 **模型时间窗口**（stage model time window），而非调用天花板或 20 美元护栏。若继续付费六步，需要放宽/调整该阶段时间窗或拆分策略，而不是再抬调用天花板。Routine `todo-by-cordis` 保持启用（完整六步仍未通过）。
+
+## 2026-11-05 Mac round-2 延长时间窗付费探针（5ce3a43）
+
+观察时间：2026-11-05 07:11–07:18Z（Asia/Shanghai 15:11–15:18）。分支 tip `5ce3a43c0b480497bd52ba76bca06c65999f40e8`（= origin）。本机 `zangtaodeMacBook-Pro.local`。用户 t51u 授权付费验证且合理调用不设限；费用护栏仍约 20 美元。本轮在 round-1 时间窗停止之后，用探针本地 `v1-scenario-extended-ms`（1.8e6 ms + milliseconds pause grants）再跑单条六步。
+
+### CI 门禁
+
+Push [41976774686](https://github.com/tower1229/todo-by-cordis/actions/runs/41976774686) 与 PR [41976781355](https://github.com/tower1229/todo-by-cordis/actions/runs/41976781355) 均 success（应用 866/866，E2E 111；push 完成 07:07:21Z，PR 完成 06:50:19Z）。付费前刷新了事故观察（Resolved，`incident-visible-20261105T0711Z.txt`）。
+
+### 账本
+
+探针开始前累计 **431/650**，剩余 219。已知用量估算起点 5.642562287999997 美元，未知预留 2.359296 美元，保护占额起点 8.001858287999998 美元。缺席台账继承 309–394；afde277 395–403、b7e9965 404–405、4df0cf4 406–431 证据保留未覆盖。绑定：`.runtime/continuous-revision-study-20261104-r11/bounded-probe-5ce3a43-bind.json`。
+
+### 探针结果
+
+有界真实路径：单次探针本地 extended-ms `runV1Acceptance`（产品 `scripts/lib/v1-scenario.ts` 未改），Node v24.18.0。未跑双六步 / accept:v1 / stock runner。未启动序号 442 的下一轮付费。
+
+| 项 | 值 |
+| --- | --- |
+| 证据目录 | `.runtime/continuous-revision-study-20261104-r11/real/bounded-probe-5ce3a43-20261105T071122Z` |
+| 通过 | 否 |
+| 完整六步通过 | 否（仍为 0） |
+| 新调用 | 10（序号 432–441，用量均已知） |
+| 累计 | 441/650，剩余 209 |
+| 本批已知增量 | 0.17931406799999916 美元 |
+| 已知用量估算 | 5.821876355999996 美元 |
+| 未知预留 | 2.359296 美元 |
+| 保护占额 | 8.181172355999996 美元（仍低于 20） |
+| 实际模型 | deepseek-flash |
+| 阶段截图 | phase-0-browser.png（phase-0 applied 1 次；phase-1 失败） |
+| 停止原因 | **business-revision-missing-existing-requirement**：诊断「业务修订引用的既有要求不存在」。不是 meter-exhaust，也不是 20 美元费用护栏，也不是 round-1 的模型时间窗口。 |
+
+相对 round-1（4df0cf4）：延长时间窗后未再撞 stage model time window；phase-0 已应用。相对 afde277：未复现「既有字段的宿主派生义务无法重新绑定」。本轮新阻塞是 phase-1 业务修订引用缺失既有要求（复核另有 blank-tag / done-increment error-feedback 的 extra-constraint/conflict 未关闭 findings）。
+
+旧 `real/targeted`、`real/chains`、`real/bounded-probe-afde277-20261105T020119Z`、`real/bounded-probe-b7e9965-20261105T035722Z`、`real/bounded-probe-4df0cf4-20261105T051938Z` 未重置、未覆盖。结果 JSON：`docs/reports/r11-20261104/bounded-probe-5ce3a43-outcome.json`。供应商账单未知。没有生产部署。
+
+### 下一步阻塞
+
+完整六步通过数仍为 0。调用天花板 650 仍剩余 209 次，费用护栏仍有余量。当前阻塞是 **业务修订引用的既有要求不存在**（phase-1 natural-flow fatal），不是调用天花板、费用护栏或模型时间窗口。本 docs 轮次不启动序号 442 付费；由 CloudAgent 走代码修复后再议续跑。
