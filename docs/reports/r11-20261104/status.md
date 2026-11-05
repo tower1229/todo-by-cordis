@@ -142,8 +142,8 @@ Node v24.18.0 本地构建的三个前端文件与 CI 资源名一致，sha256 �
 
 事件可见一步已 `applied`，随后计数相关规划在宿主派生义务门禁停下。硬失败后未再消耗剩余 2 次。旧 `real/targeted` 与 `real/chains`（293–308）未重置、未覆盖。结果 JSON：`docs/reports/r11-20261104/bounded-probe-afde277-outcome.json`。供应商账单未知。没有生产部署。
 
-### 后续修复（e655fee）
+### 后续修复（e655fee / 1dae482）
 
 根因定位：`src/evolution/references.ts` line 504-560 的重新编译逻辑对所有有派生字段的旧需求都尝试用当前提案的 memberCases 重新生成。当添加新插件（counter）时，当前提案只包含新插件的案例，旧插件（tags）依赖的成员案例缺失，导致派生字段无法匹配而抛出门禁错误。
 
-修复：区分「需要重新绑定」和「可以保留」的派生字段。只对当前提案中触及且案例变化的成员进行重新绑定；对未触及或继承中的成员，直接保留原派生字段。提交 `e655fee` 包含修复代码和两项回归测试。本地测试 field-reference-rebind.test.ts（15/15）、acceptance-obligations.test.ts（7/7）、historical-preparation.test.ts（7/7）通过。未跑真实模型验证。
+修复：区分「需要重新绑定」和「可以保留」的派生字段。只对当前提案中触及且案例变化的成员进行重新绑定；对未触及或继承中的成员，直接保留原派生字段。提交 `e655fee` 包含修复代码和两项回归测试。`1dae482` 修复类型收窄（reboundFields 验证后显式转为 FieldObligation[]）。本地测试 field-reference-rebind.test.ts（15/15）、acceptance-obligations.test.ts（7/7）、historical-preparation.test.ts（7/7）通过，pnpm typecheck 通过。未跑真实模型验证。
