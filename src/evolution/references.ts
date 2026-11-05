@@ -557,18 +557,20 @@ export function compileReferences(
       throw new Error(
         "既有字段的宿主派生义务无法重新绑定；须显式修订原要求，不能删除旧断言",
       );
+    // After validation, narrow to FieldObligation[] for type safety.
+    const validatedRebound = reboundFields as FieldObligation[];
     for (const [index,prior] of needsRebind.entries()) {
-      const next = reboundFields[index]!;
+      const next = validatedRebound[index];
       // A canonical declaration can supply new samples without changing the
       // inherited host projection's identity, provenance, or baseline history.
       next.derivation = structuredClone(prior.derivation);
       reuseFieldIdentity(next, prior);
     }
     // Preserved fields keep their complete identity, derivation, and browser cases unchanged.
-    const allRebound = [...reboundFields, ...canPreserve.map(o => structuredClone(o))];
+    const allRebound = [...validatedRebound, ...canPreserve.map(o => structuredClone(o))];
     const priorCaseIds = new Set(allRebound.flatMap(o=>obligationCases(o).map(c=>c.id)));
     replacement.checks = replacement.checks.filter(c=>c.checker!=="browser/1"||!priorCaseIds.has(c.caseId));
-    replacement.obligations.push(...regenerated.filter(o => !reboundFields.includes(o as FieldObligation)), ...allRebound);
+    replacement.obligations.push(...regenerated.filter(o => o.kind !== "field" || !validatedRebound.includes(o)), ...allRebound);
     requirements.push(replacement);
   }
   // Inherit accepted obligations before checker binding and technical validation.
