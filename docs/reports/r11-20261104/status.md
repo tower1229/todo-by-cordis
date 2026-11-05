@@ -110,3 +110,34 @@ Node v24.18.0 本地构建的三个前端文件与 CI 资源名一致，sha256 �
 308/405 是续跑开始前的累计。续跑已经发生，当前累计是 394/405，剩余 11 次。保护占额 6.357647664 美元，距 20 美元还剩 13.642352336 美元。费用不是缺口。
 
 最好的一条链用了 22 次调用，只完成前四步（各步 5、4、4、6 次），第五步在规划门禁停下。按已成功步骤里最低的 4 次估算，一条六步也要 24 次，两条要 48 次。相对剩余 11 次，两条完整链至少还差 37 次调用。这 11 次不再开新的链或策略臂。完整六步通过数仍为 0。两次 high 臂的完整路径通过保持原记录，两次 max 臂的阶段时间预留也保持原记录。
+
+## 2026-11-05 Mac 有界付费探针（afde277）
+
+观察时间：2026-11-05 02:01–02:06Z（Asia/Shanghai 10:01–10:06）。分支 tip `afde277f70ba55bb73eef4a2b61e9285157a2255`。本机 `zangtaodeMacBook-Pro.local`。云端 agent 未重启。
+
+### 账本继承（缺席台账风格）
+
+`status.md` / PR #52 权威累计在探针开始前为 394/405，剩余 11。已知用量估算 4.470210864 美元，未知预留 1.8874368 美元，保护占额 6.357647664 美元。Mac 磁盘上的 `.runtime/.../real/` 仍只有早期包到调用 308；**不宣称** 309–394 的 attempt 目录存在于本机。309–394 按缺席台账并入 `priorGoal*`，弱于封存逐次目录的审计强度。绑定说明：`.runtime/continuous-revision-study-20261104-r11/bounded-probe-afde277-bind.json`。
+
+### 未跑项
+
+未跑双完整六步链，未跑 `pnpm accept:v1 --authorize-real-model`，未跑 stock r11 `runner.ts` 的 chains/performance（本机缺少完整 envelope 依赖与 `/workspace` 路径密封，且缺 309–394 封存目录；父代理授权选项 2）。
+
+### 探针结果
+
+有界真实路径：单次 `runV1Acceptance`（`real-model-full-six-step`），硬顶 11 次新调用，序号从 395 起。Node v24.18.0。付费前刷新了事故观察（Resolved）与无凭证 `/models`（HTTP 401）。CI 绑定 push [41941921229](https://github.com/tower1229/todo-by-cordis/actions/runs/41941921229) / PR [41941928823](https://github.com/tower1229/todo-by-cordis/actions/runs/41941928823)（应用 864/864，E2E 111）。
+
+| 项 | 值 |
+| --- | --- |
+| 证据目录 | `.runtime/continuous-revision-study-20261104-r11/real/bounded-probe-afde277-20261105T020119Z` |
+| 通过 | 否 |
+| 完整六步通过 | 否（仍为 0） |
+| 新调用 | 9（序号 395–403，用量均已知） |
+| 累计 | 403/405，剩余 2 |
+| 已知用量估算 | 4.645160568 美元 |
+| 未知预留 | 1.8874368 美元 |
+| 保护占额 | 6.532597368 美元（仍低于 20） |
+| 实际模型 | deepseek-flash |
+| 停止原因 | planning-gate / plan-compilation：既有字段的宿主派生义务无法重新绑定；须显式修订原要求，不能删除旧断言 |
+
+事件可见一步已 `applied`，随后计数相关规划在宿主派生义务门禁停下。硬失败后未再消耗剩余 2 次。旧 `real/targeted` 与 `real/chains`（293–308）未重置、未覆盖。结果 JSON：`docs/reports/r11-20261104/bounded-probe-afde277-outcome.json`。供应商账单未知。没有生产部署。
