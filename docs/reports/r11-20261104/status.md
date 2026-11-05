@@ -180,6 +180,46 @@ Push [41956504060](https://github.com/tower1229/todo-by-cordis/actions/runs/4195
 
 这是记录的非通过，不是伪造通过。先前 afde277 路径约需 9 次才碰到重绑定门禁；剩余 2 次不足以验证 e655fee/1dae482 修复。旧 `real/targeted`、`real/chains`、`real/bounded-probe-afde277-20261105T020119Z` 未重置、未覆盖。结果 JSON：`docs/reports/r11-20261104/bounded-probe-b7e9965-outcome.json`。供应商账单未知。没有生产部署。
 
+### 下一步阻塞（已被后续覆盖）
+
+调用天花板 **405** 当时已占满。用户 t51u 随后授权提高合理调用上限；见下方 4df0cf4 提高天花板探针。
+
+## 2026-11-05 Mac 提高天花板付费探针（4df0cf4）
+
+观察时间：2026-11-05 05:19–05:51Z（Asia/Shanghai 13:19–13:51）。分支 tip `4df0cf44ccf71b748d11088e169e7ac99793f61f`。本机 `zangtaodeMacBook-Pro.local`。用户 t51u 授权付费验证且合理调用不设限；费用护栏仍为约 20 美元。
+
+### CI 门禁
+
+Push [41965019082](https://github.com/tower1229/todo-by-cordis/actions/runs/41965019082) 与 PR [41965027821](https://github.com/tower1229/todo-by-cordis/actions/runs/41965027821) 均 success（应用 866/866，E2E 111；push 完成 05:15:27Z，PR 完成 05:13:33Z）。付费前刷新了事故观察（Resolved，`incident-visible-20261105T0517Z.txt`）与无凭证 `/models`（HTTP 401）。
+
+### 账本
+
+探针开始前累计 **405/405**（旧天花板已满）。按 t51u 将累计天花板提高到 **650**，本批硬顶 245 次新调用，序号从 **406** 起。已知用量估算起点 4.672185947999999 美元，未知预留 1.8874368 美元，保护占额起点 6.559622747999999 美元。缺席台账继承 309–394；afde277 395–403 与 b7e9965 404–405 证据保留未覆盖。绑定：`.runtime/continuous-revision-study-20261104-r11/bounded-probe-4df0cf4-bind.json`。
+
+### 探针结果
+
+有界真实路径：单次 `runV1Acceptance`（`real-model-full-six-step`），Node v24.18.0（`node --import tsx`）。未跑双六步 / accept:v1 / stock runner。
+
+| 项 | 值 |
+| --- | --- |
+| 证据目录 | `.runtime/continuous-revision-study-20261104-r11/real/bounded-probe-4df0cf4-20261105T051938Z` |
+| 通过 | 否 |
+| 完整六步通过 | 否（仍为 0） |
+| 新调用 | 26（序号 406–431；431 用量未知并计入未知预留） |
+| 累计 | 431/650，剩余 219 |
+| 本批已知增量 | 0.9703763399999978 美元 |
+| 本批未知预留增量 | 0.4718592 美元 |
+| 已知用量估算 | 5.642562287999997 美元 |
+| 未知预留 | 2.359296 美元 |
+| 保护占额 | 8.001858287999998 美元（仍低于 20） |
+| 实际模型 | deepseek-flash |
+| 阶段截图 | phase-0 .. phase-3 browser.png（共 4 次 applied） |
+| 停止原因 | **model-time-window-exhausted**：诊断「本阶段已用完模型时间窗口，保留后续候选与验收时间并停止」。不是 meter-exhaust，也不是 20 美元费用护栏。 |
+
+相对 afde277：当时 9 次调用后在 planning-gate / plan-compilation 因「既有字段的宿主派生义务无法重新绑定」硬停。本轮该致命短语未再出现于 events/failure；多插件 applied 路径推进到 phase-3，说明 e655fee/1dae482 宿主派生重绑定路径已被真实模型行使且未复现该门禁失败。完整六步仍未完成。
+
+旧 `real/targeted`、`real/chains`、`real/bounded-probe-afde277-20261105T020119Z`、`real/bounded-probe-b7e9965-20261105T035722Z` 未重置、未覆盖。结果 JSON：`docs/reports/r11-20261104/bounded-probe-4df0cf4-outcome.json`。供应商账单未知。没有生产部署。
+
 ### 下一步阻塞
 
-调用天花板 **405** 已占满。若完整六步通过数仍为 0，在不提高天花板或另行授权更多调用之前，无法再跑付费六步探针。Routine `todo-by-cordis` 保持启用（完整六步仍未通过）。
+完整六步通过数仍为 0。调用天花板 650 仍剩余 219 次，费用护栏仍有余量。当前阻塞是验收阶段的 **模型时间窗口**（stage model time window），而非调用天花板或 20 美元护栏。若继续付费六步，需要放宽/调整该阶段时间窗或拆分策略，而不是再抬调用天花板。Routine `todo-by-cordis` 保持启用（完整六步仍未通过）。
