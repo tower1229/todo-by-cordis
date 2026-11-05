@@ -523,7 +523,19 @@ export function compileReferences(
       if (o.kind === "backend")
         o.checks = replacement.checks.filter((c) => c.checker !== "browser/1");
     inputObligation(replacement);
-    const regenerated = deriveFieldObligations(
+    // Only rebind derived fields whose member cases have changed in the current proposal.
+    // Fields depending on unchanged members can be preserved as-is without regeneration.
+    const memberTouchedInCurrent = (member: string) =>
+      memberCases.some(c => c.member === member);
+    const memberCasesChanged = (member: string) =>
+      memberTouchedInCurrent(member) &&
+      hash(memberCases.filter(c => c.member === member)) !==
+      hash((inherited.memberCases ?? []).filter(c => c.member === member));
+    const memberExistsInInherited = (member: string) =>
+      (inherited.memberCases ?? []).some(c => c.member === member);
+    const needsRebind = derived.filter(o => memberCasesChanged(o.member) || !memberExistsInInherited(o.member));
+    const canPreserve = derived.filter(o => !memberCasesChanged(o.member) && memberExistsInInherited(o.member));
+    const regenerated = needsRebind.length ? deriveFieldObligations(
       replacement,
       memberCases as import("../shared/acceptance-cases.js").MemberAcceptanceCase[],
       rules,
@@ -531,30 +543,32 @@ export function compileReferences(
       currentDefinitions,
       renderable(replacement),
       lifecycle.existing,
-    );
-    const reboundFields = derived.map((prior) => {
+    ) : [];
+    const reboundFields = needsRebind.map((prior) => {
       const matches = regenerated.filter((next): next is FieldObligation =>
         next.kind === "field" && next.member === prior.member && next.field === prior.field &&
         // deriveFieldObligations already bound a unique current UI target.
         // An unqualified legacy projection may follow it; an explicit scope may not change.
         (prior.contribution === undefined || next.contribution === prior.contribution));
-      return matches.length === 1 && derived.filter(other => other.member === prior.member && other.field === prior.field).length === 1
+      return matches.length === 1 && needsRebind.filter(other => other.member === prior.member && other.field === prior.field).length === 1
         ? matches[0] : undefined;
     });
     if (reboundFields.some((next) => !next))
       throw new Error(
         "既有字段的宿主派生义务无法重新绑定；须显式修订原要求，不能删除旧断言",
       );
-    for (const [index,prior] of derived.entries()) {
+    for (const [index,prior] of needsRebind.entries()) {
       const next = reboundFields[index]!;
       // A canonical declaration can supply new samples without changing the
       // inherited host projection's identity, provenance, or baseline history.
       next.derivation = structuredClone(prior.derivation);
       reuseFieldIdentity(next, prior);
     }
-    const priorCaseIds = new Set(derived.flatMap(o=>obligationCases(o).map(c=>c.id)));
+    // Preserved fields keep their complete identity, derivation, and browser cases unchanged.
+    const allRebound = [...reboundFields, ...canPreserve.map(o => structuredClone(o))];
+    const priorCaseIds = new Set(allRebound.flatMap(o=>obligationCases(o).map(c=>c.id)));
     replacement.checks = replacement.checks.filter(c=>c.checker!=="browser/1"||!priorCaseIds.has(c.caseId));
-    replacement.obligations.push(...regenerated);
+    replacement.obligations.push(...regenerated.filter(o => !reboundFields.includes(o as FieldObligation)), ...allRebound);
     requirements.push(replacement);
   }
   // Inherit accepted obligations before checker binding and technical validation.

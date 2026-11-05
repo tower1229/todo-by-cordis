@@ -150,3 +150,78 @@ test("两个旧派生身份不能不经修订合并为一个", () => {
   assert.throws(() => compile(f), /既有字段的宿主派生义务无法重新绑定/);
 });
 
+test("添加新插件时，旧插件的派生字段可以直接保留（成员案例未变化）", () => {
+  const f = fixture();
+  // Simulate adding a new "counter" plugin while tags plugin already exists.
+  // The current proposal only includes counter member cases, not tags.
+  // But inherited memberCases includes the original tags cases.
+  f.inherited.memberCases = [
+    {
+      action: "setTags",
+      expected: { fields: { tags: "Alpha Project" }, kind: "commit" as const, state: "open" },
+      fields: {},
+      input: { tags: "  Alpha Project  " },
+      name: "设置标签去除首尾空格并保留大小写",
+      state: "open",
+      member: "tags",
+    },
+  ];
+  f.draft.memberCases = [
+    {
+      action: "increment",
+      expected: { fields: { count: "1" }, kind: "commit" as const, state: "open" },
+      fields: { count: "0" },
+      input: {},
+      name: "increment counter",
+      state: "open",
+      member: "counter",
+    },
+  ];
+  f.draft.requirements = [
+    {
+      id: "requirement-counter-new",
+      description: "请增加独立的计数插件：未完成任务可以将计数加一，初始为零。保留已有标签。",
+      source: 2,
+      sourceQuote: "请增加独立的计数插件",
+      type: "behavior" as const,
+      checks: [{ kind: "member", index: 1 }],
+      obligations: [
+        {
+          kind: "backend",
+        },
+      ],
+    },
+  ];
+  // Tags member cases are NOT in the current proposal, only in inherited.
+  const result = compile(f);
+  // The old tags requirement with its derived field should be preserved.
+  const tagsReq = result.requirements.find(r => r.id === f.inherited.requirements![0].id);
+  assert.ok(tagsReq, "旧 tags 需求应该被保留");
+  const tagsField = tagsReq.obligations!.find((o): o is Field => o.kind === "field" && o.field === "tags");
+  assert.ok(tagsField, "tags 派生字段应该被保留");
+  assert.equal(tagsField.id, priorField(f).id, "派生字段 ID 应该保持不变");
+  assert.deepEqual(tagsField.derivation, priorField(f).derivation, "派生标记应该保持不变");
+  assert.equal(tagsField.scenarios[0].value, "Alpha Project", "派生字段值应该保持不变");
+});
+
+test("添加新插件后修改旧插件案例时，仍需要重新绑定派生字段", () => {
+  const f = fixture();
+  // Add counter plugin, and also change tags member case.
+  f.draft.memberCases = [
+    {
+      action: "setTags",
+      expected: { fields: { tags: "new value" }, kind: "commit" as const, state: "open" },
+      fields: {},
+      input: { tags: "  New Value  " },
+      name: "设置标签去除首尾空格并保留大小写",
+      state: "open",
+      member: "tags",
+    },
+  ];
+  f.draft.requirements[0].obligations[0].scenarios![0].value = "new value";
+  const result = compile(f);
+  const tagsReq = result.requirements.find(r => r.id === f.inherited.requirements![0].id);
+  const tagsField = tagsReq!.obligations!.find((o): o is Field => o.kind === "field" && o.field === "tags");
+  assert.equal(tagsField!.scenarios[0].value, "new value", "派生字段应该根据新案例重新生成");
+});
+
