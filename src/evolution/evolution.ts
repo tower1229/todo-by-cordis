@@ -1236,7 +1236,7 @@ export class Evolution {
       let input: Record<string,unknown>;
       try { input = JSON.parse(original.message ?? "{}"); }
       catch { input = {originalMessage:original.message}; }
-      request = {...original, message:JSON.stringify({...input,protocolCorrection:{problems,rejected:{text:reply.text,calls:reply.calls},attempt:protocolAttempt+1,budget:this.base(r).budget}})};
+      request = {...original, message:JSON.stringify({...input,protocolCorrection:{problems,rejected:{text:reply.text,calls:reply.calls},attempt:protocolAttempt,budget:this.base(r).budget}})};
     }
   }
   private remainingTime(r: RecordRun) {
