@@ -570,7 +570,15 @@ export function compileReferences(
     const allRebound = [...validatedRebound, ...canPreserve.map(o => structuredClone(o))];
     const priorCaseIds = new Set(allRebound.flatMap(o=>obligationCases(o).map(c=>c.id)));
     replacement.checks = replacement.checks.filter(c=>c.checker!=="browser/1"||!priorCaseIds.has(c.caseId));
-    replacement.obligations.push(...regenerated.filter(o => o.kind !== "field" || !validatedRebound.includes(o)), ...allRebound);
+    // Filter out regenerated obligations that have the same ID as allRebound to prevent
+    // "同一字段验收义务发生冲突" when both derive from the same member/field but differ in content.
+    const allReboundIds = new Set(allRebound.map(o => o.id));
+    replacement.obligations.push(
+      ...regenerated.filter(o => 
+        (o.kind !== "field" || !validatedRebound.includes(o)) && !allReboundIds.has(o.id)
+      ), 
+      ...allRebound
+    );
     requirements.push(replacement);
   }
   // Inherit accepted obligations before checker binding and technical validation.
