@@ -716,4 +716,72 @@ test("v1Requests 0→3 冻结后再编译 545 单条需求：≤30、无悬空�
     step4.compiled.browserCases.some((c) => c.id.includes("historical-")),
     "tags 历史案例必须保留",
   );
+
+  const inherited4 = freeze(
+    step4,
+    sources4,
+    inherited3.fieldIdentities,
+    inherited3.uiContributions,
+    "e".repeat(64),
+    inherited3.rules,
+  );
+  const sources5 = [...sources4, { id: "request:6", text: v1Requests[5] }];
+  const step5 = compileProposal(
+    {
+      intent: "improve",
+      summary: v1Requests[5],
+      acceptanceReason: "重新启用标签插件，保留小写规则、已有数据、计数和复盘",
+      changes: [{ target: "tags", enabled: true }],
+      requirements: [
+        {
+          quote: v1Requests[5],
+          type: "behavior",
+          expectations: [
+            { kind: "behavior" },
+            { kind: "preserve-ui" },
+            { kind: "history", field: "tags" },
+            {
+              kind: "action-visible",
+              action: "increment",
+              state: "open",
+              visible: true,
+            },
+            {
+              kind: "action-visible",
+              action: "increment",
+              state: "done",
+              visible: false,
+            },
+            { kind: "operation-rejected", action: "increment" },
+            {
+              kind: "field",
+              field: "review",
+              examples: [
+                "  复盘：沟通顺畅，按时交付  ",
+                "已复盘：需求澄清耗时较长，下次提前对齐验收范围",
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    sources5,
+    inherited4,
+    [{ key: "review" }],
+    false,
+    "重新启用标签插件，保留小写规则、已有数据、计数和复盘",
+  );
+  assertClosedCompile("step5-reenable-tags", step5);
+  assert.ok(
+    step5.compiled.browserCases.length >= 8,
+    `启用标签编译应恢复多插件义务：${step5.compiled.browserCases.length}`,
+  );
+  assert.ok(
+    step5.compiled.browserCases.some((c) => c.id.startsWith("ui-identity-")),
+    "启用后 preserve-ui 仍须落到 ui-identity 规范 ID",
+  );
+  assert.ok(
+    step5.compiled.browserCases.some((c) => c.id.includes("historical-")),
+    "启用后 tags 历史案例必须保留",
+  );
 });

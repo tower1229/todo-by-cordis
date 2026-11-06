@@ -59,8 +59,29 @@ node --import tsx --test --test-concurrency=1 \
 - 未跑全量应用测试套件与 E2E；未生产部署。
 - `6bacd68` / `8b18866` 策略降级债务未在本轮裁决。
 
-## 5. 下一步（零付费）
+## 5. 零模型 0→5（已补）
 
-1. 保持系列关闭；若再开付费，须先满足复盘 §4.3–4.4 的全部前置，且最多一次确认轮。
-2. 可选：把 inherit 超限路径并入更完整的 Evolution 桩闭环测试（本轮已在 `browser-case-identity` 证明 inherit+parse 诊断）。
-3. 策略降级与义务图复杂度单独开票，不混进付费探针。
+`tests/app/round7-disable-tags-replay.test.ts` 与 `tests/app/round9-disable-tags-replay.test.ts` 在停用标签之后继续编译 `v1Requests[5]`（重新启用标签）：
+
+- 断言 ≤30、无悬空 check、结构错误不可重试。
+- 启用路径为纯 `enabled: true` 启停候选（不得混入 features/cases），与产品契约一致。
+
+本机：`node --import tsx --test` 上述两文件 **4/4 pass**。
+
+## 6. 策略债开票
+
+GitHub Issue [#54](https://github.com/tower1229/todo-by-cordis/issues/54)：裁决是否保留 `6bacd68` / `8b18866`。不在本系列用付费探针 closure。
+
+## 7. 业务扩展冻结（有效）
+
+在完整六步零付费门禁（0→5）稳定、且 #54 裁决落地或明确延期之前：
+
+- **不新开**以 Todo 插件/字段/工作流功能为交付物的实现 Issue。
+- **不把**「完整六步真实模型通过」当作打开新业务能力的前置替代；也不反向用新业务冲淡身份/策略债。
+- 已在飞的业务 PR/Issue 不自动关闭；新需求默认标为延后，直至维护者解除本冻结。
+
+## 8. 下一步
+
+1. PR #53 完整 CI 绿后合入主线。
+2. 门禁全绿后**最多一次**付费确认；再撞 `plan-compilation` 则继续停系列。
+3. 等待 #54 维护者裁决。

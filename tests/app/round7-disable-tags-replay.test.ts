@@ -416,7 +416,7 @@ test("beca405 outcome 阻塞在 v1Requests[4] 的 33>30 plan-compilation", () =>
   );
 });
 
-test("v1Requests 0→4 冻结验收零模型链：停用标签编译 ≤30、无悬空、不可重试第三次规划", () => {
+test("v1Requests 0→5 冻结验收零模型链：停用并重新启用标签编译 ≤30、无悬空、不可重试第三次规划", () => {
   const sources0: RequirementGate["sources"] = [
     { id: "request:1", text: v1Requests[0] },
   ];
@@ -612,6 +612,64 @@ test("v1Requests 0→4 冻结验收零模型链：停用标签编译 ≤30、无
     inherited3.requirements.some((r) => r.sourceQuote === v1Requests[3]) ||
       step4.compiled.requirements.some((r) => r.sourceQuote === v1Requests[3]),
     "复盘义务必须仍被继承或保留",
+  );
+
+  const inherited4 = freeze(
+    { requirements: step4.requirements, browserCases: step4.cases },
+    counterCases,
+    sources4,
+    inherited3.fieldIdentities,
+    inherited3.uiContributions,
+    "e".repeat(64),
+  );
+  const sources5 = [...sources4, { id: "request:6", text: v1Requests[5] }];
+  const step5 = compileStep(
+    {
+      workflowRules: [reviewRule],
+      memberCases: [...tagLowerCases, ...counterCases],
+      browserCases: [],
+      memberEnabled: { pluginId: "tags", enabled: true },
+      requirements: [
+        backendRequirement("reenable-tags", 6, v1Requests[5], [
+          { kind: "enabled" },
+        ]),
+      ],
+    },
+    sources5,
+    {
+      ...inherited4,
+      fieldIdentities: inherited3.fieldIdentities,
+      uiContributions: inherited3.uiContributions,
+    },
+    "重新启用标签插件，保留小写规则、已有数据、计数和复盘",
+    [{ key: "review" }],
+  );
+  assertClosedCompile("step5-reenable-tags", step5);
+  assert.ok(
+    step5.compiled.browserCases.length >= 8,
+    `启用标签编译应恢复多插件义务：${step5.compiled.browserCases.length}`,
+  );
+  assert.ok(
+    step5.compiled.requirements.some((r) => r.id === "reenable-tags"),
+    "启用标签要求必须进入编译结果",
+  );
+  assert.ok(
+    step5.cases.some((c) =>
+      c.steps.some(
+        (s) =>
+          typeof s === "object" &&
+          s !== null &&
+          "member" in s &&
+          (s as { member?: string }).member === "tags",
+      ),
+    ) ||
+      step5.compiled.requirements.some((r) =>
+        (r.obligations ?? []).some(
+          (o) =>
+            (o.kind === "field" || o.kind === "history") && o.member === "tags",
+        ),
+      ),
+    "启用后标签字段/历史义务必须仍可编译",
   );
 
   const leaked = withDistinctFieldCopies(inherited3, 3);
