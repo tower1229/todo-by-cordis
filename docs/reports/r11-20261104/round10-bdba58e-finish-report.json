@@ -1,0 +1,40 @@
+{
+  "tipSha": "bdba58eda1ffa1f2596a1c99afc132fccf673cec",
+  "round": 10,
+  "ci": {
+    "pushRunId": 42191471271,
+    "prRunId": 42191478297,
+    "headSha": "bdba58eda1ffa1f2596a1c99afc132fccf673cec",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-06T09:53:00Z",
+    "prCompletedAt": "2026-11-06T10:11:04Z",
+    "application": {
+      "tests": 886,
+      "pass": 886,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "note": "Both M1 checks success on tip bdba58e before round-10 extended-ms paid confirmation. Fee guard $20; nextOrdinal 546. Exactly ONE paid round."
+  },
+  "evidenceDir": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-bdba58e-20261106T101210Z",
+  "callsFirst": 546,
+  "callsLast": 565,
+  "paidCalls": 20,
+  "feeGuardOccupiedUSD": 11.621480592,
+  "feeGuardUSD": 20,
+  "passed": false,
+  "completeSixStepPass": false,
+  "stopMessage": "浏览器验收案例超出上限：33 条，最多 30 条",
+  "recurrence": {
+    "browserCasesCapExceededReappeared": true,
+    "sameFieldObligationConflictReappeared": false,
+    "frozenAcceptanceSelfConflictReappeared": false,
+    "tagTagHistoryNonUniquenessReappeared": false,
+    "missingExistingRequirementFatalReappeared": false
+  },
+  "seriesDecision": "STOP_SERIES",
+  "onePaidRoundOnly": true
+}
