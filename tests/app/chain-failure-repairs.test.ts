@@ -120,3 +120,26 @@ test("历史准备不唯一仍是计划缺陷，但相同调用上限内的第�
     true,
   );
 });
+
+test("浏览器案例超限或悬空引用第一次就是结构失败，不能靠再规划一轮躲开", () => {
+  assert.equal(
+    planningStructureTerminal({
+      historical: false,
+      structural: true,
+      rejectionSeen: false,
+      calls: 2,
+      callLimit: 12,
+    }),
+    true,
+  );
+  assert.equal(
+    planningStructureTerminal({
+      historical: false,
+      structural: false,
+      rejectionSeen: false,
+      calls: 2,
+      callLimit: 12,
+    }),
+    false,
+  );
+});

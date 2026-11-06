@@ -1,6 +1,22 @@
 import type { BrowserCase, BrowserStep } from "./browser-cases.js";
 import { workflowBrowserCases } from "./workflow-browser.js";
 import type { SchedulePolicy } from "./schedule-policy.js";
+import { hash } from "../release/storage.js";
+
+/** Field/history cases share one stem so derivation copies cannot mint a second ID. */
+export function browserCaseStem(obligation: AcceptanceObligation): string {
+  if (obligation.kind === "field" || obligation.kind === "history")
+    return (
+      "field-" +
+      hash({
+        kind: obligation.kind,
+        member: obligation.member,
+        contribution: obligation.contribution,
+        field: obligation.field,
+      }).slice(0, 24)
+    );
+  return obligation.id;
+}
 
 export type FieldExpectation =
   | { kind: "visible"; value: string }
@@ -98,7 +114,7 @@ export function obligationCases(
     classification: BrowserCase["classification"] = "frozen-business",
   ) =>
     cases.push({
-      id: `${obligation.id}-${key}`,
+      id: `${browserCaseStem(obligation)}-${key}`,
       task,
       steps,
       ...(prepare ? { prepare } : {}),

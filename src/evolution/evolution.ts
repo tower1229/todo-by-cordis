@@ -40,9 +40,10 @@ import type { DatabaseSync } from "node:sqlite";
 import type { Driver, ModelReply, ModelRequest } from "./driver.js";
 import { ModelTransportError } from "./driver.js";
 import { transportFailure, transportTimeoutRetryable } from "./transport-failure.js";
-import { HistoricalPreparationBlocked, planningStructureTerminal } from "./historical-preparation.js";
+import { HistoricalPreparationBlocked, PlanStructureBlocked, planningStructureTerminal } from "./historical-preparation.js";
 import { inheritBrowserCases } from "./references.js";
 import {
+  danglingBrowserChecks,
   dedupeBrowserCases,
   remapBrowserChecks,
 } from "./browser-case-content.js";
@@ -1721,7 +1722,7 @@ export class Evolution {
               const diagnostic =
                 error instanceof Error ? error.message : "计划结构无效";
               const rejection = hash({ diagnostic: error instanceof OperationPreparationError ? error.rejectionReason : diagnostic, evidence: r.run.evidence });
-              if (planningStructureTerminal({historical:error instanceof HistoricalPreparationBlocked,rejectionSeen:rejections.has(rejection),calls:r.calls,callLimit:this.runLimits(r).calls})) {
+              if (planningStructureTerminal({historical:error instanceof HistoricalPreparationBlocked,structural:error instanceof PlanStructureBlocked,rejectionSeen:rejections.has(rejection),calls:r.calls,callLimit:this.runLimits(r).calls})) {
                 r.run = {
                   ...this.base(r),
                   status: "blocked",
@@ -1796,6 +1797,16 @@ export class Evolution {
                     requirement.checks,
                     aliases,
                   );
+              const dangling = danglingBrowserChecks(
+                plan.requirements ?? [],
+                plan.browserCases ?? [],
+              );
+              if (dangling.length) {
+                parsed.blockers.push(
+                  `浏览器验收检查指向不存在的案例：${dangling.map((c) => c.caseId).join("、")}`,
+                );
+                parsed.retryable = false;
+              }
               if (browsers.changes.length) (plan.acceptanceChanges ??= []).push(...browsers.changes);
               parsed.blockers.push(...browsers.blockers);
             }

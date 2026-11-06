@@ -1,9 +1,20 @@
 import { hash } from "../release/storage.js";
 import type { BrowserCase } from "../shared/browser-cases.js";
 
-/** Content identity for collapsing duplicate browser cases.
- * Historical cases keep obligationId so history vs field stay distinct.
- * Other cases omit it so same-field projections can share one case. */
+/** Assertion identity for a case key. Provenance (id / obligationId) is not part of it. */
+export function browserCaseAssertionHash(
+  c: Pick<BrowserCase, "task" | "steps" | "prepare" | "classification">,
+) {
+  return hash({
+    task: c.task,
+    steps: c.steps,
+    prepare: c.prepare,
+    classification: c.classification,
+  });
+}
+
+/** Content identity for collapsing leftover duplicate IDs.
+ * Historical cases keep obligationId so history vs field stay distinct. */
 export function browserCaseContentHash(
   c: Pick<
     BrowserCase,
@@ -47,6 +58,19 @@ export function remapBrowserChecks<T extends { checker: string; caseId: string }
       (c, index, all) =>
         all.findIndex((other) => hash(other) === hash(c)) === index,
     );
+}
+
+export function danglingBrowserChecks(
+  requirements: { checks: { checker: string; caseId: string }[] }[],
+  browserCases: { id: string }[],
+) {
+  return requirements.flatMap((r) =>
+    r.checks.filter(
+      (c) =>
+        c.checker === "browser/1" &&
+        !browserCases.some((b) => b.id === c.caseId),
+    ),
+  );
 }
 
 export function executedBrowserCase(c: BrowserCase, browsers: BrowserCase[]) {

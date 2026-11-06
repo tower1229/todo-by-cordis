@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { compileReferences, inheritBrowserCases } from "../../src/evolution/references.js";
-import { obligationCases } from "../../src/shared/acceptance-obligations.js";
+import { browserCaseStem, obligationCases } from "../../src/shared/acceptance-obligations.js";
 import type { AcceptanceObligation } from "../../src/shared/acceptance-obligations.js";
 import type { MemberAcceptanceCase } from "../../src/shared/acceptance-cases.js";
 import type { Requirement, RequirementGate } from "../../src/shared/assistant.js";
@@ -424,7 +424,7 @@ test("同一字段身份的派生副本不能另起 after-action ID，去重后�
   );
   assertNoDanglingBrowserChecks(result);
   const afterIds = (cases: { id: string }[]) =>
-    [...new Set(cases.filter((c) => c.id.startsWith(`${f.field.id}-after-`)).map((c) => c.id))].sort();
+    [...new Set(cases.filter((c) => c.id.startsWith(`${browserCaseStem(f.field)}-after-`)).map((c) => c.id))].sort();
   assert.deepEqual(
     afterIds(result.browserCases),
     afterIds(first.browserCases),

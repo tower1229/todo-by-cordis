@@ -19,6 +19,7 @@ import { historicalPreparation } from "./historical-preparation.js";
 import {bindAvailability,type ActionAvailability} from "./action-availability.js";
 import { schedulePolicyChecks } from "../shared/schedule-policy.js";
 import {
+  browserCaseAssertionHash,
   dedupeBrowserCases,
   remapBrowserChecks,
 } from "./browser-case-content.js";
@@ -641,7 +642,7 @@ export function compileReferences(
     for (const obligation of requirement.obligations) {
       for (const c of obligationCases(obligation)) {
         const existing = browsers.find((b) => b.id === c.id) as BrowserCase | undefined;
-        if (existing && hash(existing) !== hash(c)) {
+        if (existing && browserCaseAssertionHash(existing) !== browserCaseAssertionHash(c)) {
           // When workflow-input cases conflict with inherited system-protection cases,
           // the workflow-input matrix supersedes the old assertion. This happens when
           // upgrading from a workflow without fields to one with required fields:
