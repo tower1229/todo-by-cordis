@@ -8,14 +8,22 @@ import { hash } from "../release/storage.js";
 
 export class HistoricalPreparationBlocked extends Error {}
 
-/** Multiple reachable histories stay blocked as a plan defect. The same call ceiling may carry one corrected submission; repeating the defect or exhausting calls stops. */
+/** Over-cap browserCases and dangling browser/1 refs are host structure defects, not protocol retries. */
+export class PlanStructureBlocked extends Error {}
+
+/** Multiple reachable histories stay blocked as a plan defect. The same call ceiling may carry one corrected submission; repeating the defect or exhausting calls stops. Over-cap and dangling refs stop on the first occurrence. */
 export function planningStructureTerminal(input: {
   historical: boolean;
+  structural?: boolean;
   rejectionSeen: boolean;
   calls: number;
   callLimit: number;
 }): boolean {
-  return input.rejectionSeen || input.calls >= input.callLimit;
+  return (
+    input.structural === true ||
+    input.rejectionSeen ||
+    input.calls >= input.callLimit
+  );
 }
 type Target = { member: string; field: string; contribution?: string };
 type HistoricalObligation = Extract<AcceptanceObligation, { kind: "history" }>;

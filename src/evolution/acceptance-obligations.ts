@@ -6,7 +6,7 @@ import { historicalPreparation } from "./historical-preparation.js";
 import { obligationCases } from "../shared/acceptance-obligations.js";
 import { hash } from "../release/storage.js";
 import {
-  browserCaseContentHash,
+  browserCaseAssertionHash,
   executedBrowserCase,
 } from "./browser-case-content.js";
 import { readOnlyFieldText } from "../shared/field-presentation.js";
@@ -375,7 +375,7 @@ export function obligationFailure(
       if (
         !covered ||
         !found ||
-        browserCaseContentHash(found) !== browserCaseContentHash(c)
+        browserCaseAssertionHash(found) !== browserCaseAssertionHash(c)
       )
         reasons.push(`验收义务未完整执行或断言已变化：${c.id}`);
     }

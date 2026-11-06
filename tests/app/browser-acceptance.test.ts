@@ -10,8 +10,10 @@ import {
   BrowserEnvironmentError,
   BrowserDefinitionError,
   browserEnvironment,
+  browserViewports,
   verifyBrowser,
 } from "../../src/server/browser-acceptance.js";
+import { browserCaseAssertionHash } from "../../src/evolution/browser-case-content.js";
 import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import type { BrowserCase } from "../../src/shared/browser-cases.js";
@@ -898,6 +900,40 @@ for (const faultyBase of [false, true])
         },
       );
       const cases = parseBrowserCases(compiled.browserCases);
+      const prepared = cases.filter((c) => c.prepare);
+      const historicalCases = cases.filter((c) => c.id.includes("-historical-"));
+      const afterExisting = prepared.filter(
+        (c) => c.task === "existing" && c.id.includes("-after-"),
+      );
+      // Stem used to hash obligation kind, so history vs field.historical minted
+      // two IDs for the same persist-ok matrix. 2 viewports × (that fork + the
+      // distinct after-existing prepare) = 6 preparations / 4 historical results.
+      // After contraction there is one historical persist-ok case plus the
+      // after-existing case that applies markNote on prepared history; those are
+      // different assertions. 2 cases × 2 viewports = 4 preparations, 1×2 = 2
+      // historical results. The dropped pair is not an independent obligation.
+      assert.equal(prepared.length, 2);
+      assert.equal(historicalCases.length, 1);
+      assert.equal(afterExisting.length, 1);
+      assert.ok(
+        historicalCases[0].steps.some(
+          (s) => s.kind === "field" && s.value === "ok",
+        ),
+      );
+      assert.ok(
+        afterExisting[0].steps.some(
+          (s) => s.kind === "action" && s.action === "markNote",
+        ),
+      );
+      assert.ok(
+        afterExisting[0].steps.some(
+          (s) => s.kind === "field" && s.value === "reviewed",
+        ),
+      );
+      assert.notEqual(
+        browserCaseAssertionHash(historicalCases[0]),
+        browserCaseAssertionHash(afterExisting[0]),
+      );
       const checking = verifyBrowser(
         w,
         candidate,
@@ -921,7 +957,10 @@ for (const faultyBase of [false, true])
         });
       } else {
         const evidence = await checking;
-        assert.equal(evidence.preparations!.length, 6);
+        assert.equal(
+          evidence.preparations!.length,
+          prepared.length * browserViewports.length,
+        );
         assert.ok(
           evidence.preparations!.every(
             (p) => p.status === "passed" && p.actual.fields.noteMark === "ok",
@@ -966,7 +1005,7 @@ for (const faultyBase of [false, true])
         assert.equal(
           evidence.results.filter((r) => r.caseId.includes("-historical-"))
             .length,
-          4,
+          historicalCases.length * browserViewports.length,
         );
         const fixtures = JSON.parse(
           await readFile(join(evidence.directory, "fixtures.json"), "utf8"),

@@ -40,10 +40,12 @@ import type { DatabaseSync } from "node:sqlite";
 import type { Driver, ModelReply, ModelRequest } from "./driver.js";
 import { ModelTransportError } from "./driver.js";
 import { transportFailure, transportTimeoutRetryable } from "./transport-failure.js";
-import { HistoricalPreparationBlocked, planningStructureTerminal } from "./historical-preparation.js";
+import { HistoricalPreparationBlocked, PlanStructureBlocked, planningStructureTerminal } from "./historical-preparation.js";
 import { inheritBrowserCases } from "./references.js";
 import {
+  danglingBrowserChecks,
   dedupeBrowserCases,
+  mergeBrowserCaseAliases,
   remapBrowserChecks,
 } from "./browser-case-content.js";
 import { OperationPreparationError } from "./obligation-derivation.js";
@@ -1721,7 +1723,7 @@ export class Evolution {
               const diagnostic =
                 error instanceof Error ? error.message : "计划结构无效";
               const rejection = hash({ diagnostic: error instanceof OperationPreparationError ? error.rejectionReason : diagnostic, evidence: r.run.evidence });
-              if (planningStructureTerminal({historical:error instanceof HistoricalPreparationBlocked,rejectionSeen:rejections.has(rejection),calls:r.calls,callLimit:this.runLimits(r).calls})) {
+              if (planningStructureTerminal({historical:error instanceof HistoricalPreparationBlocked,structural:error instanceof PlanStructureBlocked,rejectionSeen:rejections.has(rejection),calls:r.calls,callLimit:this.runLimits(r).calls})) {
                 r.run = {
                   ...this.base(r),
                   status: "blocked",
@@ -1786,9 +1788,10 @@ export class Evolution {
                 }
               }
               const browsers = inheritBrowserCases(plan,inherited,call.args.acceptanceReason);
-              const { cases: deduplicated, aliases } = dedupeBrowserCases(
+              const { cases: deduplicated, aliases: contentAliases } = dedupeBrowserCases(
                 browsers.browserCases,
               );
+              const aliases = mergeBrowserCaseAliases(browsers.aliases, contentAliases);
               plan.browserCases = deduplicated;
               if (aliases.size)
                 for (const requirement of plan.requirements ?? [])
@@ -1796,6 +1799,24 @@ export class Evolution {
                     requirement.checks,
                     aliases,
                   );
+              // Inherit can append frozen cases the compile pass never saw. Cap and
+              // dangling refs are host structure defects: stop once, never propose_plan again.
+              if (deduplicated.length > 30) {
+                parsed.blockers.push(
+                  `浏览器验收案例超出上限：${deduplicated.length} 条，最多 30 条`,
+                );
+                parsed.retryable = false;
+              }
+              const dangling = danglingBrowserChecks(
+                plan.requirements ?? [],
+                plan.browserCases ?? [],
+              );
+              if (dangling.length) {
+                parsed.blockers.push(
+                  `浏览器验收检查指向不存在的案例：${dangling.map((c) => c.caseId).join("、")}`,
+                );
+                parsed.retryable = false;
+              }
               if (browsers.changes.length) (plan.acceptanceChanges ??= []).push(...browsers.changes);
               parsed.blockers.push(...browsers.blockers);
             }

@@ -1,0 +1,546 @@
+{
+  "tip": "97a95fd",
+  "note": "Unique propose_plan payloads from disable-tags calls 543-545. browserCases are compiled host-side (plans have no browserCases).",
+  "calls": {
+    "543": {
+      "phase": "planning",
+      "message": "{\"materials\":{\"documents\":[{\"ref\":\"inspect_application\",\"hash\":\"de613e3b828654b4f714ee07ce7e77c63819564b3b4415665736b0be4d55c9c3\",\"content\":{\"architecture\":{\"modules\":\"规划调查与冻结、候选构建与独立验收、Workspace 统一写入、隔离体验、发布与恢复\",\"businessArtifacts\":\"主工作流 business/* 与独立辅助成员源码；宿主注入 business/contract.ts\",\"inputForms\":\"成员声明字段与 input-required 驱动宿主表单\",\"composition\":\"候选显式继承未改成员的精确版本与启用状态\",\"writableScope\":\"只有冻结计划中的 business/* 和声明的成员源码可写\",\"boundaries\":\"方案确认后生成候选；隔离体验不写正式数据；应用需另行确认\"},\"checkerRules\":{\"origin\":\"host\",\"chec",
+      "protocolErrors": [
+        "工具参数不符合 JSON 业务契约：propose_plan：$o.requirements[1].acceptanceReason: 未授权字段；$o.requirements[2].acceptanceReason: 未授权字段；$o.requirements[3].acceptanceReason: 未授权字段"
+      ],
+      "uniqueProposePlans": [
+        {
+          "intent": "improve",
+          "summary": "停用 tags 辅助成员（保留其精确版本与既有标签数据），计数与复盘功能及主工作流保持不变，标签之后可重新启用。",
+          "changes": [
+            {
+              "target": "tags",
+              "enabled": false
+            }
+          ],
+          "requirements": [
+            {
+              "quote": "请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。",
+              "type": "behavior",
+              "expectations": [
+                {
+                  "kind": "behavior"
+                },
+                {
+                  "kind": "preserve-ui"
+                },
+                {
+                  "kind": "history",
+                  "field": "tags"
+                },
+                {
+                  "kind": "action-visible",
+                  "action": "increment",
+                  "state": "open",
+                  "visible": true
+                },
+                {
+                  "kind": "field",
+                  "field": "review",
+                  "examples": [
+                    "  复盘：沟通顺畅，按时交付  ",
+                    "已复盘：需求澄清耗时较长，下次提前对齐验收范围"
+                  ]
+                }
+              ]
+            },
+            {
+              "revises": "请改进完成流程：完成前必须填写复盘，去掉首尾空格后至少一个字，最多五千字；重新打开保留复盘。标签、计数和已有任务不变。",
+              "quote": "请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。",
+              "type": "behavior",
+              "acceptanceReason": "本轮用户明确要求停用标签插件、保留已有标签数据与计数、复盘功能，并说明之后可重新启用。这改变了此前“标签（保存小写、去首尾空格、拒绝空白、可设置标签）保持不变”的已接受期望：tags 成员改为 enabled=false，其字段与「设置标签」动作不再注册，标签数据仅作为既有数据保留且不做回写；主工作流（complete 必填复盘 1–5000 码点、reopen 保留字段）与 counter（未完成加一、初始为零、已完成不能增加且不显示入口）的业务期望不变。由于此前冻结验收把共享的 workflow/1 与 workspace/1 全量案例（含 tags 成员案例与标签字段浏览器案例）绑定在该需求上，需按新组合重新冻结，成员版本与既有案例名、既有任务数据原样继承，不删除其他要求、不改写任何历史标签值；重新启用标签仍是之后独立的组合变更。",
+              "expectations": [
+                {
+                  "kind": "behavior"
+                },
+                {
+                  "kind": "preserve-ui"
+                },
+                {
+                  "kind": "history",
+                  "field": "tags"
+                },
+                {
+                  "kind": "field",
+                  "field": "review",
+                  "examples": [
+                    "  复盘：沟通顺畅，按时交付  ",
+                    "已复盘：需求澄清耗时较长，下次提前对齐验收范围"
+                  ]
+                },
+                {
+                  "kind": "action-visible",
+                  "action": "increment",
+                  "state": "open",
+                  "visible": true
+                }
+              ]
+            },
+            {
+              "revises": "请改进完成流程：完成前必须填写复盘，去掉首尾空格后至少一个字，最多五千字；重新打开保留复盘。标签、计数和已有任务不变。",
+              "quote": "请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。",
+              "type": "behavior",
+              "acceptanceReason": "本轮用户明确要求停用标签插件、保留已有标签数据与计数、复盘功能，并说明之后可重新启用。这改变了此前“升级标签插件、保存时统一小写、仍去首尾空格并拒绝空白”的已接受期望：tags 成员改为 enabled=false，其字段与「设置标签」动作不再注册，标签保存规则在停用期间不生效，既有已保存标签值原样保留、不批量改为小写也不删除；计数器（未完成加一、初始为零、已完成不能增加且不显示加一入口）与主工作流（完成必填复盘、按 Unicode 码点 1–5000、重新打开保留复盘）的含义不变。此前该需求的冻结验收包含 tags 成员案例与标签字段浏览器案例，需按新组合重新冻结，成员版本与既有案例名继承；重新启用后标签按原规则继续工作，属之后独立的组合变更。",
+              "expectations": [
+                {
+                  "kind": "behavior"
+                },
+                {
+                  "kind": "preserve-ui"
+                },
+                {
+                  "kind": "history",
+                  "field": "tags"
+                },
+                {
+                  "kind": "action-visible",
+                  "action": "increment",
+                  "state": "open",
+                  "visible": true
+                },
+                {
+                  "kind": "operation-rejected",
+                  "action": "increment"
+                }
+              ]
+            },
+            {
+              "revises": "请改进完成流程：完成前必须填写复盘，去掉首尾空格后至少一个字，最多五千字；重新打开保留复盘。标签、计数和已有任务不变。",
+              "quote": "请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。",
+              "type": "behavior",
+              "acceptanceReason": "本轮用户明确要求停用标签插件、保留已有标签数据与计数、复盘功能，并说明之后可重新启用。这改变了此前“保留已有标签”在该需求中的含义：tags 成员改为 enabled=false，其字段与「设置标签」动作不再注册，标签只作为既有任务数据保留、不删除不回写；计数期望完全不变（未完成可加一、初始为零、已完成不能增加且界面不出现加一入口，计数以十进制文本保存），主工作流（完成必填复盘、去首尾空格后 1–5000 个 Unicode 码点、重新打开保留复盘与所有字段）不变。此前该需求的冻结验收含 tags 成员案例与标签字段浏览器案例，需按新组合重新冻结，counter 成员版本与既有案例名继承；重新启用标签为之后独立的组合变更。",
+              "expectations": [
+                {
+                  "kind": "behavior"
+                },
+                {
+                  "kind": "preserve-ui"
+                },
+                {
+                  "kind": "history",
+                  "field": "tags"
+                },
+                {
+                  "kind": "action-visible",
+                  "action": "increment",
+                  "state": "open",
+                  "visible": true
+                },
+                {
+                  "kind": "operation-rejected",
+                  "action": "increment"
+                }
+              ]
+            }
+          ],
+          "defaults": [
+            {
+              "scope": "标签成员的停用方式与可恢复性",
+              "behavior": "以 enabled=false 停用辅助成员 tags，保留其精确版本 cf0538794499c30d0c1b0d45cd6d79941b3dcb80bec3f528de990b9ad516ce1c（字段 tags、动作 setTags、详情区域 tags-detail 与保存规则的定义都不重写）；之后重新启用时恢复同一精确版本即可，不需要改代码、不需要数据迁移。",
+              "basis": "用户要求“停用标签插件……之后可以重新启用”；宿主组合显式继承未改成员的精确版本，启停是可逆的配置变更。",
+              "impact": "本次只改变启用状态；标签成员源码与版本不变，重新启用后其字段、动作与详情区域按原样恢复。"
+            },
+            {
+              "scope": "停用后标签数据的保留与呈现",
+              "behavior": "停用期间不再注册 tags 字段与「设置标签」动作，任务详情不再出现标签的可编辑动作入口；既有任务中已保存的标签值原样保留在任务数据里，不删除、不清空、不回填，也不改写大小写或首尾空白，停用也不写入其他字段。",
+              "basis": "用户要求“保留已有标签数据”；宿主 preserve-data（preserveUnknownFields=true）与保留字段机制要求停用成员不改写任务数据，host-fact:write-scope 也要求数据变更只发生在显式动作。",
+              "impact": "停用后标签只作为既有数据保留；重新启用后同一标签值继续可见并可按原规则再次保存。"
+            },
+            {
+              "scope": "计数与复盘功能保持不变",
+              "behavior": "counter 辅助成员与主工作流的精确版本、启用状态、动作（increment、complete、reopen）、字段（count、review）及其校验规则保持不变：计数仍在未完成状态可加一、既有值上累加、已完成不提供入口且提交被拒绝；复盘仍为完成动作必填、去首尾空格后 1 至 5000 个 Unicode 码点、重新打开按原值保留。计数区域仍排在标签区域之后的顺序位置。",
+              "basis": "用户要求保留计数与复盘功能；宿主继承未改动成员的精确版本与启用状态，主工作流完成字段的既有宿主规则为 trim 规范化并按 Unicode 码点计长。",
+              "impact": "本轮除 tags 启用状态外，其他成员的动作入口、保存结果与既有验收行为均不受影响。"
+            },
+            {
+              "scope": "停用变更的范围边界",
+              "behavior": "不启停或改写在线调度等宿主基础服务，不改动执行策略、验证器、发布恢复控件；本次不新增动作、字段、定时任务或外部投递，也不对既有任务做批量数据处理。",
+              "basis": "用户只要求停用标签插件；宿主保护混合文件、基础服务与改进控件，数据变更只允许通过显式动作发生。",
+              "impact": "变更范围限于组合中的 tags 启用状态与随之消失的标签动作入口。"
+            }
+          ]
+        }
+      ]
+    },
+    "544": {
+      "phase": "planning",
+      "message": "{\"materials\":{\"documents\":[{\"ref\":\"inspect_application\",\"hash\":\"de613e3b828654b4f714ee07ce7e77c63819564b3b4415665736b0be4d55c9c3\",\"content\":{\"architecture\":{\"modules\":\"规划调查与冻结、候选构建与独立验收、Workspace 统一写入、隔离体验、发布与恢复\",\"businessArtifacts\":\"主工作流 business/* 与独立辅助成员源码；宿主注入 business/contract.ts\",\"inputForms\":\"成员声明字段与 input-required 驱动宿主表单\",\"composition\":\"候选显式继承未改成员的精确版本与启用状态\",\"writableScope\":\"只有冻结计划中的 business/* 和声明的成员源码可写\",\"boundaries\":\"方案确认后生成候选；隔离体验不写正式数据；应用需另行确认\"},\"checkerRules\":{\"origin\":\"host\",\"chec",
+      "protocolErrors": null,
+      "uniqueProposePlans": [
+        {
+          "intent": "improve",
+          "summary": "停用 tags 辅助成员（保留其精确版本与既有标签数据），计数与复盘功能及主工作流保持不变，标签之后可重新启用。",
+          "acceptanceReason": "本轮用户明确要求停用标签插件、保留已有标签数据与计数、复盘功能，并说明之后可以重新启用。这改变了此前“标签保持不变（保存时去首尾空格并统一小写、拒绝空白、未完成与已完成状态均可设置标签）”的已接受期望：tags 成员改为 enabled=false，其字段与「设置标签」动作不再注册，标签只作为既有任务数据保留，不删除、不清空、不回写大小写或首尾空白；主工作流（complete 必填复盘、去首尾空格后 1–5000 个 Unicode 码点、reopen 保留所有字段）与 counter（未完成可加一、既有值上累加、初始为零、已完成不能增加且界面不出现加一入口）的业务期望不变。由于此前冻结验收把共享的 workflow/1 与 workspace/1 全量案例（含 tags 成员案例与标签字段浏览器案例）绑定在这些需求上，需按新组合重新冻结；成员版本、案例名与既有任务数据原样继承，不删除任何其他要求，不做历史数据改写。重新启用标签仍是之后独立的组合变更。",
+          "changes": [
+            {
+              "target": "tags",
+              "enabled": false
+            }
+          ],
+          "requirements": [
+            {
+              "quote": "请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。",
+              "type": "behavior",
+              "expectations": [
+                {
+                  "kind": "behavior"
+                },
+                {
+                  "kind": "preserve-ui"
+                },
+                {
+                  "kind": "history",
+                  "field": "tags"
+                },
+                {
+                  "kind": "field",
+                  "field": "review",
+                  "examples": [
+                    "  复盘：沟通顺畅，按时交付  ",
+                    "已复盘：需求澄清耗时较长，下次提前对齐验收范围"
+                  ]
+                },
+                {
+                  "kind": "action-visible",
+                  "action": "increment",
+                  "state": "open",
+                  "visible": true
+                },
+                {
+                  "kind": "action-visible",
+                  "action": "increment",
+                  "state": "done",
+                  "visible": false
+                }
+              ]
+            },
+            {
+              "revises": "请改进完成流程：完成前必须填写复盘，去掉首尾空格后至少一个字，最多五千字；重新打开保留复盘。标签、计数和已有任务不变。",
+              "quote": "请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。",
+              "type": "behavior",
+              "expectations": [
+                {
+                  "kind": "behavior"
+                },
+                {
+                  "kind": "preserve-ui"
+                },
+                {
+                  "kind": "field",
+                  "field": "review",
+                  "examples": [
+                    "  复盘：沟通顺畅，按时交付  ",
+                    "已复盘：需求澄清耗时较长，下次提前对齐验收范围"
+                  ]
+                }
+              ]
+            },
+            {
+              "revises": "请改进完成流程：完成前必须填写复盘，去掉首尾空格后至少一个字，最多五千字；重新打开保留复盘。标签、计数和已有任务不变。",
+              "quote": "请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。",
+              "type": "behavior",
+              "expectations": [
+                {
+                  "kind": "behavior"
+                },
+                {
+                  "kind": "preserve-ui"
+                },
+                {
+                  "kind": "history",
+                  "field": "tags"
+                }
+              ]
+            },
+            {
+              "revises": "请改进完成流程：完成前必须填写复盘，去掉首尾空格后至少一个字，最多五千字；重新打开保留复盘。标签、计数和已有任务不变。",
+              "quote": "请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。",
+              "type": "behavior",
+              "expectations": [
+                {
+                  "kind": "behavior"
+                },
+                {
+                  "kind": "preserve-ui"
+                },
+                {
+                  "kind": "action-visible",
+                  "action": "increment",
+                  "state": "open",
+                  "visible": true
+                },
+                {
+                  "kind": "action-visible",
+                  "action": "increment",
+                  "state": "done",
+                  "visible": false
+                },
+                {
+                  "kind": "operation-rejected",
+                  "action": "increment"
+                }
+              ]
+            }
+          ],
+          "defaults": [
+            {
+              "scope": "标签成员的停用方式与可恢复性",
+              "behavior": "以 enabled=false 停用辅助成员 tags，保留其精确版本 cf0538794499c30d0c1b0d45cd6d79941b3dcb80bec3f528de990b9ad516ce1c（字段 tags、动作 setTags、详情区域 tags-detail 与保存规则的定义都不重写）；之后重新启用时恢复同一精确版本即可，不需要改代码、不需要数据迁移。",
+              "basis": "用户要求“停用标签插件……之后可以重新启用”；宿主组合显式继承未改成员的精确版本，启停是可逆的配置变更。",
+              "impact": "本次只改变启用状态；标签成员源码与版本不变，重新启用后其字段、动作与详情区域按原样恢复。"
+            },
+            {
+              "scope": "停用后标签数据的保留与呈现",
+              "behavior": "停用期间不再注册 tags 字段与「设置标签」动作，任务详情不再出现标签的可编辑动作入口；既有任务中已保存的标签值原样保留在任务数据里，不删除、不清空、不回填，也不改写大小写或首尾空白，停用本身也不写入其他字段。",
+              "basis": "用户要求“保留已有标签数据”；宿主 preserve-data（preserveUnknownFields=true）与保留字段机制要求停用成员不改写任务数据，host-fact:write-scope 也要求数据变更只发生在显式动作。",
+              "impact": "停用后标签只作为既有数据保留；重新启用后同一标签值继续可见并可按原规则再次保存。"
+            },
+            {
+              "scope": "计数与复盘功能保持不变",
+              "behavior": "counter 辅助成员与主工作流的精确版本、启用状态、动作（increment、complete、reopen）、字段（count、review）及其校验规则保持不变：计数仍在未完成状态可加一、在既有值上累加、已完成不提供入口且提交被拒绝；复盘仍为完成动作必填、去首尾空格后 1 至 5000 个 Unicode 码点、重新打开按原值保留。",
+              "basis": "用户要求保留计数与复盘功能；宿主继承未改动成员的精确版本与启用状态，主工作流完成字段的既有宿主规则为 trim 规范化并按 Unicode 码点计长。",
+              "impact": "本轮除 tags 启用状态与随之消失的标签动作入口外，其他成员的动作入口、保存结果与既有验收行为均不受影响。"
+            },
+            {
+              "scope": "停用变更的范围边界",
+              "behavior": "不启停或改写在线调度等宿主基础服务，不改动执行策略、验证器、发布恢复控件；本次不新增动作、字段、定时任务或外部投递，也不对既有任务做批量数据处理。",
+              "basis": "用户只要求停用标签插件；宿主保护混合文件、基础服务与改进控件，数据变更只允许通过显式动作发生。",
+              "impact": "变更范围限于组合中的 tags 启用状态与随之消失的标签动作入口。"
+            }
+          ]
+        }
+      ]
+    },
+    "545": {
+      "phase": "planning",
+      "protocolErrors": null,
+      "uniqueProposePlans": [
+        {
+          "intent": "improve",
+          "summary": "停用 tags 辅助成员（保留其精确版本与既有标签数据），计数与复盘功能及主工作流保持不变，标签之后可重新启用。",
+          "acceptanceReason": "本轮用户明确要求停用标签插件、保留已有标签数据与计数、复盘功能，并说明之后可以重新启用。这改变了此前“标签保持不变（保存时去首尾空格并统一小写、拒绝空白、未完成与已完成状态均可设置标签）”的已接受期望：tags 成员改为 enabled=false，其字段与「设置标签」动作不再注册，标签只作为既有任务数据保留，不删除、不清空、不回写大小写或首尾空白；主工作流（complete 必填复盘、去首尾空格后 1–5000 个 Unicode 码点、reopen 保留所有字段）与 counter（未完成可加一、既有值上累加、初始为零、已完成不能增加且界面不出现加一入口）的业务期望不变。由于此前冻结验收把共享的 workflow/1 与 workspace/1 全量案例（含 tags 成员案例与标签字段浏览器案例）绑定在这些需求上，需按新组合重新冻结；成员版本、案例名与既有任务数据原样继承，不删除任何其他要求，不做历史数据改写。重新启用标签仍是之后独立的组合变更。",
+          "changes": [
+            {
+              "target": "tags",
+              "enabled": false
+            }
+          ],
+          "requirements": [
+            {
+              "quote": "请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。",
+              "type": "behavior",
+              "expectations": [
+                {
+                  "kind": "behavior"
+                },
+                {
+                  "kind": "preserve-ui"
+                },
+                {
+                  "kind": "history",
+                  "field": "tags"
+                },
+                {
+                  "kind": "field",
+                  "field": "review",
+                  "examples": [
+                    "  复盘：沟通顺畅，按时交付  ",
+                    "已复盘：需求澄清耗时较长，下次提前对齐验收范围"
+                  ]
+                },
+                {
+                  "kind": "action-visible",
+                  "action": "increment",
+                  "state": "open",
+                  "visible": true
+                },
+                {
+                  "kind": "action-visible",
+                  "action": "increment",
+                  "state": "done",
+                  "visible": false
+                }
+              ]
+            },
+            {
+              "revises": "请改进完成流程：完成前必须填写复盘，去掉首尾空格后至少一个字，最多五千字；重新打开保留复盘。标签、计数和已有任务不变。",
+              "quote": "请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。",
+              "type": "behavior",
+              "expectations": [
+                {
+                  "kind": "behavior"
+                },
+                {
+                  "kind": "preserve-ui"
+                },
+                {
+                  "kind": "field",
+                  "field": "review",
+                  "examples": [
+                    "  复盘：沟通顺畅，按时交付  ",
+                    "已复盘：需求澄清耗时较长，下次提前对齐验收范围"
+                  ]
+                }
+              ]
+            },
+            {
+              "revises": "请改进完成流程：完成前必须填写复盘，去掉首尾空格后至少一个字，最多五千字；重新打开保留复盘。标签、计数和已有任务不变。",
+              "quote": "请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。",
+              "type": "behavior",
+              "expectations": [
+                {
+                  "kind": "behavior"
+                },
+                {
+                  "kind": "preserve-ui"
+                },
+                {
+                  "kind": "history",
+                  "field": "tags"
+                }
+              ]
+            },
+            {
+              "revises": "请改进完成流程：完成前必须填写复盘，去掉首尾空格后至少一个字，最多五千字；重新打开保留复盘。标签、计数和已有任务不变。",
+              "quote": "请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。",
+              "type": "behavior",
+              "expectations": [
+                {
+                  "kind": "behavior"
+                },
+                {
+                  "kind": "preserve-ui"
+                },
+                {
+                  "kind": "action-visible",
+                  "action": "increment",
+                  "state": "open",
+                  "visible": true
+                },
+                {
+                  "kind": "action-visible",
+                  "action": "increment",
+                  "state": "done",
+                  "visible": false
+                },
+                {
+                  "kind": "operation-rejected",
+                  "action": "increment"
+                }
+              ]
+            }
+          ],
+          "defaults": [
+            {
+              "scope": "标签成员的停用方式与可恢复性",
+              "behavior": "以 enabled=false 停用辅助成员 tags，保留其精确版本 cf0538794499c30d0c1b0d45cd6d79941b3dcb80bec3f528de990b9ad516ce1c（字段 tags、动作 setTags、详情区域 tags-detail 与保存规则的定义都不重写）；之后重新启用时恢复同一精确版本即可，不需要改代码、不需要数据迁移。",
+              "basis": "用户要求“停用标签插件……之后可以重新启用”；宿主组合显式继承未改成员的精确版本，启停是可逆的配置变更。",
+              "impact": "本次只改变启用状态；标签成员源码与版本不变，重新启用后其字段、动作与详情区域按原样恢复。"
+            },
+            {
+              "scope": "停用后标签数据的保留与呈现",
+              "behavior": "停用期间不再注册 tags 字段与「设置标签」动作，任务详情不再出现标签的可编辑动作入口；既有任务中已保存的标签值原样保留在任务数据里，不删除、不清空、不回填，也不改写大小写或首尾空白，停用本身也不写入其他字段。",
+              "basis": "用户要求“保留已有标签数据”；宿主 preserve-data（preserveUnknownFields=true）与保留字段机制要求停用成员不改写任务数据，host-fact:write-scope 也要求数据变更只发生在显式动作。",
+              "impact": "停用后标签只作为既有数据保留；重新启用后同一标签值继续可见并可按原规则再次保存。"
+            },
+            {
+              "scope": "计数与复盘功能保持不变",
+              "behavior": "counter 辅助成员与主工作流的精确版本、启用状态、动作（increment、complete、reopen）、字段（count、review）及其校验规则保持不变：计数仍在未完成状态可加一、在既有值上累加、已完成不提供入口且提交被拒绝；复盘仍为完成动作必填、去首尾空格后 1 至 5000 个 Unicode 码点、重新打开按原值保留。",
+              "basis": "用户要求保留计数与复盘功能；宿主继承未改动成员的精确版本与启用状态，主工作流完成字段的既有宿主规则为 trim 规范化并按 Unicode 码点计长。",
+              "impact": "本轮除 tags 启用状态与随之消失的标签动作入口外，其他成员的动作入口、保存结果与既有验收行为均不受影响。"
+            },
+            {
+              "scope": "停用变更的范围边界",
+              "behavior": "不启停或改写在线调度等宿主基础服务，不改动执行策略、验证器、发布恢复控件；本次不新增动作、字段、定时任务或外部投递，也不对既有任务做批量数据处理。",
+              "basis": "用户只要求停用标签插件；宿主保护混合文件、基础服务与改进控件，数据变更只允许通过显式动作发生。",
+              "impact": "变更范围限于组合中的 tags 启用状态与随之消失的标签动作入口。"
+            }
+          ]
+        },
+        {
+          "changes": [
+            {
+              "enabled": false,
+              "target": "tags"
+            }
+          ],
+          "defaults": [
+            {
+              "basis": "用户要求“停用标签插件……之后可以重新启用”；宿主组合显式继承未改成员的精确版本，启停是可逆的配置变更。",
+              "behavior": "以 enabled=false 停用辅助成员 tags，保留其精确版本 cf0538794499c30d0c1b0d45cd6d79941b3dcb80bec3f528de990b9ad516ce1c（字段 tags、动作 setTags、详情区域 tags-detail 与保存规则的定义都不重写）；之后重新启用时恢复同一精确版本即可，不需要改代码、不需要数据迁移。",
+              "impact": "本次只改变启用状态；标签成员源码与版本不变，重新启用后其字段、动作与详情区域按原样恢复。",
+              "scope": "标签成员的停用方式与可恢复性"
+            },
+            {
+              "basis": "用户要求“保留已有标签数据”；宿主 preserve-data（preserveUnknownFields=true）与保留字段机制要求停用成员不改写任务数据，host-fact:write-scope 也要求数据变更只发生在显式动作。",
+              "behavior": "停用期间不再注册 tags 字段与「设置标签」动作，任务详情不再出现标签的可编辑动作入口；既有任务中已保存的标签值原样保留在任务数据里，不删除、不清空、不回填，也不改写大小写或首尾空白，停用本身也不写入其他字段。",
+              "impact": "停用后标签只作为既有数据保留；重新启用后同一标签值继续可见并可按原规则再次保存。",
+              "scope": "停用后标签数据的保留与呈现"
+            },
+            {
+              "basis": "用户要求保留计数与复盘功能；宿主继承未改动成员的精确版本与启用状态，主工作流完成字段的既有宿主规则为 trim 规范化并按 Unicode 码点计长。",
+              "behavior": "counter 辅助成员与主工作流的精确版本、启用状态、动作（increment、complete、reopen）、字段（count、review）及其校验规则保持不变：计数仍在未完成状态可加一、在既有值上累加、已完成不提供入口且提交被拒绝；复盘仍为完成动作必填、去首尾空格后 1 至 5000 个 Unicode 码点、重新打开按原值保留。",
+              "impact": "本轮除 tags 启用状态与随之消失的标签动作入口外，其他成员的动作入口、保存结果与既有验收行为均不受影响。",
+              "scope": "计数与复盘功能保持不变"
+            },
+            {
+              "basis": "用户只要求停用标签插件；宿主保护混合文件、基础服务与改进控件，数据变更只允许通过显式动作发生。",
+              "behavior": "不启停或改写在线调度等宿主基础服务，不改动执行策略、验证器、发布恢复控件；本次不新增动作、字段、定时任务或外部投递，也不对既有任务做批量数据处理。",
+              "impact": "变更范围限于组合中的 tags 启用状态与随之消失的标签动作入口。",
+              "scope": "停用变更的范围边界"
+            }
+          ],
+          "intent": "improve",
+          "requirements": [
+            {
+              "expectations": [
+                {
+                  "kind": "behavior"
+                },
+                {
+                  "kind": "preserve-ui"
+                },
+                {
+                  "field": "tags",
+                  "kind": "history"
+                },
+                {
+                  "examples": [
+                    "  复盘：沟通顺畅，按时交付  ",
+                    "已复盘：需求澄清耗时较长，下次提前对齐验收范围"
+                  ],
+                  "field": "review",
+                  "kind": "field"
+                },
+                {
+                  "action": "increment",
+                  "kind": "action-visible",
+                  "state": "open",
+                  "visible": true
+                },
+                {
+                  "action": "increment",
+                  "kind": "action-visible",
+                  "state": "done",
+                  "visible": false
+                },
+                {
+                  "action": "increment",
+                  "kind": "operation-rejected"
+                }
+              ],
+              "quote": "请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。",
+              "type": "behavior"
+            }
+          ],
+          "summary": "停用 tags 辅助成员（保留其精确版本与既有标签数据），计数与复盘功能及主工作流保持不变，标签之后可重新启用。"
+        }
+      ]
+    }
+  }
+}
