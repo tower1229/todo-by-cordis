@@ -35,6 +35,8 @@ export class InvestigationStore {
       this.db.prepare("INSERT OR IGNORE INTO evolution_materials VALUES(?,?)").run(doc.hash,JSON.stringify(doc.content));
       this.content(doc);
     };
+    // Archive the complete captured catalog without claiming delivery of omitted originals.
+    for (const [ref, source] of Object.entries(sources)) put({ref,...source});
     for (const doc of docs) {
       if (doc.source) {
         if (doc.source.ref === doc.ref) throw new AppError("PLAN_STALE","调查视图来源身份无效",409);

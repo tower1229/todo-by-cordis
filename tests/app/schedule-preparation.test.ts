@@ -10,6 +10,7 @@ import { BrowserDefinitionError, verifyBrowser } from "../../src/server/browser-
 import { dueAutoExpireSource } from "../../src/server/capability-guides.js";
 import { hash } from "../../src/release/storage.js";
 import { activateWorkflowOnly } from "./dual-composition-fixture.js";
+import { materialIdentity } from "../../src/evolution/investigation.js";
 
 const due = "2030-02-01T09:00:00.000Z";
 const later = "2030-03-01T09:00:00.000Z";
@@ -46,7 +47,7 @@ async function fixture(t: TestContext) {
   const context = capture(workspace);
   const initial = readInvestigation("inspect_application", {}, context, []);
   assert.ok("ref" in initial);
-  const seen = [initial, ...(initial.documents ?? [])].map(({ ref, hash }) => ({ ref, hash }));
+  const seen = [initial, ...(initial.documents ?? [])].map(materialIdentity);
   return { workspace, context, seen };
 }
 

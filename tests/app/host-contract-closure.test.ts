@@ -21,7 +21,7 @@ import { memberUiReleaseInput } from "../fixtures/member-ui.js";
 import { panelMemberCases } from "./member-case-fixtures.js";
 import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
-import { PlanningDriver, toolReply } from "./planning-fixture.js";
+import { PlanningDriver, toolReply, sourceReviewFixture } from "./planning-fixture.js";
 
 const quote = "完成前填写复盘，其他行为不变";
 const base = {
@@ -322,9 +322,10 @@ const errorDecision = {
   effectQuote: "空白复盘要显示错误",
   text: "",
 };
-const reviewed = (errorDecisions?: unknown) =>
+const reviewed = (errorDecisions?: unknown, sources = errorSources) =>
   JSON.stringify({
     reviewedIds: ["requirement"],
+    sourceReview: sourceReviewFixture({sources}),
     issues: [],
     fieldDecisions: [],
     ...(errorDecisions === undefined ? {} : { errorDecisions }),
@@ -357,11 +358,11 @@ test("用户明确要求的错误文字必须保留，伪造来源和不完整�
     text: "请填写复盘",
   };
   assert.deepEqual(
-    parseReview(reviewed([decision]), errorPlan("请填写复盘"), sources).issues,
+    parseReview(reviewed([decision], sources), errorPlan("请填写复盘"), sources).issues,
     [],
   );
   assert.equal(
-    parseReview(reviewed([decision]), errorPlan(""), sources).issues[0].kind,
+    parseReview(reviewed([decision], sources), errorPlan(""), sources).issues[0].kind,
     "omission",
   );
   for (const values of [
@@ -373,7 +374,7 @@ test("用户明确要求的错误文字必须保留，伪造来源和不完整�
     [{ ...decision, text: "别的文字" }],
   ])
     assert.throws(
-      () => parseReview(reviewed(values), errorPlan("请填写复盘"), sources),
+      () => parseReview(reviewed(values, sources), errorPlan("请填写复盘"), sources),
       /错误文案解释/,
     );
 });

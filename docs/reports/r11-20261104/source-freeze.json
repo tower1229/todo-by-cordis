@@ -1,0 +1,26 @@
+{
+  "schema": "cordis.r11-source-freeze/1",
+  "batch": "continuous-revision-study-20261104-r11",
+  "commit": "54b1ba3dda7819ee001ccbc71575c2f1d973a126",
+  "parent": "80e0487e956d9eb56a51281f94906ad178fd7d5c",
+  "branch": "codex/model-interface-contraction",
+  "productFixCommit": "80e0487e956d9eb56a51281f94906ad178fd7d5c",
+  "localNode": "v22.23.4",
+  "requiredNode": "24.18.x",
+  "ciNode": "24.18.0",
+  "pnpm": "12.3.4",
+  "localNodeModules": false,
+  "localDist": "not built; content hashes are absent",
+  "ciFrontendSummary": {
+    "source": "actions run 41793691114 build log",
+    "vite": "8.2.4",
+    "assets": [
+      "dist/web/index.html 0.45 kB gzip 0.32 kB",
+      "dist/web/assets/index-DfJr-pP8.css 26.62 kB gzip 5.80 kB",
+      "dist/web/assets/index-OoB24DdB.js 392.24 kB gzip 125.07 kB"
+    ],
+    "sha256": "not present in the CI log"
+  },
+  "historicalBaselineDatabase": "absent with .runtime r10; not reconstructed",
+  "r10SealedFilesModified": false
+}

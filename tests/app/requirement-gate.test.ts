@@ -109,7 +109,7 @@ test("独立复核收到浏览器错误断言的真实匹配语义，仍使用�
   assert.match(input.checkerSemantics["browser/1"].error, /包含/);
   assert.deepEqual(reviews[0].history, []);
   assert.equal(reviews[0].tools, undefined);
-  assert.equal(run.budget?.callsUsed, fixture.requests.length + 1);
+  assert.equal(run.budget?.callsUsed, fixture.requests.length);
   assert.ok((run.budget?.callsUsed ?? 13) < 12);
 });
 
@@ -147,8 +147,8 @@ for (const issue of ["omission", "extra-constraint"] as const)
     const reviews = fixture.requests.filter((r) => r.schema);
     assert.equal(reviews.length, 2);
     assert.ok(reviews.every((r) => r.history.length === 0 && !r.tools));
-    assert.equal(run.budget?.callsUsed, fixture.requests.length + 1);
-    assert.equal(run.budget?.callsUsed, 5);
+    assert.equal(run.budget?.callsUsed, fixture.requests.length);
+    assert.equal(run.budget?.callsUsed, 4);
     assert.ok(
       fixture.requests
         .filter((r) => !r.schema)
@@ -180,10 +180,10 @@ test("冻结要求的删除、期望替换、摘要篡改及修订均不能开�
       ];
     },
     (p: InvestigatedPlan) => {
-      delete p.requestAdmission;
+      delete p.requirementGate!.review.sourceReview;
     },
     (p: InvestigatedPlan) => {
-      p.requestAdmission!.factsHash = "forged";
+      p.binding!.preflight!.factsHash = "forged";
     },
     (p: InvestigatedPlan) => {
       p.requirements = [];

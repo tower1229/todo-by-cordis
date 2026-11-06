@@ -184,5 +184,17 @@ export function replyProblems(
   return [];
 }
 
+/** Identical protocol defects stop. A different defect may be corrected twice inside the existing call ceiling. */
+export function protocolCorrectionExhausted(input: {
+  attempt: number;
+  calls: number;
+  callLimit: number;
+  previousProblems?: string[];
+  problems: string[];
+}): boolean {
+  if (input.calls >= input.callLimit || input.attempt >= 2) return true;
+  return input.previousProblems?.join("\n") === input.problems.join("\n");
+}
+
 export class ModelProtocolError extends Error {}
 export class ModelResourceError extends ModelProtocolError {}

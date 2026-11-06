@@ -21,7 +21,7 @@ import { Workspace } from "../../src/server/workspace.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { capabilityGuides } from "../../src/server/capability-guides.js";
 import { Evolution } from "./evolution-adapter.js";
-import { PlanningDriver } from "./planning-fixture.js";
+import { PlanningDriver, sourceReviewFixture } from "./planning-fixture.js";
 import {
   compileSpec,
   specificationFailure,
@@ -42,6 +42,7 @@ import type { ReviewLedger } from "../../src/shared/change-spec.js";
 import { recordReview, reviewEvidence } from "../../src/evolution/review.js";
 import { hash } from "../../src/release/storage.js";
 import { schemaProblems } from "../../src/evolution/model-protocol.js";
+import { compileSemantics } from "../../src/evolution/requirement-semantics.js";
 
 const sources = [
   {
@@ -113,6 +114,7 @@ function plan(): InvestigatedPlan {
 
 function review(p: InvestigatedPlan, issues: unknown[]) {
   return JSON.stringify({
+    sourceReview: sourceReviewFixture({sources}),
     reviewedIds: p.requirements!.map((r) => r.id),
     issues,
     fieldDecisions: [],
@@ -156,7 +158,7 @@ test("只读宿主事实随统一规格冻结；收窄复核选项不能丢失�
   const p = plan();
   const input = requirementReviewInput(p, sources);
   assert.ok(Array.isArray(input.hostFacts), "复核仍须收到只读宿主事实");
-  assert.deepEqual(input.hostFacts, p.changeSpec!.hostFacts);
+  assert.deepEqual(input.hostFacts, p.changeSpec!.hostFacts.filter(fact=>!fact.id.startsWith("host-fact:effect:")));
   assert.ok(input.hostFacts.some(f => f.id === "host-fact:field-interaction" && f.properties.detail === "read-only-display"));
   assert.ok(!input.technicalTargets.some(t => t.factId === "host-fact:field-interaction"));
   const fact = p.changeSpec!.hostFacts.find(f => f.id === "host-fact:field-interaction")!;
@@ -388,6 +390,8 @@ test("冻结门禁重放来源和事实裁决；删证明、换结果、改实�
   const {p, source, parsed, facts, context} = premiseFixture();
   const audit = parseTechnicalPremises(JSON.stringify({decisions: [{verdict: "not-requested", detail: "原文未要求保留首尾空白"}]}), parsed, facts, context);
   const result = adjudicateTechnicalReview({...parsed, technicalPremiseAudit: audit}, facts, context);
+  p.semanticState = compileSemantics(p,source,result);
+  p.changeSpec = compileSpec(p,"run","source-hash");
   p.requirementGate = freezeRequirements(p, source, "request", result, ["workflow/1"]);
   const trusted = structuredClone(p.requirementGate);
   assert.equal(gateFailure(p, trusted), undefined);

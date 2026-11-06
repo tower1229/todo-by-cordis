@@ -1,0 +1,8 @@
+{
+  "decision": "gates-present",
+  "experimentDirectoriesCreated": true,
+  "note": "directory creation is not a model call",
+  "command": "node scripts/r11-real-phase-gate.mjs docs/reports/r11-20261104 --authorize-real-directories",
+  "boundCommit": "b50a7f1c9c0b1c9ddbfea4e7f8d86cd3c43174ed",
+  "ciRunId": 41834237072
+}

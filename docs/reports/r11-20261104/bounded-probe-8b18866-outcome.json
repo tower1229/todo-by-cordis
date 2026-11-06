@@ -1,0 +1,106 @@
+{
+  "schema": "cordis.r11-8b18866-round4-extended-ms-probe-outcome/1",
+  "recordedAt": "2026-11-05T10:32:48.831156+00:00",
+  "commit": "8b18866c417175f401788fe68064f5112990fea2",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-8b18866-bind.json",
+  "evidenceDirectory": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-8b18866-20261105T101315Z",
+  "passed": false,
+  "completeSixStepPass": false,
+  "paidCalls": 13,
+  "ordinals": {
+    "first": 455,
+    "last": 467
+  },
+  "cumulativeOccupied": 467,
+  "remainingCalls": 183,
+  "knownGoalEstimatedPeakUSD": 6.401480903999996,
+  "goalUnknownUsageReserveUSD": 2.359296,
+  "goalFeeGuardOccupiedUSD": 8.760776903999997,
+  "currentCohortKnownEstimatedPeakUSD": 0.3301473479999997,
+  "currentCohortUnknownUsageReserveUSD": 0,
+  "actualModel": "deepseek-flash",
+  "fatalHead": "浏览器验收案例超出上限：34 条，最多 30 条",
+  "stop": {
+    "kind": "planning-gate",
+    "phase": 3,
+    "planningPhase": "planning",
+    "scope": "bounded-six-step-1",
+    "code": "plan-compilation",
+    "blockReason": "other",
+    "diagnostic": "浏览器验收案例超出上限：34 条，最多 30 条",
+    "detail": "Round-4 extended-ms after 8b18866 historicalPreparation shortest-path degrade: phase-0/1/2 applied; phase-3 planning blocked when compiled browserCases length 34 exceeded hard max 30 (src/server/requirement-coverage.ts). Round-3 tag:tag history non-uniqueness did not reappear. Round-2 missing-existing-requirement fatal did not reappear. Not meter-exhaust (467/650). Not fee-guard (~$8.76 < $20). Not model-time-window."
+  },
+  "progress": {
+    "phaseBrowserScreenshots": [
+      "phase-0-browser.png",
+      "phase-1-browser.png",
+      "phase-2-browser.png"
+    ],
+    "appliedEvents": 3,
+    "experienceCheckedEvents": 3,
+    "settledEvents": 11,
+    "phasesReached": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "phase0Applied": true,
+    "phase1Applied": true,
+    "phase2Applied": true,
+    "phase3Failed": true,
+    "extendedMsHarnessUsed": true,
+    "millisecondsAuthorized": 1800000,
+    "tagTagHistoryNonUniquenessReappeared": false,
+    "missingExistingRequirementFatalReappeared": false
+  },
+  "ci": {
+    "pushRunId": 41998576331,
+    "prRunId": 41998583566,
+    "headSha": "8b18866c417175f401788fe68064f5112990fea2",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-05T10:12:19Z",
+    "prCompletedAt": "2026-11-05T09:57:54Z",
+    "application": {
+      "tests": 866,
+      "pass": 866,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "prLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-8b18866-pr-41998583566.log",
+    "pushLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-8b18866-push-41998576331.log",
+    "note": "Both M1 checks success on tip 8b18866 before round-4 extended-ms paid probe. Fee guard $20; nextOrdinal 455."
+  },
+  "ceiling": {
+    "priorOccupied": 454,
+    "cumulativeCeiling": 650,
+    "maxNewCalls": 196,
+    "feeGuardUSD": 20,
+    "authorizationRef": "t51u",
+    "nextOrdinalAfterProbe": 468,
+    "doNotLaunchNextPaidYet": true
+  },
+  "tipRepairsExercised": [
+    "e655fee host-derived rebind preserve",
+    "1dae482 reboundFields type narrow",
+    "round-1 4df0cf4 progress through phase-3 then time-window",
+    "round-2 5ce3a43 extended-ms then missing-requirement fatal",
+    "6bacd68 business-revision missing-target degrade to new requirement",
+    "round-3 6bacd68 phase-0/1 apply then tag:tag history non-uniqueness",
+    "8b18866 historicalPreparation shortest-path degrade on multi-history"
+  ],
+  "preserveExistingRealDirs": [
+    ".runtime/continuous-revision-study-20261104-r11/real/targeted",
+    ".runtime/continuous-revision-study-20261104-r11/real/chains",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-afde277-20261105T020119Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-b7e9965-20261105T035722Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-4df0cf4-20261105T051938Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-5ce3a43-20261105T071122Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-6bacd68-20261105T084029Z"
+  ],
+  "honestNonPass": true,
+  "note": "Round-4 Mac paid single six-step on tip 8b18866 after dual CI green. Extended-ms harness; 8b18866 shortest-path history-prep cleared round-3 tag:tag stop through phase-2 apply. Phase-3 planning-gate browserCases 34>30. completeSixStepPass remains 0. Prior probe evidence dirs preserved. No ordinal-468 paid launch from this docs turn."
+}

@@ -23,7 +23,7 @@ test("预算暂停原地追加、幂等且跨重启保留原授权与阶段结�
   const w = await Workspace.open(join(directory, "workspace.db"));
   const driver = new PlanningDriver();
   let e = new Evolution(w.db, driver, new EvolutionDomain(w), {
-    calls: 5,
+    calls: 4,
     candidates: 3,
     milliseconds: 600000,
   });
@@ -66,7 +66,7 @@ test("预算暂停原地追加、幂等且跨重启保留原授权与阶段结�
     candidates: 99,
     milliseconds: 9999999,
   });
-  assert.equal((await e.observe()).run?.budget?.authorized?.calls, 5);
+  assert.equal((await e.observe()).run?.budget?.authorized?.calls, 4);
   const command = {
     type: "resume-budget" as const,
     runId: id,
@@ -78,14 +78,14 @@ test("预算暂停原地追加、幂等且跨重启保留原授权与阶段结�
   assert.deepEqual(await e.command(command), first);
   run = await settleEvolution(e, "ready");
   assert.equal(run.id, id);
-  assert.equal(run.budget?.authorized?.calls, 11);
-  assert.equal(run.budget?.efficiencyTarget, 5);
+  assert.equal(run.budget?.authorized?.calls, 10);
+  assert.equal(run.budget?.efficiencyTarget, 4);
   assert.equal(run.budget?.grants?.length, 1);
   assert.equal(
     driver.requests.filter(
       (r) => JSON.parse(r.message ?? "{}").kind === "request-admission/2",
     ).length,
-    1,
+    0,
   );
   await assert.rejects(
     e.command({ ...command, operationId: randomUUID() }),
@@ -132,7 +132,7 @@ test("可修正的规划诊断在调用预留边界暂停，追加后保留诊�
     if (++proposals === 1) parsed.blockers.push("案例的前置状态缺少可达准备步骤");
     return parsed;
   };
-  const e = new Evolution(w.db, driver, domain, {calls: 6, candidates: 3, milliseconds: 600000});
+  const e = new Evolution(w.db, driver, domain, {calls: 5, candidates: 3, milliseconds: 600000});
   t.after(async () => {
     await e.close();
     await w.close();
@@ -144,17 +144,17 @@ test("可修正的规划诊断在调用预留边界暂停，追加后保留诊�
   if (paused.status !== "awaiting-budget") throw new Error("not paused");
   assert.equal(paused.pause.resource, "calls");
   assert.equal(proposals, 1);
-  assert.equal(paused.budget?.callsUsed, 2);
+  assert.equal(paused.budget?.callsUsed, 1);
   assert.equal(paused.plans?.length, 1);
   await e.command({type: "resume-budget", operationId: randomUUID(), runId: paused.id, pauseRevision: paused.pause.revision, amounts: paused.pause.suggested});
   const ready = await settleEvolution(e, "ready");
   assert.equal(ready.status, "ready");
   assert.equal(ready.id, paused.id);
   assert.equal(proposals, 2);
-  assert.equal(ready.budget?.efficiencyTarget, 6);
-  assert.equal(ready.budget?.callsUsed, 4);
+  assert.equal(ready.budget?.efficiencyTarget, 5);
+  assert.equal(ready.budget?.callsUsed, 3);
   assert(driver.requests.some(request => JSON.stringify(request.history).includes("案例的前置状态缺少可达准备步骤")));
-  assert.equal(driver.requests.filter(request => JSON.parse(request.message ?? "{}").kind === "request-admission/2").length, 1);
+  assert.equal(driver.requests.filter(request => JSON.parse(request.message ?? "{}").kind === "request-admission/2").length, 0);
   assert.equal(driver.requests.filter(request => request.phase === "review").length, 1);
 });
 

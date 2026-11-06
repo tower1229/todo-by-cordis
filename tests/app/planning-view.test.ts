@@ -63,7 +63,7 @@ test("原生调查交付独立视图，保留完整业务定义及来源，不�
   assert.equal(raw.content,context.files["active-acceptance"].content);
   const legacy=readInvestigation("inspect_application",{},context,[{ref:raw.ref,hash:raw.hash}]);
   assert.ok("ref" in legacy);
-  assert.equal(legacy.documents?.some(doc=>doc.source),false,"原文旧回执不能静默升级成未交付视图");
+  assert.equal(legacy.documents?.some(doc=>doc.source?.ref==="active-acceptance"),false,"原文旧回执不能静默升级成未交付视图");
   assert.ok(legacy.documents?.some(doc=>doc.ref===raw.ref&&doc.reused));
 });
 
@@ -119,6 +119,6 @@ test("旧记录、无效冻结及冲突别名完整回退，不发明可靠视�
     const content=JSON.stringify(invalid);context.files["active-acceptance"]={content,hash:hash(content)};
     const {documents}=inspect(context);
     assert.ok(documents.some(d=>d.ref==="active-acceptance"&&d.content===content));
-    assert.equal(documents.some(d=>d.source),false);
+    assert.equal(documents.some(d=>d.source?.ref==="active-acceptance"),false);
   }
 });

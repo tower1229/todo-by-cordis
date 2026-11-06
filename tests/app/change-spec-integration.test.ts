@@ -7,11 +7,12 @@ import { join } from "node:path";
 import { Workspace } from "../../src/server/workspace.js";
 import { AdmissionEvolution as Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
-import { PlanningDriver, toolReply } from "./planning-fixture.js";
+import { PlanningDriver, toolReply, sourceReviewFixture } from "./planning-fixture.js";
 import { panelMemberCases } from "./member-case-fixtures.js";
 import { panelPluginCode } from "../fixtures/member-ui.js";
 import { hash } from "../../src/release/storage.js";
 import type { AssistantRun } from "../../src/shared/assistant.js";
+import type { InvestigationDocument } from "../../src/server/planning.js";
 
 async function settle(e: Evolution, timeout = 30000): Promise<AssistantRun> {
   const deadline = Date.now() + timeout;
@@ -33,7 +34,7 @@ async function setup(t: test.TestContext) {
   return workspace;
 }
 
-test("正式新协议：需求预检、业务规格和独立复核后ready，派生步骤和稳定需求ID由宿主冻结", async (t) => {
+test("正式新协议：业务规划和独立复核后ready，派生步骤和稳定需求ID由宿主冻结", async (t) => {
   const w = await setup(t);
   const driver = new PlanningDriver();
   const e = new Evolution(w.db, driver, new EvolutionDomain(w));
@@ -46,7 +47,7 @@ test("正式新协议：需求预检、业务规格和独立复核后ready，派
   const ready = await settle(e);
   assert.equal(ready.status, "ready", "message" in ready ? ready.message : ready.status);
   if (ready.status !== "ready") return;
-  assert.equal(ready.budget?.callsUsed, 3);
+  assert.equal(ready.budget?.callsUsed, 2);
   assert.equal(ready.plan.changeSpec?.version, "change/3");
   assert.deepEqual(
     ready.plan.steps.map((s) => s.id),
@@ -56,19 +57,26 @@ test("正式新协议：需求预检、业务规格和独立复核后ready，派
   assert.equal(ready.plan.changeSpec?.requirementOrigins[0].origin, "request");
   assert.equal(driver.requests[0].history.length, 0);
   const materials = JSON.parse(driver.requests[0].message!).materials;
-  const supplied = materials.documents;
+  const supplied = materials.documents as InvestigationDocument[];
   assert.ok(supplied.some((d: { ref: string }) => d.ref === "active-source"));
-  for (const c of supplied.find((d: {ref: string}) => d.ref === "inspect_application").content.capabilityContracts)
-    for (const ref of c.consumers)
-      assert.ok(supplied.some((d: {ref: string; content: string}) => d.ref === ref && d.content.length), `目录消费者须实际交付：${ref}`);
-  assert.equal(supplied[0].documents, undefined, "资料不得通过嵌套再复制一次");
+  const context = new EvolutionDomain(w).context();
+  const inventory = supplied.find(d => d.ref === "inspect_application")!.content as {capabilityContracts:{consumers:string[]}[]};
+  for (const c of inventory.capabilityContracts)
+    for (const ref of c.consumers) {
+      const document = supplied.find(d => d.ref === ref || d.source?.ref === ref);
+      assert.ok(document, `目录消费者须交付精确原文或来源绑定接口：${ref}`);
+      assert.notEqual(document.content, null);
+      assert.equal(hash(document.content), document.hash);
+      if (document.source) assert.equal(document.source.hash, context.files[ref].hash);
+    }
+  assert.equal(Object.hasOwn(supplied[0], "documents"), false, "资料不得通过嵌套再复制一次");
   const stored = JSON.parse(
     String(
       w.db.prepare("SELECT body FROM evolution_runs WHERE id=?").get(ready.id)!
         .body,
     ),
   );
-  assert.equal(stored.investigation.deliveries[0].call, 2);
+  assert.equal(stored.investigation.deliveries[0].call, 1);
   assert.equal(stored.investigation.deliveries[0].phase, "planning");
   assert.deepEqual(
     stored.investigation.deliveries[0].materials.map(
@@ -101,7 +109,7 @@ test("独立复核API故障直接阻塞，不消耗调用反复重做规划", as
   });
   const done = await settle(e);
   assert.equal(done.status, "blocked");
-  assert.equal(done.budget?.callsUsed, 3);
+  assert.equal(done.budget?.callsUsed, 2);
   assert.equal(calls, 2);
   assert.match(
     "message" in done ? done.message : "",
@@ -170,7 +178,7 @@ test("独立技术争议绑定检查器事实后由宿主裁决，3次调用read
   });
   const ready = await settle(e);
   assert.equal(ready.status, "ready", "message" in ready ? ready.message : ready.status);
-  assert.equal(ready.budget?.callsUsed, 3);
+  assert.equal(ready.budget?.callsUsed, 2);
   assert.equal(ready.budget!.callsUsed + ready.budget!.callsRemaining, 12);
   if (ready.status !== "ready") return;
   assert.equal(ready.plan.requirementGate!.review.issues.length, 0);
@@ -205,7 +213,7 @@ test("合成任务属性不得手填：冻结前退回同一规划循环，宿�
   const ready = await settle(e);
   assert.equal(ready.status, "ready", "message" in ready ? ready.message : ready.status);
   if (ready.status !== "ready") return;
-  assert.equal(ready.budget?.callsUsed, 4);
+  assert.equal(ready.budget?.callsUsed, 3);
   assert.equal(ready.budget!.callsUsed + ready.budget!.callsRemaining, 12);
   assert.deepEqual(ready.plan.browserCases![0].steps, [{kind: "task"}]);
   assert.ok(JSON.stringify(fixture.requests).includes("protocolCorrection"));
@@ -222,7 +230,9 @@ test("生成首轮交付完整精确资料且冻结规格不变", async (t) => {
       async generate(request, signal) {
         if (!request.tools?.some((tool) => tool.name === "submit_candidate"))
           return fixture.generate(request, signal);
-        assert.ok(JSON.parse(request.message!).materials.documents.length > 3);
+        const documents = JSON.parse(request.message!).materials.documents as InvestigationDocument[];
+        assert.ok(documents.length > 3);
+        assert.equal(documents.find(d => d.ref === "active-source")?.content, w.release.get(member.versionId).source);
         assert.deepEqual(request.tools?.map(t => t.name).sort(), ["report_blocker", "submit_candidate"]);
         return toolReply("report_blocker", { reason: "收集交付回执后停止" });
       },
@@ -247,7 +257,7 @@ test("生成首轮交付完整精确资料且冻结规格不变", async (t) => {
   });
   const done = await settle(e);
   assert.equal(done.status, "blocked");
-  assert.equal(done.budget?.callsUsed, 4);
+  assert.equal(done.budget?.callsUsed, 3);
   const stored = JSON.parse(
     String(
       w.db.prepare("SELECT body FROM evolution_runs WHERE id=?").get(done.id)!
@@ -256,7 +266,7 @@ test("生成首轮交付完整精确资料且冻结规格不变", async (t) => {
   );
   assert.equal(hash(stored.plan), frozen);
   const receipt = stored.investigation.deliveries.at(-1);
-  assert.equal(receipt.call, 4);
+  assert.equal(receipt.call, 3);
   assert.equal(receipt.phase, "generation");
   const refs = receipt.materials.map((m: {ref:string}) => m.ref);
   assert.equal(new Set(refs).size, refs.length);
@@ -264,10 +274,18 @@ test("生成首轮交付完整精确资料且冻结规格不变", async (t) => {
       "candidate-contract",
       "active-source",
       "candidate-scaffold",
-      `member-source/${member.pluginId}@${member.versionId}`,
-      `member-contract/${member.pluginId}@${member.versionId}`,
       `member-acceptance/${member.pluginId}@${member.versionId}`,
     ]) assert.ok(refs.includes(ref), ref);
+  const context = new EvolutionDomain(w).context();
+  for (const [alias, canonical] of [
+    [`member-source/${member.pluginId}@${member.versionId}`, "active-source"],
+    [`member-contract/${member.pluginId}@${member.versionId}`, "active-contract"],
+  ]) {
+    assert.equal(context.files[alias].hash, context.files[canonical].hash);
+    assert.equal(refs.includes(alias), false, "重复身份不冒充已交付");
+    assert.ok(ready.plan.binding!.materials.some(d => d.ref === canonical && d.hash === context.files[alias].hash));
+    assert.ok(w.db.prepare("SELECT body FROM evolution_materials WHERE hash=?").get(context.files[alias].hash), "完整原文仍归档");
+  }
   for (const ref of Object.keys(ready.plan.binding!.guideCatalog)) assert.ok(refs.includes(ref), ref);
 });
 
@@ -282,7 +300,7 @@ test("澄清直接等待用户，回答沿同一运行和预算复用已验证�
       async generate(request, signal) {
         if (phase++ === 0)
           return {
-            ...toolReply("read_guides", { refs: ["guide/command.register"] }),
+            ...toolReply("read_materials", { refs: ["guide/command.register"] }),
             history: request.history,
           };
         if (phase === 2)
@@ -317,7 +335,7 @@ test("澄清直接等待用户，回答沿同一运行和预算复用已验证�
   const ready = await settle(e);
   assert.equal(ready.status, "ready", "message" in ready ? ready.message : ready.status);
   assert.equal(ready.id, waiting.id);
-  assert.equal(ready.budget?.callsUsed, 7);
+  assert.equal(ready.budget?.callsUsed, 5);
   assert.ok(
     continuationMaterials.some((d) => d.ref === "guide/command.register"),
   );
@@ -382,7 +400,7 @@ test("正式差异协议：辅助新增files为空，精确继承旧主工作流
     "awaiting-apply",
     "message" in done ? done.message : done.status,
   );
-  assert.equal(done.budget?.callsUsed, 4);
+  assert.equal(done.budget?.callsUsed, 3);
   assert.deepEqual(w.composition(), before);
   const candidate = (await e.observe()).candidates!.find((c) => c.passed)!;
   assert.ok(candidate.browser?.results.every((r) => r.status === "passed"));
@@ -411,6 +429,7 @@ test("独立复核可直接提出业务澄清；同一运行回答后复核必�
           reviewed = true;
           const input = JSON.parse(request.message!);
           reply.text = JSON.stringify({
+            sourceReview:sourceReviewFixture(input),
             reviewedIds: input.requirements.map((r: { id: string }) => r.id),
             fieldDecisions: JSON.parse(reply.text).fieldDecisions,
             issues: [],
@@ -430,7 +449,7 @@ test("独立复核可直接提出业务澄清；同一运行回答后复核必�
   });
   const waiting = await settle(e);
   assert.equal(waiting.status, "awaiting-input");
-  assert.equal(waiting.budget?.callsUsed, 4);
+  assert.equal(waiting.budget?.callsUsed, 3);
   assert.equal(waiting.reviewLedger!.findings[0].status, "open");
   await answerCurrent(e, {
     type: "answer",
@@ -440,7 +459,7 @@ test("独立复核可直接提出业务澄清；同一运行回答后复核必�
   });
   const ready = await settle(e);
   assert.equal(ready.status, "ready", "message" in ready ? ready.message : ready.status);
-  assert.equal(ready.budget?.callsUsed, 7);
+  assert.equal(ready.budget?.callsUsed, 5);
   assert.equal(ready.reviewLedger!.findings[0].status, "resolved");
   if (ready.status !== "ready") return;
   assert.deepEqual(
@@ -605,7 +624,7 @@ const plugin: Plugin = {
     "awaiting-apply",
     "message" in done ? done.message : done.status,
   );
-  assert.equal(done.budget?.callsUsed, 5);
+  assert.equal(done.budget?.callsUsed, 4);
   assert.equal(done.budget!.callsUsed + done.budget!.callsRemaining, 12);
   const candidates = (await e.observe()).candidates!;
   const first = candidates.find((c) => c.attempt === 1)!;

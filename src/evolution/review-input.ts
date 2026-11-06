@@ -26,10 +26,10 @@ function reviewHistory(ledger?: ReviewLedger) {
       issueRef: remember(issue),
     })),
     attempts: ledger.attempts.map(({ review, ...attempt }) => {
-      const { issues: claims, ...result } = review;
+      const { issues: claims, sourceReview, ...result } = review;
       return {
         ...attempt,
-        review: { ...result, issueRefs: claims.map(remember) },
+        review: { ...result, ...(sourceReview ? {sourceReview:{reviewedSources:sourceReview.reviewedSources,effects:sourceReview.effects.intents}} : {}), issueRefs: claims.map(remember) },
       };
     }),
     issues,
@@ -75,6 +75,7 @@ export function requirementReviewInput(
     sources,
     answeredQuestions: plan.answeredQuestions ?? [],
     answerPolicy: "question是宿主问题记录而不是用户新增声明；answer才是对应sourceRevision的用户回答。不能把问题中的假设或备选项当成用户要求。",
+    identityPolicy: "requirement.id、caseId 和既有案例名是兼容身份，可能保留历史命名，不单独定义当前业务语义。按绑定的用户原文、可执行预期与历史准备分别复核；不能因旧名称放过相反预期。明确修订会保留旧身份并改绑较新原文，被修订的旧预期仍用于历史准备；未改变的业务义务仍须保留。",
     defaults: plan.defaults ?? [],
     baselineDefaults: spec.definition.binding?.baselineDefaults,
     defaultPolicy: "优先遵循明确要求、既有规则及已审基线默认；仅低影响、可逆且有惯例支持的细节可为 safe-default。先判断默认是否属于本次需求：仅 Agent 自行扩展、可以整体撤回而不减少用户要求、既有规则及必要能力的额外行为为 out-of-scope，targets 必须为空并说明需撤回的范围；宿主退回完整规划纠错，不会自动删除规格或执行该行为。满足需求所必需的重大未决分支，涉及业务目的、外部副作用、数据损失或权限放宽时必须 requires-choice，冲突为 conflict。capabilityChanges/requiredCapabilities 是统一规格中执行和验收必须满足的接口要求，不是用户原话；默认不能取消这些要求，与之冲突须为 conflict。逐项复核并绑定其覆盖的业务选择 targetId，不能以默认免除独立验收。",
@@ -89,7 +90,8 @@ export function requirementReviewInput(
     hostInvariants: spec.invariants,
     contractAuthority: spec.authority,
     designTargets: designTargets(plan).map((target, index) => ({ target: index + 1, ...target })),
-    hostFacts: spec.hostFacts,
+    hostFacts: spec.hostFacts.filter(fact => !fact.id.startsWith("host-fact:effect:")),
+    sourceReviewPolicy: "逐项覆盖全部 sources，并独立判断完整宿主效果矩阵。初始逻辑值、初始显示、名称和动作后值分别解释；不能根据计划期望或当前支持性改写原意。宿主在解释完成后判断实际支持性。遗漏原文要求须报告 omission，不能仅复核已列入提案的项目。",
     hostRules: spec.hostRules.map(
       ({ factId, property, value: _value, ...rule }) => ({
         ...rule,
@@ -105,24 +107,10 @@ export function requirementReviewInput(
       ...sources.map((s) => s.id),
     ],
     requirements: plan.requirements,
-    requestAdmission: plan.requestAdmission
-      ? {
-          contract: plan.requestAdmission.contract,
-          key: plan.requestAdmission.key,
-          receiptHash: hash(plan.requestAdmission),
-          baseVersion: plan.requestAdmission.baseVersion,
-          sourceHash: plan.requestAdmission.sourceHash,
-          factsHash: plan.requestAdmission.factsHash,
-          claims: plan.requestAdmission.claims,
-          semanticReview: plan.requestAdmission.semanticReview,
-          technicalChecks: plan.requestAdmission.technicalChecks,
-          capabilityChecks: plan.requestAdmission.capabilityChecks,
-          initialStates: plan.requestAdmission.initialStates,
-          blockers: plan.requestAdmission.blockers,
-        }
-      : undefined,
-    questionAdjudications: plan.questionAdjudications ?? [],
-    technicalTargets,
+    questionAdjudications: (plan.questionAdjudications ?? []).map(({decision:{effects:_effects,...decision},...receipt})=>({...receipt,decision})),
+    technicalTargets: technicalTargets.map(({actual,evidenceHash,...target})=>({
+      ...target,...(!target.factId.startsWith("host-fact:effect:") ? {actual,evidenceHash} : {}),
+    })),
     businessChoices: businessChoices(plan),
     semanticState: plan.semanticState,
     fieldReviewTargets: sourceTargets(fieldReviewTargets(plan, sources)),

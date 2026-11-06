@@ -354,11 +354,11 @@ test("browser rejects stale guide before execution and after experience, then ac
       const reply = await execution.generate(request, signal);
       if (
         reply.calls.some((call) => call.name === "propose_plan") &&
-        !JSON.stringify(request.history).includes('"name":"read_guides"')
+        !JSON.stringify(request.history).includes('"name":"read_materials"')
       )
         return {
           ...reply,
-          calls: [{ name: "read_guides", args: { refs: [guideRef] } }],
+          calls: [{ name: "read_materials", args: { refs: [guideRef] } }],
         };
       if (
         reply.calls[0]?.name === "submit_candidate" &&
@@ -569,10 +569,10 @@ test("browser planning corrects bad guide arguments and rejects an unsent catalo
       if (phase++ === 0)
         return {
           ...reply,
-          calls: [{ name: "read_guides", args: { refs: ["guide/unknown"] } }],
+          calls: [{ name: "read_materials", args: { refs: ["guide/unknown"] } }],
         };
       if (phase === 2)
-        return {...reply,calls:[{name:"read_source",args:{ref:"active-source"}}]};
+        return {...reply,calls:[{name:"read_materials",args:{refs: ["active-source"]}}]};
       if (phase === 3)
         return {
           ...reply,
@@ -625,12 +625,13 @@ test("browser planning corrects bad guide arguments and rejects an unsent catalo
       .toBe("ready");
     expect(phase).toBe(4);
     expect(JSON.stringify(base.requests)).toContain("protocolCorrection");
+    expect(JSON.stringify(base.requests)).toContain("REF_UNAVAILABLE");
     const snapshot = await (
       await page.request.get(`${baseURL}/api/assistant`)
     ).json();
-    expect(snapshot.run.protocolFailures).toHaveLength(2);
-    expect(snapshot.run.protocolFailures[0].problems.join(";")).toContain("refs");
-    expect(snapshot.run.protocolFailures[1].problems.join(";")).toContain("evidence");
+    expect(snapshot.run.protocolFailures).toHaveLength(1);
+    expect(snapshot.run.protocolFailures[0].problems.join(";")).toContain("evidence");
+    expect(snapshot.run.evidence.some((item: {ref:string}) => item.ref === "guide/unknown")).toBe(false);
     expect(
       snapshot.run.plan.binding.materials.some(
         (item: { ref: string }) => item.ref === unsentGuide,
@@ -668,7 +669,7 @@ test("browser planning can read the bounded task event upgrade guide", async ({
         return {
           ...reply,
           calls: [
-            { name: "read_guides", args: { refs: ["guide/task.events"] } },
+            { name: "read_materials", args: { refs: ["guide/task.events"] } },
           ],
         };
       }

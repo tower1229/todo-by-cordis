@@ -1,0 +1,39 @@
+{
+  "commit": "b50a7f1c9c0b1c9ddbfea4e7f8d86cd3c43174ed",
+  "rehearsalCommit": "5bb228defb1b01f04e79130f7f08412b089b3309",
+  "rehearsalNotRerun": true,
+  "ci": {
+    "boundRunId": 41834237072,
+    "boundEvent": "pull_request",
+    "application": {"tests": 857, "pass": 857, "fail": 0, "cancelled": 0, "skipped": 0},
+    "e2ePassed": 111,
+    "pushRunId": 41834230056,
+    "pushConclusion": "success",
+    "pushLogCountsMatch": true
+  },
+  "targeted": {
+    "passed": true,
+    "calls": 3,
+    "ordinals": [293, 294, 295],
+    "usageKnown": 3,
+    "actualModel": "deepseek-flash"
+  },
+  "chains": {
+    "passed": false,
+    "scope": "six-step-1",
+    "calls": 13,
+    "ordinals": "296-308",
+    "usageKnown": 13,
+    "diagnostic": "预算不足：剩余调用无法容纳完整需求复核与候选执行，保留原预算并停止规划",
+    "sixStep2Started": false
+  },
+  "strategyArmsStarted": false,
+  "completeSixStepPasses": 0,
+  "cumulativeOccupied": 308,
+  "remainingCalls": 97,
+  "knownGoalEstimatedPeakUSD": 2.5732923720000005,
+  "goalUnknownUsageReserveUSD": 0.9437184,
+  "goalFeeGuardOccupiedUSD": 3.5170107720000003,
+  "currentCohortKnownEstimatedPeakUSD": 0.3474083160000001,
+  "actualVendorInvoiceUSD": null
+}

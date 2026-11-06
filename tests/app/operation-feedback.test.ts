@@ -138,6 +138,7 @@ function sourceReview(
 ) {
   return parseReview(
     JSON.stringify({
+      sourceReview:sourceReviewFixture({sources}),
       reviewedIds: plan.requirements!.map((r) => r.id),
       issues: [],
       fieldDecisions: [],
@@ -188,6 +189,7 @@ test("来源未要求页面报错时只裁决新意图，保留后端拒绝和�
     semantics.entries.find((e) => e.target.aspect === "error-feedback")?.status,
     "unspecified",
   );
+  plan.semanticState = semantics;
   plan.changeSpec = compileSpec(plan, "run", "base");
   const gate = freezeRequirements(plan, sources, "request", review, supported);
   plan.requirementGate = gate;
@@ -336,7 +338,7 @@ import { Evolution } from "../../src/evolution/evolution.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
 import { memberUiReleaseInput } from "../fixtures/member-ui.js";
 import { panelMemberCases } from "./member-case-fixtures.js";
-import { fieldDecisionsFixture } from "./planning-fixture.js";
+import { fieldDecisionsFixture, sourceReviewFixture } from "./planning-fixture.js";
 import { verifyViaIsolatedWorkspace } from "../../src/server/workspace-acceptance.js";
 
 for (const required of [false, true])
@@ -397,6 +399,7 @@ for (const required of [false, true])
               ),
             );
             return reply({
+              sourceReview:sourceReviewFixture(input),
               reviewedIds: input.requirements.map((r: { id: string }) => r.id),
               issues: [],
               fieldDecisions: fieldDecisionsFixture(input),
@@ -419,7 +422,7 @@ for (const required of [false, true])
               text: "",
               calls: [
                 {
-                  name: "read_guides",
+                  name: "read_materials",
                   args: {
                     refs: [
                       "guide/command.register",
@@ -465,11 +468,11 @@ for (const required of [false, true])
       }),
     );
     assert.equal(reviews, 1);
-    assert.equal(run.budget!.callsUsed, 4);
-    assert.equal(run.budget!.callsRemaining, 8);
+    assert.equal(run.budget!.callsUsed, 3);
+    assert.equal(run.budget!.callsRemaining, 9);
     assert.equal(
       w.db.prepare("SELECT count(*) n FROM evolution_calls").get()!.n,
-      4,
+      3,
     );
     if (run.status === "awaiting-acceptance") {
       assert.deepEqual(run.plan.requirementGate!.review.issues, []);
@@ -498,7 +501,7 @@ for (const required of [false, true])
       assert.equal(confirmed.status, "ready");
       assert.equal(
         confirmed.budget!.callsUsed,
-        4,
+        3,
         "既有验收修订确认不新增模型调用",
       );
     }

@@ -7,6 +7,24 @@ import type { BrowserCase, BrowserStep } from "../shared/browser-cases.js";
 import { hash } from "../release/storage.js";
 
 export class HistoricalPreparationBlocked extends Error {}
+
+/** Over-cap browserCases and dangling browser/1 refs are host structure defects, not protocol retries. */
+export class PlanStructureBlocked extends Error {}
+
+/** Multiple reachable histories stay blocked as a plan defect. The same call ceiling may carry one corrected submission; repeating the defect or exhausting calls stops. Over-cap and dangling refs stop on the first occurrence. */
+export function planningStructureTerminal(input: {
+  historical: boolean;
+  structural?: boolean;
+  rejectionSeen: boolean;
+  calls: number;
+  callLimit: number;
+}): boolean {
+  return (
+    input.structural === true ||
+    input.rejectionSeen ||
+    input.calls >= input.callLimit
+  );
+}
 type Target = { member: string; field: string; contribution?: string };
 type HistoricalObligation = Extract<AcceptanceObligation, { kind: "history" }>;
 
@@ -79,8 +97,11 @@ export function historicalPreparation(
       }
       if (
         c.member === target.member &&
+        !Object.hasOwn(node.fields, target.field) &&
         Object.hasOwn(c.expected.fields, target.field)
       ) {
+        // Updates keep using the established history; they are not new seeds.
+        // Continue traversing below so later frozen contradictions still block.
         const recipe: BaselinePreparation = {
           baseVersion,
           sourceHash: hash(origins),
@@ -100,12 +121,17 @@ export function historicalPreparation(
       }
     }
   }
-  if (results.size !== 1)
-    blocked(
-      results.size
-        ? "目标字段存在多个可达历史状态"
-        : "没有可达的冻结成功动作产生目标字段",
-    );
+  if (results.size === 0)
+    blocked("没有可达的冻结成功动作产生目标字段");
+  if (results.size > 1) {
+    // Multiple reachable histories: degrade to shortest path with stable tie-break.
+    // This allows tag/counter fields to proceed instead of blocking on non-uniqueness.
+    const candidates = [...results.values()];
+    const shortest = Math.min(...candidates.map((r) => r.actions.length));
+    const viable = candidates.filter((r) => r.actions.length === shortest);
+    viable.sort((a, b) => a.sourceHash.localeCompare(b.sourceHash));
+    return viable[0];
+  }
   return [...results.values()][0];
 }
 

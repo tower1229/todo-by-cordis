@@ -127,7 +127,8 @@ for (const { minimal, mode } of [
         defaults,
       );
       let e = new Evolution(w.db, driver, new EvolutionDomain(w), {
-        calls: mode === "resume" ? 7 : 12,
+        // Keep the correction paused now that the normal path omits admission.
+        calls: mode === "resume" ? 6 : 12,
         candidates: 3,
         milliseconds: 600000,
       });
@@ -159,7 +160,7 @@ for (const { minimal, mode } of [
           candidates: 99,
           milliseconds: 9999999,
         });
-        assert.equal((await e.observe()).run?.budget?.efficiencyTarget, 7);
+        assert.equal((await e.observe()).run?.budget?.efficiencyTarget, 6);
         await e.command({
           type: "resume-budget",
           operationId: "grant",

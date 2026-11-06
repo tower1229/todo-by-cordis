@@ -2,12 +2,13 @@ import type { InvestigatedPlan, RequirementGate } from "../shared/assistant.js";
 import { hash } from "../release/storage.js";
 import type { BrowserCase, BrowserStep } from "../shared/browser-cases.js";
 import { compileObligations } from "./acceptance-obligations.js";
-import { obligationCases } from "../shared/acceptance-obligations.js";
+import { browserCaseStem, obligationCases } from "../shared/acceptance-obligations.js";
 import {
   bindHistoricalCase,
   HistoricalPreparationBlocked,
 } from "./historical-preparation.js";
 import type { Requirement } from "../shared/assistant.js";
+
 import {
   fieldLifecycle,
   deriveFieldObligations,
@@ -17,8 +18,114 @@ import {
 import { historicalPreparation } from "./historical-preparation.js";
 import {bindAvailability,type ActionAvailability} from "./action-availability.js";
 import { schedulePolicyChecks } from "../shared/schedule-policy.js";
+import {
+  browserCaseAssertionHash,
+  browserCaseQuotaKey,
+  canSupersedeBrowserCase,
+  dedupeBrowserCases,
+  isHostSnapshotQuota,
+  mergeBrowserCaseAliases,
+  remapBrowserChecks,
+} from "./browser-case-content.js";
+import { PlanStructureBlocked } from "./historical-preparation.js";
 
+/** Inherit accepted browser cases and report every explicit revision to the caller. */
+export function inheritBrowserCases(
+  plan: Pick<InvestigatedPlan, "requirements" | "browserCases">,
+  inherited: Pick<InvestigatedPlan, "requirements" | "browserCases">,
+  reason: unknown,
+) {
+  const compiled = plan.browserCases ?? [];
+  const browserCases = [...compiled];
+  const changes: NonNullable<InvestigatedPlan["acceptanceChanges"]> = [];
+  const blockers: string[] = [];
+  const reboundFieldCase = (old: BrowserCase) => {
+    if (old.classification !== "frozen-business" || !old.obligationId) return;
+    const matches: BrowserCase[] = [];
+    for (const owner of inherited.requirements ?? []) {
+      const previous = owner.obligations?.find(o => o.id === old.obligationId);
+      const current = plan.requirements?.find(r => r.id === owner.id);
+      if (previous?.kind !== "field" || !current || hash(current) === hash(owner)) continue;
+      const scopes = new Set((plan.requirements ?? []).flatMap(r => r.obligations ?? [])
+        .filter(o => o.kind === "field" && o.member === previous.member && o.field === previous.field)
+        .map(o => o.kind === "field" ? o.contribution : undefined));
+      if (!previous.contribution && scopes.size !== 1) continue;
+      const fields = (current.obligations ?? []).filter(o => o.kind === "field" &&
+        o.member === previous.member && o.field === previous.field &&
+        (!previous.contribution || o.contribution === previous.contribution));
+      if (fields.length !== 1 || fields[0].kind !== "field") continue;
+      const field = fields[0];
+      // An old unqualified field may acquire its unique host-bound UI scope.
+      // Preserve every operation, input, other field, and refresh/restart check.
+      const changesValue = old.steps.some(s =>
+        (s.kind === "action" || s.kind === "case-action") && s.member === previous.member);
+      const shape = (steps: BrowserStep[]) => steps.map(s => s.kind === "field" &&
+        s.member === field.member && s.field === field.field &&
+        (!s.contribution || s.contribution === field.contribution)
+        ? {...s,contribution:field.contribution,...(changesValue ? {value:undefined} : {})} : s);
+      for (const candidate of compiled) {
+        if (candidate.classification !== "frozen-business" || candidate.task !== old.task ||
+          candidate.obligationId !== field.id ||
+          (old.prepare && hash(old.prepare) !== hash(candidate.prepare)) ||
+          (!changesValue && !old.prepare && candidate.prepare) ||
+          hash(shape(old.steps)) !== hash(shape(candidate.steps))) continue;
+        if (!matches.some(c => c.id === candidate.id)) matches.push(candidate);
+      }
+    }
+    return matches.length === 1 ? matches[0] : undefined;
+  };
+  const aliases = new Map<string, string>();
+  for (const old of inherited.browserCases ?? []) {
+    const quota = browserCaseQuotaKey(old);
+    const replacement =
+      compiled.find((item) => item.id === old.id) ??
+      compiled.find((item) => browserCaseQuotaKey(item) === quota) ??
+      reboundFieldCase(old);
+    if (!replacement) browserCases.push(structuredClone(old));
+    else {
+      if (replacement.id !== old.id) aliases.set(old.id, replacement.id);
+      if (hash(replacement) !== hash(old)) {
+        const snapshot = isHostSnapshotQuota(quota);
+        if (snapshot) {
+          if (typeof reason === "string" && reason.trim())
+            changes.push({
+              rule: `浏览器案例 ${old.id}`,
+              before: JSON.stringify(old),
+              after: JSON.stringify(replacement),
+              reason,
+            });
+        } else if (typeof reason !== "string" || !reason.trim()) {
+          blockers.push(`既有浏览器案例 ${old.id} 改变，须说明验收修订原因`);
+          if (replacement.id !== old.id && browserCaseQuotaKey(replacement) !== quota)
+            browserCases.push(structuredClone(old));
+        } else
+          changes.push({
+            rule: `浏览器案例 ${old.id}`,
+            before: JSON.stringify(old),
+            after: JSON.stringify(replacement),
+            reason,
+          });
+      }
+    }
+  }
+  return {browserCases,changes,blockers,aliases};
+}
 type Row = Record<string, unknown>;
+type FieldObligation = Extract<NonNullable<Requirement["obligations"]>[number], {kind:"field"}>;
+const sameFieldIdentity = (a: FieldObligation, b: FieldObligation) =>
+  a.member === b.member && a.field === b.field && a.contribution === b.contribution;
+/** Callers prove a unique host binding before reusing a legacy projection. */
+function reuseFieldIdentity(next: FieldObligation, prior: FieldObligation) {
+  next.id = prior.id;
+  if (prior.contribution === undefined) delete next.contribution;
+  // Only complete, unchanged operation paths keep an accepted case identity.
+  // Value changes still require an explicit acceptance revision.
+  next.scenarios = next.scenarios.map(scenario => {
+    const matches = prior.scenarios.filter(old => hash(old.steps) === hash(scenario.steps));
+    return matches.length === 1 ? { ...scenario, id: matches[0].id } : scenario;
+  });
+  if (prior.history) next.history = structuredClone(prior.history);
+}
 function row(value: unknown): Row {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("需求引用结构无效");
@@ -209,7 +316,7 @@ export function compileReferences(
       return s;
     }) as BrowserStep[];
   };
-  const browsers = list(draft.browserCases ?? []).map((value) => {
+  const browsers: BrowserCase[] = list(draft.browserCases ?? []).map((value) => {
     const c = row(value);
     if (
       typeof c.id !== "string" ||
@@ -217,11 +324,14 @@ export function compileReferences(
       Object.keys(c).some((k) => !["id", "task", "steps"].includes(k))
     )
       throw new Error("浏览器局部案例身份无效");
+    if (c.task !== "existing" && c.task !== "new")
+      throw new Error("浏览器局部案例身份无效");
     return {
-      ...c,
-      id: inherited.browserCases?.some((old) => old.id === c.id)
-        ? c.id
-        : "browser-" + hash({ workflow: workflow.id, key: c.id }).slice(0, 24),
+      id:
+        inherited.browserCases?.some((old) => old.id === c.id)
+          ? c.id
+          : "browser-" + hash({ workflow: workflow.id, key: c.id }).slice(0, 24),
+      task: c.task,
       steps: bindSteps(list(c.steps), c.id),
     };
   });
@@ -322,6 +432,24 @@ export function compileReferences(
     return { ...requirement, obligations };
   });
   const canonical = requirements.flatMap((r) => r.obligations);
+  const frozenFields = inherited.requirementGate
+    ? (inherited.requirements ?? []).flatMap(r => r.obligations ?? [])
+        .filter((o): o is FieldObligation => o.kind === "field")
+    : [];
+  // Unchanged accepted auxiliary fields already have complete operation samples.
+  // Reuse them for implicit projections; a new declaration or changed member
+  // cases must still pass the ordinary revision and independent review gates.
+  const acceptedFields = frozenFields.filter(
+    o => o.member !== "workflow" &&
+      !canonical.some(current => current.kind === "field" && current.member === o.member && current.field === o.field) &&
+      hash(memberCases.filter(c => c.member === o.member)) ===
+        hash((inherited.memberCases ?? []).filter(c => c.member === o.member)),
+  );
+  // Changed accepted fields need their update paths too. bindSteps has already
+  // proved a unique UI scope; a different explicit scope cannot authorize it.
+  const includeAcceptedUpdates = (target: {member: string; field: string; contribution?: string}) =>
+    frozenFields.some(o => o.member === target.member && o.field === target.field &&
+      (o.contribution === undefined || o.contribution === target.contribution));
   const renderable = (requirement: Requirement) => (target: {member: string; contribution?: string}) =>
     target.member === "workflow" || !!target.contribution ||
     (requirement.type === "interface" && Array.isArray(draft.capabilityChanges) && draft.capabilityChanges.some(value => {
@@ -334,6 +462,35 @@ export function compileReferences(
       requirement.obligations!.push({version:1,id:"workflow-input-"+hash(workflow.id).slice(0,16),kind:"workflow-input",rules:structuredClone(inputs)});
   };
   for (const requirement of requirements) inputObligation(requirement);
+  // Reuse the accepted host projection only when a declaration has exactly the
+  // same initial state and operation/value samples. Source authority stays on
+  // each requirement; explicit initial values and different samples stay distinct.
+  for (const requirement of requirements) {
+    for (const field of requirement.obligations) {
+      if (field.kind !== "field" || field.derivation || field.initialOrigin !== "host") continue;
+      const previous = new Map((inherited.requirements ?? []).flatMap(r => r.obligations ?? [])
+        .filter((o): o is FieldObligation => o.kind === "field" && !!o.derivation &&
+          o.member === field.member && o.field === field.field &&
+          (o.contribution === undefined || o.contribution === field.contribution))
+        .map(o => [hash(o),o]));
+      if (previous.size !== 1) continue;
+      const prior = [...previous.values()][0];
+      const projected = deriveFieldObligations(
+        {...requirement,obligations:requirement.obligations.filter(o=>o!==field)},
+        memberCases as import("../shared/acceptance-cases.js").MemberAcceptanceCase[], rules,
+        steps=>bindSteps(steps,requirement.id), [], renderable(requirement), lifecycle.existing,
+        scheduledMembers(draft as Pick<InvestigatedPlan,"capabilityChanges"|"requiredCapabilities">),
+        () => true, // Compare the explicit field against every frozen update, not just fresh saves.
+      ).filter((o): o is FieldObligation => o.kind === "field" && sameFieldIdentity(field,o));
+      const samples = (o: FieldObligation) => hash(o.scenarios.map(s=>hash({steps:s.steps,value:s.value})).sort());
+      if (projected.length !== 1 || hash(field.initial) !== hash(projected[0].initial) ||
+          samples(field) !== samples(projected[0]) ||
+          (field.history && prior.history && hash(field.history) !== hash(prior.history))) continue;
+      field.derivation = structuredClone(projected[0].derivation);
+      field.scenarios = structuredClone(projected[0].scenarios);
+      reuseFieldIdentity(field, prior);
+    }
+  }
   for (const requirement of requirements)
     requirement.obligations.push(
       ...deriveFieldObligations(
@@ -341,10 +498,11 @@ export function compileReferences(
         memberCases as import("../shared/acceptance-cases.js").MemberAcceptanceCase[],
         rules,
         (steps) => bindSteps(steps, requirement.id),
-        canonical,
+        [...canonical, ...acceptedFields],
         renderable(requirement),
         lifecycle.existing,
         scheduledMembers(draft as Pick<InvestigatedPlan, "capabilityChanges" | "requiredCapabilities">),
+        includeAcceptedUpdates,
       ),
     );
   const fields = requirements
@@ -376,10 +534,12 @@ export function compileReferences(
   // Recompile host-generated samples when authoritative rules/cases change.
   // Evolution still compares old/new definitions through its original explicit
   // acceptance revision gate; business definitions are never rewritten here.
+  // Rebound copies must not become competing definitions for later owners.
+  const currentDefinitions = requirements.flatMap(r => r.obligations);
   for (const old of inherited.requirements ?? []) {
     if (requirements.some((r) => r.id === old.id)) continue;
     const derived =
-      old.obligations?.filter((o) => o.kind === "field" && o.derivation) ?? [];
+      old.obligations?.filter((o): o is FieldObligation => o.kind === "field" && !!o.derivation) ?? [];
     if (!derived.length && !old.obligations?.some(o=>o.kind==="workflow-input")) continue;
     const replacement = {
       ...structuredClone(old),
@@ -399,25 +559,62 @@ export function compileReferences(
       if (o.kind === "backend")
         o.checks = replacement.checks.filter((c) => c.checker !== "browser/1");
     inputObligation(replacement);
-    const regenerated = deriveFieldObligations(
+    // Only rebind derived fields whose member cases have changed in the current proposal.
+    // Fields depending on unchanged members can be preserved as-is without regeneration.
+    const memberTouchedInCurrent = (member: string) =>
+      memberCases.some(c => c.member === member);
+    const memberCasesChanged = (member: string) =>
+      memberTouchedInCurrent(member) &&
+      hash(memberCases.filter(c => c.member === member)) !==
+      hash((inherited.memberCases ?? []).filter(c => c.member === member));
+    const memberExistsInInherited = (member: string) =>
+      (inherited.memberCases ?? []).some(c => c.member === member);
+    const needsRebind = derived.filter(o => memberCasesChanged(o.member) || !memberExistsInInherited(o.member));
+    const canPreserve = derived.filter(o => !memberCasesChanged(o.member) && memberExistsInInherited(o.member));
+    const regenerated = needsRebind.length ? deriveFieldObligations(
       replacement,
       memberCases as import("../shared/acceptance-cases.js").MemberAcceptanceCase[],
       rules,
       (steps) => bindSteps(steps, old.id),
-      requirements.flatMap((r) => r.obligations),
+      currentDefinitions,
       renderable(replacement),
       lifecycle.existing,
-    );
-    if (derived.some((old) => !regenerated.some((next) => next.id === old.id)))
+    ) : [];
+    const reboundFields = needsRebind.map((prior) => {
+      const matches = regenerated.filter((next): next is FieldObligation =>
+        next.kind === "field" && next.member === prior.member && next.field === prior.field &&
+        // deriveFieldObligations already bound a unique current UI target.
+        // An unqualified legacy projection may follow it; an explicit scope may not change.
+        (prior.contribution === undefined || next.contribution === prior.contribution));
+      return matches.length === 1 && needsRebind.filter(other => other.member === prior.member && other.field === prior.field).length === 1
+        ? matches[0] : undefined;
+    });
+    if (reboundFields.some((next) => !next))
       throw new Error(
         "既有字段的宿主派生义务无法重新绑定；须显式修订原要求，不能删除旧断言",
       );
-    for (const o of regenerated) {
-      const prior = derived.find((old) => old.id === o.id);
-      if (o.kind === "field" && prior?.kind === "field" && prior.history)
-        o.history = structuredClone(prior.history);
+    // After validation, narrow to FieldObligation[] for type safety.
+    const validatedRebound = reboundFields as FieldObligation[];
+    for (const [index,prior] of needsRebind.entries()) {
+      const next = validatedRebound[index];
+      // A canonical declaration can supply new samples without changing the
+      // inherited host projection's identity, provenance, or baseline history.
+      next.derivation = structuredClone(prior.derivation);
+      reuseFieldIdentity(next, prior);
     }
-    replacement.obligations.push(...regenerated);
+    // Preserved fields keep their complete identity, derivation, and browser cases unchanged.
+    const allRebound = [...validatedRebound, ...canPreserve.map(o => structuredClone(o))];
+    const priorCaseIds = new Set(allRebound.flatMap(o=>obligationCases(o).map(c=>c.id)));
+    replacement.checks = replacement.checks.filter(c=>c.checker!=="browser/1"||!priorCaseIds.has(c.caseId));
+    // Filter out regenerated obligations that have the same ID as allRebound to prevent
+    // "同一字段验收义务发生冲突" when both derive from the same member/field but differ in content.
+    const allReboundIds = new Set(allRebound.map(o => o.id));
+    replacement.obligations.push(
+      ...regenerated.filter(o => 
+        (o.kind !== "field" || !validatedRebound.includes(o)) && !allReboundIds.has(o.id)
+      ), 
+      ...allRebound
+    );
     requirements.push(replacement);
   }
   // Inherit accepted obligations before checker binding and technical validation.
@@ -428,6 +625,7 @@ export function compileReferences(
   const histories = requirements
     .flatMap((r) => r.obligations)
     .filter((o) => o.kind === "history");
+  const generateAliases = new Map<string, string>();
   // History belongs to a field identity, not requirement ordering. Existing-task
   // action scenarios must exercise old data too; initial empty-task checks stay empty.
   for (const requirement of requirements) {
@@ -459,28 +657,62 @@ export function compileReferences(
                 (r) => r.obligations ?? [],
               ),
             );
+        // Same field identity + same steps + same history must keep one after-action
+        // case ID. Derivation provenance must not mint a second scenario hash; that
+        // previously let content-hash dedupe drop the derived ID while checks and
+        // obligationCases still required it, forcing a retryable third planning round.
         obligation.scenarios = obligation.scenarios.map((s) => ({
           ...s,
-          id: hash(
-            obligation.derivation
-              ? { scenario: s.id, history: obligation.history!.baseVersion }
-              : {
-                  steps: s.steps,
-                  history: obligation.history!.baseVersion,
-                },
-          ).slice(0, 16),
+          id: hash({
+            steps: s.steps,
+            history: obligation.history!.baseVersion,
+          }).slice(0, 16),
         }));
       }
     }
     bindAvailability([requirement],inherited.actionAvailability);
+    requirement.checks = requirement.checks.filter((c) => {
+      if (c.checker !== "browser/1") return true;
+      return !requirement.obligations.some((o) => {
+        const stem = browserCaseStem(o);
+        return c.caseId === stem || c.caseId.startsWith(`${stem}-`);
+      });
+    });
     for (const obligation of requirement.obligations) {
       for (const c of obligationCases(obligation)) {
-        const existing = browsers.find((b) => b.id === c.id);
-        if (existing && hash(existing) !== hash(c))
-          throw new Error(
-            "同一字段验收义务发生冲突，初始状态或相同操作不能要求不同结果",
-          );
-        if (!existing) browsers.push(c);
+        const existingIndex = browsers.findIndex(
+          (b) =>
+            b.id === c.id ||
+            browserCaseQuotaKey(b) === browserCaseQuotaKey(c),
+        );
+        const existing =
+          existingIndex >= 0
+            ? (browsers[existingIndex] as BrowserCase)
+            : undefined;
+        if (existing && browserCaseAssertionHash(existing) !== browserCaseAssertionHash(c)) {
+          // Host snapshots (ui-identity / action-visible) and workflow-input vs
+          // leftover system-protection keep one current assertion, not a second family.
+          if (canSupersedeBrowserCase(existing, c, obligation.kind)) {
+            if (existing.id !== c.id) generateAliases.set(existing.id, c.id);
+            browsers[existingIndex] = c;
+          } else {
+            throw new Error(
+              "同一字段验收义务发生冲突，初始状态或相同操作不能要求不同结果",
+            );
+          }
+        } else if (!existing) {
+          browsers.push(c);
+        } else {
+          if (existing.id !== c.id) {
+            generateAliases.set(existing.id, c.id);
+            browsers[existingIndex] = { ...existing, id: c.id };
+          }
+          if (obligation.kind === "history" && c.prepare)
+            browsers[existingIndex] = {
+              ...browsers[existingIndex],
+              obligationId: obligation.id,
+            };
+        }
         requirement.checks.push({ checker: "browser/1", caseId: c.id });
       }
     }
@@ -489,10 +721,32 @@ export function compileReferences(
         all.findIndex((other) => hash(other) === hash(c)) === index,
     );
   }
+  const bound = browsers.map((c) =>
+    bindHistoricalCase(c as BrowserCase, histories),
+  );
+  const { cases: deduplicated, aliases: contentAliases } = dedupeBrowserCases(bound);
+  const aliases = mergeBrowserCaseAliases(generateAliases, contentAliases);
+  if (aliases.size)
+    for (const requirement of requirements)
+      requirement.checks = remapBrowserChecks(requirement.checks, aliases);
+  const missingObligationCases = requirements.flatMap((r) =>
+    (r.obligations ?? []).flatMap((o) =>
+      obligationCases(o).filter(
+        (c) =>
+          !deduplicated.some((b) => b.id === c.id) && !aliases.has(c.id),
+      ),
+    ),
+  );
+  if (missingObligationCases.length)
+    throw new PlanStructureBlocked(
+      `验收义务案例未进入浏览器清单：${missingObligationCases.map((c) => c.id).join("、")}`,
+    );
+  if (deduplicated.length > 30)
+    throw new PlanStructureBlocked(
+      `浏览器验收案例超出上限：${deduplicated.length} 条，最多 30 条`,
+    );
   return {
     requirements,
-    browserCases: browsers.map((c) =>
-      bindHistoricalCase(c as BrowserCase, histories),
-    ),
+    browserCases: deduplicated,
   };
 }

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Workspace } from "../../src/server/workspace.js";
 import { Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
-import { PlanningDriver } from "./planning-fixture.js";
+import { PlanningDriver, admissionReceiptFixture } from "./planning-fixture.js";
 import { ExecutionDriver } from "./execution-fixture.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -380,14 +380,16 @@ for (const phase of ["start", "apply"] as const)
           operationId: "start",
         });
         ready = await settle();
-        assert.equal(ready.status, "awaiting-apply");
+        assert.equal(ready.status, "awaiting-apply",JSON.stringify(ready));
         if (ready.status !== "awaiting-apply") return;
       }
       if (!("plan" in ready)) throw new Error("missing plan");
       const calls = ready.budget!.callsUsed,
         plan = structuredClone(ready.plan);
       if (change === "legacy") {
-        Object.assign(plan.requestAdmission!, { contract: "host-admission/5" });
+        plan.requestAdmission=admissionReceiptFixture(domain.context(),plan.requirementGate!.sources);
+        Object.assign(plan.requestAdmission, { contract: "host-admission/5" });
+        delete plan.requirementGate!.review.sourceReview;
         const stored = JSON.parse(
           String(
             w.db

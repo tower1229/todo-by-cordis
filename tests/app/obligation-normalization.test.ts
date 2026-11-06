@@ -25,7 +25,7 @@ import {
 import { Workspace } from "../../src/server/workspace.js";
 import { AdmissionEvolution as Evolution } from "./evolution-adapter.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
-import { PlanningDriver } from "./planning-fixture.js";
+import { PlanningDriver, sourceReviewFixture } from "./planning-fixture.js";
 import {
   fieldReviewTargets,
   fieldReviewSchema,
@@ -360,7 +360,7 @@ test("新字段无动作后业务规格时阻塞，不能捏造基础历史（�
     s.run && "message" in s.run ? s.run.message : "",
     /没有基础历史.*缺少可推导动作后义务/,
   );
-  assert.equal(s.run?.budget?.callsUsed, 3);
+  assert.equal(s.run?.budget?.callsUsed, 2);
   assert.equal(s.candidates?.length ?? 0, 0);
   assert.deepEqual({ tasks: w.query(), composition: w.composition() }, before);
 });
@@ -637,6 +637,7 @@ test("技术复核wire不允许手工目标/立场，宿主绑定事实后裁决
     },
   };
   const raw = {
+    sourceReview:sourceReviewFixture({sources}),
     reviewedIds: p.requirements!.map((r) => r.id),
     issues: [issue],
     fieldDecisions: [
@@ -792,7 +793,7 @@ test("用户明确空白呈现且宿主无法表达时，公开规划门禁直�
     snapshot.run && "message" in snapshot.run ? snapshot.run.message : "",
     /当前无法表达该初始呈现要求/,
   );
-  assert.equal(snapshot.run!.budget!.callsUsed, 3);
+  assert.equal(snapshot.run!.budget!.callsUsed, 2);
   assert.equal(snapshot.candidates?.length ?? 0, 0);
 });
 
@@ -855,7 +856,7 @@ test("规划器虚构的初始ok经来源复核退回规格修正，不能误报
     s = await e.observe();
   }
   assert.equal(s.run?.status, "ready", JSON.stringify(s.run));
-  assert.equal(s.run.budget?.callsUsed, 5);
+  assert.equal(s.run.budget?.callsUsed, 4);
   assert.equal(s.run.revisions!.length, 1);
   assert.equal(s.run.reviewLedger!.attempts.length, 2);
   assert.ok(

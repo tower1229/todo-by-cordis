@@ -1,3 +1,4 @@
+import { effectBlockers, sourceReviewFailure } from "./capability-admission.js";
 import { budgetPause } from "./budget-authorization.js";
 import { questionsFor, answerText, compileDefaults } from "./interaction.js";
 import type { BudgetGrant, ResourceAmounts } from "../shared/evolution-interaction.js";
@@ -9,13 +10,13 @@ import { BudgetScheduler, BudgetExhaustedError, type ModelPhase } from "./budget
 import { InvestigationStore, materialIdentity } from "./investigation.js";
 import { modelInput, modelInputEncoding } from "./model-input.js";
 import { changeDefinition, compileSpec } from "./specification.js";
-import { recordReview, reviewEvidence } from "./review.js";
+import { recordReview, reviewEvidence, reviewDefinitionHash } from "./review.js";
 import { requirementReviewInput } from "./review-input.js";
 import { clarificationRequest, parseClarificationReview, clarificationBlockers, type ClarificationDecision } from "./clarification-review.js";
 import { admissionRequest, admissionKey, parseAdmission, admissionQuestionState, questionReviewKey, admissionReviewRequest, adjudicateAdmission, admissionResolved } from "./request-admission.js";
 import { admissionChoiceProof, type AdmissionQuestionTarget } from "./source-items.js";
 import { technicalPremiseContext, technicalPremiseBasis, technicalPremiseRequest, parseTechnicalPremises, technicalPremisesResolved } from "./technical-premise.js";
-import { ModelProtocolError, ModelResourceError, replyProblems } from "./model-protocol.js";
+import { ModelProtocolError, ModelResourceError, protocolCorrectionExhausted, replyProblems } from "./model-protocol.js";
 import { stopForError } from "./run-stop.js";
 import {
   adjudicateTechnicalReview,
@@ -38,8 +39,15 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { Driver, ModelReply, ModelRequest } from "./driver.js";
 import { ModelTransportError } from "./driver.js";
-import { transportFailure } from "./transport-failure.js";
-import { HistoricalPreparationBlocked } from "./historical-preparation.js";
+import { transportFailure, transportTimeoutRetryable } from "./transport-failure.js";
+import { HistoricalPreparationBlocked, PlanStructureBlocked, planningStructureTerminal } from "./historical-preparation.js";
+import { inheritBrowserCases } from "./references.js";
+import {
+  danglingBrowserChecks,
+  dedupeBrowserCases,
+  mergeBrowserCaseAliases,
+  remapBrowserChecks,
+} from "./browser-case-content.js";
 import { OperationPreparationError } from "./obligation-derivation.js";
 import type {
   CandidateAttempt,
@@ -396,28 +404,22 @@ export class Evolution {
             ? "宿主正在恢复，暂时无法检查方案，请稍后重试"
             : "宿主运行环境不可用，请恢复宿主后重试", { reason: "runtime-not-ready" });
         const inputs = this.domain.admission(context);
-        const receipt = plan.requestAdmission;
         const sources = trusted?.sources ?? [];
-        const state = receipt ? admissionQuestionState(receipt, sources, inputs.facts, r.run.clarificationReviews ?? []) : undefined;
+        const failure = sourceReviewFailure(trusted?.review.sourceReview, sources, inputs.facts);
         const checks = {
           environmentAvailable: inputs.missing.length === 0,
-          receiptPresent: !!receipt,
-          receiptResolved: !!receipt && admissionResolved(receipt),
-          factsAndSourcesBound: receipt?.key === admissionKey(context.versionId, sources, inputs.facts),
-          receiptUnblocked: !!receipt && receipt.blockers.length === 0,
-          questionsResolved: !!state && !state.pending.length && !state.questions.length && !state.blockers.length,
-          receiptRecorded: !!receipt && !!r.run.requestAdmissions?.some(a => hash(a) === hash(receipt)),
+          factsBound: plan.binding?.preflight?.factsHash === hash(inputs.facts),
+          independentSourceReview: failure === undefined,
         };
         if (Object.values(checks).some(passed => !passed)) {
-          const previousFacts = new Map((receipt?.factsSnapshot ?? []).map(fact => [fact.id, fact]));
-          const currentFacts = new Map(inputs.facts.map(fact => [fact.id, fact]));
+          const previousFacts = new Map(plan.binding?.preflight?.facts.map(fact => [fact.id, fact.hash]) ?? []);
+          const currentFacts = new Map(inputs.facts.map(fact => [fact.id, hash(fact)]));
           reject("PLAN_STALE", "需求预检事实或来源已变化，请重新规划", {
-            reason: "admission-invalid", checks, missing: inputs.missing,
-            baseVersion: { frozen: receipt?.baseVersion, current: context.versionId },
-            sourcesHash: { frozen: hash(receipt?.sources), current: hash(sources) },
+            reason: "source-review-invalid", checks, missing: inputs.missing, failure,
+            baseVersion: {frozen:plan.baseVersion,current:context.versionId},
             changedFacts: [...new Set([...previousFacts.keys(), ...currentFacts.keys()])]
-              .filter(id => hash(previousFacts.get(id)) !== hash(currentFacts.get(id)))
-              .map(id => ({ id, frozenHash: hash(previousFacts.get(id)), currentHash: hash(currentFacts.get(id)) })),
+              .filter(id => previousFacts.get(id) !== currentFacts.get(id))
+              .map(id => ({id,frozenHash:previousFacts.get(id),currentHash:currentFacts.get(id)})),
           });
         }
       }
@@ -1190,8 +1192,32 @@ export class Evolution {
     const memoKey = phase === "review" || phase === "admission" ? hash(request) : undefined;
     if (memoKey && r.memoReplies?.[memoKey]) return structuredClone(r.memoReplies[memoKey]);
     const original = request;
-    for (let attempt = 0; ; attempt++) {
-      const reply = await this.callOnce(r, request, signal, phase);
+    for (let protocolAttempt = 0, timeoutAttempt = 0; ;) {
+      let reply: ModelReply;
+      try {
+        reply = await this.callOnce(r, request, signal, phase);
+      } catch (error) {
+        if (
+          error instanceof ModelTransportError &&
+          transportTimeoutRetryable({
+            kind: error.transport.failure?.kind,
+            attempt: timeoutAttempt,
+            calls: r.calls,
+            callLimit: this.runLimits(r).calls,
+          })
+        ) {
+          timeoutAttempt++;
+          (r.run.transportFailures ??= []).push({
+            phase,
+            call: r.calls,
+            kind: "timeout",
+            attempt: timeoutAttempt,
+          });
+          this.save(r);
+          continue;
+        }
+        throw error;
+      }
       if(reply.transport?.finishReason==="length") {
         (r.run.resourceFailures??=[]).push({phase,call:r.calls,kind:"output-budget",requestHash:hash(original),responseHash:hash(reply.raw),finishReason:"length",usage:reply.usage});
         this.save(r);
@@ -1206,15 +1232,17 @@ export class Evolution {
         if (memoKey) { (r.memoReplies ??= {})[memoKey] = structuredClone(reply); this.save(r); }
         return reply;
       }
+      const previousProblems = r.run.protocolFailures?.at(-1)?.problems;
       (r.run.protocolFailures ??= []).push({phase,call:r.calls,requestHash:hash(original),responseHash:hash(reply.raw),problems});
       this.save(r);
-      if (attempt || r.run.protocolFailures.length > 2)
+      if (protocolCorrectionExhausted({attempt:protocolAttempt,calls:r.calls,callLimit:this.runLimits(r).calls,previousProblems,problems}))
         throw new ModelProtocolError("模型协议未收敛，保留原始响应与用量：" + problems.join("；"));
-      // A single budgeted protocol correction at this seam, never a new run or transport retry.
+      protocolAttempt++;
+      // Budgeted protocol corrections stay inside this run. They are not a new run or a transport retry.
       let input: Record<string,unknown>;
       try { input = JSON.parse(original.message ?? "{}"); }
       catch { input = {originalMessage:original.message}; }
-      request = {...original, message:JSON.stringify({...input,protocolCorrection:{problems,rejected:{text:reply.text,calls:reply.calls},attempt:attempt+1,budget:this.base(r).budget}})};
+      request = {...original, message:JSON.stringify({...input,protocolCorrection:{problems,rejected:{text:reply.text,calls:reply.calls},attempt:protocolAttempt,budget:this.base(r).budget}})};
     }
   }
   private remainingTime(r: RecordRun) {
@@ -1453,32 +1481,8 @@ export class Evolution {
       ? {ref:doc.source.ref,...context.files[doc.source.ref]} : doc);
     return {baseline:compatible,valid};
   }
-  private async plan(r: RecordRun, signal: AbortSignal) {
-    const context = this.domain.context();
-    if (
-      r.run.baseVersion &&
-      (r.run.baseVersion !== context.versionId ||
-        r.run.capabilityId !== context.pluginId)
-    )
-      throw new Error("基础版本已变化，请重新规划");
-    r.run.baseVersion = context.versionId;
-    r.run.capabilityId = context.pluginId;
-    r.investigation ??= {version: 2, baseVersion: context.versionId, materials: [], deliveries: []};
-    const {baseline,valid} = this.planningMaterials(context,r.investigation);
-    const reused = this.materials.documents(r.investigation, valid);
-    this.materials.capture(r.investigation, baseline, context.files);
-    const documents = [...reused.filter(d => !baseline.some(b => b.ref === d.ref)), ...baseline];
-    r.run.evidence = documents.map(materialIdentity);
-    r.pendingMaterials = r.run.evidence;
-    this.save(r);
-    const inheritedSources = (JSON.parse(context.files["active-acceptance"].content) as {requirementGate?: RequirementGate}).requirementGate?.sources ?? [];
-    const sourceCatalog = [...inheritedSources, ...(r.run.revisions ?? []).map(v => ({id: `${r.run.id}:${v.revision}`, text: v.text}))];
-    const admissionContext = this.domain.admission?.(context);
-    if (admissionContext) {
-      if (admissionContext.missing.length) {
-        r.run = {...this.base(r),status:"blocked",stop:{kind:"environment",phase:"admission",code:"missing-dependency-or-checker",evidence:["inspect_application.environment"]},...describeBlockers(admissionContext.missing.map(s=>"规划预检缺少依赖或检查器："+s))};
-        this.save(r); return;
-      }
+  /** Source adjudication is conditional on a proposed blocker, not every plan. */
+  private async auditBlockerAdmission(r: RecordRun, context: Investigation, sourceCatalog: RequirementGate["sources"], admissionContext: {facts: ReturnType<typeof technicalFacts>; missing:string[]}, signal: AbortSignal) {
       const key = admissionKey(context.versionId,sourceCatalog,admissionContext.facts);
       let admitted = r.run.requestAdmissions?.find(a=>a.key === key && admissionResolved(a));
       if (!admitted) {
@@ -1505,20 +1509,49 @@ export class Evolution {
           admitted!.semanticReview?.decisions.some(decision => decision.claimId === check.claimId &&
             decision.layer === "capability" && decision.verdict === "entailed"));
         r.run={...this.base(r),status:"blocked",stop:{kind:capability?"capability":"semantic",phase:"admission",code:capability?"unsupported-host-effect":admitted.semanticReview?.decisions.some(d=>d.verdict==="uncertain")?"source-undecided":"unsupported-initial-presentation",evidence:["run.requestAdmissions"]},...describeBlockers(admitted.blockers)};
-        this.save(r);return;
+        this.save(r);return true;
       }
       if (admitted.questions.length) {
         const pending=admissionQuestionState(admitted,sourceCatalog,admissionContext.facts,r.run.clarificationReviews??[]).pendingTargets;
         if(pending.length) await this.auditQuestions(r,pending.map((target)=>target.question),sourceCatalog,admissionContext.facts,signal,undefined,pending);
         const state=admissionQuestionState(admitted,sourceCatalog,admissionContext.facts,r.run.clarificationReviews??[]);
         if(state.pending.length)throw new ModelProtocolError("需求预检澄清缺少完整裁决");
-        if(state.blockers.length){const capability = r.run.clarificationReviews?.some(a=>a.decision.effects?.checks.some(c=>c.verdict==="required"&&c.outcome==="unsupported"));r.run={...this.base(r),status:"blocked",stop:{kind:capability?"capability":"semantic",phase:"admission",code:capability?"unsupported-host-effect":"clarification-boundary",evidence:["run.clarificationReviews"]},...describeBlockers(state.blockers)};this.save(r);return;}
+        if(state.blockers.length){const capability = r.run.clarificationReviews?.some(a=>a.decision.effects?.checks.some(c=>c.verdict==="required"&&c.outcome==="unsupported"));r.run={...this.base(r),status:"blocked",stop:{kind:capability?"capability":"semantic",phase:"admission",code:capability?"unsupported-host-effect":"clarification-boundary",evidence:["run.clarificationReviews"]},...describeBlockers(state.blockers)};this.save(r);return true;}
         if(state.questions.length){
         this.scheduler(r).requireClarification(r.calls, true, this.remainingTime(r));
         r.run={...this.base(r),status:"awaiting-input",stop:{kind:"clarification",phase:"admission",code:"business-answer-required",evidence:["run.question","run.clarificationReviews"]},question:state.questions.join("\n")};
-        this.save(r);return;
+        this.save(r);return true;
         }
       }
+    return false;
+  }
+  private async plan(r: RecordRun, signal: AbortSignal) {
+    const context = this.domain.context();
+    if (
+      r.run.baseVersion &&
+      (r.run.baseVersion !== context.versionId ||
+        r.run.capabilityId !== context.pluginId)
+    )
+      throw new Error("基础版本已变化，请重新规划");
+    r.run.baseVersion = context.versionId;
+    r.run.capabilityId = context.pluginId;
+    r.investigation ??= {version: 2, baseVersion: context.versionId, materials: [], deliveries: []};
+    const {baseline,valid} = this.planningMaterials(context,r.investigation);
+    const reused = this.materials.documents(r.investigation, valid);
+    this.materials.capture(r.investigation, baseline, context.files);
+    const documents = [...reused.filter(d => !baseline.some(b => b.ref === d.ref)), ...baseline];
+    r.run.evidence = documents.map(materialIdentity);
+    r.pendingMaterials = r.run.evidence;
+    this.save(r);
+    const inheritedSources = (JSON.parse(context.files["active-acceptance"].content) as {requirementGate?: RequirementGate}).requirementGate?.sources ?? [];
+    const sourceCatalog = [...inheritedSources, ...(r.run.revisions ?? []).map(v => ({id: `${r.run.id}:${v.revision}`, text: v.text}))];
+    const admissionContext = this.domain.admission?.(context);
+    if (admissionContext) {
+      if (admissionContext.missing.length) {
+        r.run = {...this.base(r),status:"blocked",stop:{kind:"environment",phase:"admission",code:"missing-dependency-or-checker",evidence:["inspect_application.environment"]},...describeBlockers(admissionContext.missing.map(s=>"规划预检缺少依赖或检查器："+s))};
+        this.save(r); return;
+      }
+
     }
     let message: string | undefined = JSON.stringify({
       materials: {documents}, reviewLedger: r.run.reviewLedger,
@@ -1529,13 +1562,8 @@ export class Evolution {
       baseVersion: context.versionId,
       requestSourceIds: (r.run.revisions ?? []).map(v => `${r.run.id}:${v.revision}`),
       priorPlanIdentities: r.run.plans?.map(p=>({id:p.id,definitionHash:hash(p.changeSpec?.definition)})),
-      admission: r.run.requestAdmissions?.at(-1) ? {
-        receiptHash:hash(r.run.requestAdmissions.at(-1)),
-        initialStates:r.run.requestAdmissions.at(-1)!.initialStates,
-        presentations:r.run.requestAdmissions.at(-1)!.presentations,
-        semanticReview:r.run.requestAdmissions.at(-1)!.semanticReview,
-      }:undefined,
       sources: sourceCatalog,
+      baselineDefaults: reviewedBaselineDefaults(context),
       answeredQuestions:this.answeredQuestions(r),
       questionAdjudications:r.run.clarificationReviews,
     });
@@ -1652,7 +1680,16 @@ export class Evolution {
               message: this.resultText(call.args.message),
             };
           } else if (call.name === "report_blocker") {
-            r.run = {...this.base(r), status: "blocked",stop:{kind:"model-blocker",phase:"planning",code:"model-reported-blocker",evidence:[`model-call:${r.calls}`]}, ...describeBlockers([this.resultText(call.args.reason)])};
+            const inputs = admissionContext ?? {facts:technicalFacts({workflowRules:[],binding:undefined}),missing:[]};
+            if (await this.auditBlockerAdmission(r,context,sourceCatalog,inputs,signal)) return;
+            const rejection = hash({kind:"unverified-blocker",reason:call.args.reason,evidence:r.run.evidence});
+            if (rejections.has(rejection)) {
+              r.run = {...this.base(r),status:"blocked",stop:{kind:"model-blocker",phase:"planning",code:"unverified-model-blocker",evidence:[`model-call:${r.calls}`]},...describeBlockers(["模型反复报告阻断，但独立来源审查未确认；没有可冻结方案。模型原始理由："+this.resultText(call.args.reason)])};
+            } else {
+              rejections.add(rejection);
+              retryProtocol(response,"独立来源审查未证实该阻断；不能将技术路径或可逆默认当作用户未决要求。","保留原始要求，在同一预算内调查并提交可复核方案；确有能力缺口须由精确契约和来源支持。");
+              continue investigation;
+            }
           } else if (call.name === "request_clarification") {
             if (!r.run.evidence?.some((e) => e.ref === "inspect_application")) {
               retryProtocol(
@@ -1670,7 +1707,7 @@ export class Evolution {
               retryProtocol(response, "宿主已裁决该问题无需用户澄清：" + JSON.stringify(decision), "保持原始要求，在同一预算内纠正规格或报告阻断，不以替代要求发起用户确认。");
               continue investigation;
             } else {
-              this.scheduler(r).requireClarification(r.calls, !!admissionContext, this.remainingTime(r));
+              this.scheduler(r).requireClarification(r.calls, false, this.remainingTime(r));
               r.run = {...this.base(r),status:"awaiting-input",stop:{kind:"clarification",phase:"planning",code:"business-answer-required",evidence:["run.question","run.clarificationReviews"]},question};
             }
           } else {
@@ -1681,13 +1718,12 @@ export class Evolution {
                 context,
                 r.run.evidence ?? [],
                 sourceCatalog,
-                r.run.requestAdmissions?.at(-1),
               );
             } catch (error) {
               const diagnostic =
                 error instanceof Error ? error.message : "计划结构无效";
               const rejection = hash({ diagnostic: error instanceof OperationPreparationError ? error.rejectionReason : diagnostic, evidence: r.run.evidence });
-              if (error instanceof HistoricalPreparationBlocked || rejections.has(rejection) || r.calls >= this.runLimits(r).calls) {
+              if (planningStructureTerminal({historical:error instanceof HistoricalPreparationBlocked,structural:error instanceof PlanStructureBlocked,rejectionSeen:rejections.has(rejection),calls:r.calls,callLimit:this.runLimits(r).calls})) {
                 r.run = {
                   ...this.base(r),
                   status: "blocked",
@@ -1714,7 +1750,6 @@ export class Evolution {
               intent: r.run.intent === "repair" ? "repair" : parsed.plan.intent,
               id: r.planner.proposalId ??= randomUUID(),
               requestRevision: r.run.requestRevision ?? 1,
-              ...(admissionContext ? {requestAdmission: r.run.requestAdmissions?.at(-1)} : {}),
               questionAdjudications:structuredClone(r.run.clarificationReviews??[]),
             };
             const sources = (r.run.revisions ?? []).map((v) => ({
@@ -1752,33 +1787,47 @@ export class Evolution {
                     });
                 }
               }
-              for (const old of inherited.browserCases ?? []) {
-                const replacement = plan.browserCases?.find(
-                  (item) => item.id === old.id,
+              const browsers = inheritBrowserCases(plan,inherited,call.args.acceptanceReason);
+              const { cases: deduplicated, aliases: contentAliases } = dedupeBrowserCases(
+                browsers.browserCases,
+              );
+              const aliases = mergeBrowserCaseAliases(browsers.aliases, contentAliases);
+              plan.browserCases = deduplicated;
+              if (aliases.size)
+                for (const requirement of plan.requirements ?? [])
+                  requirement.checks = remapBrowserChecks(
+                    requirement.checks,
+                    aliases,
+                  );
+              // Inherit can append frozen cases the compile pass never saw. Cap and
+              // dangling refs are host structure defects: stop once, never propose_plan again.
+              if (deduplicated.length > 30) {
+                parsed.blockers.push(
+                  `浏览器验收案例超出上限：${deduplicated.length} 条，最多 30 条`,
                 );
-                if (!replacement) (plan.browserCases ??= []).push(old);
-                else if (hash(replacement) !== hash(old)) {
-                  if (
-                    typeof call.args.acceptanceReason !== "string" ||
-                    !call.args.acceptanceReason.trim()
-                  )
-                    parsed.blockers.push(
-                      `既有浏览器案例 ${old.id} 改变，须说明验收修订原因`,
-                    );
-                  else
-                    (plan.acceptanceChanges ??= []).push({
-                      rule: `浏览器案例 ${old.id}`,
-                      before: JSON.stringify(old),
-                      after: JSON.stringify(replacement),
-                      reason: call.args.acceptanceReason,
-                    });
-                }
+                parsed.retryable = false;
               }
+              const dangling = danglingBrowserChecks(
+                plan.requirements ?? [],
+                plan.browserCases ?? [],
+              );
+              if (dangling.length) {
+                parsed.blockers.push(
+                  `浏览器验收检查指向不存在的案例：${dangling.map((c) => c.caseId).join("、")}`,
+                );
+                parsed.retryable = false;
+              }
+              if (browsers.changes.length) (plan.acceptanceChanges ??= []).push(...browsers.changes);
+              parsed.blockers.push(...browsers.blockers);
             }
             plan.requirements = plan.requirements?.map(requirement => ({...requirement,
               id: requirement.sourceRevision.startsWith(r.run.id + ":") && !(inherited.requirements ?? []).some(old => old.id === requirement.id) && !(r.run.plans ?? []).some(p => p.requirements?.some(old => old.id === requirement.id && old.sourceRevision === requirement.sourceRevision))
                 ? "requirement-" + hash({source: requirement.sourceRevision, key: requirement.id}).slice(0, 24) : requirement.id,
             }));
+            if (admissionContext && plan.binding) {
+              plan.binding.preflight = {factsHash:hash(admissionContext.facts),facts:admissionContext.facts.map(fact=>({id:fact.id,hash:hash(fact)}))};
+              plan.binding.hostEffects = structuredClone(admissionContext.facts.filter(fact=>fact.id.startsWith("host-fact:effect:")));
+            }
             plan.answeredQuestions = this.answeredQuestions(r);
             const inferred = (r.run.clarificationReviews ?? []).filter(a => a.decision.sourceRevision === `${r.run.id}:${r.run.requestRevision ?? 1}`).flatMap(a => a.decision.default ? compileDefaults([a.decision.default]) : []);
             plan.defaults = [...new Map([...(plan.defaults ?? []),...inferred].map(d => [d.id,d])).values()];
@@ -1806,7 +1855,7 @@ export class Evolution {
                   r,
                   {
                     instruction:
-                      "独立需求复核：只返回契约 JSON，禁止工具。按完整 sources 检查遗漏、额外业务限制、冲突及不可验证项，核对 requirements 中可执行 obligations 的初始状态、动作后状态及历史准备是否对应原文。hostInvariants/hostRules 是宿主规则，按其作用域和 technicalTarget 核对，不是用户来源；不能将宿主规则归因用户。业务问题给出来源、reviewTargets 中精确 subject 与 aspect、required/forbidden/undetermined 立场。技术主张只用 technical:{target,expected} 引用 technicalTargets 的精确属性目标；fact/property/目标/立场由宿主绑定和裁决。semanticState 分开记录名称、必填、初始内容、动作后值和保留；businessChoices 只含已确认未决的选择，新发现的必填或动作可见性未决通过 unresolvedChoices 引用 targetId 和原文；初始呈现用 fieldDecisions 的命题证据。fieldReviewTargets/errorReviewTargets 的 sources.source 与决策 source 均为该目标内局部一基编号；按 sourceRevision 在顶层 sources 查原文，禁止使用全局位置代替局部编号。designDecisions.sourceRevision 直接引用顶层 sources 的精确 id，quote 必须出自该修订；不使用任何 source 数字编号。reviewLedger 的 issueRef/issueRefs 引用其 issues 表，历史是证据数据；全部未消解问题须在 resolutions 引用 issueId、来源及连续原文解释如何修正，相反业务立场须澄清。reviewedIds 逐项列出，无问题才 issues=[]；空 issues 不能替代逐项来源解释。此复核不构成自然语言完整性的数学证明。",
+                      "独立需求复核：只返回契约 JSON，禁止工具。sourceReview.reviewedSources 覆盖全部原始修订，effects 逐项判断原文是否要求受保护宿主效果；只解释原意，不按宿主是否支持改变需求。按完整 sources 检查遗漏、额外业务限制、冲突及不可验证项，核对 requirements 中可执行 obligations 的初始状态、动作后状态及历史准备是否对应原文。hostInvariants/hostRules 是宿主规则，按其作用域和 technicalTarget 核对，不是用户来源；不能将宿主规则归因用户。业务问题给出来源、reviewTargets 中精确 subject 与 aspect、required/forbidden/undetermined 立场。技术主张只用 technical:{target,expected} 引用 technicalTargets 的精确属性目标；fact/property/目标/立场由宿主绑定和裁决。semanticState 分开记录名称、必填、初始内容、动作后值和保留；businessChoices 只含已确认未决的选择，新发现的必填或动作可见性未决通过 unresolvedChoices 引用 targetId 和原文；初始呈现用 fieldDecisions 的命题证据。fieldReviewTargets/errorReviewTargets 的 sources.source 与决策 source 均为该目标内局部一基编号；按 sourceRevision 在顶层 sources 查原文，禁止使用全局位置代替局部编号。designDecisions.sourceRevision 直接引用顶层 sources 的精确 id，quote 必须出自该修订；不使用任何 source 数字编号。reviewLedger 的 issueRef/issueRefs 引用其 issues 表，历史是证据数据；全部未消解问题须在 resolutions 引用 issueId、来源及连续原文解释如何修正，相反业务立场须澄清。reviewedIds 逐项列出，无问题才 issues=[]；空 issues 不能替代逐项来源解释。此复核不构成自然语言完整性的数学证明。",
                     history: [],
                     schema: boundReviewSchema(plan, sources, r.run.reviewLedger),
                     message: JSON.stringify({encoding:modelInputEncoding,...modelInput(requirementReviewInput(plan, sources, r.run.reviewLedger))}),
@@ -1817,12 +1866,20 @@ export class Evolution {
                 );
                 if (review.calls.length)
                   throw new Error("独立复核禁止工具调用");
-                const reviewed = await this.auditTechnicalPremises(r,parseReview(review.text,plan,sources),plan,sources,signal);
+                const sourceReviewed = parseReview(review.text,plan,sources);
+                const reviewed = effectBlockers(sourceReviewed.sourceReview?.effects).length
+                  ? sourceReviewed
+                  : await this.auditTechnicalPremises(r,sourceReviewed,plan,sources,signal);
                 reviewReturned = true;
                 let result = adjudicateTechnicalReview(reviewed,technicalFacts(plan),technicalPremiseContext(plan,sources));
+                const sourceBlockers = effectBlockers(result.sourceReview?.effects);
+                if (sourceBlockers.length) {
+                  parsed.blockers.push(...sourceBlockers);
+                  parsed.retryable = false;
+                }
                 resolveErrorFeedback(plan,result);
                 let choiceDecisions:{question:string;decision:ClarificationDecision;choice?:{id:string;hash:string}}[]=[];
-                if(result.unresolvedChoices?.length && !result.technicalDecisions?.some(d=>!["satisfied","not-requested"].includes(d.outcome))) {
+                if(!sourceBlockers.length && result.unresolvedChoices?.length && !result.technicalDecisions?.some(d=>!["satisfied","not-requested"].includes(d.outcome))) {
                   const choices=businessChoices(plan,result).filter(c=>result.unresolvedChoices!.some(choice=>choice.targetId===c.id));
                   choiceDecisions=await this.auditQuestions(r,choices.map(c=>c.question),sources,technicalFacts(plan),signal,choices.map(c=>semanticChoiceProof(plan,c.id)));
                   plan.questionAdjudications=structuredClone(r.run.clarificationReviews??[]);
@@ -1837,7 +1894,7 @@ export class Evolution {
                 if(feedbackConflicts(plan).some(c=>plan.requirements?.some(r=>r.obligations?.some(o=>o.id===c.obligationId&&o.kind==="feedback"&&o.resolution==="required"))) || result.errorDecisions?.some(d=>d.feedback==="undetermined")) parsed.retryable=false;
                 plan.defaultReviews = structuredClone(result.defaultReviews ?? []);
                 parsed.blockers.push(...(result.defaultReviews ?? []).filter(d => d.verdict === "out-of-scope").map(d => `默认处理超出需求范围：${d.id}：${d.detail}。请撤回该额外行为及仅为它新增的断言；保留全部用户要求、既有规则和必要能力，重新提交完整方案供独立复核。`));
-                const undecidedDefaults = (result.defaultReviews ?? []).filter(d => d.verdict === "requires-choice");
+                const undecidedDefaults = sourceBlockers.length ? [] : (result.defaultReviews ?? []).filter(d => d.verdict === "requires-choice");
                 if (undecidedDefaults.length) {
                   const source = sources.at(-1)!;
                   const questions = undecidedDefaults.map(d => {
@@ -1865,19 +1922,12 @@ export class Evolution {
                   ledger,
                   result,
                   plan.requestRevision,
-                  hash({
-                    requirements: plan.requirements,
-                    browserCases: plan.browserCases,
-                    cases: plan.cases,
-                    memberCases: plan.memberCases,
-                    extensions: plan.extensions,
-                    workflowRules: plan.workflowRules,
-                  }),
+                  reviewDefinitionHash(plan),
                   issue=>reviewEvidence(plan,sources,issue),
                 );
                 parsed.blockers.push(...recorded.blockers);
                 if (recorded.halt) parsed.retryable = false;
-                const technicalBlock = result.technicalDecisions?.some(
+                const technicalBlock = sourceBlockers.length > 0 || result.technicalDecisions?.some(
                   (d) => !["satisfied","not-requested"].includes(d.outcome),
                 );
                 if (technicalBlock) parsed.retryable = false;
@@ -1892,8 +1942,10 @@ export class Evolution {
                   const choice=businessChoices(plan,result).find(c=>c.question===question);
                   const decision=choiceDecisions.find(d=>d.choice?.id===choice?.id)?.decision ?? await this.auditQuestion(r,question,sources,technicalFacts(plan),signal);
                   if(decision.kind === "business-ambiguity" && !clarificationBlockers(decision).length) {
-                    this.scheduler(r).requireClarification(r.calls, !!admissionContext, this.remainingTime(r));
-                    r.run={...this.base(r),status:"awaiting-input",stop:{kind:"clarification",phase:"review",code:"business-answer-required",evidence:["run.question","run.clarificationReviews"]},question};this.save(r);return;
+                    this.scheduler(r).requireClarification(r.calls, false, this.remainingTime(r));
+                    plan.questionAdjudications=structuredClone(r.run.clarificationReviews ?? []);
+                    plan.changeSpec=compileSpec(plan,r.run.id,context.files["active-source"].hash,JSON.parse(context.files["active-contract"].content));
+                    r.run={...this.base(r),plans:[...(r.run.plans ?? []),plan],status:"awaiting-input",stop:{kind:"clarification",phase:"review",code:"business-answer-required",evidence:["run.question","run.clarificationReviews","run.plans"]},question};this.save(r);return;
                   }
                   if(clarificationBlockers(decision).length) {parsed.retryable=false;parsed.blockers.push(...clarificationBlockers(decision));}
                   parsed.blockers.push("复核问题已由统一澄清审查裁决，保留原意见并纠正规格或停止："+JSON.stringify(decision));
@@ -2004,11 +2056,16 @@ export class Evolution {
               this.save(r);
               continue investigation;
             }
+            const sourceEffects = plan.requirementGate?.review.sourceReview?.effects;
+            const sourceBlocked = effectBlockers(sourceEffects).length > 0;
+            const capabilityBlocked = sourceEffects?.checks.some(check => check.verdict === "required" && check.outcome === "unsupported");
             r.run = parsed.blockers.length
               ? {
                   ...base,
                   status: "blocked",
-                  stop: {kind:"planning-gate",phase:"planning",code:"plan-gate",evidence:["run.plans","run.reviewLedger"]},
+                  stop: sourceBlocked
+                    ? {kind:capabilityBlocked?"capability":"semantic",phase:"review",code:capabilityBlocked?"unsupported-host-effect":"source-undecided",evidence:["run.plans","run.reviewLedger"]}
+                    : {kind:"planning-gate",phase:"planning",code:"plan-gate",evidence:["run.plans","run.reviewLedger"]},
                   ...describeBlockers(parsed.blockers),
                   plan,
                 }
@@ -2043,7 +2100,7 @@ export class Evolution {
         );
         if ("ref" in result) {
           const delivered = [result, ...(result.documents ?? [])];
-          const stored = delivered.filter(d => d.ref !== "read_guides" && !("reused" in d && d.reused));
+          const stored = delivered.filter(d => !["read_guides","read_materials"].includes(d.ref) && !("reused" in d && d.reused));
           this.materials.capture(r.investigation!, stored, context.files);
           r.pendingMaterials = [...(r.pendingMaterials ?? []), ...stored.map(materialIdentity)];
           const deliveredRefs = new Set(

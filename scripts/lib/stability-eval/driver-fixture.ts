@@ -382,6 +382,8 @@ export function stabilityDriverFor(
 ): Driver {
   if (scenario?.oracle?.kind === "block" && scenario.oracle.reason === "offline-delivery")
     return { async generate(request) {
+      if (request.tools?.some(tool => tool.name === "report_blocker"))
+        return toolReply("report_blocker", {reason:"合成需求要求外部与离线交付，请按完整来源独立核实宿主能力缺口"});
       const input = JSON.parse(request.message ?? "{}");
       const value = input.kind === "request-admission/2" ? {
         effects: [
@@ -401,7 +403,7 @@ export function stabilityDriverFor(
     return {
       async generate(request, signal, onTransport) {
         const input = JSON.parse(request.message ?? "{}") as {
-          kind?: string; sources?: { text: string }[]; questions?: string[];
+          kind?: string; sources?: { id:string; text: string }[]; questions?: string[];
           sourceItems?: {text:string}[];
           admissionTargets?: ({choice:unknown}|null)[];
         };
@@ -420,13 +422,27 @@ export function stabilityDriverFor(
           return { text: JSON.stringify(value), calls: [], history: [], usage: null,
             raw: { fixture: "source-bound-clarification" } };
         }
-        return original.generate(request, signal, onTransport);
+        const reply = await original.generate(request, signal, onTransport);
+        if (input.kind === "requirement-review/2" &&
+            !input.sources?.some(s => s.text === scenario?.clarification?.answer)) {
+          const schema = request.schema as {properties:{unresolvedChoices:{items:{properties:{targetId:{enum:string[]}}}}}};
+          const targets = schema.properties.unresolvedChoices.items.properties.targetId.enum
+            .filter(id => id.startsWith("business-choice:input-required:"));
+          const source = input.sources?.find(s => s.text === scenario?.request) ?? input.sources?.[0];
+          if (targets.length !== 1 || !source) throw new Error("澄清模型桩缺少唯一的宿主必填性目标和原始来源");
+          reply.text = JSON.stringify({...JSON.parse(reply.text),unresolvedChoices:[{
+            targetId:targets[0],sourceRevision:source.id,sourceQuote:quote,
+          }]});
+        }
+        return reply;
       },
     };
   }
   if (scenarioId === "unsupported-blank-presentation")
     return {
       async generate(request) {
+        if (request.tools?.some(tool => tool.name === "report_blocker"))
+          return toolReply("report_blocker", {reason:"合成需求要求尚未填写时显示空白，请独立核实原文和呈现能力"});
         const input = JSON.parse(request.message ?? "{}") as {
           kind?: string;
           sources?: { text: string }[];
@@ -568,10 +584,10 @@ function dueCurrentStubDriver(): Driver {
       const reply = await planning.generate(request);
       if (
         reply.calls.some((c) => c.name === "propose_plan") &&
-        !JSON.stringify(request.history).includes("read_guides")
+        !JSON.stringify(request.history).includes("read_materials")
       )
         return {
-          ...toolReply("read_guides", { refs: ["guide/schedule.register"] }),
+          ...toolReply("read_materials", { refs: ["guide/schedule.register"] }),
           history: request.history,
         };
       return reply;

@@ -11,7 +11,7 @@ import { compileDefaults } from "../../src/evolution/interaction.js";
 import { compileSpec, specificationFailure } from "../../src/evolution/specification.js";
 import { requirementReviewInput } from "../../src/evolution/review-input.js";
 import { memberUiReleaseInput } from "../fixtures/member-ui.js";
-import { PlanningDriver, clarificationPayloadFixture } from "./planning-fixture.js";
+import { PlanningDriver, clarificationPayloadFixture, toolReply } from "./planning-fixture.js";
 import { settleEvolution } from "./evolution-adapter.js";
 import { hash } from "../../src/release/storage.js";
 import type { InvestigatedPlan } from "../../src/shared/assistant.js";
@@ -39,17 +39,18 @@ async function setup(t: test.TestContext) {
   return w;
 }
 
-test("连续变更的预检、澄清和独立复核收到同一已审基线默认，原始来源不变", async t => {
+for (const question of [false,true]) test(`连续变更的规划、按需澄清和独立复核收到同一已审基线默认：${question?"多余问题被审查":"常态两次调用"}`, async t => {
   const w = await setup(t);
   const fixture = new PlanningDriver();
   const captured: Record<string, unknown>[] = [];
+  let asked=false;
   const e = new Evolution(w.db, { async generate(request) {
     const input = JSON.parse(request.message ?? "{}");
     captured.push(input);
-    if (input.kind === "request-admission/2") return {
-      text: JSON.stringify({ initials: [], effects: [], questions: [{ source: 1, sourceQuote: "设置时拒绝空白输入", question: "所有任务是否必须填写标记？" }] }),
-      history: [], calls: [], usage: null, raw: { fixture: "old-source-question" },
-    };
+    if(question&&!asked&&request.phase==="planning"){
+      asked=true;
+      return {...toolReply("request_clarification",{question:"所有任务是否必须填写标记？"}),history:[...request.history,{role:"user",parts:[{text:request.message!}]}]};
+    }
     if (input.kind === "clarification-review/2") return {
       text: JSON.stringify(clarificationPayloadFixture({ kind: "unnecessary", source: 1, sourceQuote: "设置时拒绝空白输入", detail: "继承已审查的可选默认；动作输入限制不能扩为所有任务必填" })),
       history: [], calls: [], usage: null, raw: { fixture: "baseline-default-review" },
@@ -60,18 +61,20 @@ test("连续变更的预检、澄清和独立复核收到同一已审基线默�
   const text = "完成前填写复盘，保留已有标记及其他行为";
   await e.command({ type: "request", text, operationId: "request" });
   const ready = await settleEvolution(e, "ready");
-  const intake = captured.find(x => x.kind === "request-admission/2")!;
-  const clarification = captured.find(x => x.kind === "clarification-review/2")!;
+  const planning = captured.find(x => x.materials&&x.sources)!;
+  const clarification = captured.find(x => x.kind === "clarification-review/2");
   const independent = captured.find(x => x.kind === "requirement-review/2")!;
-  assert.ok(intake.baselineDefaults, "预检丢失已发布的独立默认复核依据，会重新解释旧必填性");
-  assert.deepEqual(clarification.baselineDefaults, intake.baselineDefaults);
-  assert.deepEqual(independent.baselineDefaults, intake.baselineDefaults);
-  assert.deepEqual((intake.baselineDefaults as { defaults: unknown }).defaults, defaults);
-  assert.deepEqual(intake.sources, [{ id: "published:1", text: "新增标记，设置时拒绝空白输入" }, { id: ready.id + ":1", text }]);
+  assert.ok(planning.baselineDefaults, "规划须继承已发布默认，不能重新解释旧必填性");
+  if(question)assert.deepEqual(clarification!.baselineDefaults, planning.baselineDefaults);
+  else assert.equal(clarification,undefined);
+  assert.deepEqual(independent.baselineDefaults, planning.baselineDefaults);
+  assert.deepEqual((planning.baselineDefaults as { defaults: unknown }).defaults, defaults);
+  assert.deepEqual(planning.sources, [{ id: "published:1", text: "新增标记，设置时拒绝空白输入" }, { id: ready.id + ":1", text }]);
+  assert.ok(!captured.some(value=>value.kind==="request-admission/2"));
   assert.equal(ready.status, "ready");
-  assert.equal(ready.budget?.callsUsed, 4);
+  assert.equal(ready.budget?.callsUsed, question?4:2);
   assert.equal(ready.budget?.grants?.length, 0);
-  assert.equal(ready.clarificationReviews?.[0].decision.kind, "unnecessary");
+  assert.equal(ready.clarificationReviews?.[0].decision.kind, question?"unnecessary":undefined);
   assert.equal(w.query().total, 0, "只形成计划，不能修改业务数据");
   if (ready.status !== "ready") throw new Error("fixture");
   const altered = structuredClone(ready.plan);

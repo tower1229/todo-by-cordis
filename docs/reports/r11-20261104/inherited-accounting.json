@@ -1,0 +1,24 @@
+{
+  "schema": "cordis.r11-inherited-accounting/1",
+  "source": "docs/handoff-2026-11-04-model-interface-contraction.md",
+  "ledgerFiles": "absent",
+  "reconstructed": false,
+  "cumulativeCalls": 292,
+  "authorizationCeiling": 405,
+  "sharedRemaining": 113,
+  "unknownCallOrdinals": [202, 250],
+  "knownUsageEstimateUsd": 2.225884056,
+  "unknownUsageReserveUsd": 0.9437184,
+  "protectionOccupancyUsd": 3.169602456,
+  "supplierBillUsd": null,
+  "pricePerMillionTokens": {
+    "cachedInput": 0.006,
+    "uncachedInput": 0.3,
+    "outputIncludingReasoning": 1.2
+  },
+  "completeRealSixStepPasses": 0,
+  "policyArmsStarted": false,
+  "newPaidCallsThisBatch": 0,
+  "r10RealTargetedReopened": false,
+  "r10RealChainsReopened": false
+}

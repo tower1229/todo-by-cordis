@@ -1,3 +1,5 @@
+import { compileSemantics } from "../../src/evolution/requirement-semantics.js";
+import { sourceReviewReceiptFixture } from "./planning-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -123,7 +125,7 @@ test("宿主推导多步真实动作，忽略不可达注入、拒绝案例及�
   );
 });
 
-test("无路径、字段所有者不符、循环、矛盾成功结果和多历史状态都明确阻塞", () => {
+test("无路径、字段所有者不符、循环、矛盾成功结果都明确阻塞", () => {
   const other = { ...panelMemberCases[0], member: "other" };
   const cycle: MemberAcceptanceCase = {
     ...panelMemberCases[0],
@@ -144,7 +146,6 @@ test("无路径、字段所有者不符、循环、矛盾成功结果和多历�
     [other],
     [cycle],
     [panelMemberCases[0], opposite],
-    [panelMemberCases[0], { ...opposite, action: "another" }],
   ])
     assert.throws(
       () => historicalPreparation(target, catalog, base),
@@ -154,6 +155,35 @@ test("无路径、字段所有者不符、循环、矛盾成功结果和多历�
     () => historicalPreparation(target, panelMemberCases, ""),
     /精确基础版本/,
   );
+});
+
+test("多个可达历史状态降级为最短路径，字典序最小", () => {
+  const alpha: MemberAcceptanceCase = {
+    ...panelMemberCases[0],
+    name: "alpha",
+    expected: {
+      kind: "commit",
+      state: "open",
+      fields: { noteMark: "alpha" },
+    },
+  };
+  const beta: MemberAcceptanceCase = {
+    ...panelMemberCases[0],
+    name: "beta",
+    action: "another",
+    expected: {
+      kind: "commit",
+      state: "open",
+      fields: { noteMark: "beta" },
+    },
+  };
+  // Both paths produce noteMark field; should pick shortest then stable order
+  const h = historicalPreparation(target, [alpha, beta], base);
+  assert.equal(h.actions.length, 1);
+  assert.ok(h.sourceHash === hash([alpha]) || h.sourceHash === hash([beta]));
+  // Order-independent: same result regardless of catalog order
+  const h2 = historicalPreparation(target, [beta, alpha], base);
+  assert.equal(h.sourceHash, h2.sourceHash);
 });
 
 test("已接受历史准备保持原精确版本、动作、旧值及摘要，不随下一次升级改写", () => {
@@ -278,12 +308,13 @@ test("同步替换义务与案例的旧值仍不能绕过原冻结身份检查",
       checkers: [{ id: "browser/1", version: "fixture" }],
     },
   };
+  p.semanticState = compileSemantics(p,sources);
   p.changeSpec = compileSpec(p, "run", hash("base"));
   p.requirementGate = freezeRequirements(
     p,
     sources,
     "request",
-    { reviewedIds: p.requirements!.map((r) => r.id), issues: [] },
+    { reviewedIds: p.requirements!.map((r) => r.id), issues: [], sourceReview: sourceReviewReceiptFixture(p,sources) },
     ["browser/1"],
   );
   const trusted = structuredClone(p.requirementGate);

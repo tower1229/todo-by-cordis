@@ -37,7 +37,7 @@ import {
   planBindingFailure,
   planningInstruction,
   planningTools,
-  readInvestigation,
+  readPlanningMaterials,
   compilePlanDraft,
   memberAcceptancePayload,
   type Investigation,
@@ -296,7 +296,7 @@ export class EvolutionDomain implements Domain {
     context: Investigation,
     delivered: PlanEvidence[] = [],
   ) {
-    return readInvestigation(name, args, context, delivered);
+    return readPlanningMaterials(name, args, context, delivered);
   }
   parse(value: unknown, context: Investigation, seen: PlanEvidence[], sources: import("../shared/assistant.js").RequirementGate["sources"] = [], admission?: import("../evolution/request-admission.js").RequestAdmission) {
     const parsed = compilePlanDraft(value, context, seen, sources, admission);

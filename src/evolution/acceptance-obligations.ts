@@ -5,6 +5,10 @@ import type { MemberAcceptanceCase } from "../shared/acceptance-cases.js";
 import { historicalPreparation } from "./historical-preparation.js";
 import { obligationCases } from "../shared/acceptance-obligations.js";
 import { hash } from "../release/storage.js";
+import {
+  browserCaseAssertionHash,
+  executedBrowserCase,
+} from "./browser-case-content.js";
 import { readOnlyFieldText } from "../shared/field-presentation.js";
 import { schedulePolicyChecks, schedulePolicySemantics, type SchedulePolicyCheck } from "../shared/schedule-policy.js";
 type Outcomes = Pick<
@@ -361,14 +365,20 @@ export function obligationFailure(
       reasons.push("字段义务缺少初始或动作后状态");
       continue;
     }
-    for (const c of obligationCases(o))
+    for (const c of obligationCases(o)) {
+      const found = executedBrowserCase(c, browsers);
+      const covered = requirement.checks.some(
+        (ref) =>
+          ref.checker === "browser/1" &&
+          (ref.caseId === c.id || ref.caseId === found?.id),
+      );
       if (
-        !requirement.checks.some(
-          (ref) => ref.checker === "browser/1" && ref.caseId === c.id,
-        ) ||
-        hash(browsers.find((b) => b.id === c.id)) !== hash(c)
+        !covered ||
+        !found ||
+        browserCaseAssertionHash(found) !== browserCaseAssertionHash(c)
       )
         reasons.push(`验收义务未完整执行或断言已变化：${c.id}`);
+    }
   }
   return reasons;
 }

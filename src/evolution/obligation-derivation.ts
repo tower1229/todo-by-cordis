@@ -272,6 +272,11 @@ export function deriveFieldObligations(
   }) => boolean = () => true,
   existing: (target: { member: string; field: string }) => boolean = () => true,
   scheduleProviders: ReadonlySet<string> = new Set(),
+  includeExistingUpdates: (target: {
+    member: string;
+    field: string;
+    contribution?: string;
+  }) => boolean = () => false,
 ): AcceptanceObligation[] {
   const projections: {
     field: string;
@@ -339,9 +344,12 @@ export function deriveFieldObligations(
         o.kind === "field" &&
         o.member === target.member &&
         o.field === target.field &&
-        o.contribution === target.contribution,
+        // bind() has already proved the current UI scope is unique. A legacy
+        // unqualified canonical field keeps its accepted identity and cases.
+        (o.contribution === target.contribution || o.contribution === undefined),
     );
-    if (p.seeded && existing(target) && !declared.length) continue;
+    if (p.seeded && existing(target) && !declared.length && !includeExistingUpdates(target))
+      continue;
     if (!renderable(target) && !declared.length) continue;
     if (
       (requirement.obligations ?? []).some(
@@ -353,14 +361,13 @@ export function deriveFieldObligations(
     )
       continue;
     if (declared.length) {
-      for (const d of declared)
-        if (!result.some((o) => hash(o) === hash(d)))
-          result.push(
-            structuredClone(d) as Extract<
-              AcceptanceObligation,
-              { kind: "field" }
-            >,
-          );
+      for (const d of declared) {
+        if (d.kind !== "field") continue;
+        // This requirement projects a canonical definition; it does not gain
+        // independent business authority over a copy of that definition.
+        const projection = { ...structuredClone(d), derivation: d.derivation ?? { checker: p.checker } };
+        if (!result.some((o) => hash(o) === hash(projection))) result.push(projection);
+      }
       continue;
     }
     const id =

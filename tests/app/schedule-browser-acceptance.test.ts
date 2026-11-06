@@ -14,6 +14,7 @@ import { activateWorkflowOnly } from "./dual-composition-fixture.js";
 import { coverage } from "../../src/server/requirement-coverage.js";
 import type { Version } from "../../src/release/types.js";
 import type { BrowserCase } from "../../src/shared/browser-cases.js";
+import { materialIdentity } from "../../src/evolution/investigation.js";
 
 test("宿主生成的过期字段验收通过真实页面准备并由真实调度触发，内部命令仍不开放", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "schedule-browser-channel-"));
@@ -30,7 +31,7 @@ test("宿主生成的过期字段验收通过真实页面准备并由真实调�
   const context = capture(workspace);
   const initial = readInvestigation("inspect_application", {}, context, []);
   assert.ok("ref" in initial);
-  const seen = [initial, ...(initial.documents ?? [])].map(({ ref, hash }) => ({ ref, hash }));
+  const seen = [initial, ...(initial.documents ?? [])].map(materialIdentity);
   const parsed = compilePlanDraft({
     changes: [{
       target: "due", features: ["commands", "fields", "detail", "schedules"],

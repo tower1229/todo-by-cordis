@@ -154,7 +154,7 @@ import type { AcceptanceObligation } from "../../src/shared/acceptance-obligatio
 import { obligationCases } from "../../src/shared/acceptance-obligations.js";
 import { Evolution } from "../../src/evolution/evolution.js";
 import { EvolutionDomain } from "../../src/server/evolution-domain.js";
-import { PlanningDriver } from "./planning-fixture.js";
+import { PlanningDriver, sourceReviewFixture, sourceReviewReceiptFixture } from "./planning-fixture.js";
 import { modelPolicy } from "../../src/evolution/model-policy.js";
 
 const sources = [
@@ -236,7 +236,7 @@ function fixturePlan(visible = false): InvestigatedPlan {
   return plan;
 }
 test("宿主已证明的可见性保护不能伪装成额外业务限制，明确改变可见性的异议仍保留", () => {
-  const wire={reviewedIds:["r"],fieldDecisions:[],issues:[{kind:"extra-constraint",sourceRevision:"run:1",sourceQuote:sources[0].text,detail:"来源未要求固定可见性",target:{subject:"r",aspect:"availability"},stance:"forbidden"}]};
+  const wire={sourceReview:sourceReviewFixture({sources}),reviewedIds:["r"],fieldDecisions:[],issues:[{kind:"extra-constraint",sourceRevision:"run:1",sourceQuote:sources[0].text,detail:"来源未要求固定可见性",target:{subject:"r",aspect:"availability"},stance:"forbidden"}]};
   assert.throws(()=>parseReview(JSON.stringify(wire),fixturePlan(),sources),/宿主.*保护|业务限制/);
   assert.equal(parseReview(JSON.stringify(wire),fixturePlan(true),sources).issues.length,1);
 });
@@ -300,12 +300,13 @@ test("明确改变可见性保留业务复核；不可由不可执行或后端�
 });
 test("基线来源、版本及摘要在开始和应用共用门禁校验，删除浏览器断言仍失败", () => {
   const p = fixturePlan();
+  p.semanticState = compileSemantics(p,sources);
   p.changeSpec = compileSpec(p, "run", "source");
   const g = freezeRequirements(
     p,
     sources,
     "request",
-    { reviewedIds: ["r"], issues: [], fieldDecisions: [] },
+    { reviewedIds: ["r"], issues: [], fieldDecisions: [], sourceReview: sourceReviewReceiptFixture(p,sources) },
     ["browser/1"],
   );
   p.requirementGate = g;
@@ -439,8 +440,8 @@ test("复核 length 是资源失败：只消费一次调用，保留原始响应
     }),
   );
   assert.equal(run.resourceFailures![0].kind, "output-budget");
-  assert.equal(run.budget!.callsUsed, 3);
-  assert.equal(run.budget!.callsRemaining, 9);
+  assert.equal(run.budget!.callsUsed, 2);
+  assert.equal(run.budget!.callsRemaining, 10);
   const calls = w.db
     .prepare("SELECT body FROM evolution_calls ORDER BY id")
     .all()
@@ -528,6 +529,7 @@ test("归档可见性误判离线重放：原有效目标现在由可信基线�
       parseReview(
         JSON.stringify({
           ...replay,
+          sourceReview:sourceReviewFixture({sources:[{id:archive.sourceId}]}),
           reviewedIds: parsed.plan.requirements!.map((r) => r.id),
         }),
         parsed.plan,
@@ -567,6 +569,7 @@ test("归档可见性误判离线重放：原有效目标现在由可信基线�
             );
           return reply({
             ...archive.review,
+            sourceReview:sourceReviewFixture(input),
             reviewedIds: input.requirements.map((r: { id: string }) => r.id),
             unresolvedChoices:
               reviewCalls === 1
@@ -592,7 +595,7 @@ test("归档可见性误判离线重放：原有效目标现在由可信基线�
             text: "",
             calls: [
               {
-                name: "read_guides",
+                name: "read_materials",
                 args: {
                   refs: [
                     "guide/command.register",
@@ -638,8 +641,8 @@ test("归档可见性误判离线重放：原有效目标现在由可信基线�
     }),
   );
   assert.equal(reviewCalls, 2);
-  assert.equal(run.budget!.callsUsed, 5);
-  assert.equal(run.budget!.callsRemaining, 7);
+  assert.equal(run.budget!.callsUsed, 4);
+  assert.equal(run.budget!.callsRemaining, 8);
   if (run.status !== "awaiting-acceptance") throw new Error("fixture");
   assert.equal(run.protocolFailures!.length, 1);
   assert.ok(

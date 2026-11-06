@@ -1,0 +1,120 @@
+{
+  "schema": "cordis.r11-6bacd68-round3-extended-ms-probe-outcome/1",
+  "recordedAt": "2026-11-05T08:52:51.664657+00:00",
+  "commit": "6bacd68613e2dfc8da3d9dc07fb9aa07db9614a2",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-6bacd68-bind.json",
+  "evidenceDirectory": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-6bacd68-20261105T084029Z",
+  "passed": false,
+  "completeSixStepPass": false,
+  "paidCalls": 13,
+  "ordinals": {
+    "first": 442,
+    "last": 454
+  },
+  "cumulativeOccupied": 454,
+  "remainingCalls": 196,
+  "knownGoalEstimatedPeakUSD": 6.071333555999996,
+  "goalUnknownUsageReserveUSD": 2.359296,
+  "goalFeeGuardOccupiedUSD": 8.430629555999996,
+  "currentCohortKnownEstimatedPeakUSD": 0.24945720000000016,
+  "currentCohortUnknownUsageReserveUSD": 0,
+  "actualModel": "deepseek-flash",
+  "fatalHead": "历史准备无法由基础版本唯一推导：tag:tag",
+  "stop": {
+    "kind": "planning-gate",
+    "phase": 2,
+    "planningPhase": "planning",
+    "scope": "bounded-six-step-1",
+    "code": "plan-compilation",
+    "blockReason": "maintainer-capability",
+    "diagnostic": "历史准备无法由基础版本唯一推导：tag:tag；目标字段存在多个可达历史状态，需要维护者补齐可信基线，不能伪造历史或降低要求",
+    "detail": "Round-3 extended-ms after 6bacd68 missing-requirement degrade: phase-0 and phase-1 applied; phase-2 planning blocked on non-unique history preparation for tag:tag (same class as earlier chains-history tags:tags / real/chains counter:count). Round-2 missing-existing-requirement fatal did not reappear. Not meter-exhaust (454/650). Not fee-guard (~$8.43 < $20). Not model-time-window."
+  },
+  "progress": {
+    "phaseBrowserScreenshots": [
+      "phase-0-browser.png",
+      "phase-1-browser.png"
+    ],
+    "appliedEvents": 2,
+    "experienceCheckedEvents": 2,
+    "settledEvents": 7,
+    "phasesReached": [
+      0,
+      1,
+      2
+    ],
+    "phase0Applied": true,
+    "phase1Applied": true,
+    "phase2Failed": true,
+    "extendedMsHarnessUsed": true,
+    "milliseconds": 1800000,
+    "millisecondsPauseGrants": true,
+    "modelTimeWindowStopReproduced": false,
+    "afde277RebindFatalReproduced": false,
+    "missingExistingRequirementFatalReappeared": false
+  },
+  "accountingStyle": "absent-ledger inheritance for calls 309-394; afde277 395-403, b7e9965 404-405, 4df0cf4 406-431, and 5ce3a43 432-441 present on Mac",
+  "weakerAudit": true,
+  "missingAttemptDirsNotOnMac": [
+    "chains-protocol-20261104T2104Z",
+    "chains-history-20261104T2113Z",
+    "chains-review-gate-20261104T2124Z",
+    "chains-disable-tag-review-20261104T2145Z",
+    "chains-timeout-phase3-20261104T2216Z",
+    "real/chains cloud continuation 371-381",
+    "real/performance 382-394"
+  ],
+  "notRun": [
+    "dual full six-step",
+    "pnpm accept:v1 --authorize-real-model",
+    "stock r11 runner --stage chains/performance",
+    "product scripts/lib/v1-scenario.ts edit",
+    "ordinal-455 paid continuation"
+  ],
+  "ci": {
+    "pushRunId": 41987221871,
+    "prRunId": 41987228498,
+    "headSha": "6bacd68613e2dfc8da3d9dc07fb9aa07db9614a2",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-05T08:39:49Z",
+    "prCompletedAt": "2026-11-05T08:32:43Z",
+    "application": {
+      "tests": 866,
+      "pass": 866,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "prLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-6bacd68-pr-41987228498.log",
+    "pushLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-6bacd68-push-41987221871.log",
+    "note": "Both M1 checks success on tip 6bacd68 before round-3 extended-ms paid probe. Fee guard $20; nextOrdinal 442."
+  },
+  "ceiling": {
+    "priorOccupied": 441,
+    "cumulativeCeiling": 650,
+    "maxNewCalls": 209,
+    "feeGuardUSD": 20,
+    "authorizationRef": "t51u",
+    "nextOrdinalAfterProbe": 455,
+    "doNotLaunchNextPaidYet": true
+  },
+  "tipRepairsExercised": [
+    "e655fee host-derived rebind preserve",
+    "1dae482 reboundFields type narrow",
+    "round-1 4df0cf4 progress through phase-3 then time-window",
+    "round-2 5ce3a43 extended-ms then missing-requirement fatal",
+    "6bacd68 business-revision missing-target degrade to new requirement"
+  ],
+  "preserveExistingRealDirs": [
+    ".runtime/continuous-revision-study-20261104-r11/real/targeted",
+    ".runtime/continuous-revision-study-20261104-r11/real/chains",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-afde277-20261105T020119Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-b7e9965-20261105T035722Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-4df0cf4-20261105T051938Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-5ce3a43-20261105T071122Z"
+  ],
+  "honestNonPass": true,
+  "note": "Round-3 Mac paid single six-step on tip 6bacd68 after dual CI green. Extended-ms harness; 6bacd68 degrade cleared round-2 missing-requirement stop through phase-1 apply. Phase-2 planning-gate history non-uniqueness tag:tag. completeSixStepPass remains 0. Prior probe evidence dirs preserved. No ordinal-455 paid launch from this docs turn."
+}

@@ -1,0 +1,100 @@
+{
+  "schema": "cordis.r11-4df0cf4-raised-ceiling-probe-outcome/1",
+  "recordedAt": "2026-11-05T05:52:46.238783+00:00",
+  "commit": "4df0cf44ccf71b748d11088e169e7ac99793f61f",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-4df0cf4-bind.json",
+  "evidenceDirectory": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-4df0cf4-20261105T051938Z",
+  "passed": false,
+  "completeSixStepPass": false,
+  "paidCalls": 26,
+  "ordinals": {
+    "first": 406,
+    "last": 431
+  },
+  "cumulativeOccupied": 431,
+  "remainingCalls": 219,
+  "knownGoalEstimatedPeakUSD": 5.642562287999997,
+  "goalUnknownUsageReserveUSD": 2.359296,
+  "goalFeeGuardOccupiedUSD": 8.001858287999998,
+  "currentCohortKnownEstimatedPeakUSD": 0.9703763399999978,
+  "currentCohortUnknownUsageReserveUSD": 0.47185920000000015,
+  "actualModel": "deepseek-flash",
+  "fatalHead": "本阶段已用完模型时间窗口，保留后续候选与验收时间并停止",
+  "stop": {
+    "kind": "model-time-window-exhausted",
+    "phase": "after-phase-3-during-later-planning-or-generation",
+    "code": "stage-model-time-window",
+    "detail": "Native stage stopped with diagnostics saying the model time window for this stage was exhausted while retaining later candidate/acceptance time. Not meter-exhaust (ceiling 650, remaining 219). Not fee-guard ($8.00 < $20). Not the afde277 host-derived rebind plan-compilation fatal."
+  },
+  "progress": {
+    "phaseBrowserScreenshots": [
+      "phase-0-browser.png",
+      "phase-1-browser.png",
+      "phase-2-browser.png",
+      "phase-3-browser.png"
+    ],
+    "appliedEvents": 4,
+    "experienceCheckedEvents": 4,
+    "settledEvents": 18,
+    "hostDerivedRebindGateReached": true,
+    "hostDerivedRebindGateReachedNote": "Multi-plugin applied path advanced through phase-0..phase-3 browser evidence with 4 applied cycles after the counter/follow-on requirements. The afde277 fatal phrase '既有字段的宿主派生义务无法重新绑定' did not appear in events or failure. e655fee/1dae482 path was exercised without that planning-gate stop; probe later stopped on stage model time window.",
+    "afde277RebindFatalReproduced": false
+  },
+  "accountingStyle": "absent-ledger inheritance for calls 309-394 (and fee totals through 394); afde277 395-403 and b7e9965 404-405 present on Mac",
+  "weakerAudit": true,
+  "missingAttemptDirsNotOnMac": [
+    "chains-protocol-20261104T2104Z",
+    "chains-history-20261104T2113Z",
+    "chains-review-gate-20261104T2124Z",
+    "chains-disable-tag-review-20261104T2145Z",
+    "chains-timeout-phase3-20261104T2216Z",
+    "real/chains cloud continuation 371-381",
+    "real/performance 382-394"
+  ],
+  "notRun": [
+    "dual full six-step",
+    "pnpm accept:v1 --authorize-real-model",
+    "stock r11 runner --stage chains/performance"
+  ],
+  "ci": {
+    "pushRunId": 41965019082,
+    "prRunId": 41965027821,
+    "headSha": "4df0cf44ccf71b748d11088e169e7ac99793f61f",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-05T05:15:27Z",
+    "prCompletedAt": "2026-11-05T05:13:33Z",
+    "application": {
+      "tests": 866,
+      "pass": 866,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "prLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-4df0cf4-pr-41965027821.log",
+    "pushLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-4df0cf4-push-41965019082.log",
+    "note": "Both M1 checks success on tip 4df0cf4 before raised-ceiling paid probe. User t51u raised call ceiling; fee guard $20 unchanged."
+  },
+  "ceiling": {
+    "priorOccupied": 405,
+    "cumulativeCeiling": 650,
+    "maxNewCalls": 245,
+    "feeGuardUSD": 20,
+    "authorizationRef": "t51u"
+  },
+  "tipRepairsExercised": [
+    "e655fee host-derived rebind preserve",
+    "1dae482 reboundFields type narrow",
+    "b7e9965 docs record of typecheck fix",
+    "4df0cf4 docs record of b7e9965 meter-exhaust"
+  ],
+  "preserveExistingRealDirs": [
+    ".runtime/continuous-revision-study-20261104-r11/real/targeted",
+    ".runtime/continuous-revision-study-20261104-r11/real/chains",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-afde277-20261105T020119Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-b7e9965-20261105T035722Z"
+  ],
+  "honestNonPass": true,
+  "note": "Raised-ceiling Mac paid single six-step on tip 4df0cf4. Inherited ordinals after 405 (406-431). Host-derived rebind gate path from afde277 was passed without reproducing that fatal; complete six-step still 0 due to stage model time-window stop. Prior afde277/b7e9965 evidence dirs not overwritten. Fee guard not binding."
+}

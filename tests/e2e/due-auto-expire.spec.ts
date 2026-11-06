@@ -124,13 +124,13 @@ function dueDriver(source: string, expiryCaseAt?: string): Driver {
       const result = await planning.generate(request, signal);
       if (
         result.calls[0]?.name === "propose_plan" &&
-        !history.includes("read_guides")
+        !history.includes("read_materials")
       )
         return {
           ...result,
           calls: [
             {
-              name: "read_guides",
+              name: "read_materials",
               args: { refs: ["guide/schedule.register"] },
             },
           ],

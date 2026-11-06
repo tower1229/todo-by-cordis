@@ -20,7 +20,7 @@ test("原生来源视图冻结、原文补读与两阶段预算续行跨重启�
   let w=await Workspace.open(filename);
   let sessions=new ExperienceSessionHost(w);
   let driver=new PlanningViewDriver({invalidConclusion:true,badViewCandidate:true});
-  let e=new Evolution(w.db,driver,new EvolutionDomain(w),sessions,{calls:5,candidates:1,milliseconds:600000});
+  let e=new Evolution(w.db,driver,new EvolutionDomain(w),sessions,{calls:4,candidates:1,milliseconds:600000});
   const appForHost=()=>{
     const app=createApp(w,e,sessions);
     app.use("/*",serveStatic({root:"./dist/web"}));app.get("*",serveStatic({path:"./dist/web/index.html"}));return app;
@@ -50,7 +50,7 @@ test("原生来源视图冻结、原文补读与两阶段预算续行跨重启�
     await page.getByRole("button",{name:"继续修改",exact:true}).click();
     await page.getByRole("textbox",{name:"告诉 AI 你的需求"}).fill("复盘至少三个字，其他行为不变");
     await page.getByRole("button",{name:"发送需求"}).click();await status("awaiting-budget");
-    const paused=(await snapshot()).run!;expect(paused.budget?.callsUsed).toBe(3);
+    const paused=(await snapshot()).run!;expect(paused.budget?.callsUsed).toBe(2);
     expect(paused.status).toBe("awaiting-budget");
     await restart();await page.setViewportSize({width:320,height:850});await open();
     expect((await snapshot()).run?.id).toBe(paused.id);
@@ -71,8 +71,8 @@ test("原生来源视图冻结、原文补读与两阶段预算续行跨重启�
     expect((await snapshot()).run?.id).toBe(paused.id);
     await page.getByRole("button",{name:"继续进行",exact:true}).click();await status("awaiting-apply");
     const checked=await snapshot();const run=checked.run!;
-    expect(run.id).toBe(paused.id);expect(run.budget?.efficiencyTarget).toBe(5);
-    expect(run.budget?.callsUsed).toBe(8);expect(run.budget?.grants).toHaveLength(2);
+    expect(run.id).toBe(paused.id);expect(run.budget?.efficiencyTarget).toBe(4);
+    expect(run.budget?.callsUsed).toBe(7);expect(run.budget?.grants).toHaveLength(2);
     if(!("plan" in run)||!run.plan)throw new Error("plan");expect(hash(run.plan)).toBe(frozen);
     expect(checked.candidates?.filter(item=>!item.passed)).toHaveLength(1);
     expect(checked.candidates?.filter(item=>item.passed)).toHaveLength(1);
@@ -91,7 +91,7 @@ test("原生来源视图冻结、原文补读与两阶段预算续行跨重启�
     expect(receipts.some(item=>item.ref==="active-acceptance")).toBe(true);
     const calls=w.db.prepare("SELECT body FROM evolution_calls WHERE runId=? ORDER BY id").all(run.id).map(item=>JSON.parse(String(item.body)));
     await writeFile(join(directory,"calls.json"),JSON.stringify(calls,null,2));
-    expect(calls.filter(item=>item.phase==="admission")).toHaveLength(1);
+    expect(calls.filter(item=>item.phase==="admission")).toHaveLength(0);
     expect(calls.filter(item=>item.phase==="review")).toHaveLength(1);
   }finally{
     await writeFile(join(directory,"final-assistant.json"),JSON.stringify(await snapshot(),null,2));

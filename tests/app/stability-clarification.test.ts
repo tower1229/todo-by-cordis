@@ -78,7 +78,7 @@ function awaiting(freeQuestion?: string, sourceQuote = undecided, request = scen
   );
   return {
     id: "run",
-    status: "awaiting-input",
+    status: "awaiting-input" as const,
     question,
     requestAdmissions: [admission],
     clarificationReviews: [

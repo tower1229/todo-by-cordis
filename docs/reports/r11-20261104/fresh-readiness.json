@@ -1,0 +1,37 @@
+{
+  "schema": "cordis.r11-fresh-readiness/1",
+  "incident": {
+    "url": "https://status.deepseek.com/incidents/7202016104287",
+    "state": "resolved",
+    "observedAt": "2026-11-04T08:52:16.452688+00:00",
+    "latestUpdateAt": "2026-11-03T10:48:00+00:00",
+    "latestUpdateDeclaresFixImplemented": false,
+    "visibleTextSha256": "56e445b991fa0cff7037921af1d1b9dd8f18b922a8cfa76608edff8eb621d157",
+    "rawHtmlSha256": "c2587b2d820fc2a758ffe6c205c32ca4363957b28ab4907a355aaa4732c05afa",
+    "paidCalls": 0,
+    "gatePublished": false
+  },
+  "nativeRoute": {
+    "observedAt": "2026-11-04T08:52:45.146Z",
+    "network": "direct",
+    "httpStatus": 401,
+    "elapsedMs": 333,
+    "bodyBytes": 31,
+    "authorizationHeaderSent": false,
+    "environmentFileLoaded": false,
+    "paidModelCalls": 0,
+    "meaning": "Unauthenticated GET /models reached the API. This is connectivity only."
+  },
+  "localFrontend": {
+    "node": "v24.18.0",
+    "builtAt": "2026-11-04T08:52:45Z",
+    "files": {
+      "index.html": "41ed8c649233f2ac8ff9a97d1a6a98ef8b4414f3c0555843045ae7a4f125d14a",
+      "assets/index-DfJr-pP8.css": "59fc831f325ffcf604445332424721a31c1f6192d9537f539f35d5f91750a3ee",
+      "assets/index-OoB24DdB.js": "e2f03694ab1ce20596a700fca383b95a69ac4c4de688b60f302d607fc91ffa6a"
+    }
+  },
+  "zeroCostRehearsals": 0,
+  "realCalls": 0,
+  "apiKeyLoaded": false
+}

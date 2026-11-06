@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runV1Acceptance } from "../../scripts/lib/v1-scenario.js";
+import { runV1Acceptance, v1Requests } from "../../scripts/lib/v1-scenario.js";
+import type { AssistantSnapshot } from "../../src/shared/assistant.js";
 import { v1FixtureDriver } from "./v1-driver-fixture.js";
 
 test("六步模型桩按运行来源推进阶段；同运行的规划纠正不跳阶段、不丢需求", async () => {
@@ -64,7 +65,8 @@ test("六步模型桩按运行来源推进阶段；同运行的规划纠正不�
     (b.calls[0].args.changes as { target: string }[]).find(c=>c.target!=="workflow")!.target,
     "counter",
   );
-  await exchange("run-c");
+  const c = await exchange("run-c");
+  assert.equal((c.calls[0].args.requirements as {revises?:string}[])[0].revises, "合成需求");
   const d = await exchange("run-d");
   assert.match(
     String(d.calls[0].args.acceptanceReason),
@@ -88,6 +90,26 @@ test("首版桩层经公开控制面完成四次变更、隔离体验和独立�
       events.filter((e) => e.type === "experience-checked").length,
       4,
     );
+    const runs = events.filter(e => e.type === "settled")
+      .map(e => ({phase:e.phase,run:(e.snapshot as AssistantSnapshot).run}));
+    const accepted = runs.find(e => e.phase === 0 && e.run?.status === "ready")!.run!;
+    assert.equal(accepted.status,"ready");
+    if (accepted.status !== "ready") throw new Error("missing accepted tag plan");
+    const old = accepted.plan.requirements!.find(r => r.sourceQuote === v1Requests[0])!;
+    const revision = runs.find(e => e.phase === 2 && e.run?.status === "awaiting-acceptance")!.run!;
+    assert.equal(revision.status,"awaiting-acceptance", "来源修订仍须独立的验收修订确认");
+    if (revision.status !== "awaiting-acceptance") throw new Error("missing acceptance revision");
+    const replacement = revision.plan.requirements!.find(r => r.id === old.id)!;
+    assert.equal(replacement.sourceQuote,v1Requests[2]);
+    assert.equal(replacement.description,v1Requests[2]);
+    assert.equal(replacement.sourceRevision,`${revision.id}:1`);
+    assert.ok(revision.plan.acceptanceChanges!.some(change =>
+      change.rule === `需求 ${old.id}` &&
+      JSON.parse(change.before).sourceQuote === v1Requests[0] &&
+      JSON.parse(change.after).sourceQuote === v1Requests[2]));
+    assert.ok(revision.plan.requirementGate!.review.reviewedIds.includes(old.id));
+    assert.ok(revision.plan.requirementGate!.sources.some(source => source.text === v1Requests[0]),
+      "旧原文仍须保留在历史来源中");
     const combined = events.find(
       (e) => e.type === "candidate-evidence" && e.phase === 1,
     );

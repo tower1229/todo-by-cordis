@@ -1,0 +1,30 @@
+{
+  "schema": "cordis.r11-incident-observation/1",
+  "fetchedAt": "2026-11-04T08:41:30Z",
+  "url": "https://status.deepseek.com/",
+  "headline": "Everything is running smoothly. All systems are operating as expected.",
+  "liveJsonApi": {
+    "https://status.deepseek.com/api/v2/summary.json": 404,
+    "https://status.deepseek.com/api/v2/incidents.json": 404
+  },
+  "flashComponent": {
+    "componentId": "01KY4MVS8BSBSVW6053QJ37RJE",
+    "name": "DeepSeek V4.1 Flash API服务(API Service)",
+    "uptimePercentInEmbeddedPayload": 99.58,
+    "statusOnLatestEmbeddedIncident": "operational"
+  },
+  "embeddedCalendarIncidents": 8,
+  "embeddedNonResolvedIncidents": 0,
+  "latestEmbeddedIncident": {
+    "id": 7202016104287,
+    "title": "DeepSeek 网页/API 部分中断（DeepSeek Web/API Partially Unavailable）",
+    "status": "resolved",
+    "description": "本次问题已解决，服务已恢复。 The incident has been resolved and service has been restored.",
+    "firstImpactStart": "2026-11-03T08:58:16Z",
+    "lastEmbeddedSectionImpactEnd": "2026-11-03T10:41:12Z",
+    "affectsFlashComponent": true
+  },
+  "proxyEnvironmentVariables": [],
+  "nativeProxyPath": "user-machine path from r10 is absent; this environment has no proxy variables",
+  "limits": "Headline and embedded HTML payload only. This observation does not prove long reasoning, key validity, or a stable native proxy path. An unauthenticated HTTP 401 probe was not sent."
+}

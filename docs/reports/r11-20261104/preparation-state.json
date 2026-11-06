@@ -1,0 +1,19 @@
+{
+  "schema": "cordis.r11-preparation-state/1",
+  "batch": "continuous-revision-study-20261104-r11",
+  "createdAt": "2026-11-04T08:41:30Z",
+  "commit": "54b1ba3dda7819ee001ccbc71575c2f1d973a126",
+  "recordDirectory": "docs/reports/r11-20261104",
+  "paidDirectories": {
+    "real/targeted": "not created",
+    "real/chains": "not created"
+  },
+  "r10Reopened": false,
+  "zeroCostRehearsals": {
+    "required": 52,
+    "completed": 0,
+    "reason": "r10 audit-targeted-v2.py, audit-real-study-v2.py and the sealed rehearsal materials are not in git and are not on this machine"
+  },
+  "paidPhase": "refused",
+  "keyLoaded": false
+}

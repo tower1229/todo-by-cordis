@@ -1,0 +1,57 @@
+{
+  "schema": "cordis.r11-afde277-bounded-probe-outcome/1",
+  "recordedAt": "2026-11-05T02:06:34.184752+00:00",
+  "commit": "afde277f70ba55bb73eef4a2b61e9285157a2255",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-afde277-bind.json",
+  "evidenceDirectory": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-afde277-20261105T020119Z",
+  "passed": false,
+  "completeSixStepPass": false,
+  "paidCalls": 9,
+  "ordinals": {
+    "first": 395,
+    "last": 403
+  },
+  "cumulativeOccupied": 403,
+  "remainingCalls": 2,
+  "knownGoalEstimatedPeakUSD": 4.6451605680000005,
+  "goalUnknownUsageReserveUSD": 1.8874368,
+  "goalFeeGuardOccupiedUSD": 6.532597368,
+  "actualModel": "deepseek-flash",
+  "fatalHead": "既有字段的宿主派生义务无法重新绑定；须显式修订原要求，不能删除旧断言",
+  "accountingStyle": "absent-ledger inheritance for calls 309-394 (and fee totals through 394)",
+  "weakerAudit": true,
+  "missingAttemptDirsNotOnMac": [
+    "chains-protocol-20261104T2104Z",
+    "chains-history-20261104T2113Z",
+    "chains-review-gate-20261104T2124Z",
+    "chains-disable-tag-review-20261104T2145Z",
+    "chains-timeout-phase3-20261104T2216Z",
+    "real/chains cloud continuation 371-381",
+    "real/performance 382-394"
+  ],
+  "notRun": [
+    "dual full six-step",
+    "pnpm accept:v1 --authorize-real-model",
+    "stock r11 runner --stage chains/performance"
+  ],
+  "ci": {
+    "pushRunId": 41941921229,
+    "prRunId": 41941928823,
+    "headSha": "afde277f70ba55bb73eef4a2b61e9285157a2255",
+    "application": {
+      "tests": 864,
+      "pass": 864,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "prLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-afde277-pr-41941928823.log",
+    "pushLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-afde277-push-41941921229.log"
+  },
+  "stop": {
+    "kind": "planning-gate",
+    "phase": "planning",
+    "code": "plan-compilation"
+  }
+}

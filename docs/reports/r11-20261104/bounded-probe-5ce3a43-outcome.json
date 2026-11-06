@@ -1,0 +1,112 @@
+{
+  "schema": "cordis.r11-5ce3a43-round2-extended-ms-probe-outcome/1",
+  "recordedAt": "2026-11-05T07:22:37.713898+00:00",
+  "commit": "5ce3a43c0b480497bd52ba76bca06c65999f40e8",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-5ce3a43-bind.json",
+  "evidenceDirectory": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-5ce3a43-20261105T071122Z",
+  "passed": false,
+  "completeSixStepPass": false,
+  "paidCalls": 10,
+  "ordinals": {
+    "first": 432,
+    "last": 441
+  },
+  "cumulativeOccupied": 441,
+  "remainingCalls": 209,
+  "knownGoalEstimatedPeakUSD": 5.821876355999996,
+  "goalUnknownUsageReserveUSD": 2.359296,
+  "goalFeeGuardOccupiedUSD": 8.181172355999996,
+  "currentCohortKnownEstimatedPeakUSD": 0.17931406799999916,
+  "currentCohortUnknownUsageReserveUSD": 0,
+  "actualModel": "deepseek-flash",
+  "fatalHead": "业务修订引用的既有要求不存在",
+  "stop": {
+    "kind": "business-revision-missing-existing-requirement",
+    "phase": 1,
+    "scope": "bounded-six-step-1",
+    "code": "natural-flow-fatal",
+    "diagnostic": "业务修订引用的既有要求不存在",
+    "detail": "Round-2 extended-ms harness cleared the round-1 model-time-window stop far enough to apply phase-0, then failed during phase-1 planning/settled with native diagnostic that a business revision referenced a missing existing requirement. Review findings also open on extra-constraint/conflict around blank-tag rejection and done-state increment error-feedback. Not meter-exhaust (441/650). Not fee-guard (~$8.18 < $20). Not afde277 host-derived rebind fatal."
+  },
+  "progress": {
+    "phaseBrowserScreenshots": [
+      "phase-0-browser.png"
+    ],
+    "appliedEvents": 1,
+    "experienceCheckedEvents": 1,
+    "settledEvents": 4,
+    "phasesReached": [
+      0,
+      1
+    ],
+    "phase0Applied": true,
+    "phase1Failed": true,
+    "extendedMsHarnessUsed": true,
+    "milliseconds": 1800000,
+    "millisecondsPauseGrants": true,
+    "modelTimeWindowStopReproduced": false,
+    "afde277RebindFatalReproduced": false
+  },
+  "accountingStyle": "absent-ledger inheritance for calls 309-394; afde277 395-403, b7e9965 404-405, and 4df0cf4 406-431 present on Mac",
+  "weakerAudit": true,
+  "missingAttemptDirsNotOnMac": [
+    "chains-protocol-20261104T2104Z",
+    "chains-history-20261104T2113Z",
+    "chains-review-gate-20261104T2124Z",
+    "chains-disable-tag-review-20261104T2145Z",
+    "chains-timeout-phase3-20261104T2216Z",
+    "real/chains cloud continuation 371-381",
+    "real/performance 382-394"
+  ],
+  "notRun": [
+    "dual full six-step",
+    "pnpm accept:v1 --authorize-real-model",
+    "stock r11 runner --stage chains/performance",
+    "product scripts/lib/v1-scenario.ts edit",
+    "ordinal-442 paid continuation"
+  ],
+  "ci": {
+    "pushRunId": 41976774686,
+    "prRunId": 41976781355,
+    "headSha": "5ce3a43c0b480497bd52ba76bca06c65999f40e8",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-05T07:07:21Z",
+    "prCompletedAt": "2026-11-05T06:50:19Z",
+    "application": {
+      "tests": 866,
+      "pass": 866,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "prLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-5ce3a43-pr-41976781355.log",
+    "pushLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-5ce3a43-push-41976774686.log",
+    "note": "Both M1 checks success on tip 5ce3a43 before round-2 extended-ms paid probe. Docs-only tip after 4df0cf4; fee guard $20; nextOrdinal 432."
+  },
+  "ceiling": {
+    "priorOccupied": 431,
+    "cumulativeCeiling": 650,
+    "maxNewCalls": 219,
+    "feeGuardUSD": 20,
+    "authorizationRef": "t51u",
+    "nextOrdinalAfterProbe": 442,
+    "doNotLaunchNextPaidYet": true
+  },
+  "tipRepairsExercised": [
+    "e655fee host-derived rebind preserve",
+    "1dae482 reboundFields type narrow",
+    "round-1 4df0cf4 progress through phase-3 then time-window",
+    "round-2 probe-local v1-scenario-extended-ms 1.8e6 + milliseconds pause grants"
+  ],
+  "preserveExistingRealDirs": [
+    ".runtime/continuous-revision-study-20261104-r11/real/targeted",
+    ".runtime/continuous-revision-study-20261104-r11/real/chains",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-afde277-20261105T020119Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-b7e9965-20261105T035722Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-4df0cf4-20261105T051938Z"
+  ],
+  "honestNonPass": true,
+  "note": "Round-2 Mac paid single six-step on tip 5ce3a43 after dual CI green. Extended-ms harness avoided the round-1 stage model-time-window stop; phase-0 applied then phase-1 fatal 业务修订引用的既有要求不存在. completeSixStepPass remains 0. Prior probe evidence dirs preserved. No ordinal-442 paid launch from this docs turn; parent routing code fix via CloudAgent."
+}

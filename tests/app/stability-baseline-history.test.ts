@@ -17,6 +17,7 @@ import { capture, compilePlanDraft, readInvestigation } from "../../src/server/p
 import { verifyViaIsolatedWorkspace } from "../../src/server/workspace-acceptance.js";
 import { verifyBrowser } from "../../src/server/browser-acceptance.js";
 import { hash } from "../../src/release/storage.js";
+import { materialIdentity } from "../../src/evolution/investigation.js";
 
 test("标签升级评测的基础版本已实现去空格、拒绝空白并保留大小写", async () => {
   const directory = await mkdtemp(join(tmpdir(), "stability-tag-baseline-"));
@@ -103,12 +104,12 @@ test("升级义务从已实际验收的基础版本通过真实页面准备历�
   };
   const compile = () => {
     const context = capture(workspace);
-    const seen: { ref: string; hash: string }[] = [];
+    const seen: ReturnType<typeof materialIdentity>[] = [];
     for (const tool of ["inspect_application", "check_environment"] as const) {
       const observed = readInvestigation(tool, {}, context, seen);
       assert.ok("ref" in observed);
-      seen.push({ ref: observed.ref, hash: observed.hash });
-      for (const document of observed.documents ?? []) seen.push({ ref: document.ref, hash: document.hash });
+      seen.push(materialIdentity(observed));
+      for (const document of observed.documents ?? []) seen.push(materialIdentity(document));
     }
     return compilePlanDraft(proposal, context, seen, [{ id: "baseline-history:1", text: quote }]);
   };

@@ -37,6 +37,33 @@ export type EffectReview = {
     outcome: "supported" | "unsupported" | "deferred";
   }[];
 };
+export type SourceReview = { reviewedSources: string[]; effects: EffectReview };
+export function sourceReviewSchema(sources: Source[]) {
+  const effects = structuredClone(effectReviewSchema);
+  const source = effects.items.anyOf[1].properties.source;
+  if (!source) throw new Error("需求能力复核缺少来源地址契约");
+  Object.assign(source, {maximum:sources.length});
+  return {type:"object",additionalProperties:false,required:["reviewedSources","effects"],properties:{
+    reviewedSources:{type:"array",uniqueItems:true,minItems:sources.length,maxItems:sources.length,items:{type:"string",enum:sources.map(source=>source.id)}},
+    effects,
+  }};
+}
+export function parseSourceReview(value: unknown, sources: Source[], facts: TechnicalFact[]): SourceReview {
+  const problems = schemaProblems(value, sourceReviewSchema(sources));
+  if (problems.length) throw new Error("独立来源复核不完整：" + problems.join("；"));
+  const raw = value as {reviewedSources:string[];effects:unknown};
+  if (hash(raw.reviewedSources.slice().sort()) !== hash(sources.map(source=>source.id).sort()))
+    throw new Error("独立来源复核遗漏或重复原始修订");
+  return {reviewedSources:[...raw.reviewedSources],effects:parseEffectReview(raw.effects,sources,facts)};
+}
+export function sourceReviewFailure(review: SourceReview | undefined, sources: Source[], facts: TechnicalFact[]): string | undefined {
+  try {
+    if (!review || hash(review) !== hash(parseSourceReview({reviewedSources:review.reviewedSources,effects:review.effects.intents},sources,facts)))
+      return "独立需求来源复核、能力事实或来源修订已变化，请重新规划";
+    const blockers = effectBlockers(review.effects);
+    return blockers.length ? blockers.join("；") : undefined;
+  } catch { return "独立需求来源复核缺失或无效，请重新规划"; }
+}
 const effect = { type: "string", enum: hostEffectIds };
 export const effectReviewSchema = {
   type: "array",

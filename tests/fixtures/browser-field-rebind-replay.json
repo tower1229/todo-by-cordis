@@ -1,0 +1,378 @@
+{
+  "provenance": {
+    "kind": "model-stub-native-failure-projection",
+    "source": "Zero-paid study v3 on copied previously paid tag+counter composition; no real-model success claim",
+    "symptom": "Correct lowercase candidate rejected by inherited old field browser cases after scope and history rebinding"
+  },
+  "previous": {
+    "requirements": [
+      {
+        "id": "requirement-5c9536b98564557552209b86",
+        "description": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。保留已有标签及其他行为。",
+        "sourceQuote": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。保留已有标签及其他行为。",
+        "sourceRevision": "8e17eeed-bb72-4c81-9c37-86928a5b4963:1",
+        "type": "behavior",
+        "obligations": [
+          {
+            "version": 1,
+            "id": "field-58136918eca279064799cbf2",
+            "kind": "field",
+            "member": "tags",
+            "contribution": "tags-detail",
+            "field": "tags",
+            "initialOrigin": "host",
+            "initial": {
+              "kind": "visible",
+              "value": "（空）"
+            },
+            "scenarios": [
+              {
+                "id": "049388473614bc9a",
+                "steps": [
+                  {
+                    "kind": "action",
+                    "action": "setTags",
+                    "input": {
+                      "tags": "  Alpha Project  "
+                    },
+                    "member": "tags"
+                  }
+                ],
+                "value": "Alpha Project"
+              }
+            ],
+            "derivation": {
+              "checker": "workspace/1"
+            }
+          }
+        ],
+        "checks": []
+      },
+      {
+        "id": "requirement-338ce97bf6a40cbbdfcab9fc",
+        "description": "请增加标签插件：给任务设置一个文本标签，保存时去掉首尾空格，拒绝空白标签，保留大小写；其他行为不变。",
+        "sourceQuote": "请增加标签插件：给任务设置一个文本标签，保存时去掉首尾空格，拒绝空白标签，保留大小写；其他行为不变。",
+        "sourceRevision": "b64914da-c5dd-409c-bbc5-6e7e860fe7d8:1",
+        "type": "behavior",
+        "obligations": [
+          {
+            "version": 1,
+            "id": "field-24e83f926f360794a13df041",
+            "kind": "field",
+            "member": "tags",
+            "field": "tags",
+            "initialOrigin": "host",
+            "initial": {
+              "kind": "visible",
+              "value": "（空）"
+            },
+            "scenarios": [
+              {
+                "id": "056488c3a7a59501",
+                "steps": [
+                  {
+                    "kind": "action",
+                    "action": "setTags",
+                    "input": {
+                      "tags": "  Alpha Project  "
+                    },
+                    "member": "tags"
+                  }
+                ],
+                "value": "Alpha Project"
+              },
+              {
+                "id": "6b2b98d8094c6c05",
+                "steps": [
+                  {
+                    "kind": "action",
+                    "action": "setTags",
+                    "input": {
+                      "tags": " 家庭 "
+                    },
+                    "member": "tags"
+                  }
+                ],
+                "value": "家庭"
+              }
+            ]
+          }
+        ],
+        "checks": []
+      }
+    ],
+    "browserCases": [
+      {
+        "id": "field-58136918eca279064799cbf2-after-049388473614bc9a-existing",
+        "task": "existing",
+        "steps": [
+          {
+            "kind": "action",
+            "action": "setTags",
+            "input": {
+              "tags": "  Alpha Project  "
+            },
+            "member": "tags"
+          },
+          {
+            "kind": "field",
+            "member": "tags",
+            "contribution": "tags-detail",
+            "field": "tags",
+            "value": "Alpha Project"
+          },
+          {
+            "kind": "refresh"
+          },
+          {
+            "kind": "field",
+            "member": "tags",
+            "contribution": "tags-detail",
+            "field": "tags",
+            "value": "Alpha Project"
+          },
+          {
+            "kind": "restart"
+          },
+          {
+            "kind": "field",
+            "member": "tags",
+            "contribution": "tags-detail",
+            "field": "tags",
+            "value": "Alpha Project"
+          }
+        ],
+        "obligationId": "field-58136918eca279064799cbf2",
+        "classification": "frozen-business"
+      },
+      {
+        "id": "field-24e83f926f360794a13df041-after-056488c3a7a59501-existing",
+        "task": "existing",
+        "steps": [
+          {
+            "kind": "action",
+            "action": "setTags",
+            "input": {
+              "tags": "  Alpha Project  "
+            },
+            "member": "tags"
+          },
+          {
+            "kind": "field",
+            "member": "tags",
+            "field": "tags",
+            "value": "Alpha Project"
+          },
+          {
+            "kind": "refresh"
+          },
+          {
+            "kind": "field",
+            "member": "tags",
+            "field": "tags",
+            "value": "Alpha Project"
+          },
+          {
+            "kind": "restart"
+          },
+          {
+            "kind": "field",
+            "member": "tags",
+            "field": "tags",
+            "value": "Alpha Project"
+          }
+        ],
+        "obligationId": "field-24e83f926f360794a13df041",
+        "classification": "frozen-business"
+      }
+    ]
+  },
+  "next": {
+    "requirements": [
+      {
+        "id": "requirement-5c9536b98564557552209b86",
+        "description": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。保留已有标签及其他行为。",
+        "sourceQuote": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。保留已有标签及其他行为。",
+        "sourceRevision": "8e17eeed-bb72-4c81-9c37-86928a5b4963:1",
+        "type": "behavior",
+        "obligations": [
+          {
+            "version": 1,
+            "id": "field-24e83f926f360794a13df041",
+            "kind": "field",
+            "member": "tags",
+            "contribution": "tags-detail",
+            "field": "tags",
+            "initialOrigin": "host",
+            "initial": {
+              "kind": "visible",
+              "value": "（空）"
+            },
+            "scenarios": [
+              {
+                "id": "2a6769cfea2552e1",
+                "steps": [
+                  {
+                    "kind": "action",
+                    "action": "setTags",
+                    "input": {
+                      "tags": "  Alpha Project  "
+                    },
+                    "member": "tags"
+                  }
+                ],
+                "value": "alpha project"
+              }
+            ],
+            "history": {
+              "baseVersion": "424a85ff9cd7cd164347ce896dc210fd891135e5cbc09efdbc5995f532c38fcd",
+              "sourceHash": "b6c5e7d7f1b449462e6b13a9595af9b4e61540e0ec3089538f80386c3c26862d",
+              "expected": {
+                "state": "open",
+                "fields": {
+                  "tags": "Alpha Project"
+                }
+              },
+              "actions": [
+                {
+                  "kind": "action",
+                  "member": "tags",
+                  "action": "setTags",
+                  "input": {
+                    "tags": "  Alpha Project  "
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "checks": []
+      },
+      {
+        "id": "requirement-338ce97bf6a40cbbdfcab9fc",
+        "description": "请升级标签插件：保存标签时统一为小写，仍去掉首尾空格、拒绝空白。保留计数和其他行为。",
+        "sourceQuote": "请升级标签插件：保存标签时统一为小写，仍去掉首尾空格、拒绝空白。保留计数和其他行为。",
+        "sourceRevision": "178cd01f-29f2-4580-85f6-5c0c3d579a68:1",
+        "type": "behavior",
+        "obligations": [
+          {
+            "version": 1,
+            "id": "field-24e83f926f360794a13df041",
+            "kind": "field",
+            "member": "tags",
+            "contribution": "tags-detail",
+            "field": "tags",
+            "initialOrigin": "host",
+            "initial": {
+              "kind": "visible",
+              "value": "（空）"
+            },
+            "scenarios": [
+              {
+                "id": "2a6769cfea2552e1",
+                "steps": [
+                  {
+                    "kind": "action",
+                    "action": "setTags",
+                    "input": {
+                      "tags": "  Alpha Project  "
+                    },
+                    "member": "tags"
+                  }
+                ],
+                "value": "alpha project"
+              }
+            ],
+            "history": {
+              "baseVersion": "424a85ff9cd7cd164347ce896dc210fd891135e5cbc09efdbc5995f532c38fcd",
+              "sourceHash": "b6c5e7d7f1b449462e6b13a9595af9b4e61540e0ec3089538f80386c3c26862d",
+              "expected": {
+                "state": "open",
+                "fields": {
+                  "tags": "Alpha Project"
+                }
+              },
+              "actions": [
+                {
+                  "kind": "action",
+                  "member": "tags",
+                  "action": "setTags",
+                  "input": {
+                    "tags": "  Alpha Project  "
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "checks": []
+      }
+    ],
+    "browserCases": [
+      {
+        "id": "field-24e83f926f360794a13df041-after-2a6769cfea2552e1-existing",
+        "task": "existing",
+        "steps": [
+          {
+            "kind": "action",
+            "action": "setTags",
+            "input": {
+              "tags": "  Alpha Project  "
+            },
+            "member": "tags"
+          },
+          {
+            "kind": "field",
+            "member": "tags",
+            "contribution": "tags-detail",
+            "field": "tags",
+            "value": "alpha project"
+          },
+          {
+            "kind": "refresh"
+          },
+          {
+            "kind": "field",
+            "member": "tags",
+            "contribution": "tags-detail",
+            "field": "tags",
+            "value": "alpha project"
+          },
+          {
+            "kind": "restart"
+          },
+          {
+            "kind": "field",
+            "member": "tags",
+            "contribution": "tags-detail",
+            "field": "tags",
+            "value": "alpha project"
+          }
+        ],
+        "prepare": {
+          "actions": [
+            {
+              "kind": "action",
+              "member": "tags",
+              "action": "setTags",
+              "input": {
+                "tags": "  Alpha Project  "
+              }
+            }
+          ],
+          "expected": {
+            "state": "open",
+            "fields": {
+              "tags": "Alpha Project"
+            }
+          },
+          "sourceHash": "b6c5e7d7f1b449462e6b13a9595af9b4e61540e0ec3089538f80386c3c26862d",
+          "baseVersion": "424a85ff9cd7cd164347ce896dc210fd891135e5cbc09efdbc5995f532c38fcd"
+        },
+        "obligationId": "field-24e83f926f360794a13df041",
+        "classification": "frozen-business"
+      }
+    ]
+  },
+  "reason": "用户明确要求之后保存统一小写，历史值保持原样"
+}

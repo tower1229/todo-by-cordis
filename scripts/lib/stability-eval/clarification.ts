@@ -7,11 +7,73 @@ import {
 import type { StabilityScenario } from "./manifest.js";
 import { hash } from "../../../src/release/storage.js";
 import { sourceItems, admissionChoiceProof } from "../../../src/evolution/source-items.js";
+import { semanticChoiceTargets, semanticChoiceProof, technicalFacts } from "../../../src/evolution/technical-facts.js";
+import { bindFieldReference, fieldTargets } from "../../../src/evolution/field-identity.js";
+import { effectReviewResolved, sourceReviewFailure } from "../../../src/evolution/capability-admission.js";
+import { clarificationBlockers } from "../../../src/evolution/clarification-review.js";
+import { reviewDefinitionHash } from "../../../src/evolution/review.js";
+import { specificationFailure } from "../../../src/evolution/specification.js";
 
 type AwaitingRun = Pick<
   NonNullable<AssistantSnapshot["run"]>,
   "id" | "status" | "requestAdmissions" | "clarificationReviews"
-> & { question?: string };
+> & Partial<Pick<NonNullable<AssistantSnapshot["run"]>, "plans" | "revisions" | "reviewLedger">>
+  & { question?: string };
+
+/** Replay the existing normal-plan choice proof; a quoted free question is insufficient. */
+function plannedClarificationAnswer(scenario: StabilityScenario, run: AwaitingRun) {
+  const expected = scenario.clarification!;
+  const quote = expected.sourceQuote;
+  if (!quote?.trim()) throw new Error("冻结澄清缺少原始来源条目");
+  if (!run.plans?.length || !run.clarificationReviews?.some(r => r.choice))
+    throw new Error("冻结澄清缺少有效的来源预检或结构化规划选择");
+  const choice = expected.choice;
+  // Workflow text rules describe complete's action input, never task presence or another action.
+  if (choice?.kind !== "field-required" || choice.scope !== "action-input" || choice.action !== "complete")
+    throw new Error("结构化未决项没有绑定冻结答案的动作输入作用域");
+  const matches = new Map<string, {
+    sourceRevision:string; sourceQuote:string; sourceItemId:string;
+    auditKey:string; choiceId:string; choiceHash:string;
+  }>();
+  for (const plan of run.plans) {
+    if (specificationFailure(plan)) continue;
+    const sources = (run.revisions ?? []).filter(r => r.revision <= plan.requestRevision)
+      .map(r => ({id:`${run.id}:${r.revision}`,text:r.text}));
+    const source = sources.find(s => s.id === `${run.id}:1` && s.text === scenario.request);
+    const items = sourceItems(sources).filter(item => item.sourceRevision === source?.id && item.text === quote);
+    if (!source || items.length !== 1) continue;
+    const facts = technicalFacts(plan);
+    const catalog = fieldTargets(facts);
+    let field: ReturnType<typeof bindFieldReference>;
+    try { field = bindFieldReference(choice.field,catalog); } catch { continue; }
+    const rules = plan.workflowRules.filter(rule => choice.field.kind === "new"
+      ? rule.label === choice.field.name
+      : field.target?.member === "workflow" && rule.key === field.field);
+    if (rules.length !== 1) continue;
+    for (const target of semanticChoiceTargets(plan).filter(t => t.aspect === "required" && t.subject === `workflow:${rules[0].key}`)) {
+      const proof = semanticChoiceProof(plan,target.id).proof;
+      const key = questionReviewKey(target.question,sources,facts);
+      const audits = run.clarificationReviews.filter(r =>
+        r.question === run.question && r.question === target.question && r.key === key &&
+        !r.admissionChoice && hash(r.choice) === hash(proof) &&
+        r.decision.kind === "business-ambiguity" &&
+        r.decision.sourceRevision === source.id && r.decision.sourceQuote === quote &&
+        effectReviewResolved(r.decision.effects,sources,facts) && !clarificationBlockers(r.decision).length &&
+        plan.questionAdjudications?.some(saved => hash(saved) === hash(r)));
+      const reviewed = run.reviewLedger?.attempts.some(attempt =>
+        attempt.revision === plan.requestRevision && attempt.definitionHash === reviewDefinitionHash(plan) &&
+        !sourceReviewFailure(attempt.review.sourceReview,sources,facts) &&
+        attempt.review.unresolvedChoices?.some(c => c.targetId === target.id &&
+          c.sourceRevision === source.id && c.sourceQuote === quote));
+      if (audits.length !== 1 || !reviewed) continue;
+      const binding = {sourceRevision:source.id,sourceQuote:quote,
+        sourceItemId:items[0].id,auditKey:key,choiceId:proof.id,choiceHash:proof.hash};
+      matches.set(hash(binding),binding);
+    }
+  }
+  if (matches.size !== 1) throw new Error("冻结澄清缺少唯一的结构化选择、原始来源或独立审查证明");
+  return {answer:expected.answer,binding:[...matches.values()][0]};
+}
 
 /** Answers only the predeclared unknown source item; wording is not its identity. */
 export function frozenClarificationAnswer(
@@ -36,7 +98,7 @@ export function frozenClarificationAnswer(
           (s) => s.id === `${run.id}:1` && s.text === scenario.request,
         ),
     );
-  if (!admission) throw new Error("冻结澄清缺少有效的来源预检");
+  if (!admission) return plannedClarificationAnswer(scenario,run);
   const reviews = run.clarificationReviews ?? [];
   const state = admissionQuestionState(
     admission,

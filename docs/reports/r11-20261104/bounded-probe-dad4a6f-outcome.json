@@ -1,0 +1,109 @@
+{
+  "schema": "cordis.r11-dad4a6f-round5-extended-ms-probe-outcome/1",
+  "recordedAt": "2026-11-05T12:20:06.496064+00:00",
+  "commit": "dad4a6f6a9c12cb17a76036a87d915e29abca7c5",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-dad4a6f-bind.json",
+  "evidenceDirectory": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-dad4a6f-20261105T120841Z",
+  "passed": false,
+  "completeSixStepPass": false,
+  "paidCalls": 11,
+  "ordinals": {
+    "first": 468,
+    "last": 478
+  },
+  "cumulativeOccupied": 478,
+  "remainingCalls": 172,
+  "knownGoalEstimatedPeakUSD": 6.634123331999997,
+  "goalUnknownUsageReserveUSD": 2.359296,
+  "goalFeeGuardOccupiedUSD": 8.993419331999997,
+  "currentCohortKnownEstimatedPeakUSD": 0.232642428000001,
+  "currentCohortUnknownUsageReserveUSD": 0,
+  "actualModel": "deepseek-flash",
+  "fatalHead": "同一字段验收义务发生冲突，初始状态或相同操作不能要求不同结果",
+  "stop": {
+    "kind": "planning-gate",
+    "phase": 2,
+    "planningPhase": "planning",
+    "scope": "bounded-six-step-1",
+    "code": "plan-compilation",
+    "blockReason": "other",
+    "diagnostic": "同一字段验收义务发生冲突，初始状态或相同操作不能要求不同结果",
+    "detail": "Round-5 extended-ms after dad4a6f browserCases content-hash dedupe: phase-0/1 applied; phase-2 planning blocked on same-field acceptance-obligation conflict (initial state or identical operation cannot require different results). Round-4 browserCases 34>30 did not reappear. Round-3 tag:tag history non-uniqueness did not reappear. Round-2 missing-existing-requirement fatal did not reappear. Not meter-exhaust (478/650). Not fee-guard (~$8.99 < $20). Not model-time-window."
+  },
+  "progress": {
+    "phaseBrowserScreenshots": [
+      "phase-0-browser.png",
+      "phase-1-browser.png"
+    ],
+    "appliedEvents": 2,
+    "experienceCheckedEvents": 2,
+    "settledEvents": 8,
+    "phasesReached": [
+      0,
+      1,
+      2
+    ],
+    "phase0Applied": true,
+    "phase1Applied": true,
+    "phase2Applied": false,
+    "phase2Failed": true,
+    "extendedMsHarnessUsed": true,
+    "millisecondsAuthorized": 1800000,
+    "browserCasesCapExceededReappeared": false,
+    "tagTagHistoryNonUniquenessReappeared": false,
+    "missingExistingRequirementFatalReappeared": false
+  },
+  "ci": {
+    "pushRunId": 42014438554,
+    "prRunId": 42014446334,
+    "headSha": "dad4a6f6a9c12cb17a76036a87d915e29abca7c5",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-05T12:06:49Z",
+    "prCompletedAt": "2026-11-05T12:07:38Z",
+    "application": {
+      "tests": 866,
+      "pass": 866,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "prLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-dad4a6f-pr-42014446334.log",
+    "pushLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-dad4a6f-push-42014438554.log",
+    "note": "Both M1 checks success on tip dad4a6f before round-5 extended-ms paid probe. Fee guard $20; nextOrdinal 468."
+  },
+  "ceiling": {
+    "priorOccupied": 467,
+    "cumulativeCeiling": 650,
+    "maxNewCalls": 183,
+    "feeGuardUSD": 20,
+    "authorizationRef": "t51u",
+    "nextOrdinalAfterProbe": 479,
+    "doNotLaunchNextPaidYet": true
+  },
+  "tipRepairsExercised": [
+    "e655fee host-derived rebind preserve",
+    "1dae482 reboundFields type narrow",
+    "round-1 4df0cf4 progress through phase-3 then time-window",
+    "round-2 5ce3a43 extended-ms then missing-requirement fatal",
+    "6bacd68 business-revision missing-target degrade to new requirement",
+    "round-3 6bacd68 phase-0/1 apply then tag:tag history non-uniqueness",
+    "8b18866 historicalPreparation shortest-path degrade on multi-history",
+    "round-4 8b18866 phase-0/1/2 apply then browserCases 34>30",
+    "dad4a6f compileReferences content-hash dedupe prefer inherited frozen case IDs"
+  ],
+  "preserveExistingRealDirs": [
+    ".runtime/continuous-revision-study-20261104-r11/real/targeted",
+    ".runtime/continuous-revision-study-20261104-r11/real/chains",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-afde277-20261105T020119Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-b7e9965-20261105T035722Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-4df0cf4-20261105T051938Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-5ce3a43-20261105T071122Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-6bacd68-20261105T084029Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-8b18866-20261105T101315Z",
+    ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-dad4a6f-20261105T120841Z"
+  ],
+  "honestNonPass": true,
+  "note": "Round-5 Mac paid single six-step on tip dad4a6f after dual CI green. Extended-ms harness; dad4a6f content-hash browserCases dedupe cleared round-4 34>30 through phase-1 apply. Phase-2 planning-gate same-field acceptance-obligation conflict. completeSixStepPass remains 0. Prior probe evidence dirs preserved. No ordinal-479 paid launch from this docs turn."
+}

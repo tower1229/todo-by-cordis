@@ -1,0 +1,201 @@
+{
+  "draft": {
+    "requirements": [
+      {
+        "id": "requirement-338ce97bf6a40cbbdfcab9fc",
+        "description": "请升级标签插件：保存标签时统一为小写，仍去掉首尾空格、拒绝空白。保留计数和其他行为。",
+        "source": 3,
+        "sourceQuote": "请升级标签插件：保存标签时统一为小写，仍去掉首尾空格、拒绝空白。保留计数和其他行为。",
+        "type": "behavior",
+        "checks": [
+          {
+            "kind": "member",
+            "index": 1
+          }
+        ],
+        "obligations": [
+          {
+            "kind": "field",
+            "field": "tags",
+            "initial": {
+              "kind": "baseline"
+            },
+            "scenarios": [
+              {
+                "steps": [
+                  {
+                    "kind": "action",
+                    "action": "setTags",
+                    "input": {
+                      "tags": "  Alpha Project  "
+                    }
+                  }
+                ],
+                "value": "alpha project"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "memberCases": [
+      {
+        "action": "setTags",
+        "expected": {
+          "fields": {
+            "tags": "alpha project"
+          },
+          "kind": "commit",
+          "state": "open"
+        },
+        "fields": {},
+        "input": {
+          "tags": "  Alpha Project  "
+        },
+        "name": "设置标签去除首尾空格并保留大小写",
+        "state": "open",
+        "member": "tags"
+      }
+    ]
+  },
+  "sources": [
+    {
+      "id": "b64914da-c5dd-409c-bbc5-6e7e860fe7d8:1",
+      "text": "请增加标签插件：给任务设置一个文本标签，保存时去掉首尾空格，拒绝空白标签，保留大小写；其他行为不变。"
+    },
+    {
+      "id": "8e17eeed-bb72-4c81-9c37-86928a5b4963:1",
+      "text": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。保留已有标签及其他行为。"
+    },
+    {
+      "id": "831c0d36-fa02-497f-8440-e4a3ffe548ab:1",
+      "text": "请升级标签插件：保存标签时统一为小写，仍去掉首尾空格、拒绝空白。保留计数和其他行为。"
+    }
+  ],
+  "workflowCases": [],
+  "workflow": {
+    "id": "default",
+    "actions": []
+  },
+  "inherited": {
+    "requirements": [
+      {
+        "id": "requirement-5c9536b98564557552209b86",
+        "description": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。保留已有标签及其他行为。",
+        "sourceRevision": "8e17eeed-bb72-4c81-9c37-86928a5b4963:1",
+        "sourceQuote": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。保留已有标签及其他行为。",
+        "type": "behavior",
+        "checks": [
+          {
+            "checker": "workspace/1",
+            "caseId": "member:tags:设置标签去除首尾空格并保留大小写"
+          }
+        ],
+        "obligations": [
+          {
+            "version": 1,
+            "id": "field-58136918eca279064799cbf2",
+            "kind": "field",
+            "member": "tags",
+            "contribution": "tags-detail",
+            "field": "tags",
+            "initialOrigin": "host",
+            "initial": {
+              "kind": "visible",
+              "value": "（空）"
+            },
+            "scenarios": [
+              {
+                "id": "049388473614bc9a",
+                "steps": [
+                  {
+                    "kind": "action",
+                    "action": "setTags",
+                    "input": {
+                      "tags": "  Alpha Project  "
+                    },
+                    "member": "tags"
+                  }
+                ],
+                "value": "Alpha Project"
+              }
+            ],
+            "derivation": {
+              "checker": "workspace/1"
+            }
+          }
+        ]
+      },
+      {
+        "id": "requirement-338ce97bf6a40cbbdfcab9fc",
+        "description": "请增加标签插件：给任务设置一个文本标签，保存时去掉首尾空格，拒绝空白标签，保留大小写；其他行为不变。",
+        "sourceRevision": "b64914da-c5dd-409c-bbc5-6e7e860fe7d8:1",
+        "sourceQuote": "请增加标签插件：给任务设置一个文本标签，保存时去掉首尾空格，拒绝空白标签，保留大小写；其他行为不变。",
+        "type": "behavior",
+        "checks": [],
+        "obligations": [
+          {
+            "version": 1,
+            "id": "obligation-c43856590ce9bc624525a5f9",
+            "kind": "backend",
+            "scope": "checker-suite",
+            "checks": [
+              {
+                "checker": "workflow/1",
+                "caseId": "workflow/1:1"
+              },
+              {
+                "checker": "workflow/1",
+                "caseId": "workflow/1:2"
+              },
+              {
+                "checker": "workflow/1",
+                "caseId": "workflow/1:3"
+              },
+              {
+                "checker": "workspace/1",
+                "caseId": "member:tags:设置标签去除首尾空格并保留大小写"
+              },
+              {
+                "checker": "workspace/1",
+                "caseId": "member:tags:拒绝空白标签"
+              },
+              {
+                "checker": "workspace/1",
+                "caseId": "member:tags:设置标签时保留既有历史字段"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "uiContributions": [
+      {
+        "id": "tags-detail",
+        "slot": "task.detail",
+        "title": "标签",
+        "actions": [
+          {
+            "commandId": "setTags",
+            "label": "编辑标签"
+          }
+        ],
+        "fields": [
+          {
+            "key": "tags",
+            "label": "标签"
+          }
+        ],
+        "providerId": "tags",
+        "order": 0
+      }
+    ]
+  },
+  "_provenance": {
+    "kind": "minimized real-proposal compiler projection; not an accepted plan or real success",
+    "sourceCommit": "529b008b66335fb93f94ac45e65971a5bbac7970",
+    "originalCallOrdinal": 189,
+    "paidCallsForProjection": 0,
+    "retainedCheck": "Original first member-case mapping retained to verify canonical projection equivalence"
+  }
+}

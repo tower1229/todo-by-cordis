@@ -525,7 +525,7 @@ test("经公开规划入口：同触发冲突可在原预算修正，对象键�
       });
       const ready = await settle(e);
       assert.equal(ready.status, "ready", JSON.stringify(ready));
-      assert.equal(ready.budget?.callsUsed, 4);
+      assert.equal(ready.budget?.callsUsed, 3);
       assert.match(JSON.stringify(planning.requests), /业务案例冲突/);
       assert.equal(w.composition().revision, 2);
     });

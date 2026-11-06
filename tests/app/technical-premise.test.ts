@@ -131,7 +131,7 @@ test("生产规划链路：来源未要求的相反期望不再伪装成技术�
   const { w, e, requests } = await setup(t, () => verdict("not-requested"));
   const run = await settle(e);
   assert.equal(run.status, "ready", JSON.stringify(run));
-  assertBudget(run, 4);
+  assertBudget(run, 3);
   assert.equal(auditCalls(requests).length, 1);
   assert.deepEqual(auditCalls(requests)[0].history, []);
   assert.equal(auditCalls(requests)[0].tools, undefined);
@@ -170,7 +170,7 @@ test("相同来源与事实命题的复核随账本复用，不因另一项验�
   });
   const run = await settle(e);
   assert.equal(run.status, "ready", JSON.stringify(run));
-  assertBudget(run, 6);
+  assertBudget(run, 5);
   assert.equal(auditCalls(requests).length, 1);
   assert.equal(run.reviewLedger?.attempts.length, 2);
   assert.deepEqual(
@@ -190,7 +190,7 @@ test("用户明确要求与宿主冲突，或独立来源仍不确定，均阻�
       });
       const run = await settle(e);
       assert.equal(run.status, "blocked", JSON.stringify(run));
-      assertBudget(run, 4);
+      assertBudget(run, 3);
       assert.equal(run.stop?.kind, "planning-gate");
       assert.equal(auditCalls(requests).length, 1);
       assert.equal(
@@ -205,7 +205,7 @@ test("语义前提审查的传输、输出截断和无效结构分别停止，�
   const failures = [
     {
       name: "transport",
-      calls: 4,
+      calls: 3,
       attempts: 1,
       kind: "transport",
       audit: () => {
@@ -220,14 +220,14 @@ test("语义前提审查的传输、输出截断和无效结构分别停止，�
     },
     {
       name: "output-budget",
-      calls: 4,
+      calls: 3,
       attempts: 1,
       kind: "output-budget",
       audit: () => ({ ...response({}), transport: { finishReason: "length" } }),
     },
     {
       name: "protocol",
-      calls: 5,
+      calls: 4,
       attempts: 2,
       kind: "protocol",
       audit: () => response({}),
@@ -260,12 +260,12 @@ test("语义前提审查的传输、输出截断和无效结构分别停止，�
 
 test("复核前预留不足时不调用模型、不签发可执行计划，沿用原预算调度（模型桩）", async (t) => {
   const { e, requests } = await setup(t, () => verdict("not-requested"), {
-    calls: 6,
+    calls: 5,
   });
   const run = await settle(e);
   assert.equal(run.status, "awaiting-budget", JSON.stringify(run));
   assert.equal(run.stop?.kind, "budget");
-  assert.equal(run.budget?.callsUsed, 3);
+  assert.equal(run.budget?.callsUsed, 2);
   assert.equal(run.budget?.callsRemaining, 3);
   assert.equal(auditCalls(requests).length, 0);
 });
@@ -294,7 +294,7 @@ test("取消独立来源审查会终止同一调用并保留失败回执，不�
   });
   const stopped = await settle(e);
   assert.equal(stopped.status, "cancelled");
-  assertBudget(stopped, 4);
+  assertBudget(stopped, 3);
   assert.equal(auditCalls(requests).length, 1);
   const receipt = JSON.parse(
     String(

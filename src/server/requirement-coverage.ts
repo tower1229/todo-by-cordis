@@ -3,6 +3,7 @@ import { defaultReviewSchema, parseDefaultReviews, defaultAuthorizes } from "../
 import { designDecisionSchema, parseDesignDecisions, designAuthorized, authorityFailure } from "../evolution/contract-authority.js";
 import { clarificationBlockers } from "../evolution/clarification-review.js";
 import {availabilityFailure,isInheritedAvailability} from "../evolution/action-availability.js";
+import {sourceReviewSchema,parseSourceReview,sourceReviewFailure} from "../evolution/capability-admission.js";
 import {
   errorReviewSchema,
   errorReviewTargets,
@@ -24,7 +25,7 @@ import { browserSteps } from "../shared/browser-contract.js";
 import { specificationFailure } from "../evolution/specification.js";
 import { obligationFailure } from "../evolution/acceptance-obligations.js";
 import { scheduledPreparationFailures } from "../evolution/obligation-derivation.js";
-import { fieldCaseObligation } from "../evolution/historical-preparation.js";
+import { fieldCaseObligation, PlanStructureBlocked } from "../evolution/historical-preparation.js";
 import { schedulePolicyChecks } from "../shared/schedule-policy.js";
 import {
   businessChoices,
@@ -88,6 +89,10 @@ export function parseRequirements(value: unknown): Requirement[] {
   });
 }
 export function parseBrowserCases(value: unknown): BrowserCase[] {
+  if (Array.isArray(value) && value.length > 30)
+    throw new PlanStructureBlocked(
+      `浏览器验收案例超出上限：${value.length} 条，最多 30 条`,
+    );
   const cases = array(value ?? [], 30).map((item) => {
     const c = record(item);
     if (
@@ -594,11 +599,13 @@ export function boundReviewSchema(
     required: [
       ...schema.required,
       "fieldDecisions",
+      "sourceReview",
       ...(plan.defaults?.length ? ["defaultReviews"] : []),
       ...(errorReviewTargets(plan).length ? ["errorDecisions"] : []),
     ],
     properties: {
       ...schema.properties,
+      sourceReview: sourceReviewSchema(sources),
       defaultReviews: defaultReviewSchema(plan.defaults ?? [], choiceIds),
       designDecisions: designDecisionSchema(plan, sources),
       unresolvedChoices: {
@@ -870,6 +877,7 @@ export function parseReview(
   const fields = parseFieldDecisions(v.fieldDecisions, plan, sources);
   const errors = parseErrorDecisions(v.errorDecisions, plan, sources);
   return {
+    sourceReview: parseSourceReview(v.sourceReview, sources, technicalFacts(plan)),
     reviewedIds,
     unresolvedChoices,
     ...(choiceAdjudications.length?{choiceAdjudications}:{}),
@@ -911,6 +919,7 @@ function gateVersion() {
       "src/evolution/investigation.ts",
       "src/server/planning.ts",
       "src/server/planning-view.ts",
+      "src/server/host-interface.ts",
       "src/evolution/budget.ts",
       "src/evolution/interaction.ts",
       "src/shared/evolution-interaction.ts",
@@ -925,6 +934,7 @@ function gateVersion() {
       "src/server/capability-checkers.ts",
       "src/evolution/clarification-review.ts",
       "src/evolution/request-admission.ts",
+      "src/evolution/capability-admission.ts",
       "src/evolution/model-protocol.ts",
     ].map((path) => ({ path, content: readFileSync(resolve(path), "utf8") })),
   );
@@ -966,7 +976,9 @@ export function gateFailure(
     const decision=g.review.errorDecisions?.find(d=>d.obligationId===o.id);
     return !decision || decision.feedback!==o.resolution || decision.feedback==="required" && decision.text!==o.text;
   }))) return "页面反馈义务与独立来源裁决不一致，请重新规划";
-  if (plan.requestAdmission) {
+  const sourceFailure = sourceReviewFailure(g.review.sourceReview, g.sources, technicalFacts(plan));
+  if (sourceFailure) return sourceFailure;
+  {
     try {
       if (
         !plan.semanticState ||

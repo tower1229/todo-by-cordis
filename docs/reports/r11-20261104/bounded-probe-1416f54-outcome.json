@@ -1,0 +1,47 @@
+{
+  "probe": "bounded-probe-1416f54-20261105T135408Z",
+  "commit": "1416f54",
+  "round": 6,
+  "phase": "phase-0 (tags)",
+  "stopReason": "planning-gate / plan-compilation",
+  "stopPhase": "acceptance-obligation-conflict",
+  "diagnostic": "同一字段验收义务发生冲突，初始状态或相同操作不能要求不同结果",
+  "evidence": ".runtime/.../real/bounded-probe-1416f54-20261105T135408Z",
+  "calls": "479-498",
+  "fee": "$9.51/$20",
+  "symptom": {
+    "obligationId": "obligation-5ffcbba71ad194ff8c8152b0",
+    "requirementId": "requirement-013651",
+    "conflict": "Frozen candidate-contract + workflow/1:1 + requirement-013651 / workflow-input matrix require missing/blank `review` → input-required, but system-protected case expects workflow `complete` with NO input, then assert counter increment is invisible (baseline: complete commits without input)."
+  },
+  "rootCause": {
+    "location": "src/evolution/references.ts:640-643",
+    "description": "When a workflow is upgraded from no fields (e.g., 'default') to having required fields (e.g., 'review'), the new workflow-input obligation generates browser cases expecting complete WITH input. These conflict with inherited system-protection cases (from old assertions) that expect complete WITHOUT input from the previous workflow contract.",
+    "mechanism": "System-protection cases (classification='system-protection') are inherited via inheritBrowserCases. New workflow-input obligations (classification='frozen-business') generate cases with IDs that can match old cases but with different content (input requirements). The conflict detection throws instead of resolving the supersession."
+  },
+  "fix": {
+    "commit": "TBD",
+    "files": [
+      "src/evolution/references.ts",
+      "tests/app/workflow-input-system-protection-conflict.test.ts"
+    ],
+    "logic": "In references.ts line 640-660, when a browser case ID conflict is detected (existing.id === c.id but hash differs), check if the new case is from workflow-input and the existing case is system-protection. If so, replace the old case with the new one (browsers[index] = c) instead of throwing. This allows workflow-input matrix to supersede old system-protection assertions when the workflow contract evolves.",
+    "rationale": "workflow-input obligations represent the current frozen workflow field contract and must take precedence over historical system-protection assertions that were valid under the old contract but are now obsolete."
+  },
+  "verification": {
+    "regressionTests": 2,
+    "testFile": "tests/app/workflow-input-system-protection-conflict.test.ts",
+    "coreTests": "48/48 passed (same-field-obligation-conflict, inherited-field-projection, field-reference-rebind, acceptance-obligations, workflow-input-system-protection-conflict)",
+    "typecheck": "pass",
+    "build": "pass"
+  },
+  "priorFixesIntact": [
+    "5476925: same-field obligation conflict (canPreserve vs regenerated same ID)",
+    "dad4a6f: browserCases content-hash dedupe",
+    "8b18866: tag:tag shortest-path history",
+    "6bacd68: missing-existing-requirement degrade",
+    "e655fee: host-derived rebind preserve + 1dae482 type narrow"
+  ],
+  "status": "fixed",
+  "nextStep": "Commit fix, push, update PR #52, rerun Mac paid extended-ms probe on new commit to verify phase-0 passes"
+}

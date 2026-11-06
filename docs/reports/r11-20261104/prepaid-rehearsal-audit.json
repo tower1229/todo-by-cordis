@@ -1,0 +1,63 @@
+{
+  "commit": "5bb228defb1b01f04e79130f7f08412b089b3309",
+  "envelope": "v1",
+  "summarySha256": "aad491af1d487896891ba6935d46aee2f8eb0957f515a1860eeafa8bf97117c7",
+  "sourceFilesVerified": 854,
+  "priorPaidLedgersVerified": 2,
+  "sdkCalls": 52,
+  "phases": {
+    "planning": 18,
+    "review": 17,
+    "generation": 17
+  },
+  "actualWirePolicies": {
+    "high": 46,
+    "max": 6
+  },
+  "chains": [
+    {
+      "scope": "six-step-1",
+      "succeededRuns": 6,
+      "calls": 18,
+      "budgetGrants": 0
+    },
+    {
+      "scope": "six-step-2",
+      "succeededRuns": 6,
+      "calls": 18,
+      "budgetGrants": 0
+    }
+  ],
+  "targeted": {
+    "passed": true,
+    "runId": "fee31bab-59df-4ca8-8320-023cf76f10cb",
+    "sourceBoundRevision": true,
+    "independentBackend": 7,
+    "independentBrowserCases": 4,
+    "experienceUi": true,
+    "exactApply": true,
+    "untouchedHistoricalData": true,
+    "restart": true,
+    "exactRestore": true
+  },
+  "performanceArmsFullPath": 4,
+  "paidCalls": 0,
+  "actualTokenCost": null,
+  "passed": true,
+  "schema": "cordis.r11-prepaid-rehearsal-audit/1",
+  "batch": "continuous-revision-study-20261104-r11",
+  "inheritedCumulativeOccupied": 292,
+  "sharedRemaining": 113,
+  "globalCeiling": 405,
+  "absentPriorPaidLedgerFiles": 30,
+  "absentPriorLedgersNotReconstructed": true,
+  "credentialScan": "not-run-env-file-not-read",
+  "keyRead": false,
+  "realTargetedCreated": false,
+  "realChainsCreated": false,
+  "notRealModelEvidence": true,
+  "baselineDatabases": {
+    "upgrade": "76b1da827ae853280f15f610c0a8c4a05bfedad17a00f73a7dc507d376bfc08d",
+    "counter": "93fa8ce2921a1b36cb298b0598114fa6619cec0d61b3295516f980ef0fceed4b"
+  }
+}
