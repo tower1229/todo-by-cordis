@@ -464,3 +464,7 @@ Push [42046481904](https://github.com/tower1229/todo-by-cordis/actions/runs/4204
 ### 下一步阻塞
 
 完整六步通过数=仍为 0。本 docs 轮次不启动序号 524 付费。
+
+## 2026-11-06 系列停止与身份收缩（零付费）
+
+round-9（`97a95fd`）一次付费确认仍停在停用标签 `32>30` plan-compilation，命中复盘停止条件。**r11 付费六步系列正式关闭**；细节与零付费门禁结果见 `series-stop-and-identity-contraction.md`。本段未发起付费调用。

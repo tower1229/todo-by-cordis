@@ -1799,6 +1799,14 @@ export class Evolution {
                     requirement.checks,
                     aliases,
                   );
+              // Inherit can append frozen cases the compile pass never saw. Cap and
+              // dangling refs are host structure defects: stop once, never propose_plan again.
+              if (deduplicated.length > 30) {
+                parsed.blockers.push(
+                  `浏览器验收案例超出上限：${deduplicated.length} 条，最多 30 条`,
+                );
+                parsed.retryable = false;
+              }
               const dangling = danglingBrowserChecks(
                 plan.requirements ?? [],
                 plan.browserCases ?? [],

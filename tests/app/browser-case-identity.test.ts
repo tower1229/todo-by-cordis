@@ -8,6 +8,7 @@ import type { AcceptanceObligation } from "../../src/shared/acceptance-obligatio
 import {
   browserCaseAssertionHash,
   browserCaseQuotaKey,
+  dedupeBrowserCases,
 } from "../../src/evolution/browser-case-content.js";
 import { compileReferences, inheritBrowserCases } from "../../src/evolution/references.js";
 import { PlanStructureBlocked } from "../../src/evolution/historical-preparation.js";
@@ -275,6 +276,49 @@ test("parseBrowserCases 超限仍是 PlanStructureBlocked，不抬上限", () =>
   assert.throws(() => parseBrowserCases(cases), (error: unknown) => {
     assert.ok(error instanceof PlanStructureBlocked);
     assert.match(String(error.message), /浏览器验收案例超出上限：32 条，最多 30 条/);
+    return true;
+  });
+});
+
+test("inherit 可把冻结案例追加到编译结果之上，超过 30 后仍须按同一诊断硬停", () => {
+  const compiled = Array.from({ length: 12 }, (_, i) => ({
+    id: `compiled-${i}`,
+    task: "new" as const,
+    steps: [
+      {
+        kind: "field" as const,
+        member: "tags",
+        field: "tags",
+        value: `compiled-${i}`,
+      },
+    ],
+  }));
+  const inherited = Array.from({ length: 22 }, (_, i) => ({
+    id: `frozen-${i}`,
+    task: "existing" as const,
+    steps: [
+      {
+        kind: "field" as const,
+        member: "counter",
+        field: "count",
+        value: `frozen-${i}`,
+      },
+    ],
+    classification: "frozen-business" as const,
+  }));
+  const merged = inheritBrowserCases(
+    { requirements: [], browserCases: compiled },
+    { requirements: [], browserCases: inherited },
+    undefined,
+  );
+  const { cases } = dedupeBrowserCases(merged.browserCases);
+  assert.equal(cases.length, 34);
+  assert.throws(() => parseBrowserCases(cases), (error: unknown) => {
+    assert.ok(error instanceof PlanStructureBlocked);
+    assert.match(
+      String(error.message),
+      /浏览器验收案例超出上限：34 条，最多 30 条/,
+    );
     return true;
   });
 });
