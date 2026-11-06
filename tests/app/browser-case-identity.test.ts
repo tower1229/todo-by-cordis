@@ -9,9 +9,10 @@ import {
   browserCaseAssertionHash,
   browserCaseQuotaKey,
 } from "../../src/evolution/browser-case-content.js";
-import { inheritBrowserCases } from "../../src/evolution/references.js";
+import { compileReferences, inheritBrowserCases } from "../../src/evolution/references.js";
 import { PlanStructureBlocked } from "../../src/evolution/historical-preparation.js";
 import { parseBrowserCases } from "../../src/server/requirement-coverage.js";
+import { panelMemberCases } from "./member-case-fixtures.js";
 
 const historyPrep = {
   baseVersion: "a".repeat(64),
@@ -170,6 +171,99 @@ test("多个 action-visible 同动作同可见性共用 assertion stem，当前 
       ),
     ),
   );
+});
+
+test("browser-acceptance 历史夹具收掉 field/history 分叉后仍有两条互异准备", () => {
+  const updatedCases = panelMemberCases.map((c) => ({
+    ...c,
+    expected:
+      c.expected.kind === "commit"
+        ? { ...c.expected, fields: { noteMark: "reviewed" } }
+        : c.expected,
+  }));
+  const sources = [
+    { id: "history:1", text: "原标记不自动替换，新动作写 reviewed，详情刷新重启保留" },
+  ];
+  const compiled = compileReferences(
+    {
+      workflowRules: [],
+      memberCases: updatedCases,
+      browserCases: [],
+      requirements: [
+        {
+          id: "identity",
+          source: 1,
+          sourceQuote: sources[0].text,
+          description: "界面身份沿用基线",
+          type: "interface",
+          checks: [],
+          obligations: [{ kind: "preserve-ui" }],
+        },
+        {
+          id: "history",
+          source: 1,
+          sourceQuote: sources[0].text,
+          description: sources[0].text,
+          type: "interface",
+          checks: [],
+          obligations: [
+            {
+              kind: "field",
+              field: "noteMark",
+              initial: { kind: "visible", value: "（空）" },
+              scenarios: [
+                {
+                  steps: [{ kind: "action", action: "markNote", input: {} }],
+                  value: "reviewed",
+                },
+              ],
+            },
+            { kind: "history", field: "noteMark" },
+          ],
+        },
+      ],
+    },
+    sources,
+    [],
+    { id: "default", actions: [{ id: "complete" }, { id: "reopen" }] },
+    {
+      memberCases: panelMemberCases,
+      baseVersion: "a".repeat(64),
+      uiContributions: [
+        {
+          id: "note-panel",
+          providerId: "panel",
+          fields: [{ key: "noteMark" }],
+          actions: [{ commandId: "markNote" }],
+        },
+      ],
+    },
+  );
+  const cases = parseBrowserCases(compiled.browserCases);
+  const prepared = cases.filter((c) => c.prepare);
+  const historical = cases.filter((c) => c.id.includes("-historical-"));
+  const afterExisting = prepared.find(
+    (c) => c.task === "existing" && c.id.includes("-after-"),
+  );
+  const field = compiled.requirements
+    .flatMap((r) => r.obligations ?? [])
+    .find((o) => o.kind === "field");
+  const history = compiled.requirements
+    .flatMap((r) => r.obligations ?? [])
+    .find((o) => o.kind === "history");
+  assert.ok(field && history);
+  assert.equal(
+    obligationCases(field).find((c) => c.id.includes("-historical-"))?.id,
+    obligationCases(history)[0]?.id,
+  );
+  assert.equal(prepared.length, 2);
+  assert.equal(historical.length, 1);
+  assert.ok(afterExisting);
+  assert.notEqual(
+    browserCaseAssertionHash(historical[0]),
+    browserCaseAssertionHash(afterExisting),
+  );
+  assert.ok(cases.length <= 30);
 });
 
 test("parseBrowserCases 超限仍是 PlanStructureBlocked，不抬上限", () => {
