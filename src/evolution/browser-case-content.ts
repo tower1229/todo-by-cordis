@@ -13,21 +13,49 @@ export function browserCaseAssertionHash(
   });
 }
 
-/** Content identity for collapsing leftover duplicate IDs.
- * Historical cases keep obligationId so history vs field stay distinct. */
+/** Content identity for collapsing leftover duplicate IDs. Provenance is not part of it. */
 export function browserCaseContentHash(
-  c: Pick<
-    BrowserCase,
-    "task" | "steps" | "prepare" | "classification" | "obligationId"
-  >,
+  c: Pick<BrowserCase, "task" | "steps" | "prepare" | "classification">,
 ) {
-  return hash({
-    task: c.task,
-    steps: c.steps,
-    prepare: c.prepare,
-    classification: c.classification,
-    ...(c.prepare ? { obligationId: c.obligationId } : {}),
-  });
+  return browserCaseAssertionHash(c);
+}
+
+/** Generate-side quota: current host snapshot of UI identity or action visibility replaces extras. */
+export function browserCaseQuotaKey(
+  c: Pick<BrowserCase, "id" | "task" | "steps">,
+) {
+  if (c.steps.some((s) => s.kind === "ui-identity")) return `ui-identity:${c.task}`;
+  const visible = [...c.steps]
+    .reverse()
+    .find((s) => s.kind === "action-visible");
+  if (visible?.kind === "action-visible")
+    return `action-visible:${hash({
+      action: visible.action,
+      visible: visible.visible,
+      member: visible.member,
+      contribution: visible.contribution,
+    }).slice(0, 24)}:${c.task}`;
+  return c.id;
+}
+
+export function isHostSnapshotQuota(key: string) {
+  return key.startsWith("ui-identity:") || key.startsWith("action-visible:");
+}
+
+export function canSupersedeBrowserCase(
+  existing: BrowserCase,
+  next: BrowserCase,
+  obligationKind: string,
+) {
+  if (
+    obligationKind === "workflow-input" &&
+    existing.classification === "system-protection"
+  )
+    return true;
+  const quota = browserCaseQuotaKey(next);
+  return (
+    browserCaseQuotaKey(existing) === quota && isHostSnapshotQuota(quota)
+  );
 }
 
 export function dedupeBrowserCases<T extends BrowserCase>(cases: T[]) {
@@ -41,6 +69,16 @@ export function dedupeBrowserCases<T extends BrowserCase>(cases: T[]) {
     return false;
   });
   return { cases: kept, aliases };
+}
+
+export function mergeBrowserCaseAliases(
+  first: Map<string, string>,
+  second: Map<string, string>,
+) {
+  const aliases = new Map(first);
+  for (const [from, to] of second) aliases.set(from, aliases.get(to) ?? to);
+  for (const [from, to] of aliases) aliases.set(from, aliases.get(to) ?? to);
+  return aliases;
 }
 
 export function remapBrowserChecks<T extends { checker: string; caseId: string }>(

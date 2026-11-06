@@ -45,6 +45,7 @@ import { inheritBrowserCases } from "./references.js";
 import {
   danglingBrowserChecks,
   dedupeBrowserCases,
+  mergeBrowserCaseAliases,
   remapBrowserChecks,
 } from "./browser-case-content.js";
 import { OperationPreparationError } from "./obligation-derivation.js";
@@ -1787,9 +1788,10 @@ export class Evolution {
                 }
               }
               const browsers = inheritBrowserCases(plan,inherited,call.args.acceptanceReason);
-              const { cases: deduplicated, aliases } = dedupeBrowserCases(
+              const { cases: deduplicated, aliases: contentAliases } = dedupeBrowserCases(
                 browsers.browserCases,
               );
+              const aliases = mergeBrowserCaseAliases(browsers.aliases, contentAliases);
               plan.browserCases = deduplicated;
               if (aliases.size)
                 for (const requirement of plan.requirements ?? [])

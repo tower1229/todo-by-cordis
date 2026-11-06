@@ -7,6 +7,7 @@ import {
 } from "../../src/evolution/references.js";
 import {
   dedupeBrowserCases,
+  mergeBrowserCaseAliases,
   remapBrowserChecks,
   browserCaseContentHash,
 } from "../../src/evolution/browser-case-content.js";
@@ -206,7 +207,8 @@ function compileStep(
     compileDiagnostic = error instanceof Error ? error.message : String(error);
   }
   const merged = inheritBrowserCases(compiled, inherited, reason);
-  const { cases, aliases } = dedupeBrowserCases(merged.browserCases);
+  const { cases, aliases: contentAliases } = dedupeBrowserCases(merged.browserCases);
+  const aliases = mergeBrowserCaseAliases(merged.aliases, contentAliases);
   const requirements = compiled.requirements.map((r) => ({
     ...r,
     checks: remapBrowserChecks(r.checks, aliases),

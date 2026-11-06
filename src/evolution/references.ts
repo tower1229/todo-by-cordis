@@ -2,7 +2,7 @@ import type { InvestigatedPlan, RequirementGate } from "../shared/assistant.js";
 import { hash } from "../release/storage.js";
 import type { BrowserCase, BrowserStep } from "../shared/browser-cases.js";
 import { compileObligations } from "./acceptance-obligations.js";
-import { obligationCases } from "../shared/acceptance-obligations.js";
+import { browserCaseStem, obligationCases } from "../shared/acceptance-obligations.js";
 import {
   bindHistoricalCase,
   HistoricalPreparationBlocked,
@@ -20,9 +20,14 @@ import {bindAvailability,type ActionAvailability} from "./action-availability.js
 import { schedulePolicyChecks } from "../shared/schedule-policy.js";
 import {
   browserCaseAssertionHash,
+  browserCaseQuotaKey,
+  canSupersedeBrowserCase,
   dedupeBrowserCases,
+  isHostSnapshotQuota,
+  mergeBrowserCaseAliases,
   remapBrowserChecks,
 } from "./browser-case-content.js";
+import { PlanStructureBlocked } from "./historical-preparation.js";
 
 /** Inherit accepted browser cases and report every explicit revision to the caller. */
 export function inheritBrowserCases(
@@ -69,18 +74,41 @@ export function inheritBrowserCases(
     }
     return matches.length === 1 ? matches[0] : undefined;
   };
+  const aliases = new Map<string, string>();
   for (const old of inherited.browserCases ?? []) {
-    const replacement = compiled.find(item => item.id === old.id) ?? reboundFieldCase(old);
+    const quota = browserCaseQuotaKey(old);
+    const replacement =
+      compiled.find((item) => item.id === old.id) ??
+      compiled.find((item) => browserCaseQuotaKey(item) === quota) ??
+      reboundFieldCase(old);
     if (!replacement) browserCases.push(structuredClone(old));
-    else if (hash(replacement) !== hash(old)) {
-      if (typeof reason !== "string" || !reason.trim()) {
-        blockers.push(`既有浏览器案例 ${old.id} 改变，须说明验收修订原因`);
-        if (replacement.id !== old.id) browserCases.push(structuredClone(old));
+    else {
+      if (replacement.id !== old.id) aliases.set(old.id, replacement.id);
+      if (hash(replacement) !== hash(old)) {
+        const snapshot = isHostSnapshotQuota(quota);
+        if (snapshot) {
+          if (typeof reason === "string" && reason.trim())
+            changes.push({
+              rule: `浏览器案例 ${old.id}`,
+              before: JSON.stringify(old),
+              after: JSON.stringify(replacement),
+              reason,
+            });
+        } else if (typeof reason !== "string" || !reason.trim()) {
+          blockers.push(`既有浏览器案例 ${old.id} 改变，须说明验收修订原因`);
+          if (replacement.id !== old.id && browserCaseQuotaKey(replacement) !== quota)
+            browserCases.push(structuredClone(old));
+        } else
+          changes.push({
+            rule: `浏览器案例 ${old.id}`,
+            before: JSON.stringify(old),
+            after: JSON.stringify(replacement),
+            reason,
+          });
       }
-      else changes.push({rule:`浏览器案例 ${old.id}`,before:JSON.stringify(old),after:JSON.stringify(replacement),reason});
     }
   }
-  return {browserCases,changes,blockers};
+  return {browserCases,changes,blockers,aliases};
 }
 type Row = Record<string, unknown>;
 type FieldObligation = Extract<NonNullable<Requirement["obligations"]>[number], {kind:"field"}>;
@@ -288,7 +316,7 @@ export function compileReferences(
       return s;
     }) as BrowserStep[];
   };
-  const browsers = list(draft.browserCases ?? []).map((value) => {
+  const browsers: BrowserCase[] = list(draft.browserCases ?? []).map((value) => {
     const c = row(value);
     if (
       typeof c.id !== "string" ||
@@ -296,11 +324,14 @@ export function compileReferences(
       Object.keys(c).some((k) => !["id", "task", "steps"].includes(k))
     )
       throw new Error("浏览器局部案例身份无效");
+    if (c.task !== "existing" && c.task !== "new")
+      throw new Error("浏览器局部案例身份无效");
     return {
-      ...c,
-      id: inherited.browserCases?.some((old) => old.id === c.id)
-        ? c.id
-        : "browser-" + hash({ workflow: workflow.id, key: c.id }).slice(0, 24),
+      id:
+        inherited.browserCases?.some((old) => old.id === c.id)
+          ? c.id
+          : "browser-" + hash({ workflow: workflow.id, key: c.id }).slice(0, 24),
+      task: c.task,
       steps: bindSteps(list(c.steps), c.id),
     };
   });
@@ -594,6 +625,7 @@ export function compileReferences(
   const histories = requirements
     .flatMap((r) => r.obligations)
     .filter((o) => o.kind === "history");
+  const generateAliases = new Map<string, string>();
   // History belongs to a field identity, not requirement ordering. Existing-task
   // action scenarios must exercise old data too; initial empty-task checks stay empty.
   for (const requirement of requirements) {
@@ -639,21 +671,30 @@ export function compileReferences(
       }
     }
     bindAvailability([requirement],inherited.actionAvailability);
+    requirement.checks = requirement.checks.filter((c) => {
+      if (c.checker !== "browser/1") return true;
+      return !requirement.obligations.some((o) => {
+        const stem = browserCaseStem(o);
+        return c.caseId === stem || c.caseId.startsWith(`${stem}-`);
+      });
+    });
     for (const obligation of requirement.obligations) {
       for (const c of obligationCases(obligation)) {
-        const existing = browsers.find((b) => b.id === c.id) as BrowserCase | undefined;
+        const existingIndex = browsers.findIndex(
+          (b) =>
+            b.id === c.id ||
+            browserCaseQuotaKey(b) === browserCaseQuotaKey(c),
+        );
+        const existing =
+          existingIndex >= 0
+            ? (browsers[existingIndex] as BrowserCase)
+            : undefined;
         if (existing && browserCaseAssertionHash(existing) !== browserCaseAssertionHash(c)) {
-          // When workflow-input cases conflict with inherited system-protection cases,
-          // the workflow-input matrix supersedes the old assertion. This happens when
-          // upgrading from a workflow without fields to one with required fields:
-          // old system-protection expects complete with no input, new workflow-input
-          // requires complete WITH input per the frozen field contract.
-          const isWorkflowInputSuperseding =
-            obligation.kind === "workflow-input" &&
-            existing.classification === "system-protection";
-          if (isWorkflowInputSuperseding) {
-            const index = browsers.indexOf(existing);
-            browsers[index] = c;
+          // Host snapshots (ui-identity / action-visible) and workflow-input vs
+          // leftover system-protection keep one current assertion, not a second family.
+          if (canSupersedeBrowserCase(existing, c, obligation.kind)) {
+            if (existing.id !== c.id) generateAliases.set(existing.id, c.id);
+            browsers[existingIndex] = c;
           } else {
             throw new Error(
               "同一字段验收义务发生冲突，初始状态或相同操作不能要求不同结果",
@@ -661,6 +702,16 @@ export function compileReferences(
           }
         } else if (!existing) {
           browsers.push(c);
+        } else {
+          if (existing.id !== c.id) {
+            generateAliases.set(existing.id, c.id);
+            browsers[existingIndex] = { ...existing, id: c.id };
+          }
+          if (obligation.kind === "history" && c.prepare)
+            browsers[existingIndex] = {
+              ...browsers[existingIndex],
+              obligationId: obligation.id,
+            };
         }
         requirement.checks.push({ checker: "browser/1", caseId: c.id });
       }
@@ -673,10 +724,27 @@ export function compileReferences(
   const bound = browsers.map((c) =>
     bindHistoricalCase(c as BrowserCase, histories),
   );
-  const { cases: deduplicated, aliases } = dedupeBrowserCases(bound);
+  const { cases: deduplicated, aliases: contentAliases } = dedupeBrowserCases(bound);
+  const aliases = mergeBrowserCaseAliases(generateAliases, contentAliases);
   if (aliases.size)
     for (const requirement of requirements)
       requirement.checks = remapBrowserChecks(requirement.checks, aliases);
+  const missingObligationCases = requirements.flatMap((r) =>
+    (r.obligations ?? []).flatMap((o) =>
+      obligationCases(o).filter(
+        (c) =>
+          !deduplicated.some((b) => b.id === c.id) && !aliases.has(c.id),
+      ),
+    ),
+  );
+  if (missingObligationCases.length)
+    throw new PlanStructureBlocked(
+      `验收义务案例未进入浏览器清单：${missingObligationCases.map((c) => c.id).join("、")}`,
+    );
+  if (deduplicated.length > 30)
+    throw new PlanStructureBlocked(
+      `浏览器验收案例超出上限：${deduplicated.length} 条，最多 30 条`,
+    );
   return {
     requirements,
     browserCases: deduplicated,

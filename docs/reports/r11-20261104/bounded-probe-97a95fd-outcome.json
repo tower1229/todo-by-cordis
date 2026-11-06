@@ -1,0 +1,85 @@
+{
+  "schema": "cordis.r11-97a95fd-round9-extended-ms-probe-outcome/1",
+  "tipSha": "97a95fd22402f6e82bec0b2e4e637a05e5fc0d60",
+  "evidenceDir": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-97a95fd-20261106T025349Z",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-97a95fd-bind.json",
+  "passed": false,
+  "completeSixStepPass": false,
+  "paidCalls": 22,
+  "ordinals": {
+    "first": 524,
+    "last": 545
+  },
+  "cumulativeOccupied": 545,
+  "remainingCalls": 105,
+  "nextOrdinal": 546,
+  "knownGoalEstimatedPeakUSD": 8.757059567999995,
+  "goalUnknownUsageReserveUSD": 2.359296,
+  "goalFeeGuardOccupiedUSD": 11.116355567999996,
+  "currentCohortKnownEstimatedPeakUSD": 0.7332725519999972,
+  "currentCohortUnknownUsageReserveUSD": 0,
+  "actualModel": "deepseek-flash",
+  "fatalHead": "{\"diagnostics\":[\"浏览器验收案例超出上限：32 条，最多 30 条\"],\"protocolFailures\":[{\"phase\":\"planning\",\"call\":1,\"requestHash\":\"7ea9c127339064221ee1bf691c39bb9e043dbeb7ad113067caf747a735af19ab\",\"responseHash\":\"74c5f2fde60d8a1d35bb6ff26a7851194e988d3e270b83eec0",
+  "honestNonPass": true,
+  "stop": {
+    "kind": "planning-gate",
+    "phase": "planning",
+    "code": "plan-compilation",
+    "diagnostic": "{\"diagnostics\":[\"浏览器验收案例超出上限：32 条，最多 30 条\"],\"protocolFailures\":[{\"phase\":\"planning\",\"call\":1,\"requestHash\":\"7ea9c127339064221ee1bf691c39bb9e043dbeb7ad113067caf747a735af19ab\",\"responseHash\":\"74c5f2fde60d8a1d35bb6ff26a7851194e988d3e270b83eec0c952f16f565381\",\"problems\":[\"工具参数不符合 JSON 业务契约：propose_plan：$o.requirements[1].acceptanceReason: 未授权字段；$o.requirements[2].acceptanceReason: 未授权字段；$o.requirements[3].acceptanceReason: 未授权字段\"]}],\"acceptanceRevisions\":[],\"parentRunId\":\"33faa07f-4b8a-4df4-b062-a10f7bc0fa80\",\"baseVersion\":\"772fee6c8340b3ded3a81d4fc4739a762a55d030f240d325db767a9e4285e147\",\"capabilityId\":\"default\",\"parent\":{\"status\":\"succeeded\",\"budget\":{\"efficiencyTarget\":12,\"authorized\":{\"calls\":12,\"candidates\":3,\"milliseconds\":1800000},\"grants\":[],\"callsUsed\":6,\"callsRemaining\":6,\"candidatesRemaining\":2,\"millisecondsRemaining\":1518226.5526240002}},\"id\":\"161c4191-803d-4f13-9644-3e1f2052384f\",\"request\":\"请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。\",\"requestRevision\":1,\"revisions\":[{\"revision\":1,\"type\":\"request\",\"text\":\"请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。\",\"createdAt\":\"2026-11-06T03:12:14.691Z\"}],\"plans\":[],\"evidence\":[{\"ref\":\"inspect_application\",\"hash\":\"de613e3b828654b4f714ee07ce7e77c63819564b3b4415665736b0be4d55c9c3\"},{\"ref\":\"active-source\",\"hash\":\"b462cc009ed8c4e674093564842678246279462c3d7de695e3fd506420cc808d\"},{\"ref\":\"business/entry.ts\",\"hash\":\"b462cc009ed8c4e674093564842678246279462c3d7de695e3fd506420cc808d\"},{\"ref\":\"business/view.ts\",\"hash\":\"62dcd0f12892e72d019f20c7b64f4f42ed264bef4fbf61facfdb0ab7c81b074b\"},{\"ref\":\"business/config.json\",\"hash\":\"c89a148be40e6752261e3038609a4b68de22fa3bfdaf32f884edffb8480b9bbe\"},{\"ref\":\"business/compatibility.json\",\"hash\":\"8e3451c424803ea0632b31b4423abe0fcf90285b589cc0b70b615dd26cf17e73\"},{\"ref\":\"business/contract.ts\",\"hash\":\"00825b03c2b28716ecb565549c871852e30cafd7c2b53ef66a859a5369ccec23\"},{\"ref\":\"active-contract\",\"hash\":\"38c26641fd77228c7405b21a8572e0d83cf1b85ab2a46c459d4936202c8fd091\"},{\"ref\":\"model-view/active-acceptance\",\"hash\":\"61fcb382b17bb94dfdeb3822ff6306509df5672925bab4c980ee06d664ea2ad8\",\"source\":{\"ref\":\"active-acceptance\",\"hash\":\"beae608608589482f75c0dc40c2508d12b7b19fe3ec8dad33c1192d4354c498c\"}},{\"ref\":\"member-acceptance/default@772fee6c8340b3ded3a81d4fc4739a762a55d030f240d325db767a9e4285e147\",\"hash\":\"5b4368ff7f90596def0a74e91ee8f870e8dd59d0e9160642fd48b81b9bb29f88\"},{\"ref\":\"member-source/tags@cf0538794499c30d0c1b0d45cd6d79941b3dcb80bec3f528de990b9ad516ce1c\",\"hash\":\"ac839a144f5591ad41189e376852aad3f335d69e6c44ec7a2e5728a41f7bb4b8\"},{\"ref\":\"member-contract/tags@cf0538794499c30d0c1b0d45cd6d79941b3dcb80bec3f528de990b9ad516ce1c\",\"hash\":\"e94c82fbba93e19fd5157c5d03cb68a0fd354be0b99de5f55cceb9260194a13d\"},{\"ref\":\"member-acceptance/tags@cf0538794499c30d0c1b0d45cd6d79941b3dcb80bec3f528de990b9ad516ce1c\",\"hash\":\"3871d0f9d8ec68cb73ea700598ff47fd2a1c00990982b6ea61eb834b385dfc35\"},{\"ref\":\"member-source/counter@24e61f5e8f8c91d0940019fd3bd6cec44bf0ab0c9e5c422e90cd585bf0251ce8\",\"hash\":\"ec3e1d27218500ad986f82e467688e2d5becf5c7c34e8306a3f6e9d9a36e41ef\"},{\"ref\":\"member-contract/counter@24e61f5e8f8c91d0940019fd3bd6cec44bf0ab0c9e5c422e90cd585bf0251ce8\",\"hash\":\"adec23d07ca463b2b4c9454017d69981dcfa7b505cb9bd0105fe3e3240f42248\"},{\"ref\":\"member-acceptance/counter@24e61f5e8f8c91d0940019fd3bd6cec44bf0ab0c9e5c422e90cd585bf0251ce8\",\"hash\":\"4016dd86fbbc6b0890b22769033aad7623f1b1667e7a55bf43499f3815f57798\"},{\"ref\":\"src/shared/contracts.ts\",\"hash\":\"c62db0016c86d46eacce3a8cd686704f4e3ca01c427318401674edf910a1a628\"},{\"ref\":\"src/server/business/contracts.ts\",\"hash\":\"e81dccc9808a51d8e0c9f708d607825f40c018bed8bd01ba834b61d9a13fec65\"},{\"ref\":\"src/server/workflow-acceptance.ts\",\"hash\":\"9b07a35834173a12cdffa5f435e25b64223a8ad559153e77fdc4edc859ebad43\"},{\"ref\":\"model-view/src/server/workspace.ts\",\"hash\":\"68cd8ee3e5513dc1c0e2c676afb1f960921d78e1b81cc67b51bee495a71f1da0\",\"source\":{\"ref\":\"src/server/workspace.ts\",\"hash\":\"4c8d3ddc80df2ec8914a2ce0fce630599b22033a137501dd67cb8f9842412cce\"}},{\"ref\":\"src/web/TaskEditor.tsx\",\"hash\":\"f323da88e5958dabe7c8382dedc49067233dbbc14d5086ca0e1569a323a151bc\"},{\"ref\":\"src/web/ActionForm.tsx\",\"hash\":\"4c2d8a103d04287d1d56b06a5a7a38850cfb246b302de9bbf4e0137c01d33290\"},{\"ref\":\"check_environment\",\"hash\":\"3254bc9be3345e85a3c022277a4fbf07f5f5a170d7b1d9bdddd9974e7a154839\"},{\"ref\":\"guide/command.register\",\"hash\":\"318b8c2aee7ddee04ad0fd720935c7e379aeecc5ae1a149d551bc3bf14935044\"},{\"ref\":\"guide/workflow.provide\",\"hash\":\"4603eacc4cbb02b2e6829252fdbbd14cbc8c9683905c4829fc58002dc36d8804\"}],\"budget\":{\"efficiencyTarget\":12,\"authorized\":{\"calls\":12,\"candidates\":3,\"milliseconds\":1800000},\"grants\":[],\"callsUsed\":3,\"callsRemaining\":9,\"candidatesRemaining\":3,\"millisecondsRemaining\":1684381.695084},\"updatedAt\":\"2026-11-06T03:14:10.406Z\",\"status\":\"blocked\",\"stop\":{\"kind\":\"planning-gate\",\"phase\":\"planning\",\"code\":\"plan-compilation\",\"evidence\":[\"model-call:3\",\"run.evidence\"]},\"message\":\"浏览器验收案例超出上限：32 条，最多 30 条\",\"blockReason\":\"other\",\"userMessage\":\"当前还不能开始执行这次改进。请修改需求或放弃计划；技术细节可在下方展开查看。\"}\n\n'blocked' !== 'ready'\n",
+    "message": "浏览器验收案例超出上限：32 条，最多 30 条"
+  },
+  "progress": {
+    "phaseBrowserScreenshots": [
+      "shot",
+      "shot",
+      "shot",
+      "shot",
+      "six-step-1/phase-0-browser.png",
+      "six-step-1/phase-1-browser.png",
+      "six-step-1/phase-2-browser.png",
+      "six-step-1/phase-3-browser.png"
+    ],
+    "appliedEvents": 5,
+    "experienceCheckedEvents": 0,
+    "settledEvents": 0,
+    "phasesReached": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "phase0Applied": true,
+    "phase1Applied": true,
+    "phase2Applied": true,
+    "phase3Applied": true,
+    "phase3Failed": false,
+    "extendedMsHarnessUsed": true,
+    "frozenAcceptanceSelfConflictReappeared": false,
+    "sameFieldObligationConflictReappeared": false,
+    "browserCasesCapExceededReappeared": true,
+    "tagTagHistoryNonUniquenessReappeared": false,
+    "missingExistingRequirementFatalReappeared": false
+  },
+  "ci": {
+    "pushRunId": 42143963907,
+    "prRunId": 42143983745,
+    "headSha": "97a95fd22402f6e82bec0b2e4e637a05e5fc0d60",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-06T02:41:28Z",
+    "prCompletedAt": "2026-11-06T02:25:43Z",
+    "application": {
+      "tests": 866,
+      "pass": 866,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "prLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-97a95fd-pr-42143983745.log",
+    "pushLog": ".runtime/continuous-revision-study-20261104-r11/ci-run-97a95fd-push-42143963907.log",
+    "note": "Both M1 checks success on tip 97a95fd before round-9 extended-ms paid confirmation. Fee guard $20; nextOrdinal 524. Exactly ONE paid round."
+  },
+  "note": "Round-9 ONE paid confirmation after 97a95fd / PR #53. Calls {'first': 524, 'last': 545}. Fee ~$11.116355567999996/$20. Ceiling 545/650. No further paid round. Dual six-step and accept:v1 not run."
+}
