@@ -24,6 +24,8 @@ export function browserCaseStem(obligation: AcceptanceObligation): string {
         action: obligation.expected.action,
         visible: obligation.expected.visible,
         member: obligation.expected.member,
+        // Keep contribution in the stem so inherited browser/1 checks still match
+        // the filter when recompiling; quota collapses contribution-only forks.
         contribution: obligation.expected.contribution,
       }).slice(0, 24)
     );

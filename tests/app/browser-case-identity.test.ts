@@ -174,6 +174,79 @@ test("多个 action-visible 同动作同可见性共用 assertion stem，当前 
   );
 });
 
+test("action-visible 配额忽略 contribution；visible:true 被同任务 ui-identity 覆盖时不追加", () => {
+  const withContribution = obligationCases({
+    version: 1,
+    id: "vis-with-contribution",
+    kind: "assertion",
+    steps: [],
+    expected: {
+      kind: "action-visible",
+      member: "tags",
+      contribution: "tags-detail",
+      action: "setTags",
+      visible: true,
+    },
+  })[0];
+  const withoutContribution = obligationCases({
+    version: 1,
+    id: "vis-without-contribution",
+    kind: "assertion",
+    steps: [],
+    expected: {
+      kind: "action-visible",
+      member: "tags",
+      action: "setTags",
+      visible: true,
+    },
+  })[0];
+  assert.notEqual(withContribution.id, withoutContribution.id);
+  assert.equal(
+    browserCaseQuotaKey(withContribution),
+    browserCaseQuotaKey(withoutContribution),
+  );
+  const uiIdentity = obligationCases({
+    version: 1,
+    id: "preserve-ui",
+    kind: "ui-identity",
+    contributions: [
+      {
+        member: "tags",
+        contribution: "tags-detail",
+        fields: ["tags"],
+        actions: ["setTags"],
+      },
+    ],
+  })[0];
+  const collapsed = inheritBrowserCases(
+    { requirements: [], browserCases: [uiIdentity] },
+    {
+      requirements: [],
+      browserCases: [withContribution, withoutContribution],
+    },
+    undefined,
+  );
+  assert.deepEqual(collapsed.blockers, []);
+  assert.equal(collapsed.browserCases.length, 1);
+  assert.equal(collapsed.browserCases[0].id, uiIdentity.id);
+  assert.equal(collapsed.aliases.get(withContribution.id), uiIdentity.id);
+  assert.equal(collapsed.aliases.get(withoutContribution.id), uiIdentity.id);
+
+  const forksOnly = inheritBrowserCases(
+    { requirements: [], browserCases: [] },
+    {
+      requirements: [],
+      browserCases: [withContribution, withoutContribution],
+    },
+    undefined,
+  );
+  assert.equal(forksOnly.browserCases.length, 1);
+  assert.equal(
+    forksOnly.aliases.get(withoutContribution.id),
+    withContribution.id,
+  );
+});
+
 test("browser-acceptance 历史夹具收掉 field/history 分叉后仍有两条互异准备", () => {
   const updatedCases = panelMemberCases.map((c) => ({
     ...c,

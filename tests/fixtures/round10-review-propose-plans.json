@@ -1,0 +1,111 @@
+{
+  "tip": "bdba58e",
+  "note": "Round-10 phase-3 review propose_plan from call-565 that compiled to 33>30 against phase-2 frozen acceptance (23 cases).",
+  "calls": {
+    "565": {
+      "phase": "planning",
+      "uniqueProposePlans": [
+        {
+          "summary": "改进主工作流完成流程：完成动作新增必填复盘文本字段（去首尾空白后 1–5000 字），重新打开保留复盘；标签、计数及既有任务保持不变。",
+          "changes": [
+            {
+              "target": "workflow",
+              "fields": [
+                {
+                  "key": "review",
+                  "label": "复盘",
+                  "required": true,
+                  "minLength": 1,
+                  "maxLength": 5000
+                }
+              ]
+            }
+          ],
+          "requirements": [
+            {
+              "quote": "请改进完成流程：完成前必须填写复盘，去掉首尾空格后至少一个字，最多五千字；重新打开保留复盘。",
+              "type": "behavior",
+              "expectations": [
+                {
+                  "kind": "field",
+                  "field": "review",
+                  "examples": [
+                    "  完成初稿  ",
+                    "复盘",
+                    "上线检查通过"
+                  ]
+                },
+                {
+                  "kind": "behavior"
+                }
+              ]
+            },
+            {
+              "quote": "标签、计数和已有任务不变。",
+              "type": "compatibility",
+              "expectations": [
+                {
+                  "kind": "preserve-ui"
+                },
+                {
+                  "kind": "behavior"
+                }
+              ]
+            }
+          ],
+          "defaults": [
+            {
+              "scope": "复盘字段的键名、显示名与输入形态",
+              "behavior": "在主工作流新增 complete 输入字段：键 review、显示名「复盘」、文本类型；完成动作在未完成状态通过该字段接收复盘内容。",
+              "basis": "来源只要求「填写复盘」，未指定键名；沿用宿主工作流字段的文本字段与既有字段命名惯例，显示名直接采用来源用词「复盘」。",
+              "impact": "仅新增一个主工作流字段，不改动标签、计数或既有动作标识。"
+            },
+            {
+              "scope": "复盘内容的规范化与长度边界",
+              "behavior": "保存前去除首尾空白；去除后必须至少 1 个字符、最多 5000 个字符，长度按 Unicode 码点计，不做其它改写；不满足时阻止完成并保留任务状态与既有字段。",
+              "basis": "来源要求「去掉首尾空格后至少一个字，最多五千字」；宿主 workflow/1 文本字段规则规定校验与保存均 trim、长度按 Unicode 码点计算。",
+              "impact": "仅影响 complete 的输入校验与复盘保存值，不改写标签、计数或主工作流其它字段。"
+            },
+            {
+              "scope": "空白复盘输入的反馈方式",
+              "behavior": "去除首尾空白后为空的输入按缺失必填处理，返回填写表单/提示补充，而不是提交完成；具体提示文案不作为验收约束。",
+              "basis": "宿主 required 字段惯例与 workflow/1 对缺失、空串和纯空白统一返回 input-required 的预期；来源未指定文案。",
+              "impact": "仅影响提交反馈，不改变任务状态或任何已保存字段。"
+            },
+            {
+              "scope": "超长复盘输入的反馈方式",
+              "behavior": "去除首尾空白后超过 5000 个码点的输入以可读拒绝原因反馈并不完成；具体文案不作为验收约束。",
+              "basis": "来源明确最多五千字；宿主 browser-error 事实允许非空错误文本以子串方式验证，未要求固定文案。",
+              "impact": "仅影响提交反馈与是否完成，不改变任务既有字段。"
+            },
+            {
+              "scope": "复盘字段的初始呈现与既有任务数据",
+              "behavior": "未执行完成前不显示复盘值、也不向既有任务写入复盘初始值；既有任务的标签、计数及其它字段原样保留，只有再次执行完成时才要求填写复盘。",
+              "basis": "来源「已有任务不变」；宿主 initial-field-presentation 规定工作流缺失字段为 absent，write-scope 禁止在体验中改写既有任务数据。",
+              "impact": "不修改任何既有任务记录，不新增初始值呈现约束。"
+            },
+            {
+              "scope": "重新打开时复盘与其他字段的保留",
+              "behavior": "重新打开沿用既有 reopen 行为：任务回到未完成，复盘以及标签、计数等全部既有字段原样保留。",
+              "basis": "来源「重新打开保留复盘」；既有主工作流 reopen 已保留全部 task.fields，宿主 workflow/1 也验证重开保留字段。",
+              "impact": "不改变 reopen 的可用状态、动作标识或字段保留语义。"
+            },
+            {
+              "scope": "标签与计数成员的保持",
+              "behavior": "不升级或改动 tags、counter 成员：继续使用当前版本、现有 setTags/incrementCount 动作、标签与计数字段及 tags-detail/counter-detail 详情贡献。",
+              "basis": "来源「标签、计数……不变」；当前组合已包含统一小写的标签成员与独立计数成员。",
+              "impact": "仅主工作流新增复盘字段，辅助成员及其验收保持原样。"
+            },
+            {
+              "scope": "完成与重新打开动作的身份与可用状态",
+              "behavior": "complete 与 reopen 的动作标识、显示名与可用状态保持现状：未完成可完成、已完成可重新打开；新增复盘必填不改变动作可见性。",
+              "basis": "来源只要求完成前填写复盘，未要求改变动作入口；沿用既有主工作流动作身份。",
+              "impact": "保留既有操作入口，不新增或隐藏动作。"
+            }
+          ],
+          "intent": "improve"
+        }
+      ]
+    }
+  }
+}

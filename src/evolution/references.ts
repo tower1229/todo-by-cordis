@@ -19,6 +19,7 @@ import { historicalPreparation } from "./historical-preparation.js";
 import {bindAvailability,type ActionAvailability} from "./action-availability.js";
 import { schedulePolicyChecks } from "../shared/schedule-policy.js";
 import {
+  actionVisibleCoveredByUiIdentity,
   browserCaseAssertionHash,
   browserCaseQuotaKey,
   canSupersedeBrowserCase,
@@ -77,12 +78,20 @@ export function inheritBrowserCases(
   const aliases = new Map<string, string>();
   for (const old of inherited.browserCases ?? []) {
     const quota = browserCaseQuotaKey(old);
+    // Search the accumulating list so same-quota frozen copies collapse onto the
+    // first kept case instead of re-appending (contribution-only forks used to).
     const replacement =
-      compiled.find((item) => item.id === old.id) ??
-      compiled.find((item) => browserCaseQuotaKey(item) === quota) ??
+      browserCases.find((item) => item.id === old.id) ??
+      browserCases.find((item) => browserCaseQuotaKey(item) === quota) ??
       reboundFieldCase(old);
-    if (!replacement) browserCases.push(structuredClone(old));
-    else {
+    if (!replacement) {
+      const coveredBy = actionVisibleCoveredByUiIdentity(old, browserCases);
+      if (coveredBy) {
+        aliases.set(old.id, coveredBy);
+        continue;
+      }
+      browserCases.push(structuredClone(old));
+    } else {
       if (replacement.id !== old.id) aliases.set(old.id, replacement.id);
       if (hash(replacement) !== hash(old)) {
         const snapshot = isHostSnapshotQuota(quota);
