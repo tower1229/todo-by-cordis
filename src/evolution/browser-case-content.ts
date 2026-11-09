@@ -29,13 +29,40 @@ export function browserCaseQuotaKey(
     .reverse()
     .find((s) => s.kind === "action-visible");
   if (visible?.kind === "action-visible")
+    // Contribution is host binding detail, not a second visibility fact. Omitting it
+    // collapses obligation copies that only differ on whether contribution was set.
     return `action-visible:${hash({
       action: visible.action,
       visible: visible.visible,
       member: visible.member,
-      contribution: visible.contribution,
     }).slice(0, 24)}:${c.task}`;
   return c.id;
+}
+
+/** visible:true presence is already asserted when ui-identity lists the action. */
+export function actionVisibleCoveredByUiIdentity(
+  c: Pick<BrowserCase, "task" | "steps">,
+  browsers: Pick<BrowserCase, "task" | "steps" | "id">[],
+) {
+  const visible = [...c.steps]
+    .reverse()
+    .find((s) => s.kind === "action-visible");
+  if (visible?.kind !== "action-visible" || visible.visible !== true)
+    return undefined;
+  const cover = browsers.find(
+    (b) =>
+      b.task === c.task &&
+      b.steps.some(
+        (s) =>
+          s.kind === "ui-identity" &&
+          s.contributions.some(
+            (item) =>
+              item.member === visible.member &&
+              item.actions.includes(visible.action),
+          ),
+      ),
+  );
+  return cover?.id;
 }
 
 export function isHostSnapshotQuota(key: string) {
