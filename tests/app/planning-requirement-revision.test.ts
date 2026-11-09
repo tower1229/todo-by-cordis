@@ -70,20 +70,18 @@ test("没有显式业务修订时，新要求不能静默接管旧身份", () =>
   assert.equal(JSON.parse(c.files["active-acceptance"].content).requirements[0].description, original);
 });
 
-test("业务修订拒绝歧义与非后续来源，不能用相同旧原文授权改写", () => {
+test("业务修订拒绝未知、歧义与非后续来源，不能用相同旧原文授权改写", () => {
+  // #54：撤回 6bacd68；缺失修订目标恢复致命，不得降级为新增。
+  assert.throws(
+    () => compilePlanInput(proposal("不存在的旧业务要求"), context(), sources),
+    /修订.*不存在|既有.*不存在/,
+  );
   assert.throws(() => compilePlanInput(proposal(original), context([
     oldRequirement, { ...oldRequirement, id: "another-accepted-tags" },
   ]), sources), /修订.*不唯一|修订.*歧义/);
   const same = proposal(original);
   same.requirements[0].quote = original;
   assert.throws(() => compilePlanInput(same, context(), sources), /修订.*较新|修订.*后续/);
-});
-
-test("业务修订引用不存在的既有要求时，降级为新增要求并生成新 ID", () => {
-  const draft = compilePlanInput(proposal("不存在的旧业务要求"), context(), sources);
-  assert.notEqual(draft.requirements[0].id, oldRequirement.id, "缺失修订目标时不得复用旧身份");
-  assert.equal(draft.requirements[0].sourceQuote, upgrade);
-  assert.ok(draft.requirements[0].id.startsWith("claim-"), "应生成新的需求 ID");
 });
 
 test("同一既有业务要求不能在一次计划中被多次接管", () => {
@@ -110,7 +108,8 @@ test("业务修订只绑定来源和身份，不能根据原文静默改写模�
     "矛盾预期必须交给原独立复核阻塞，不能被编译器改成通过值");
 });
 
-test("error-feedback 冲突场景：业务修订引用过滤或转换后缺失的要求，流程继续且复核门禁保持", () => {
+test("error-feedback 冲突场景：业务修订引用缺失的既有要求仍致命", () => {
+  // #54：与「未知修订目标」同裁决；不得借冲突场景绕过致命门禁。
   const blankTagRequirement = "拒绝空白标签";
   const revisedText = "升级标签验证，继续拒绝空白";
   const conflictingSources = [
@@ -128,9 +127,8 @@ test("error-feedback 冲突场景：业务修订引用过滤或转换后缺失�
         expectations: [{ kind: "error", action: "setTags" }] },
     ],
   };
-  const draft = compilePlanInput(input, c, conflictingSources);
-  assert.equal(draft.requirements.length, 1);
-  const revisingReq = draft.requirements[0];
-  assert.equal(revisingReq.sourceQuote, revisedText);
-  assert.ok(revisingReq.id.startsWith("claim-"), "修订目标缺失时应生成新 ID 而非复用");
+  assert.throws(
+    () => compilePlanInput(input, c, conflictingSources),
+    /修订.*不存在|既有.*不存在/,
+  );
 });

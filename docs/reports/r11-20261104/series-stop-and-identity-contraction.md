@@ -68,13 +68,18 @@ node --import tsx --test --test-concurrency=1 \
 
 本机：`node --import tsx --test` 上述两文件 **4/4 pass**。
 
-## 6. 策略债开票
+## 6. 策略债开票与部分裁决
 
-GitHub Issue [#54](https://github.com/tower1229/todo-by-cordis/issues/54)：裁决是否保留 `6bacd68` / `8b18866`。不在本系列用付费探针 closure。
+GitHub Issue [#54](https://github.com/tower1229/todo-by-cordis/issues/54)：不在本系列用付费探针 closure。
+
+| 项 | 状态 |
+| --- | --- |
+| `8b18866` 多历史最短路径 | **保留**（维护者书面确认；零付费回归见 `historical-preparation*.test.ts`） |
+| `6bacd68` revises 变新增 | **撤回**（恢复「既有要求不存在」致命；见 `planning-requirement-revision.test.ts`） |
 
 ## 7. 业务扩展冻结（有效）
 
-在完整六步零付费门禁（0→5）稳定、且 #54 裁决落地或明确延期之前：
+在完整六步零付费门禁（0→5）稳定、且维护者明确解除本冻结之前：
 
 - **不新开**以 Todo 插件/字段/工作流功能为交付物的实现 Issue。
 - **不把**「完整六步真实模型通过」当作打开新业务能力的前置替代；也不反向用新业务冲淡身份/策略债。
@@ -94,6 +99,6 @@ GitHub Issue [#54](https://github.com/tower1229/todo-by-cordis/issues/54)：裁�
 
 ## 9. 下一步（零付费）
 
-1. 等待 #54 维护者裁决策略降级债。
-2. 用真实停用/启用标签提案形态（含继承膨胀）强化零付费夹具；干净 0→5 链不足证明付费路径。
-3. **不开**下一轮付费，直到夹具能复现并消除 round-10 的 33>30。
+1. #54 两项均已裁决（保留 `8b18866`、撤回 `6bacd68`）；实现合入后可关闭该 Issue。
+2. round-10 call-565 复盘路径的 33>30 已由 [#56](https://github.com/tower1229/todo-by-cordis/pull/56) 零付费夹具消除并合入主线；**不开**下一轮付费，除非维护者另授权单次确认。
+3. 业务扩展冻结：#54 裁决落地后由维护者决定是否解除；默认仍暂缓新开 Todo 业务实现 Issue，直至明确解除。
