@@ -657,21 +657,16 @@ export function compilePlanInput(
       (o) => o.sourceQuote === (r.revises ?? r.quote) && o.type === r.type,
     );
     if (r.revises !== undefined) {
-      if (!old.length) {
-        // When a business revision cites a missing requirement, allow it to proceed as new.
-        // This prevents fatal stops in complex scenarios (e.g., error-feedback conflicts)
-        // where the target requirement may have been filtered or transformed.
-        // The revision intent is recorded but not enforced; review gates remain active.
-      } else if (old.length !== 1) {
-        throw new Error("业务修订的既有要求不唯一，请使用精确原文与类别");
-      } else {
-        const priorSource = sources.findIndex(s => s.id === old[0].sourceRevision);
-        if (priorSource < 0 || source.index <= priorSource + 1)
-          throw new Error("业务修订须绑定较新的用户原文来源，不能用旧要求授权自身改写");
-      }
+      // #54：撤回 6bacd68 降级。revises 必须唯一命中既有要求；找不到即致命，
+      // 不得改发新 ID 冒充新增，以免并存要求膨胀。
+      if (!old.length) throw new Error("业务修订引用的既有要求不存在");
+      if (old.length !== 1) throw new Error("业务修订的既有要求不唯一，请使用精确原文与类别");
+      const priorSource = sources.findIndex(s => s.id === old[0].sourceRevision);
+      if (priorSource < 0 || source.index <= priorSource + 1)
+        throw new Error("业务修订须绑定较新的用户原文来源，不能用旧要求授权自身改写");
     }
     const prior =
-      (r.revises !== undefined && old.length === 1 ? old[0] : old.find((o) => o.description === r.description)) ??
+      (r.revises !== undefined ? old[0] : old.find((o) => o.description === r.description)) ??
       (old.length === 1 ? old[0] : undefined);
     const id =
       prior?.id ??

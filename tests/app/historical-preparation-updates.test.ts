@@ -73,6 +73,7 @@ test("字段建立后保留原值并更新其他字段也不改变历史来源",
 });
 
 test("两个独立可达的字段初建结果降级为最短路径，顺序无关", () => {
+  // #54：与 historical-preparation.test 同裁决——多历史取最短路径，不阻塞。
   const another: MemberAcceptanceCase = { ...update, fields: {} };
   const baseline1 = [create, update, another];
   const baseline2 = [another, update, create];

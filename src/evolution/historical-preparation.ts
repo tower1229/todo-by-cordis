@@ -124,8 +124,11 @@ export function historicalPreparation(
   if (results.size === 0)
     blocked("没有可达的冻结成功动作产生目标字段");
   if (results.size > 1) {
-    // Multiple reachable histories: degrade to shortest path with stable tie-break.
-    // This allows tag/counter fields to proceed instead of blocking on non-uniqueness.
+    // Product decision (#54): keep shortest-path degrade, do not block on
+    // multiple reachable histories. Non-uniqueness of path is accepted when each
+    // path is a frozen success that produces the target field; pick the shortest
+    // action chain, then stable sourceHash order. True contradictions (ambiguous
+    // frozen success expectation, unreachable field) still block elsewhere.
     const candidates = [...results.values()];
     const shortest = Math.min(...candidates.map((r) => r.actions.length));
     const viable = candidates.filter((r) => r.actions.length === shortest);
