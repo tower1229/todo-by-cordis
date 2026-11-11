@@ -205,7 +205,7 @@ export function planSchemaFor(
         object({
           description: text,
           quote: text,
-          revises: { ...text, minLength: 1, description: "仅在明确改变已接受的业务要求时提供：引用该旧要求的完整 sourceQuote，quote 提供较新的用户原文；新增要求省略。宿主沿用旧身份并保留历史，仍须 acceptanceReason、独立复核和验收修订确认。不能用来删除未改变的要求。" },
+          revises: { ...text, minLength: 1, description: "仅在明确改变已接受的业务要求时提供：引用该旧要求的完整 sourceQuote，quote 提供较新的用户原文；新增要求省略。宿主沿用旧身份并保留历史。改变已接受要求时须在 propose_plan 顶层（plan 根）填写 acceptanceReason，禁止写在 requirements[] 项内；另须独立复核和验收修订确认。不能用来删除未改变的要求。" },
           type: kind("behavior", "interface", "compatibility", "constraint"),
           expectations: businessExpectationsSchema,
         }, ["quote", "type", "expectations"]),
@@ -215,7 +215,11 @@ export function planSchemaFor(
         object({ member: text, feature: kind(...Object.keys(usedFeatures)) }),
       ),
       intent: kind("improve", "repair"),
-      acceptanceReason: text,
+      acceptanceReason: {
+        ...text,
+        description:
+          "改变任一已接受需求的预期时必填：写在 propose_plan 参数顶层。禁止放在 requirements[] 项内；多项变更共用这一条原因。",
+      },
     },
     ["requirements"],
   );

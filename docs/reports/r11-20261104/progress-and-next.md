@@ -1,6 +1,6 @@
 # r11 收口进度与下一步（2026-11-11）
 
-基线 tip：`e7e88b1`（`master` / `dev` 对齐）。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
+基线 tip：以 `dev` / `master` 对齐的最新合入为准。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
 
 ## 1. 已收口
 
@@ -13,15 +13,15 @@
 | 付费六步系列 | `STOP_SERIES`（round-9/10 同类 `plan-compilation`）；默认不开 round-11 |
 | 安全 | #58 `@hono/node-server` 2.1.3 |
 | 演示域表述 | #59：改写为「演示域扩张纪律」，非 Todo 产品开关 |
-| Issue / PR 队列 | 开着的 Issue、PR 均为 0 |
-| 分支 | 新增 `dev`＝当前主线 tip；已删多数已合入远端功能枝 |
+| Issue / PR 队列 | 以当前 GitHub 为准 |
+| 分支 | `dev`＝日常 tip；与 `master` 定期快进对齐 |
 
 ## 2. 仍未声称
 
 - 真实模型完整六步通过数仍为 **0**（有意停付费，不是本轮缺口单）。
 - 未把「零付费夹具绿」等同于「生产自迭代已可靠」。
-- 未解除「演示域可随意加功能」；仅允许为验证自迭代所必需的最小夹具。
-- 仓库仍有 1 条 moderate Dependabot 告警（非 #58 同源项，另排）。
+- 演示域改动仅允许为验证自迭代所必需的最小夹具。
+- 仓库仍可能有与主线正交的 Dependabot moderate 告警。
 
 ## 3. 分支约定（收束后）
 
@@ -31,17 +31,20 @@
 | `master` | 默认保护/发布指针；与 `dev` 定期快进对齐，避免长期分叉 |
 | 功能枝 | 短命：`dev` 上开、合回 `dev` 后删 |
 
-本地仍可能挂着旧 worktree 枝（如 issue-26/27、codex/41–42）；远端对应已合入枝已删，worktree 可另行 `git worktree remove` 清理，不阻塞 `dev`。
-
 ## 4. 下一步推进方向（按自迭代收益排序）
 
 不新开「Todo 功能交付」票。下一刀只服务自迭代有效性 / 可信性 / 接口简洁 / 可迁移。
 
-1. **编译与继承不变量固化（零付费）**  
-   把 round-7/9/10 已证明的门禁收成稳定回归面：`≤30`、无悬空 check、结构错误 `retryable=false`、`acceptanceReason` 等复盘路径。缺哪条补哪条夹具，不再用付费发现同类诊断。
+1. **编译与继承不变量固化（零付费）** — **已完成**  
+   - round-10 **不注入** `acceptanceReason` →「须说明验收修订原因」  
+   - 补 reason → ≤30 / 无悬空 / `planningStructureTerminal`  
+   - inherit 超限结构终态；series-stop §3 列入 round10  
+   - 见 PR 合入记录与 `round10-review-cap-replay` / `browser-case-identity`
 
-2. **模型驱动闭环的下一结构性缺口（仍先零付费）**  
-   对照 `00-core-direction-v2` §10 与 r11 停点：优先「连续变更 / 修订表达 / 宿主机械编译职责」一类接口问题，而不是再堆演示域字段。有明确可测缺口再开 Issue（标自迭代，不标 Todo 产品）。
+2. **模型驱动闭环的下一结构性缺口（零付费）** — **已完成（结论 A）**  
+   - Issue [#62](https://github.com/tower1229/todo-by-cordis/issues/62)  
+   - 结论：强化 **仅 plan 根** `acceptanceReason`，禁止 `requirements[]`；见 [`acceptance-reason-contract.md`](./acceptance-reason-contract.md)  
+   - 夹具：`acceptance-reason-contract.test.ts` + 工具描述/schema 文案强化  
 
 3. **单次付费确认（仅维护者授权）**  
    条件：上述零付费门禁在 `dev` tip 稳定；目标只验证协议/时间窗，不再买新的 `plan-compilation`。再次死在编译结构 → 继续停系列，改架构，不补丁循环。

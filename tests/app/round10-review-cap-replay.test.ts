@@ -12,7 +12,10 @@ import {
   mergeBrowserCaseAliases,
   remapBrowserChecks,
 } from "../../src/evolution/browser-case-content.js";
-import { PlanStructureBlocked } from "../../src/evolution/historical-preparation.js";
+import {
+  PlanStructureBlocked,
+  planningStructureTerminal,
+} from "../../src/evolution/historical-preparation.js";
 import { obligationCases } from "../../src/shared/acceptance-obligations.js";
 import type { Requirement } from "../../src/shared/assistant.js";
 import { parseBrowserCases } from "../../src/server/requirement-coverage.js";
@@ -147,7 +150,26 @@ function assertNoDanglingBrowserChecks(
   );
 }
 
-function compileReviewProposal(proposal: unknown) {
+/** Mirrors evolution.ts: changed accepted requirements need plan-root acceptanceReason. */
+function requirementRevisionBlockers(
+  inherited: Requirement[],
+  next: Requirement[],
+  acceptanceReason: unknown,
+) {
+  const blockers: string[] = [];
+  for (const old of inherited) {
+    const replacement = next.find((item) => item.id === old.id);
+    if (!replacement || hash(replacement) === hash(old)) continue;
+    if (
+      typeof acceptanceReason !== "string" ||
+      !acceptanceReason.trim()
+    )
+      blockers.push(`既有需求 ${old.id} 改变，须说明验收修订原因`);
+  }
+  return blockers;
+}
+
+function loadRound10Inherited() {
   const frozen = JSON.parse(readFileSync(definitionPath, "utf8")) as {
     baseVersion: string;
     definition: {
@@ -192,6 +214,15 @@ function compileReviewProposal(proposal: unknown) {
     { id: "request:3", text: v1Requests[2] },
     { id: "request:4", text: v1Requests[3] },
   ];
+  return { inherited, contract, sources };
+}
+
+function compileReviewProposal(
+  proposal: unknown,
+  options: { injectAcceptanceReason?: boolean } = {},
+) {
+  const injectAcceptanceReason = options.injectAcceptanceReason !== false;
+  const { inherited, contract, sources } = loadRound10Inherited();
   const ctx = context(
     {
       rules: inherited.rules,
@@ -202,11 +233,14 @@ function compileReviewProposal(proposal: unknown) {
     contract,
   );
   const draft = compilePlanInput(proposal, ctx, sources);
-  const withReason = {
+  const draftReason = (draft as { acceptanceReason?: string }).acceptanceReason;
+  const acceptanceReason = injectAcceptanceReason
+    ? draftReason ??
+      "用户新增必填复盘，已有标签与计数期望按兼容说明保留"
+    : draftReason;
+  const planInput = {
     ...draft,
-    acceptanceReason:
-      (draft as { acceptanceReason?: string }).acceptanceReason ??
-      "用户新增必填复盘，已有标签与计数期望按兼容说明保留",
+    ...(acceptanceReason ? { acceptanceReason } : {}),
   };
   const workflow = {
     id: "default",
@@ -217,7 +251,7 @@ function compileReviewProposal(proposal: unknown) {
     ],
   };
   const compiled = compileReferences(
-    { ...withReason, memberCases: inherited.memberCases },
+    { ...planInput, memberCases: inherited.memberCases },
     sources,
     workflowCases,
     workflow,
@@ -232,10 +266,15 @@ function compileReviewProposal(proposal: unknown) {
     },
   ) as CompiledPlan;
   parseBrowserCases(compiled.browserCases);
+  const revisionBlockers = requirementRevisionBlockers(
+    inherited.requirements,
+    compiled.requirements,
+    acceptanceReason,
+  );
   const merged = inheritBrowserCases(
     compiled,
     inherited as never,
-    withReason.acceptanceReason,
+    acceptanceReason,
   );
   const { cases, aliases: contentAliases } = dedupeBrowserCases(
     merged.browserCases,
@@ -247,6 +286,8 @@ function compileReviewProposal(proposal: unknown) {
   }));
   return {
     inheritedCount: inherited.browserCases.length,
+    acceptanceReason,
+    revisionBlockers,
     compiled,
     merged,
     cases,
@@ -276,6 +317,43 @@ test("bdba58e outcome 阻塞在复盘步 plan-compilation 的 33>30", () => {
   assert.equal(frozen.definition.browserCases.length, 23);
 });
 
+test("round-10 call-565 缺顶层 acceptanceReason：须说明验收修订原因", () => {
+  // bdba58e 并列停因；不得靠测试注入 reason 绕过。
+  const plans = JSON.parse(readFileSync(plansPath, "utf8")) as {
+    calls: Record<string, { uniqueProposePlans: unknown[] }>;
+  };
+  const proposal = plans.calls["565"].uniqueProposePlans[0] as {
+    acceptanceReason?: string;
+  };
+  assert.ok(proposal, "fixture 必须包含 call-565 propose_plan");
+  assert.equal(
+    proposal.acceptanceReason,
+    undefined,
+    "fixture 原样不得已带顶层 acceptanceReason",
+  );
+
+  const step = compileReviewProposal(proposal, {
+    injectAcceptanceReason: false,
+  });
+  assert.ok(
+    step.revisionBlockers.length > 0,
+    "改变已接受需求且无 plan 根原因时必须有修订 blockers",
+  );
+  for (const blocker of step.revisionBlockers)
+    assert.match(blocker, /既有需求 .+ 改变，须说明验收修订原因/);
+  assert.equal(
+    planningStructureTerminal({
+      historical: false,
+      structural: true,
+      rejectionSeen: false,
+      calls: 2,
+      callLimit: 12,
+    }),
+    true,
+    "验收修订原因缺失与结构缺陷同属不可协议重试终态",
+  );
+});
+
 test("round-10 call-565 复盘提案对 phase-2 冻结验收：≤30、无悬空、不抬上限", () => {
   const plans = JSON.parse(readFileSync(plansPath, "utf8")) as {
     calls: Record<string, { uniqueProposePlans: unknown[] }>;
@@ -285,7 +363,7 @@ test("round-10 call-565 复盘提案对 phase-2 冻结验收：≤30、无悬空
 
   let step: ReturnType<typeof compileReviewProposal>;
   try {
-    step = compileReviewProposal(proposal);
+    step = compileReviewProposal(proposal, { injectAcceptanceReason: true });
   } catch (error) {
     assert.fail(
       `真实复盘提案应可编译闭合，不应再抛 ${
@@ -294,6 +372,7 @@ test("round-10 call-565 复盘提案对 phase-2 冻结验收：≤30、无悬空
     );
   }
   assert.equal(step.inheritedCount, 23);
+  assert.deepEqual(step.revisionBlockers, []);
   assert.ok(
     step.compiled.browserCases.length <= 30,
     `compileReferences 输出 ${step.compiled.browserCases.length} > 30`,
@@ -311,6 +390,17 @@ test("round-10 call-565 复盘提案对 phase-2 冻结验收：≤30、无悬空
     new Map(),
   );
   assertNoDanglingBrowserChecks(step.requirements, step.cases, step.aliases);
+  assert.equal(
+    planningStructureTerminal({
+      historical: false,
+      structural: true,
+      rejectionSeen: false,
+      calls: 2,
+      callLimit: 12,
+    }),
+    true,
+    "超限/悬空必须不可重试（与 round9 闭合口径对齐）",
+  );
   assert.ok(
     step.cases.some((c) => c.id.startsWith("ui-identity-")),
     "preserve-ui 必须落到规范 ui-identity",
