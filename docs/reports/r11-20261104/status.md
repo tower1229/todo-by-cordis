@@ -469,7 +469,7 @@ Push [42046481904](https://github.com/tower1229/todo-by-cordis/actions/runs/4204
 
 round-9（`97a95fd`）一次付费确认仍停在停用标签 `32>30` plan-compilation，命中复盘停止条件。**r11 付费六步系列正式关闭**；细节与零付费门禁结果见 `series-stop-and-identity-contraction.md`。本段未发起付费调用。
 
-续：零模型链已延伸到 `v1Requests` 0→5（重新启用标签）；策略债见 Issue #54；业务扩展冻结见同报告 §7。
+续：零模型链已延伸到 `v1Requests` 0→5（重新启用标签）；策略债 #54 已裁决合入；演示域扩张纪律（非 Todo 产品冻结）见同报告 §7。
 
 ## 2026-11-06 Round-10 付费确认（bdba58e）后继续停系列
 
