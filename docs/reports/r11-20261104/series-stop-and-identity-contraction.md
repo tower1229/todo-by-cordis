@@ -35,6 +35,7 @@ Node v24.18.0。命令：
 node --import tsx --test --test-concurrency=1 \
   tests/app/round7-disable-tags-replay.test.ts \
   tests/app/round9-disable-tags-replay.test.ts \
+  tests/app/round10-review-cap-replay.test.ts \
   tests/app/browser-case-identity.test.ts \
   tests/app/inherited-field-projection.test.ts \
   tests/app/field-reference-rebind.test.ts
@@ -42,7 +43,7 @@ node --import tsx --test --test-concurrency=1 \
 
 | 套件 | 结果 |
 | --- | --- |
-| round7 / round9 replay + browser-case-identity | pass（含 inherit 超限诊断回归） |
+| round7 / round9 / round10 replay + browser-case-identity | pass（含 inherit 超限、缺 `acceptanceReason`、结构终态） |
 | inherited-field-projection + field-reference-rebind | 40/40 pass |
 
 覆盖的复盘要求：
@@ -50,7 +51,8 @@ node --import tsx --test --test-concurrency=1 \
 - 停用标签 0→4 冻结链 ≤30、无悬空 check
 - 同字段不同义务 ID 叠层投影可编译闭合
 - round-9 fixture 单需求提案（调用 545 形态）≤30、ui-identity 规范 ID、历史案例保留
-- 超限仍为 `PlanStructureBlocked` / 同文案硬停，不抬上限
+- round-10 call-565：补 plan 根 `acceptanceReason` 后 ≤30；**不注入**时须出现「须说明验收修订原因」
+- 超限仍为 `PlanStructureBlocked` / 同文案硬停，不抬上限；`planningStructureTerminal(structural)` 为真
 
 ## 4. 仍未声称的事项
 

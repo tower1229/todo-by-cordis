@@ -11,7 +11,10 @@ import {
   dedupeBrowserCases,
 } from "../../src/evolution/browser-case-content.js";
 import { compileReferences, inheritBrowserCases } from "../../src/evolution/references.js";
-import { PlanStructureBlocked } from "../../src/evolution/historical-preparation.js";
+import {
+  PlanStructureBlocked,
+  planningStructureTerminal,
+} from "../../src/evolution/historical-preparation.js";
 import { parseBrowserCases } from "../../src/server/requirement-coverage.js";
 import { panelMemberCases } from "./member-case-fixtures.js";
 
@@ -394,4 +397,15 @@ test("inherit 可把冻结案例追加到编译结果之上，超过 30 后仍�
     );
     return true;
   });
+  // compile → inherit → parse 超限后与 Evolution 同属结构终态，不可协议重试。
+  assert.equal(
+    planningStructureTerminal({
+      historical: false,
+      structural: true,
+      rejectionSeen: false,
+      calls: 2,
+      callLimit: 12,
+    }),
+    true,
+  );
 });
