@@ -1,0 +1,44 @@
+{
+  "tipSha": "6170cd7510b1b84aef40a4ccd8aa3d9d826407e0",
+  "round": "post-gate-confirmation",
+  "ci": {
+    "pushRunId": 42950946513,
+    "devRunId": 42950830278,
+    "prRunId": null,
+    "headSha": "6170cd7510b1b84aef40a4ccd8aa3d9d826407e0",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-11T04:20:51Z",
+    "devCompletedAt": "2026-11-11T04:02:19Z",
+    "application": {
+      "tests": 892,
+      "pass": 892,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "note": "Both M1 checks success on tip 6170cd7 (dev 42950830278 + master 42950946513) before post-gate extended-ms paid confirmation. Fee guard $20; nextOrdinal 566. Exactly ONE paid round."
+  },
+  "evidenceDir": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-6170cd7-20261111T042437Z",
+  "callsFirst": 566,
+  "callsLast": 573,
+  "paidCalls": 8,
+  "feeGuardOccupiedUSD": 11.956185479999997,
+  "feeGuardUSD": 20,
+  "passed": false,
+  "completeSixStepPass": false,
+  "stopMessage": "需求 requirement-b4f8d0cb1fa0f2f6b65914d2：验收义务未完整执行或断言已变化：assertion-00bf3cf2d56efea5c7497897-existing；需求 requirement-b4f8d0cb1fa0f2f6b65914d2：验收义务未完整执行或断言已变化：assertion-00bf3cf2d56efea5c7497897-new",
+  "recurrence": {
+    "browserCasesCapExceededReappeared": false,
+    "acceptanceObligationIncompleteReappeared": true,
+    "sameFieldObligationConflictReappeared": false,
+    "frozenAcceptanceSelfConflictReappeared": false,
+    "tagTagHistoryNonUniquenessReappeared": false,
+    "missingExistingRequirementFatalReappeared": false
+  },
+  "seriesDecision": "STOP_SERIES",
+  "onePaidRoundOnly": true,
+  "harnessReconstructed": true,
+  "harnessNote": "r11 runtime was missing; rebuilt probe-local extended-ms + meter from prior evidence/transcript before launch."
+}

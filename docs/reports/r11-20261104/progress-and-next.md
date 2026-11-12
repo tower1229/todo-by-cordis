@@ -46,11 +46,19 @@
    - 结论：强化 **仅 plan 根** `acceptanceReason`，禁止 `requirements[]`；见 [`acceptance-reason-contract.md`](./acceptance-reason-contract.md)  
    - 夹具：`acceptance-reason-contract.test.ts` + 工具描述/schema 文案强化  
 
-3. **单次付费确认（仅维护者授权）**  
-   条件：上述零付费门禁在 `dev` tip 稳定；目标只验证协议/时间窗，不再买新的 `plan-compilation`。再次死在编译结构 → 继续停系列，改架构，不补丁循环。
+3. **单次付费确认（仅维护者授权）** — **已完成（非通过）**  
+   - tip `6170cd7`；双 CI 绿后 extended-ms 单条六步（调用 566–573）  
+   - **`33>30` 未复现**；新停点：验收义务未完整执行/断言已变化 → 规划 `blocked`  
+   - 费用约 $11.96/$20；累计 573/650；**继续 STOP_SERIES**  
+   - 见 `bounded-probe-6170cd7-outcome.json` / `post-gate-6170cd7-finish-report.json`
 
 4. **Dependabot 剩余 moderate**  
    与自迭代主线正交；有空修，不插队挡架构刀。
+
+## 6. 刚确认后的架构下一刀（零付费优先）
+
+付费确认暴露的是 **action-visible 到达状态未进身份键**：同动作 open/done 两条可见性期望共用 stem/配额 → done 案例 supersede open → `obligationFailure` 误杀。  
+**本刀已完成（零付费）**：`actionVisibleArrivalState` 写入 `browserCaseStem` + `browserCaseQuotaKey`；同态不同 setup 仍可覆盖；夹具见 `browser-case-identity`。系列保持 `STOP_SERIES`，不抬 30、不开付费。
 
 ## 5. 明确不做
 

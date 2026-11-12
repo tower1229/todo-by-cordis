@@ -3,8 +3,43 @@ import { workflowBrowserCases } from "./workflow-browser.js";
 import type { SchedulePolicy } from "./schedule-policy.js";
 import { hash } from "../release/storage.js";
 
+/**
+ * Workflow state reached by assertion preparation steps (before the visible/error/task check).
+ * Aligns with plan-input action-visible encoding: no prep → open; complete → done; reopen → open.
+ * Unknown prep does not collapse into open/done — use a content key so distinct paths stay distinct.
+ */
+export function actionVisibleArrivalState(steps: BrowserStep[]): string {
+  let state = "open";
+  for (const step of steps) {
+    if (
+      step.kind === "open" ||
+      step.kind === "refresh" ||
+      step.kind === "restart"
+    )
+      continue;
+    if (
+      step.kind === "action-visible" ||
+      step.kind === "error" ||
+      step.kind === "task" ||
+      step.kind === "field" ||
+      step.kind === "ui-identity" ||
+      step.kind === "form-invalid"
+    )
+      continue;
+    if (
+      step.kind !== "action" ||
+      step.member !== "workflow" ||
+      !["complete", "reopen"].includes(step.action)
+    )
+      return "prep-" + hash(steps).slice(0, 16);
+    state = step.action === "complete" ? "done" : "open";
+  }
+  return state;
+}
+
 /** Canonical case family. Field and history of the same identity share one stem.
- * Host snapshots (ui-identity / action-visible) share one stem per assertion, not per obligation.id. */
+ * Host snapshots (ui-identity / action-visible) share one stem per assertion, not per obligation.id.
+ * action-visible stems include arrival state so open vs done stay distinct; same-state setup variants share a stem. */
 export function browserCaseStem(obligation: AcceptanceObligation): string {
   if (obligation.kind === "field" || obligation.kind === "history")
     return (
@@ -27,6 +62,7 @@ export function browserCaseStem(obligation: AcceptanceObligation): string {
         // Keep contribution in the stem so inherited browser/1 checks still match
         // the filter when recompiling; quota collapses contribution-only forks.
         contribution: obligation.expected.contribution,
+        state: actionVisibleArrivalState(obligation.steps),
       }).slice(0, 24)
     );
   return obligation.id;

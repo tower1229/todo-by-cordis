@@ -110,5 +110,19 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 收口进度与推进顺序见 [progress-and-next.md](./progress-and-next.md)（`dev` / `master` tip 对齐后的现行清单）。摘要：
 
 1. #54 已裁决并合入；round-10 `33>30` 已由 [#56](https://github.com/tower1229/todo-by-cordis/pull/56) 消除。
-2. **不开**下一轮付费，除非维护者另授权单次确认。
+2. tip `6170cd7` 单次付费确认已跑（§10）；**继续 STOP_SERIES**，改架构不补丁循环。
 3. 下一刀排在自迭代能力本身；演示域改动只作验证夹具。
+
+## 10. tip `6170cd7` 单次付费确认（已跑，继续停止）
+
+| 项 | 值 |
+| --- | --- |
+| tip | `6170cd7`（#56/#61 零付费门禁已合入；dev+master 双 CI 绿） |
+| CI | master `42950946513` + dev `42950830278`；892/892 + e2e 111 |
+| 证据 | `bounded-probe-6170cd7-outcome.json` / `.runtime/.../bounded-probe-6170cd7-20261111T042437Z` |
+| 调用 | 566–573（8 次） |
+| 费用护栏 | 约 $11.96 / $20；累计 **573/650** |
+| 进度 | phase 0 规划即停；无浏览器截图 |
+| 停止 | `验收义务未完整执行或断言已变化`（`assertion-00bf3cf2…-existing/new`）→ `blocked ≠ ready` |
+| 未复现 | **`33>30` browserCases cap 未再出现** |
+| 系列 | **STOP_SERIES**（见 `post-gate-6170cd7-finish-report.json`）；不再自动续跑 |

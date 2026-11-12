@@ -1,5 +1,6 @@
 import { hash } from "../release/storage.js";
 import type { BrowserCase } from "../shared/browser-cases.js";
+import { actionVisibleArrivalState } from "../shared/acceptance-obligations.js";
 
 /** Assertion identity for a case key. Provenance (id / obligationId) is not part of it. */
 export function browserCaseAssertionHash(
@@ -31,10 +32,12 @@ export function browserCaseQuotaKey(
   if (visible?.kind === "action-visible")
     // Contribution is host binding detail, not a second visibility fact. Omitting it
     // collapses obligation copies that only differ on whether contribution was set.
+    // Arrival state keeps open vs done from superseding each other.
     return `action-visible:${hash({
       action: visible.action,
       visible: visible.visible,
       member: visible.member,
+      state: actionVisibleArrivalState(c.steps),
     }).slice(0, 24)}:${c.task}`;
   return c.id;
 }
