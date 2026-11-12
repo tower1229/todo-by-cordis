@@ -1,0 +1,87 @@
+{
+  "schema": "cordis.r11-6170cd7-post-gate-extended-ms-probe-outcome/1",
+  "recordedAt": "2026-11-11T04:37:37.724028+00:00",
+  "tipSha": "6170cd7510b1b84aef40a4ccd8aa3d9d826407e0",
+  "evidenceDir": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-6170cd7-20261111T042437Z",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-6170cd7-bind.json",
+  "passed": false,
+  "completeSixStepPass": false,
+  "paidCalls": 8,
+  "ordinals": {
+    "first": 566,
+    "last": 573
+  },
+  "cumulativeOccupied": 573,
+  "remainingCalls": 77,
+  "knownGoalEstimatedPeakUSD": 9.596889479999996,
+  "goalUnknownUsageReserveUSD": 2.359296,
+  "goalFeeGuardOccupiedUSD": 11.956185479999997,
+  "currentCohortKnownEstimatedPeakUSD": 0.3347048879999974,
+  "currentCohortUnknownUsageReserveUSD": 0,
+  "actualModel": "deepseek-flash",
+  "fatalHead": "{\"diagnostics\":[\"需求 requirement-b4f8d0cb1fa0f2f6b65914d2：验收义务未完整执行或断言已变化：assertion-00bf3cf2d56efea5c7497897-existing；需求 requirement-b4f8d0cb1fa0f2f6b65914d2：验收义务未完整执行或断言已变化：assertion-00bf3cf2d56efea5c7497897-new\"],\"reviewLedger\":{\"version\":2,\"findings\":[],\"attempts\":[{\"revision\":1,\"definitionHash\":\"c5745f3cc4e2c723dacffed7b420e9754ecad47950b544e0706caf869850b793\",\"review\":{\"sourceReview\":{\"reviewedSources\":[\"1a11d625-ddbf-481c-909c-43bcdc8f2a9b:1\"],\"effects\":{\"intents\":[{\"effect\":\"external-delivery\",\"verdict\":\"not-requested\"},{\"effect\":\"offline-delivery\",\"verdict\":\"not-requested\"},{\"effect\":\"online-schedule\",\"verdict\":\"not-requested\"}],\"sourceHash\":\"20b8491c6980bea7c1ebddc7c8b2d253ad66ba519604711a8e149c03e35946f6\",\"factsHash\":\"914624dc34d9984d0acca7afe524548369ce842d4e5ee23ddecb9b4e5c81eee",
+  "honestNonPass": true,
+  "stop": {
+    "kind": "acceptance-obligation-incomplete",
+    "phase": null,
+    "planningPhase": null,
+    "scope": "bounded-six-step-1",
+    "code": "plan-compilation",
+    "blockReason": null,
+    "diagnostic": "{\"diagnostics\":[\"需求 requirement-b4f8d0cb1fa0f2f6b65914d2：验收义务未完整执行或断言已变化：assertion-00bf3cf2d56efea5c7497897-existing；需求 requirement-b4f8d0cb1fa0f2f6b65914d2：验收义务未完整执行或断言已变化：assertion-00bf3cf2d56efea5c7497897-new\"],\"reviewLedger\":{\"version\":2,\"findings\":[],\"attempts\":[{\"revision\":1,\"definitionHash\":\"c5745f3cc4e2c723dacffed7b420e9754ecad47950b544e0706caf869850b793\",\"review\":{\"sourceReview\":{\"reviewedSources\":[\"1a11d625-ddbf-481c-909c-43bcdc8f2a9b:1\"],\"effects\":{\"intents\":[{\"effect\":\"external-delivery\",\"verdict\":\"not-requested\"},{\"effect\":\"offline-delivery\",\"verdict\":\"not-requested\"},{\"effect\":\"online-schedule\",\"verdict\":\"not-requested\"}],\"sourceHash\":\"20b8491c6980bea7c1ebddc7c8b2d253ad66ba519604711a8e149c03e35946f6\",\"factsHash\":\"914624dc34d9984d0acca7afe524548369ce842d4e5ee23ddecb9b4e5c81eee1\",\"checks\":[]}},\"reviewedIds\":[\"requirement-b4f8d0cb1fa0f2f6b65914d2\",\"requirement-5f45a4c08d21109511b6f466\",\"requirement-d8a0417f788bdd0d8351f4a7\"],\"unresolvedChoices\":[],\"issues\":[],\"resolutions\":[],\"defaultReviews\":[{\"id\":\"default-06376eef95843e34f89435df\",\"verdict\":\"safe-default\",\"detail\":\"原文未指定插件、字段、动作的内部标识及按钮文案，沿用标签插件与动作命名惯例，低影响且可逆。\",\"targets\":[]},{\"id\":\"default-96d54b011d1c71e4ad960622\",\"verdict\":\"safe-default\",\"detail\":\"tags 作为可选文本字段及 setTags 缺少输入时使用宿主 input-required 表单，属于低影响输入默认，不改变完成/重开要求。\",\"targets\":[]},{\"id\":\"default-e1347a8894459e504cdd99bd\",\"verdict\":\"safe-default\",\"detail\":\"原文未限制任务状态；setTags 在 open 可用是设置标签所必需，在 done 可用为低影响可逆默认；仅写入 tags、保持状态并保留其他字段符合“其他行为不变”。\",\"targets\":[\"business-choice:action-availability:obligation-acdca999b2c4789e49f14f2d\",\"business-choice:action-availability:obligation-d4a1095f4b2d11d94288c76a\"]},{\"id\":\"default-a044cce0fe70de89a629c171\",\"verdict\":\"safe-default\",\"detail\":\"原文只要求拒绝空白标签且未指定提示文案；由宿主显示可见错误提示属于低影响、可逆的惯例默认，不新增固定文案规则。\",\"targets\":[]},{\"id\":\"default-6a3b3865da55ee1590ffd2e4\",\"verdict\":\"safe-default\",\"detail\":\"原文未规定标签长度；不新增业务长度规则并沿用宿主既有输入上限，避免扩大业务约束。\",\"targets\":[]}],\"designDecisions\":[],\"fieldDecisions\":[{\"obligationId\":\"field-24e83f926f360",
+    "message": "éæ± requirement-b4f8d0cb1fa0f2f6b65914d2ï¼éªæ¶ä¹å¡æªå®æ´æ§è¡ææ­è¨å·²ååï¼assertion-00bf3cf2d56efea5c7497897-existingï¼éæ± requirement-b4f8d0cb1fa0f2f6b65914d2ï¼éªæ¶ä¹å¡æªå®æ´æ§è¡ææ­è¨å·²ååï¼assertion-00bf3cf2d56efea5c7497897-new"
+  },
+  "progress": {
+    "phaseBrowserScreenshots": [],
+    "appliedEvents": 0,
+    "experienceCheckedEvents": 0,
+    "settledEvents": 1,
+    "phasesReached": [
+      0
+    ],
+    "phase0Applied": false,
+    "phase1Applied": false,
+    "phase2Applied": false,
+    "phase3Applied": false,
+    "phase3Failed": false,
+    "extendedMsHarnessUsed": true,
+    "millisecondsAuthorized": 1800000,
+    "millisecondsPauseGrants": true,
+    "browserCasesCapExceededReappeared": false,
+    "sameFieldObligationConflictReappeared": false,
+    "frozenAcceptanceSelfConflictReappeared": false,
+    "tagTagHistoryNonUniquenessReappeared": false,
+    "missingExistingRequirementFatalReappeared": false,
+    "acceptanceObligationIncompleteReappeared": true
+  },
+  "ci": {
+    "pushRunId": 42950946513,
+    "devRunId": 42950830278,
+    "prRunId": null,
+    "headSha": "6170cd7510b1b84aef40a4ccd8aa3d9d826407e0",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-11T04:20:51Z",
+    "devCompletedAt": "2026-11-11T04:02:19Z",
+    "application": {
+      "tests": 892,
+      "pass": 892,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "note": "Both M1 checks success on tip 6170cd7 (dev 42950830278 + master 42950946513) before post-gate extended-ms paid confirmation. Fee guard $20; nextOrdinal 566. Exactly ONE paid round."
+  },
+  "recurrence": {
+    "browserCasesCapExceededReappeared": false,
+    "acceptanceObligationIncompleteReappeared": true,
+    "sameFieldObligationConflictReappeared": false,
+    "frozenAcceptanceSelfConflictReappeared": false,
+    "tagTagHistoryNonUniquenessReappeared": false,
+    "missingExistingRequirementFatalReappeared": false
+  },
+  "seriesDecision": "STOP_SERIES",
+  "onePaidRoundOnly": true,
+  "note": "Post-gate ONE paid confirmation on tip 6170cd7 after dual CI green. browserCases 33>30 did NOT reappear. New stop: acceptance obligation incomplete/changed on plan compile → blocked≠ready. Fee ~$11.9562/$20. Calls {'first': 566, 'last': 573}. Dual six-step and accept:v1 not run."
+}

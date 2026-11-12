@@ -1,15 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  actionVisibleArrivalState,
   browserCaseStem,
   obligationCases,
 } from "../../src/shared/acceptance-obligations.js";
 import type { AcceptanceObligation } from "../../src/shared/acceptance-obligations.js";
+import type { BrowserStep } from "../../src/shared/browser-cases.js";
 import {
   browserCaseAssertionHash,
   browserCaseQuotaKey,
+  canSupersedeBrowserCase,
   dedupeBrowserCases,
 } from "../../src/evolution/browser-case-content.js";
+import { obligationFailure } from "../../src/evolution/acceptance-obligations.js";
 import { compileReferences, inheritBrowserCases } from "../../src/evolution/references.js";
 import {
   PlanStructureBlocked,
@@ -154,12 +158,22 @@ test("多个 action-visible 同动作同可见性共用 assertion stem，当前 
       visible: false,
     },
   });
-  const before = obligationCases(visible("obligation-vis-old", false));
-  const after = obligationCases(visible("obligation-vis-new", true));
+  const bare = visible("obligation-vis-old", false);
+  const reviewed = visible("obligation-vis-new", true);
+  assert.equal(actionVisibleArrivalState(bare.steps), "done");
+  assert.equal(actionVisibleArrivalState(reviewed.steps), "done");
+  assert.equal(browserCaseStem(bare), browserCaseStem(reviewed));
+  const before = obligationCases(bare);
+  const after = obligationCases(reviewed);
   assert.equal(before[0].id, after[0].id);
+  assert.equal(browserCaseQuotaKey(before[0]), browserCaseQuotaKey(after[0]));
   assert.notEqual(
     browserCaseAssertionHash(before[0]),
     browserCaseAssertionHash(after[0]),
+  );
+  assert.equal(
+    canSupersedeBrowserCase(before[0], after[0], "assertion"),
+    true,
   );
   const inherited = inheritBrowserCases(
     { requirements: [], browserCases: after },
@@ -175,6 +189,96 @@ test("多个 action-visible 同动作同可见性共用 assertion stem，当前 
       ),
     ),
   );
+});
+
+test("action-visible open 与 done 分 stem/配额，并排保留后义务通过对账", () => {
+  const visible = (
+    id: string,
+    steps: BrowserStep[],
+  ): AcceptanceObligation => ({
+    version: 1,
+    id,
+    kind: "assertion",
+    steps,
+    expected: {
+      kind: "action-visible",
+      member: "tags",
+      action: "setTags",
+      visible: true,
+    },
+  });
+  const open = visible("vis-open", []);
+  const done = visible("vis-done", [
+    { kind: "action", member: "workflow", action: "complete" },
+  ]);
+  assert.equal(actionVisibleArrivalState(open.steps), "open");
+  assert.equal(actionVisibleArrivalState(done.steps), "done");
+  assert.notEqual(browserCaseStem(open), browserCaseStem(done));
+  const openCases = obligationCases(open);
+  const doneCases = obligationCases(done);
+  assert.notEqual(openCases[0].id, doneCases[0].id);
+  assert.notEqual(
+    browserCaseQuotaKey(openCases[0]),
+    browserCaseQuotaKey(doneCases[0]),
+  );
+  assert.equal(
+    canSupersedeBrowserCase(openCases[0], doneCases[0], "assertion"),
+    false,
+  );
+  const browsers = [...openCases];
+  for (const c of doneCases) {
+    const existingIndex = browsers.findIndex(
+      (b) =>
+        b.id === c.id || browserCaseQuotaKey(b) === browserCaseQuotaKey(c),
+    );
+    assert.equal(existingIndex, -1);
+    browsers.push(c);
+  }
+  assert.equal(browsers.length, 4);
+  const requirement = {
+    id: "set-tags-visible",
+    description: "setTags 在 open 与 done 均可见",
+    source: 1,
+    sourceQuote: "setTags 在 open 与 done 均可见",
+    type: "interface" as const,
+    checks: browsers.map((c) => ({
+      checker: "browser/1" as const,
+      caseId: c.id,
+    })),
+    obligations: [open, done],
+  };
+  assert.deepEqual(obligationFailure(requirement, browsers), []);
+  assert.ok(
+    obligationFailure(
+      requirement,
+      browsers.filter((c) => !doneCases.some((d) => d.id === c.id)),
+    ).length,
+  );
+});
+
+test("同到达状态 visible:true 与 false 不能互相覆盖", () => {
+  const visible = (id: string, value: boolean): AcceptanceObligation => ({
+    version: 1,
+    id,
+    kind: "assertion",
+    steps: [{ kind: "action", member: "workflow", action: "complete" }],
+    expected: {
+      kind: "action-visible",
+      member: "tags",
+      action: "setTags",
+      visible: value,
+    },
+  });
+  const yes = visible("vis-true", true);
+  const no = visible("vis-false", false);
+  assert.equal(actionVisibleArrivalState(yes.steps), "done");
+  assert.equal(actionVisibleArrivalState(no.steps), "done");
+  assert.notEqual(browserCaseStem(yes), browserCaseStem(no));
+  const yesCase = obligationCases(yes)[0];
+  const noCase = obligationCases(no)[0];
+  assert.notEqual(browserCaseQuotaKey(yesCase), browserCaseQuotaKey(noCase));
+  assert.equal(canSupersedeBrowserCase(yesCase, noCase, "assertion"), false);
+  assert.equal(canSupersedeBrowserCase(noCase, yesCase, "assertion"), false);
 });
 
 test("action-visible 配额忽略 contribution；visible:true 被同任务 ui-identity 覆盖时不追加", () => {
