@@ -682,9 +682,17 @@ export function compileReferences(
     bindAvailability([requirement],inherited.actionAvailability);
     requirement.checks = requirement.checks.filter((c) => {
       if (c.checker !== "browser/1") return true;
+      // Drop checks that obligationCases will rebind below. Matching only the
+      // current stem leaves orphan caseIds after host identity-rule churn
+      // (e.g. arrival state entering action-visible stem/quota).
       return !requirement.obligations.some((o) => {
+        const generated = obligationCases(o);
+        if (!generated.length) return false;
         const stem = browserCaseStem(o);
-        return c.caseId === stem || c.caseId.startsWith(`${stem}-`);
+        if (c.caseId === stem || c.caseId.startsWith(`${stem}-`)) return true;
+        return (inherited.browserCases ?? []).some(
+          (b) => b.obligationId === o.id && b.id === c.caseId,
+        );
       });
     });
     for (const obligation of requirement.obligations) {
