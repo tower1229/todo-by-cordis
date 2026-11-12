@@ -110,8 +110,8 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 收口进度与推进顺序见 [progress-and-next.md](./progress-and-next.md)（`dev` / `master` tip 对齐后的现行清单）。摘要：
 
 1. #54 已裁决并合入；round-10 `33>30` 已由 [#56](https://github.com/tower1229/todo-by-cordis/pull/56) 消除。
-2. tip `6170cd7` 单次付费确认已跑（§10）；**继续 STOP_SERIES**，改架构不补丁循环。
-3. 下一刀排在自迭代能力本身；演示域改动只作验证夹具。
+2. tip `6170cd7` / `916faff` 单次付费确认已跑（§10–§11）；**继续 STOP_SERIES**，改架构不补丁循环。
+3. 下一刀排在自迭代能力本身（现为 sourceQuote/多修订绑定）；演示域改动只作验证夹具。
 
 ## 10. tip `6170cd7` 单次付费确认（已跑，继续停止）
 
@@ -126,3 +126,16 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 | 停止 | `验收义务未完整执行或断言已变化`（`assertion-00bf3cf2…-existing/new`）→ `blocked ≠ ready` |
 | 未复现 | **`33>30` browserCases cap 未再出现** |
 | 系列 | **STOP_SERIES**（见 `post-gate-6170cd7-finish-report.json`）；不再自动续跑 |
+
+## 11. tip `916faff` 单次付费确认（已跑，继续停止）
+
+| 项 | 值 |
+| --- | --- |
+| tip | `916faff`（#63 arrival-state stem/quota 已合入；master CI `43154245923` 绿） |
+| 证据 | `bounded-probe-916faff-outcome.json` / `.runtime/.../bounded-probe-916faff-20261112T054114Z` |
+| 调用 | 574–587（14 次） |
+| 费用护栏 | 约 $12.55 / $20；累计 **587/650** |
+| 进度 | phase 0+1 `applied`；停在 phase 2 规划 |
+| 停止 | `需求原文对应多个修订，请使用可唯一绑定的完整连续原文` → `blocked ≠ ready` |
+| 未复现 | **6170cd7 的验收义务未完整执行**；**`33>30` 仍未出现** |
+| 系列 | **STOP_SERIES**（见 `post-gate-916faff-finish-report.json`）；不再自动续跑 |

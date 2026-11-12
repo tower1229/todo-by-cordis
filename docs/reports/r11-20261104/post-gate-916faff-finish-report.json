@@ -1,0 +1,55 @@
+{
+  "tipSha": "916faff433a22090ecffa73e165525b88895c6ea",
+  "round": "post-gate-confirmation",
+  "ci": {
+    "pushRunId": 43154245923,
+    "devRunId": null,
+    "prRunId": 63,
+    "headSha": "916faff433a22090ecffa73e165525b88895c6ea",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-12T05:34:42Z",
+    "devCompletedAt": null,
+    "application": {
+      "tests": 894,
+      "pass": 894,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "note": "Master M1 checks success on tip 916faff (43154245923) after #63 merge before post-gate extended-ms paid confirmation. Fee guard $20; nextOrdinal 574. Exactly ONE paid round."
+  },
+  "evidenceDir": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-916faff-20261112T054114Z",
+  "callsFirst": 574,
+  "callsLast": 587,
+  "paidCalls": 14,
+  "feeGuardOccupiedUSD": 12.554264975999997,
+  "feeGuardUSD": 20,
+  "passed": false,
+  "completeSixStepPass": false,
+  "stopMessage": "需求原文对应多个修订，请使用可唯一绑定的完整连续原文",
+  "recurrence": {
+    "browserCasesCapExceededReappeared": false,
+    "acceptanceObligationIncompleteReappeared": false,
+    "sameFieldObligationConflictReappeared": false,
+    "frozenAcceptanceSelfConflictReappeared": false,
+    "tagTagHistoryNonUniquenessReappeared": false,
+    "missingExistingRequirementFatalReappeared": false,
+    "sourceQuoteMultipleRevisionsReappeared": true
+  },
+  "seriesDecision": "STOP_SERIES",
+  "onePaidRoundOnly": true,
+  "harnessReconstructed": true,
+  "harnessNote": "Reused r11 probe-local extended-ms + meter; accounting inherits 6170cd7 outcome as priorOccupied 573.",
+  "comparedToPriorProbe": {
+    "priorTip": "6170cd7",
+    "priorStop": "acceptance-obligation-incomplete on phase0",
+    "priorStopReappeared": false,
+    "newStop": "source-quote-multiple-revisions on phase2",
+    "phasesApplied": [
+      0,
+      1
+    ]
+  }
+}

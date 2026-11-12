@@ -1,6 +1,6 @@
-# r11 收口进度与下一步（2026-11-11）
+# r11 收口进度与下一步（2026-11-12）
 
-基线 tip：以 `dev` / `master` 对齐的最新合入为准。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
+基线 tip：`master`/`dev` 对齐至 `916faff`（#63）。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
 
 ## 1. 已收口
 
@@ -46,19 +46,19 @@
    - 结论：强化 **仅 plan 根** `acceptanceReason`，禁止 `requirements[]`；见 [`acceptance-reason-contract.md`](./acceptance-reason-contract.md)  
    - 夹具：`acceptance-reason-contract.test.ts` + 工具描述/schema 文案强化  
 
-3. **单次付费确认（仅维护者授权）** — **已完成（非通过）**  
-   - tip `6170cd7`；双 CI 绿后 extended-ms 单条六步（调用 566–573）  
-   - **`33>30` 未复现**；新停点：验收义务未完整执行/断言已变化 → 规划 `blocked`  
-   - 费用约 $11.96/$20；累计 573/650；**继续 STOP_SERIES**  
-   - 见 `bounded-probe-6170cd7-outcome.json` / `post-gate-6170cd7-finish-report.json`
+3. **单次付费确认（仅维护者授权）** — **已完成两轮（均非通过）**  
+   - tip `6170cd7`：调用 566–573；停在 `验收义务未完整执行`；见 `bounded-probe-6170cd7-outcome.json`  
+   - tip `916faff`（#63 后）：调用 574–587；**上一停点未复现**（phase0+1 已 `applied`）；新停点 phase2：`需求原文对应多个修订，请使用可唯一绑定的完整连续原文` → `blocked ≠ ready`  
+   - 费用约 $12.55/$20；累计 **587/650**；**继续 STOP_SERIES**  
+   - 见 `bounded-probe-916faff-outcome.json` / `post-gate-916faff-finish-report.json`
 
 4. **Dependabot 剩余 moderate**  
    与自迭代主线正交；有空修，不插队挡架构刀。
 
 ## 6. 刚确认后的架构下一刀（零付费优先）
 
-付费确认暴露的是 **action-visible 到达状态未进身份键**：同动作 open/done 两条可见性期望共用 stem/配额 → done 案例 supersede open → `obligationFailure` 误杀。  
-**本刀已完成（零付费）**：`actionVisibleArrivalState` 写入 `browserCaseStem` + `browserCaseQuotaKey`；同态不同 setup 仍可覆盖；夹具见 `browser-case-identity`。系列保持 `STOP_SERIES`，不抬 30、不开付费。
+- **已完成**：action-visible 到达状态进 stem/配额（#63）；6170cd7 的 `obligationFailure` 误杀在付费路径上消失。  
+- **新暴露**：标签升级步（phase2）规划编译因「需求原文对应多个修订 / 须可唯一绑定的完整连续原文」门禁停下。下一刀应**零付费**夹具化该 sourceQuote/修订绑定诊断，再考虑是否另授权付费。系列保持 `STOP_SERIES`。
 
 ## 5. 明确不做
 

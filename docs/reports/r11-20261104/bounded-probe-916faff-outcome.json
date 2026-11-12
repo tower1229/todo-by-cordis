@@ -1,0 +1,94 @@
+{
+  "schema": "cordis.r11-916faff-post-gate-extended-ms-probe-outcome/1",
+  "recordedAt": "2026-11-12T06:50:05.166675+00:00",
+  "tipSha": "916faff433a22090ecffa73e165525b88895c6ea",
+  "evidenceDir": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-916faff-20261112T054114Z",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-916faff-bind.json",
+  "passed": false,
+  "completeSixStepPass": false,
+  "paidCalls": 14,
+  "ordinals": {
+    "first": 574,
+    "last": 587
+  },
+  "cumulativeOccupied": 587,
+  "remainingCalls": 63,
+  "knownGoalEstimatedPeakUSD": 10.194968975999997,
+  "goalUnknownUsageReserveUSD": 2.359296,
+  "goalFeeGuardOccupiedUSD": 12.554264975999997,
+  "currentCohortKnownEstimatedPeakUSD": 0.5980794960000004,
+  "currentCohortUnknownUsageReserveUSD": 0,
+  "actualModel": "deepseek-flash",
+  "fatalHead": "{\"diagnostics\":[\"需求原文对应多个修订，请使用可唯一绑定的完整连续原文\"],\"acceptanceRevisions\":[],\"parentRunId\":\"9a1cc8a7-655e-4058-ac1f-383fbf8e9144\",\"baseVersion\":\"893412ddaf3a83aec1744b4971d3336b41f158d6f25b81ac86a4251ebcff9310\",\"capabilityId\":\"default\",\"parent\":{\"status\":\"succeeded\",\"budget\":{\"efficiencyTarget\":12,\"authorized\":{\"calls\":12,\"candidates\":3,\"milliseconds\":1800000},\"grants\":[],\"callsUsed\":6,\"callsRemaining\":6,\"candidatesRemaining\":2,\"millisecondsRemaining\":1062512.879291}},\"id\":\"32129106-bf49-489a-b741-f7048a3f1eab\",\"request\":\"请升级标签插件：保存标签时统一为小写，仍去掉首尾空格、拒绝空白。保留计数和其他行为。\",\"requestRevision\":1,\"revisions\":[{\"revision\":1,\"type\":\"request\",\"text\":\"请升级标签插件：保存标签时统一为小写，仍去掉首尾空格、拒绝空白。保留计数和其他行为。\",\"createdAt\":\"2026-11-12T06:05:01.193Z\"}],\"plans\":[],\"evidence\":[{\"ref\":\"inspect_application\",\"hash\":\"436e009bf5c8965e4",
+  "honestNonPass": true,
+  "stop": {
+    "kind": "source-quote-multiple-revisions",
+    "phase": 2,
+    "planningPhase": "planning",
+    "scope": "bounded-six-step-1",
+    "code": "plan-compilation",
+    "blockReason": null,
+    "diagnostic": "{\"diagnostics\":[\"需求原文对应多个修订，请使用可唯一绑定的完整连续原文\"],\"acceptanceRevisions\":[],\"parentRunId\":\"9a1cc8a7-655e-4058-ac1f-383fbf8e9144\",\"baseVersion\":\"893412ddaf3a83aec1744b4971d3336b41f158d6f25b81ac86a4251ebcff9310\",\"capabilityId\":\"default\",\"parent\":{\"status\":\"succeeded\",\"budget\":{\"efficiencyTarget\":12,\"authorized\":{\"calls\":12,\"candidates\":3,\"milliseconds\":1800000},\"grants\":[],\"callsUsed\":6,\"callsRemaining\":6,\"candidatesRemaining\":2,\"millisecondsRemaining\":1062512.879291}},\"id\":\"32129106-bf49-489a-b741-f7048a3f1eab\",\"request\":\"请升级标签插件：保存标签时统一为小写，仍去掉首尾空格、拒绝空白。保留计数和其他行为。\",\"requestRevision\":1,\"revisions\":[{\"revision\":1,\"type\":\"request\",\"text\":\"请升级标签插件：保存标签时统一为小写，仍去掉首尾空格、拒绝空白。保留计数和其他行为。\",\"createdAt\":\"2026-11-12T06:05:01.193Z\"}],\"plans\":[],\"evidence\":[{\"ref\":\"inspect_application\",\"hash\":\"436e009bf5c8965e44f32303713b900946aa6eeafd64bb8844ee489affbf8dcb\"},{\"ref\":\"active-source\",\"hash\":\"438ad28505c4fbd6460391734293380b97aa7a7d2b10f1aa76fe5e334fddce67\"},{\"ref\":\"active-contract\",\"hash\":\"6cc8cc1daf6b5cdfc9909b043e568adedd095d70056b144d4cab5101b090e4cb\"},{\"ref\":\"model-view/active-acceptance\",\"hash\":\"cbf1bb95a5db1eb996aba76f6d9448cb89ab200e36689cc93d4cb49cf77d51a1\",\"source\":{\"ref\":\"active-acceptance\",\"hash\":\"cc1997097ba69bb0f4728cd96ff3a464806bd12d5b201d2c7d814419665ff0f5\"}},{\"ref\":\"member-acceptance/default@3084e545880058df90e196ede39ecea6c3b6182297c77225bc72c50ad36911e0\",\"hash\":\"5ccaa2316d3eae2cef0b6aa1f756c1591418e4d2766492ee0085d72bffc8abed\"},{\"ref\":\"member-source/tag@a81497514190317bedc5916b5302dc72a9ae453edada64158853f9edff76df26\",\"hash\":\"f1d389072f1225cd9f4b2b6a2ab7833af1cd23673e8f5273840a24e041a86ae8\"},{\"ref\":\"member-contract/tag@a81497514190317bedc5916b5302dc72a9ae453edada64158853f9edff76df26\",\"hash\":\"a04cc08bfd9ad6cc560e96d5bb936a66263d13d929c653bf3f5ef2b7bafd0dcf\"},{\"ref\":\"member-acceptance/tag@a81497514190317bedc5916b5302dc72a9ae453edada64158853f9edff76df26\",\"hash\":\"e05403b593a23b449d9935ccfe9296119abb72cc00a3a60c5395f8b873993395\"},{\"ref\":\"member-source/counter@dd056e26784992bf",
+    "message": "需求原文对应多个修订，请使用可唯一绑定的完整连续原文"
+  },
+  "progress": {
+    "phaseBrowserScreenshots": [
+      "six-step-1/phase-1-browser.png",
+      "six-step-1/phase-0-browser.png"
+    ],
+    "appliedEvents": 2,
+    "experienceCheckedEvents": 2,
+    "settledEvents": 8,
+    "phasesReached": [
+      0,
+      1,
+      2
+    ],
+    "phase0Applied": true,
+    "phase1Applied": true,
+    "phase2Applied": false,
+    "phase3Applied": false,
+    "phase3Failed": false,
+    "extendedMsHarnessUsed": true,
+    "millisecondsAuthorized": 1800000,
+    "millisecondsPauseGrants": true,
+    "browserCasesCapExceededReappeared": false,
+    "sameFieldObligationConflictReappeared": false,
+    "frozenAcceptanceSelfConflictReappeared": false,
+    "tagTagHistoryNonUniquenessReappeared": false,
+    "missingExistingRequirementFatalReappeared": false,
+    "acceptanceObligationIncompleteReappeared": false,
+    "sourceQuoteMultipleRevisionsReappeared": true
+  },
+  "ci": {
+    "pushRunId": 43154245923,
+    "devRunId": null,
+    "prRunId": 63,
+    "headSha": "916faff433a22090ecffa73e165525b88895c6ea",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-12T05:34:42Z",
+    "devCompletedAt": null,
+    "application": {
+      "tests": 894,
+      "pass": 894,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "note": "Master M1 checks success on tip 916faff (43154245923) after #63 merge before post-gate extended-ms paid confirmation. Fee guard $20; nextOrdinal 574. Exactly ONE paid round."
+  },
+  "recurrence": {
+    "browserCasesCapExceededReappeared": false,
+    "acceptanceObligationIncompleteReappeared": false,
+    "sameFieldObligationConflictReappeared": false,
+    "frozenAcceptanceSelfConflictReappeared": false,
+    "tagTagHistoryNonUniquenessReappeared": false,
+    "missingExistingRequirementFatalReappeared": false,
+    "sourceQuoteMultipleRevisionsReappeared": true
+  },
+  "seriesDecision": "STOP_SERIES",
+  "onePaidRoundOnly": true,
+  "note": "Post-gate ONE paid confirmation on tip 916faff after #63. Prior 6170cd7 stop (验收义务未完整执行 / action-visible open-done) did NOT reappear; phase0+1 applied. New stop at phase2: 需求原文对应多个修订 → planning-gate blocked≠ready. Fee ~$12.5543/$20. Calls {'first': 574, 'last': 587}. Dual six-step and accept:v1 not run."
+}
