@@ -58,7 +58,7 @@
 ## 6. 刚确认后的架构下一刀（零付费优先）
 
 - **已完成**：action-visible 到达状态进 stem/配额（#63）；6170cd7 的 `obligationFailure` 误杀在付费路径上消失。  
-- **新暴露**：标签升级步（phase2）规划编译因「需求原文对应多个修订 / 须可唯一绑定的完整连续原文」门禁停下。下一刀应**零付费**夹具化该 sourceQuote/修订绑定诊断，再考虑是否另授权付费。系列保持 `STOP_SERIES`。
+- **已完成（零付费）**：sourceQuote 多修订绑定夹具——`v1Requests[0/1/2]` 下短句「拒绝空白」「去掉首尾空格」必歧义；加长 quote 唯一绑定升级源；报错带 offending quote；规划文案强调跨修订共享短句须加长。v1 夹具见 `planning-requirement-revision`；错误文案断言见 `plan-writing`。系列保持 `STOP_SERIES`，不开付费。
 
 ## 5. 明确不做
 

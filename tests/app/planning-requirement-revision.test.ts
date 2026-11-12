@@ -1,10 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { compilePlanInput } from "../../src/evolution/plan-input.js";
+import { v1Requests } from "../../scripts/lib/v1-scenario.js";
 
 const original = "增加标签，保存去首尾空格、拒绝空白并保留大小写；其他行为不变";
 const upgrade = "升级标签，保存统一小写，仍去首尾空格并拒绝空白；其他行为不变";
 const sources = [{ id: "accepted:1", text: original }, { id: "upgrade:1", text: upgrade }];
+/** tip 916faff phase2 sourceCatalog shape: install + counter + upgrade. */
+const v1Phase2Sources = [
+  { id: "phase0:1", text: v1Requests[0] },
+  { id: "phase1:1", text: v1Requests[1] },
+  { id: "phase2:1", text: v1Requests[2] },
+];
 const oldRequirement = {
   id: "accepted-tags", description: original, sourceQuote: original,
   sourceRevision: sources[0].id, type: "behavior",
@@ -131,4 +138,67 @@ test("error-feedback 冲突场景：业务修订引用缺失的既有要求仍�
     () => compilePlanInput(input, c, conflictingSources),
     /修订.*不存在|既有.*不存在/,
   );
+});
+
+function v1Phase2Proposal(quote: string) {
+  const { member: _member, ...previous } = oldCase;
+  return {
+    intent: "improve" as const,
+    acceptanceReason: "用户明确把标签保存改为统一小写，并保留拒绝空白",
+    changes: [
+      {
+        target: "tags",
+        features: ["commands", "fields", "detail"],
+        cases: [
+          {
+            ...previous,
+            expected: {
+              kind: "commit" as const,
+              state: "open",
+              fields: { tags: "alpha project" },
+            },
+          },
+        ],
+      },
+    ],
+    requirements: [
+      {
+        quote,
+        type: "behavior",
+        expectations: [
+          { kind: "behavior" as const },
+          { kind: "field" as const, field: "tags" },
+        ],
+      },
+    ],
+  };
+}
+
+test("v1 phase2：短 quote「拒绝空白」跨初装/升级修订歧义（916faff 停点）", () => {
+  assert.throws(
+    () => compilePlanInput(v1Phase2Proposal("拒绝空白"), context(), v1Phase2Sources),
+    /需求原文「拒绝空白」对应多个修订/,
+  );
+});
+
+test("v1 phase2：短 quote「去掉首尾空格」同样跨修订歧义", () => {
+  assert.throws(
+    () =>
+      compilePlanInput(v1Phase2Proposal("去掉首尾空格"), context(), v1Phase2Sources),
+    /需求原文「去掉首尾空格」对应多个修订/,
+  );
+});
+
+test("v1 phase2：加长 quote 唯一绑定升级修订", () => {
+  const quote = "仍去掉首尾空格、拒绝空白";
+  assert.equal(v1Requests[2].includes(quote), true);
+  assert.equal(v1Requests[0].includes(quote), false);
+  const draft = compilePlanInput(
+    v1Phase2Proposal(quote),
+    context(),
+    v1Phase2Sources,
+  );
+  assert.equal(draft.requirements[0].sourceQuote, quote);
+  assert.equal(draft.requirements[0].source, 3);
+  assert.equal(draft.requirements[0].description, quote);
 });

@@ -653,9 +653,12 @@ export function compilePlanInput(
     const matches = sources
       .map((s, i) => ({ ...s, index: i + 1 }))
       .filter((s) => r.quote.trim() && s.text.includes(r.quote));
-    if (!matches.length) throw new Error("需求原文引用不存在");
+    if (!matches.length)
+      throw new Error(`需求原文「${r.quote}」引用不存在`);
     if (new Set(matches.map((s) => s.text)).size > 1)
-      throw new Error("需求原文对应多个修订，请使用可唯一绑定的完整连续原文");
+      throw new Error(
+        `需求原文「${r.quote}」对应多个修订，请使用可唯一绑定的完整连续原文`,
+      );
     const source = matches.at(-1)!;
     const old = (previous.requirements ?? []).filter(
       (o) => o.sourceQuote === (r.revises ?? r.quote) && o.type === r.type,
