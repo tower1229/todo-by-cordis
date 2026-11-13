@@ -1,0 +1,100 @@
+{
+  "schema": "cordis.r11-1a4a54f-post-gate-extended-ms-probe-outcome/1",
+  "recordedAt": "2026-11-13T02:27:01.291154+00:00",
+  "tipSha": "1a4a54f7d8eb35fcdc2057df7c5ac02afadb046f",
+  "evidenceDir": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-1a4a54f-20261113T011513Z",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-1a4a54f-bind.json",
+  "passed": false,
+  "completeSixStepPass": false,
+  "paidCalls": 24,
+  "ordinals": {
+    "first": 588,
+    "last": 611
+  },
+  "cumulativeOccupied": 611,
+  "remainingCalls": 39,
+  "knownGoalEstimatedPeakUSD": 12.01999701599999,
+  "goalUnknownUsageReserveUSD": 2.359296,
+  "goalFeeGuardOccupiedUSD": 14.379293015999991,
+  "currentCohortKnownEstimatedPeakUSD": 1.825028039999994,
+  "currentCohortUnknownUsageReserveUSD": 0,
+  "actualModel": "deepseek-flash",
+  "fatalHead": "{\"diagnostics\":[\"浏览器验收案例超出上限：38 条，最多 30 条\"],\"protocolFailures\":[{\"phase\":\"planning\",\"call\":3,\"requestHash\":\"489a9b48aaa75973ebf88b1ab2d8cea9848f751139f3ade088942afdba49e655\",\"responseHash\":\"c894ca62a38f81bc68fe3d7753f41f26a5668cda06d78b589dc1bf709502bd84\",\"problems\":[\"工具参数不符合 JSON 业务契约：propose_plan：$o.defaults[0].id: 未授权字段；$o.defaults[1].id: 未授权字段；$o.defaults[2].id: 未授权字段；$o.defaults[3].id: 未授权字段；$o.defaults[4].id: 未授权字段\"]}],\"acceptanceRevisions\":[],\"parentRunId\":\"3670357f-3bb0-4a7b-b939-7ae15b4b1c53\",\"baseVersion\":\"abc95800c2bc818c6bd9107866369c138721c9e5df409293fae23636e2de13ca\",\"capabilityId\":\"default\",\"parent\":{\"status\":\"succeeded\",\"budget\":{\"efficiencyTarget\":12,\"authorized\":{\"calls\":12,\"candidates\":3,\"milliseconds\":1800000},\"grants\":[],\"callsUsed\":6,\"callsRemaining\":6,\"candidatesRema",
+  "honestNonPass": true,
+  "stop": {
+    "kind": "browser-cases-cap-exceeded",
+    "phase": 4,
+    "planningPhase": "planning",
+    "scope": "bounded-six-step-1",
+    "code": "plan-compilation",
+    "blockReason": null,
+    "diagnostic": "{\"diagnostics\":[\"浏览器验收案例超出上限：38 条，最多 30 条\"],\"protocolFailures\":[{\"phase\":\"planning\",\"call\":3,\"requestHash\":\"489a9b48aaa75973ebf88b1ab2d8cea9848f751139f3ade088942afdba49e655\",\"responseHash\":\"c894ca62a38f81bc68fe3d7753f41f26a5668cda06d78b589dc1bf709502bd84\",\"problems\":[\"工具参数不符合 JSON 业务契约：propose_plan：$o.defaults[0].id: 未授权字段；$o.defaults[1].id: 未授权字段；$o.defaults[2].id: 未授权字段；$o.defaults[3].id: 未授权字段；$o.defaults[4].id: 未授权字段\"]}],\"acceptanceRevisions\":[],\"parentRunId\":\"3670357f-3bb0-4a7b-b939-7ae15b4b1c53\",\"baseVersion\":\"abc95800c2bc818c6bd9107866369c138721c9e5df409293fae23636e2de13ca\",\"capabilityId\":\"default\",\"parent\":{\"status\":\"succeeded\",\"budget\":{\"efficiencyTarget\":12,\"authorized\":{\"calls\":12,\"candidates\":3,\"milliseconds\":1800000},\"grants\":[],\"callsUsed\":6,\"callsRemaining\":6,\"candidatesRemaining\":2,\"millisecondsRemaining\":1008450.4505830002}},\"id\":\"fe996015-b5c6-42ba-822b-495e76936d89\",\"request\":\"请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。\",\"requestRevision\":1,\"revisions\":[{\"revision\":1,\"type\":\"request\",\"text\":\"请停用标签插件，保留已有标签数据和计数、复盘功能，之后可以重新启用。\",\"createdAt\":\"2026-11-13T02:02:53.943Z\"}],\"plans\":[],\"evidence\":[{\"ref\":\"inspect_application\",\"hash\":\"ed7c91a8b0b781010fb3df6f67e65f5ac189e1bfdf8274f0bba92d507fa93090\"},{\"ref\":\"active-source\",\"hash\":\"35f7554c49c3f32ccefbef016dce28ba2e3da895025fb9109cdac648fe9b8a23\"},{\"ref\":\"business/entry.ts\",\"hash\":\"35f7554c49c3f32ccefbef016dce28ba2e3da895025fb9109cdac648fe9b8a23\"},{\"ref\":\"business/view.ts\",\"hash\":\"62dcd0f12892e72d019f20c7b64f4f42ed264bef4fbf61facfdb0ab7c81b074b\"},{\"ref\":\"business/config.json\",\"hash\":\"c89a148be40e6752261e3038609a4b68de22fa3bfdaf32f884edffb8480b9bbe\"},{\"ref\":\"business/compatibility.json\",\"hash\":\"8e3451c424803ea0632b31b4423abe0fcf90285b589cc0b70b615dd26cf17e73\"},{\"ref\":\"business/contract.ts\",\"hash\":\"00825b03c2b28716ecb565549c871852e30cafd7c2b53ef66a859a5369ccec23\"},{\"ref\":\"active-contract\",\"hash\":\"38c26641fd77228c7405b21a8572e0d83cf1b85ab2a46c459d4936202c8fd091\"},{\"ref\":\"model-view/active-acceptance\",\"hash\":\"6f547a0898",
+    "message": "浏览器验收案例超出上限：38 条，最多 30 条"
+  },
+  "progress": {
+    "phaseBrowserScreenshots": [
+      "six-step-1/phase-1-browser.png",
+      "six-step-1/phase-2-browser.png",
+      "six-step-1/phase-0-browser.png",
+      "six-step-1/phase-3-browser.png"
+    ],
+    "appliedEvents": 4,
+    "experienceCheckedEvents": 4,
+    "settledEvents": 16,
+    "phasesReached": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "phase0Applied": true,
+    "phase1Applied": true,
+    "phase2Applied": true,
+    "phase3Applied": true,
+    "phase3Failed": false,
+    "phase4Reached": true,
+    "extendedMsHarnessUsed": true,
+    "millisecondsAuthorized": 1800000,
+    "millisecondsPauseGrants": true,
+    "browserCasesCapExceededReappeared": true,
+    "acceptanceObligationIncompleteReappeared": false,
+    "sourceQuoteMultipleRevisionsReappeared": false,
+    "sameFieldObligationConflictReappeared": false,
+    "frozenAcceptanceSelfConflictReappeared": false,
+    "tagTagHistoryNonUniquenessReappeared": false,
+    "missingExistingRequirementFatalReappeared": false
+  },
+  "ci": {
+    "pushRunId": 43175700033,
+    "devRunId": 43175700033,
+    "prRunId": null,
+    "headSha": "1a4a54f7d8eb35fcdc2057df7c5ac02afadb046f",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-12T08:46:16Z",
+    "devCompletedAt": "2026-11-12T08:46:16Z",
+    "application": {
+      "tests": 897,
+      "pass": 897,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "note": "Dev M1 checks success on tip 1a4a54f (43175700033) before post-gate extended-ms paid confirmation. Stay on dev; no master merge. Fee guard $20; nextOrdinal 588. Exactly ONE paid round."
+  },
+  "recurrence": {
+    "browserCasesCapExceededReappeared": true,
+    "acceptanceObligationIncompleteReappeared": false,
+    "sourceQuoteMultipleRevisionsReappeared": false,
+    "sameFieldObligationConflictReappeared": false,
+    "frozenAcceptanceSelfConflictReappeared": false,
+    "tagTagHistoryNonUniquenessReappeared": false,
+    "missingExistingRequirementFatalReappeared": false
+  },
+  "seriesDecision": "STOP_SERIES",
+  "onePaidRoundOnly": true,
+  "branchPolicy": "dev-only until acceptance; not merged to master",
+  "note": "Post-gate ONE paid confirmation on tip 1a4a54f (sourceQuote fixture). Prior 916faff stop (sourceQuote multi-revision) did NOT reappear; phases 0–3 applied. New/recurring stop at phase4: 浏览器验收案例超出上限：38 条，最多 30 条 → blocked≠ready. Fee ~$14.3793/$20. Calls {'first': 588, 'last': 611}. Stay on dev. Dual six-step and accept:v1 not run."
+}

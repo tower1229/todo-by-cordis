@@ -1,6 +1,6 @@
-# r11 收口进度与下一步（2026-11-12）
+# r11 收口进度与下一步（2026-11-13）
 
-基线 tip：`master`/`dev` 对齐至 `916faff`（#63）。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
+基线 tip：日常在 **`dev`**（当前 `1a4a54f`）；**达到验收标准前不合 `master`**。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
 
 ## 1. 已收口
 
@@ -14,7 +14,7 @@
 | 安全 | #58 `@hono/node-server` 2.1.3 |
 | 演示域表述 | #59：改写为「演示域扩张纪律」，非 Todo 产品开关 |
 | Issue / PR 队列 | 以当前 GitHub 为准 |
-| 分支 | `dev`＝日常 tip；与 `master` 定期快进对齐 |
+| 分支 | `dev`＝日常 tip；**验收前不合 master** |
 
 ## 2. 仍未声称
 
@@ -27,8 +27,8 @@
 
 | 分支 | 角色 |
 | --- | --- |
-| `dev` | **日常开发与合入目标**；自迭代相关改动默认从这里拉、往这里合 |
-| `master` | 默认保护/发布指针；与 `dev` 定期快进对齐，避免长期分叉 |
+| `dev` | **日常开发与合入目标**；自迭代相关改动默认从这里拉、往这里合；**验收前保持在此** |
+| `master` | 保护/发布指针；**达到验收标准前不从 `dev` 合入** |
 | 功能枝 | 短命：`dev` 上开、合回 `dev` 后删 |
 
 ## 4. 下一步推进方向（按自迭代收益排序）
@@ -46,19 +46,22 @@
    - 结论：强化 **仅 plan 根** `acceptanceReason`，禁止 `requirements[]`；见 [`acceptance-reason-contract.md`](./acceptance-reason-contract.md)  
    - 夹具：`acceptance-reason-contract.test.ts` + 工具描述/schema 文案强化  
 
-3. **单次付费确认（仅维护者授权）** — **已完成两轮（均非通过）**  
-   - tip `6170cd7`：调用 566–573；停在 `验收义务未完整执行`；见 `bounded-probe-6170cd7-outcome.json`  
-   - tip `916faff`（#63 后）：调用 574–587；**上一停点未复现**（phase0+1 已 `applied`）；新停点 phase2：`需求原文对应多个修订，请使用可唯一绑定的完整连续原文` → `blocked ≠ ready`  
-   - 费用约 $12.55/$20；累计 **587/650**；**继续 STOP_SERIES**  
-   - 见 `bounded-probe-916faff-outcome.json` / `post-gate-916faff-finish-report.json`
+3. **单次付费确认（仅维护者授权）** — **已完成三轮（均非通过）**  
+   - tip `6170cd7`：566–573；`验收义务未完整执行`  
+   - tip `916faff`：574–587；phase0+1 applied；停在 sourceQuote 多修订  
+   - tip `1a4a54f`（`dev`）：588–611；**sourceQuote 停点未复现**；phase0–3 applied；停在 phase4：`浏览器验收案例超出上限：38 条，最多 30 条`  
+   - 费用约 $14.38/$20；累计 **611/650**；**继续 STOP_SERIES**  
+   - 见 `bounded-probe-1a4a54f-outcome.json` / `post-gate-1a4a54f-finish-report.json`
 
 4. **Dependabot 剩余 moderate**  
    与自迭代主线正交；有空修，不插队挡架构刀。
 
 ## 6. 刚确认后的架构下一刀（零付费优先）
 
-- **已完成**：action-visible 到达状态进 stem/配额（#63）；6170cd7 的 `obligationFailure` 误杀在付费路径上消失。  
-- **已完成（零付费）**：sourceQuote 多修订绑定夹具——`v1Requests[0/1/2]` 下短句「拒绝空白」「去掉首尾空格」必歧义；加长 quote 唯一绑定升级源；报错带 offending quote；规划文案强调跨修订共享短句须加长。v1 夹具见 `planning-requirement-revision`；错误文案断言见 `plan-writing`。系列保持 `STOP_SERIES`，不开付费。
+- **已完成**：arrival-state stem/配额（#63）；sourceQuote 多修订夹具（`1a4a54f`）；**停用成员 browserCases 收缩**（call-611 / phase3 冻结夹具 → ≤30，不抬上限）。  
+- **宿主收缩要点**：`memberEnabled.enabled=false` 时该成员 field 义务收成 history-only；启停提案不派生无关字段填充场景；inherit 丢弃仍广告停用成员的过时 UI/操作案例。  
+- **夹具**：`tests/app/phase4-disable-tags-1a4a54f-replay.test.ts` + `tests/fixtures/phase4-disable-tags-1a4a54f-*.json`。  
+- **系列**：继续 `STOP_SERIES`；仍只在 `dev`。是否再开单次付费确认由维护者授权。
 
 ## 5. 明确不做
 

@@ -110,8 +110,8 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 收口进度与推进顺序见 [progress-and-next.md](./progress-and-next.md)（`dev` / `master` tip 对齐后的现行清单）。摘要：
 
 1. #54 已裁决并合入；round-10 `33>30` 已由 [#56](https://github.com/tower1229/todo-by-cordis/pull/56) 消除。
-2. tip `6170cd7` / `916faff` 单次付费确认已跑（§10–§11）；**继续 STOP_SERIES**，改架构不补丁循环。
-3. 下一刀排在自迭代能力本身（现为 sourceQuote/多修订绑定）；演示域改动只作验证夹具。
+2. tip `6170cd7` / `916faff` / `1a4a54f` 单次付费确认已跑（§10–§12）；**继续 STOP_SERIES**，改架构不补丁循环；**验收前只留 `dev`**。
+3. 下一刀排在自迭代能力本身（现为 phase4 `38>30` browserCases）；演示域改动只作验证夹具。
 
 ## 10. tip `6170cd7` 单次付费确认（已跑，继续停止）
 
@@ -139,3 +139,26 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 | 停止 | `需求原文对应多个修订，请使用可唯一绑定的完整连续原文` → `blocked ≠ ready` |
 | 未复现 | **6170cd7 的验收义务未完整执行**；**`33>30` 仍未出现** |
 | 系列 | **STOP_SERIES**（见 `post-gate-916faff-finish-report.json`）；不再自动续跑 |
+
+## 12. tip `1a4a54f` 单次付费确认（已跑，继续停止）
+
+| 项 | 值 |
+| --- | --- |
+| tip | `1a4a54f`（sourceQuote 多修订夹具；**仅 `dev`**，CI `43175700033` 绿） |
+| 证据 | `bounded-probe-1a4a54f-outcome.json` / `.runtime/.../bounded-probe-1a4a54f-20261113T011513Z` |
+| 调用 | 588–611（24 次） |
+| 费用护栏 | 约 $14.38 / $20；累计 **611/650** |
+| 进度 | phase 0–3 `applied`；停在 phase 4 规划 |
+| 停止 | `浏览器验收案例超出上限：38 条，最多 30 条` → `blocked ≠ ready` |
+| 未复现 | **sourceQuote 多修订**；**验收义务未完整执行** |
+| 系列 | **STOP_SERIES**（见 `post-gate-1a4a54f-finish-report.json`）；不再自动续跑 |
+
+## 13. 零付费：停用成员收缩 `38>30`（已落地，待合入 tip）
+
+| 项 | 值 |
+| --- | --- |
+| 证据来源 | tip `1a4a54f` phase3 冻结 29 条 + call-611 `propose_plan` |
+| 夹具 | `phase4-disable-tags-1a4a54f-replay.test.ts` |
+| 修法 | 停用成员 → field 义务 history-only；启停不派生无关字段；inherit 丢弃过时 UI/操作案例 |
+| 上限 | **仍 30**，不抬 |
+| 系列 | **STOP_SERIES**；付费确认另授权 |

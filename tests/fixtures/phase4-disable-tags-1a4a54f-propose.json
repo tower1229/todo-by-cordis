@@ -1,0 +1,103 @@
+{
+  "intent": "improve",
+  "summary": "停用 tags 标签辅助成员，保留既有标签数据、计数与复盘功能，并保持之后可重新启用。",
+  "changes": [
+    {
+      "target": "tags",
+      "enabled": false
+    }
+  ],
+  "requirements": [
+    {
+      "quote": "请停用标签插件",
+      "revises": "请升级标签插件",
+      "type": "behavior",
+      "description": "停用 tags 标签辅助成员，不再提供标签动作。",
+      "expectations": [
+        {
+          "kind": "action-visible",
+          "action": "setLabel",
+          "state": "open",
+          "visible": false
+        },
+        {
+          "kind": "action-visible",
+          "action": "setLabel",
+          "state": "done",
+          "visible": false
+        }
+      ]
+    },
+    {
+      "quote": "保留已有标签数据",
+      "revises": "保留已有标签及其他行为",
+      "type": "constraint",
+      "description": "停用标签成员不迁移或清空已有任务的标签值。",
+      "expectations": [
+        {
+          "kind": "history",
+          "field": "tag"
+        }
+      ]
+    },
+    {
+      "quote": "计数、复盘功能，之后可以重新启用",
+      "revises": "标签、计数和已有任务不变。",
+      "type": "constraint",
+      "description": "保留计数与复盘功能，标签成员之后可以重新启用。",
+      "expectations": [
+        {
+          "kind": "action-visible",
+          "action": "increment",
+          "state": "open",
+          "visible": true
+        },
+        {
+          "kind": "action-visible",
+          "action": "complete",
+          "state": "open",
+          "visible": true
+        },
+        {
+          "kind": "action-visible",
+          "action": "reopen",
+          "state": "done",
+          "visible": true
+        }
+      ]
+    }
+  ],
+  "defaults": [
+    {
+      "scope": "停用标签插件的范围",
+      "behavior": "仅将辅助成员 tags 的启用标志改为停用；保留其精确版本、源码、tag 字段、setLabel 动作与 task.detail 贡献定义，不修改主工作流、counter 成员或任务数据。",
+      "basis": "用户要求停用标签插件，同时保留已有标签数据、计数和复盘功能；组合按成员版本与启停标志继承未改成员。",
+      "impact": "标签动作与编辑入口暂不可用，其余成员和流程不变，停用可逆。"
+    },
+    {
+      "scope": "已有标签数据的保留",
+      "behavior": "不迁移、不清空既有任务的 fields.tag；停用只移除标签成员的贡献，历史标签值继续保存在任务记录中，供重新启用后读取。",
+      "basis": "用户明确要求保留已有标签数据；宿主保留扩展字段且停用成员不删除既有任务字段。",
+      "impact": "历史标签数据不丢失，停用期间不新增或改写标签值。"
+    },
+    {
+      "scope": "标签成员重新启用",
+      "behavior": "tags 成员以 enabled=false 保留在组合成员列表中，保留原版本和启停入口；之后可重新启用同一版本，恢复既有小写、去首尾空格和拒绝空白的规则，无需改代码或迁移数据。",
+      "basis": "用户明确之后可以重新启用；宿主成员启停按正向版本记录并保留精确成员版本。",
+      "impact": "启停可逆，重新启用后历史标签数据继续可用。"
+    },
+    {
+      "scope": "计数与复盘功能",
+      "behavior": "counter 成员的 count 字段与 increment 动作，以及主工作流 open/done、complete/reopen 和复盘必填规则精确继承当前版本，不因停用标签而改变。",
+      "basis": "用户要求保留计数和复盘功能；未要求修改其规则或版本。",
+      "impact": "计数与复盘行为与当前版本一致。"
+    },
+    {
+      "scope": "停用期间的任务详情",
+      "behavior": "停用后任务详情不再提供标签贡献的「设置标签」动作与编辑入口；已有标签值仍保存在任务记录中，其他贡献的字段与动作保持原样。",
+      "basis": "宿主停用成员时移除其 UI 贡献，保留字段用于历史任务读取。",
+      "impact": "仅影响标签编辑入口，不改变其他贡献的身份或数据。"
+    }
+  ],
+  "acceptanceReason": "用户本轮明确要求停用标签插件，同时保留已有标签数据、计数与复盘功能，并允许之后重新启用。因此将原「保留已有标签及其他行为」与「标签、计数和已有任务不变。」中标签插件保持启用及其行为不变的预期，修订为标签数据保留、计数与复盘功能不变及标签成员可重新启用；标签成员的版本、保存规则、字段和动作原样保留以便重新启用，计数成员和主工作流不改动。该变更改变了已接受的标签插件启用预期，需按原确认流程独立复核与确认。"
+}

@@ -30,9 +30,29 @@ import {
 } from "./browser-case-content.js";
 import { PlanStructureBlocked } from "./historical-preparation.js";
 
+/** Cases that become obsolete when a member is disabled (actions/UI gone; keep history only). */
+export function obsoleteDisabledMemberCase(
+  c: Pick<BrowserCase, "id" | "steps">,
+  disabledMember: string,
+) {
+  if (c.id.includes("-historical-")) return false;
+  return c.steps.some(
+    (s) =>
+      (s.kind === "field" && s.member === disabledMember) ||
+      (s.kind === "action" && s.member === disabledMember) ||
+      (s.kind === "case-action" && s.member === disabledMember) ||
+      (s.kind === "action-visible" &&
+        s.member === disabledMember &&
+        s.visible === true) ||
+      // Stale UI snapshot still advertising the disabled member's contribution.
+      (s.kind === "ui-identity" &&
+        s.contributions.some((item) => item.member === disabledMember)),
+  );
+}
+
 /** Inherit accepted browser cases and report every explicit revision to the caller. */
 export function inheritBrowserCases(
-  plan: Pick<InvestigatedPlan, "requirements" | "browserCases">,
+  plan: Pick<InvestigatedPlan, "requirements" | "browserCases" | "memberEnabled">,
   inherited: Pick<InvestigatedPlan, "requirements" | "browserCases">,
   reason: unknown,
 ) {
@@ -40,6 +60,21 @@ export function inheritBrowserCases(
   const browserCases = [...compiled];
   const changes: NonNullable<InvestigatedPlan["acceptanceChanges"]> = [];
   const blockers: string[] = [];
+  const disabledMember =
+    plan.memberEnabled && plan.memberEnabled.enabled === false
+      ? plan.memberEnabled.pluginId
+      : undefined;
+  const historicalCover = (old: BrowserCase) => {
+    if (!disabledMember || !obsoleteDisabledMemberCase(old, disabledMember))
+      return undefined;
+    return browserCases.find(
+      (b) =>
+        b.id.includes("-historical-") &&
+        b.steps.some(
+          (s) => s.kind === "field" && s.member === disabledMember,
+        ),
+    )?.id;
+  };
   const reboundFieldCase = (old: BrowserCase) => {
     if (old.classification !== "frozen-business" || !old.obligationId) return;
     const matches: BrowserCase[] = [];
@@ -85,11 +120,15 @@ export function inheritBrowserCases(
       browserCases.find((item) => browserCaseQuotaKey(item) === quota) ??
       reboundFieldCase(old);
     if (!replacement) {
-      const coveredBy = actionVisibleCoveredByUiIdentity(old, browserCases);
+      const coveredBy =
+        actionVisibleCoveredByUiIdentity(old, browserCases) ??
+        historicalCover(old);
       if (coveredBy) {
         aliases.set(old.id, coveredBy);
         continue;
       }
+      if (disabledMember && obsoleteDisabledMemberCase(old, disabledMember))
+        continue;
       browserCases.push(structuredClone(old));
     } else {
       if (replacement.id !== old.id) aliases.set(old.id, replacement.id);
@@ -182,6 +221,30 @@ export function compileReferences(
   } = {},
 ) {
   const lifecycle = {...fieldLifecycle(inherited, workflow.fields), ...(/^[\w.-]{1,100}$/.test(workflow.id ?? "") ? {workflow: {id:workflow.id, fields:(workflow.fields??[]).map(f=>({key:f.key})), actions:workflow.actions.map(a=>({id:a.id}))}} : {})};
+  const memberEnabled = draft.memberEnabled as
+    | { pluginId: string; enabled: boolean }
+    | undefined;
+  const disabledMember =
+    memberEnabled && memberEnabled.enabled === false
+      ? memberEnabled.pluginId
+      : undefined;
+  /** Disable: field ops/UI are gone — keep history retention cases only. */
+  const emitObligationCases = (
+    obligation: NonNullable<Requirement["obligations"]>[number],
+  ) => {
+    const cases = obligationCases(obligation);
+    if (!disabledMember) return cases;
+    if (obligation.kind === "field" && obligation.member === disabledMember)
+      return cases.filter((c) => c.id.includes("-historical-"));
+    if (
+      obligation.kind === "assertion" &&
+      obligation.expected.kind === "action-visible" &&
+      obligation.expected.member === disabledMember &&
+      obligation.expected.visible === true
+    )
+      return [];
+    return cases;
+  };
   const newFieldPreservation: {
     requirementId: string;
     member: string;
@@ -450,6 +513,7 @@ export function compileReferences(
   // cases must still pass the ordinary revision and independent review gates.
   const acceptedFields = frozenFields.filter(
     o => o.member !== "workflow" &&
+      o.member !== disabledMember &&
       !canonical.some(current => current.kind === "field" && current.member === o.member && current.field === o.field) &&
       hash(memberCases.filter(c => c.member === o.member)) ===
         hash((inherited.memberCases ?? []).filter(c => c.member === o.member)),
@@ -500,20 +564,23 @@ export function compileReferences(
       reuseFieldIdentity(field, prior);
     }
   }
-  for (const requirement of requirements)
-    requirement.obligations.push(
-      ...deriveFieldObligations(
-        requirement,
-        memberCases as import("../shared/acceptance-cases.js").MemberAcceptanceCase[],
-        rules,
-        (steps) => bindSteps(steps, requirement.id),
-        [...canonical, ...acceptedFields],
-        renderable(requirement),
-        lifecycle.existing,
-        scheduledMembers(draft as Pick<InvestigatedPlan, "capabilityChanges" | "requiredCapabilities">),
-        includeAcceptedUpdates,
-      ),
-    );
+  // Enable/disable only flips memberEnabled; do not synthesize new field samples
+  // (e.g. workflow "验" complete-only) that inflate browserCases beside frozen ones.
+  if (!memberEnabled)
+    for (const requirement of requirements)
+      requirement.obligations.push(
+        ...deriveFieldObligations(
+          requirement,
+          memberCases as import("../shared/acceptance-cases.js").MemberAcceptanceCase[],
+          rules,
+          (steps) => bindSteps(steps, requirement.id),
+          [...canonical, ...acceptedFields],
+          renderable(requirement),
+          lifecycle.existing,
+          scheduledMembers(draft as Pick<InvestigatedPlan, "capabilityChanges" | "requiredCapabilities">),
+          includeAcceptedUpdates,
+        ),
+      );
   const fields = requirements
     .flatMap((r) => r.obligations)
     .filter((o) => o.kind === "field");
@@ -578,8 +645,14 @@ export function compileReferences(
       hash((inherited.memberCases ?? []).filter(c => c.member === member));
     const memberExistsInInherited = (member: string) =>
       (inherited.memberCases ?? []).some(c => c.member === member);
-    const needsRebind = derived.filter(o => memberCasesChanged(o.member) || !memberExistsInInherited(o.member));
-    const canPreserve = derived.filter(o => !memberCasesChanged(o.member) && memberExistsInInherited(o.member));
+    // Pure enable/disable must not re-derive unrelated members (e.g. review "验"
+    // filler scenarios); only the toggled member may rebind when its cases change.
+    const needsRebind = derived.filter(
+      (o) =>
+        (!memberEnabled || o.member === memberEnabled.pluginId) &&
+        (memberCasesChanged(o.member) || !memberExistsInInherited(o.member)),
+    );
+    const canPreserve = derived.filter((o) => !needsRebind.includes(o));
     const regenerated = needsRebind.length ? deriveFieldObligations(
       replacement,
       memberCases as import("../shared/acceptance-cases.js").MemberAcceptanceCase[],
@@ -613,7 +686,7 @@ export function compileReferences(
     }
     // Preserved fields keep their complete identity, derivation, and browser cases unchanged.
     const allRebound = [...validatedRebound, ...canPreserve.map(o => structuredClone(o))];
-    const priorCaseIds = new Set(allRebound.flatMap(o=>obligationCases(o).map(c=>c.id)));
+    const priorCaseIds = new Set(allRebound.flatMap(o=>emitObligationCases(o).map(c=>c.id)));
     replacement.checks = replacement.checks.filter(c=>c.checker!=="browser/1"||!priorCaseIds.has(c.caseId));
     // Filter out regenerated obligations that have the same ID as allRebound to prevent
     // "同一字段验收义务发生冲突" when both derive from the same member/field but differ in content.
@@ -635,6 +708,12 @@ export function compileReferences(
     .flatMap((r) => r.obligations)
     .filter((o) => o.kind === "history");
   const generateAliases = new Map<string, string>();
+  // Disable shrinks that member's field obligations to history retention only.
+  if (disabledMember)
+    for (const requirement of requirements)
+      for (const obligation of requirement.obligations)
+        if (obligation.kind === "field" && obligation.member === disabledMember)
+          obligation.scenarios = [];
   // History belongs to a field identity, not requirement ordering. Existing-task
   // action scenarios must exercise old data too; initial empty-task checks stay empty.
   for (const requirement of requirements) {
@@ -670,13 +749,15 @@ export function compileReferences(
         // case ID. Derivation provenance must not mint a second scenario hash; that
         // previously let content-hash dedupe drop the derived ID while checks and
         // obligationCases still required it, forcing a retryable third planning round.
-        obligation.scenarios = obligation.scenarios.map((s) => ({
-          ...s,
-          id: hash({
-            steps: s.steps,
-            history: obligation.history!.baseVersion,
-          }).slice(0, 16),
-        }));
+        // Disabled members already cleared scenarios (history-only); do not remint.
+        if (obligation.scenarios.length)
+          obligation.scenarios = obligation.scenarios.map((s) => ({
+            ...s,
+            id: hash({
+              steps: s.steps,
+              history: obligation.history!.baseVersion,
+            }).slice(0, 16),
+          }));
       }
     }
     bindAvailability([requirement],inherited.actionAvailability);
@@ -686,9 +767,16 @@ export function compileReferences(
       // current stem leaves orphan caseIds after host identity-rule churn
       // (e.g. arrival state entering action-visible stem/quota).
       return !requirement.obligations.some((o) => {
-        const generated = obligationCases(o);
-        if (!generated.length) return false;
         const stem = browserCaseStem(o);
+        if (
+          disabledMember &&
+          o.kind === "field" &&
+          o.member === disabledMember &&
+          (c.caseId === stem || c.caseId.startsWith(`${stem}-`))
+        )
+          return true;
+        const generated = emitObligationCases(o);
+        if (!generated.length) return false;
         if (c.caseId === stem || c.caseId.startsWith(`${stem}-`)) return true;
         return (inherited.browserCases ?? []).some(
           (b) => b.obligationId === o.id && b.id === c.caseId,
@@ -696,7 +784,7 @@ export function compileReferences(
       });
     });
     for (const obligation of requirement.obligations) {
-      for (const c of obligationCases(obligation)) {
+      for (const c of emitObligationCases(obligation)) {
         const existingIndex = browsers.findIndex(
           (b) =>
             b.id === c.id ||
@@ -748,7 +836,7 @@ export function compileReferences(
       requirement.checks = remapBrowserChecks(requirement.checks, aliases);
   const missingObligationCases = requirements.flatMap((r) =>
     (r.obligations ?? []).flatMap((o) =>
-      obligationCases(o).filter(
+      emitObligationCases(o).filter(
         (c) =>
           !deduplicated.some((b) => b.id === c.id) && !aliases.has(c.id),
       ),

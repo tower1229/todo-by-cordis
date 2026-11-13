@@ -1,0 +1,58 @@
+{
+  "tipSha": "1a4a54f7d8eb35fcdc2057df7c5ac02afadb046f",
+  "round": "post-gate-confirmation",
+  "ci": {
+    "pushRunId": 43175700033,
+    "devRunId": 43175700033,
+    "prRunId": null,
+    "headSha": "1a4a54f7d8eb35fcdc2057df7c5ac02afadb046f",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-12T08:46:16Z",
+    "devCompletedAt": "2026-11-12T08:46:16Z",
+    "application": {
+      "tests": 897,
+      "pass": 897,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "note": "Dev M1 checks success on tip 1a4a54f (43175700033) before post-gate extended-ms paid confirmation. Stay on dev; no master merge. Fee guard $20; nextOrdinal 588. Exactly ONE paid round."
+  },
+  "evidenceDir": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-1a4a54f-20261113T011513Z",
+  "callsFirst": 588,
+  "callsLast": 611,
+  "paidCalls": 24,
+  "feeGuardOccupiedUSD": 14.379293015999991,
+  "feeGuardUSD": 20,
+  "passed": false,
+  "completeSixStepPass": false,
+  "stopMessage": "浏览器验收案例超出上限：38 条，最多 30 条",
+  "recurrence": {
+    "browserCasesCapExceededReappeared": true,
+    "acceptanceObligationIncompleteReappeared": false,
+    "sourceQuoteMultipleRevisionsReappeared": false,
+    "sameFieldObligationConflictReappeared": false,
+    "frozenAcceptanceSelfConflictReappeared": false,
+    "tagTagHistoryNonUniquenessReappeared": false,
+    "missingExistingRequirementFatalReappeared": false
+  },
+  "seriesDecision": "STOP_SERIES",
+  "onePaidRoundOnly": true,
+  "branchPolicy": "dev-only until acceptance",
+  "harnessReconstructed": true,
+  "harnessNote": "Reused r11 probe-local extended-ms + meter; accounting inherits 916faff as priorOccupied 587.",
+  "comparedToPriorProbe": {
+    "priorTip": "916faff",
+    "priorStop": "source-quote-multiple-revisions on phase2",
+    "priorStopReappeared": false,
+    "newStop": "browserCases 38>30 on phase4",
+    "phasesApplied": [
+      0,
+      1,
+      2,
+      3
+    ]
+  }
+}

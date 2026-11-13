@@ -234,6 +234,12 @@ export function obligationCases(
     historical();
     return cases;
   }
+  // Empty scenarios = no live ops/presentation (e.g. member disabled). Keep history
+  // retention cases only when a baseline preparation is bound.
+  if (!obligation.scenarios.length) {
+    historical();
+    return cases;
+  }
   const initial =
     obligation.initial.kind === "absent"
       ? field("", false)
