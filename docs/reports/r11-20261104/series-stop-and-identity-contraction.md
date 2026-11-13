@@ -153,7 +153,7 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 | 未复现 | **sourceQuote 多修订**；**验收义务未完整执行** |
 | 系列 | **STOP_SERIES**（见 `post-gate-1a4a54f-finish-report.json`）；不再自动续跑 |
 
-## 13. 零付费：停用成员收缩 `38>30`（已落地，待合入 tip）
+## 13. 零付费：停用成员收缩 `38>30`（已合入 tip `461699a`）
 
 | 项 | 值 |
 | --- | --- |
@@ -161,4 +161,28 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 | 夹具 | `phase4-disable-tags-1a4a54f-replay.test.ts` |
 | 修法 | 停用成员 → field 义务 history-only；启停不派生无关字段；inherit 丢弃过时 UI/操作案例 |
 | 上限 | **仍 30**，不抬 |
-| 系列 | **STOP_SERIES**；付费确认另授权 |
+| 系列 | **STOP_SERIES** |
+
+## 14. tip `461699a` 单次付费确认（已跑，继续停止）
+
+| 项 | 值 |
+| --- | --- |
+| tip | `461699a`（停用成员收缩；**仅 `dev`**，CI `43367511044` 绿） |
+| 证据 | `bounded-probe-461699a-outcome.json` / `.runtime/.../bounded-probe-461699a-20261113T054203Z` |
+| 调用 | 612–629（18 次） |
+| 费用护栏 | 约 $15.11 / $20；累计 **629/650** |
+| 进度 | phase 0–2 `applied`；停在 phase 3 规划；**未到 phase4** |
+| 停止 | `须说明验收修订原因` + `浏览器验收案例超出上限：33 条，最多 30 条` |
+| 未验证 | phase4 停用标签 `38>30`（本轮未到达） |
+| 系列 | **STOP_SERIES**（见 `post-gate-461699a-finish-report.json`）；不再自动续跑 |
+
+## 15. 零付费：现行验收表面收缩不变量（复盘 / 停用共用）
+
+| 项 | 值 |
+| --- | --- |
+| 不变量 | 修订后 `browserCases` 仅 **现行表面** 与 **仅保留**；`obsolete` 不得再占独立配额 |
+| 分类 | `classifyBrowserCaseAgainstSurface`（`browser-case-content.ts`）：停用成员、ui-identity 覆盖、contribution-free field 表面覆盖、孤儿义务 |
+| 生成侧 | `obligationCasesForAcceptanceSurface` 与 inherit 共用 disabled 表面（history-only） |
+| 上限 | **仍 30**，不抬；不弱化 `acceptanceReason` |
+| 多触发器 | `phase3-review-461699a-replay`（call-629）+ `phase4-disable-tags-1a4a54f-replay` + `round10-review-cap-replay` |
+| 系列 | **STOP_SERIES**；零付费绿不等于再开付费 |

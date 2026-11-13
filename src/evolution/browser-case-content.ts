@@ -1,6 +1,10 @@
 import { hash } from "../release/storage.js";
 import type { BrowserCase } from "../shared/browser-cases.js";
-import { actionVisibleArrivalState } from "../shared/acceptance-obligations.js";
+import {
+  actionVisibleArrivalState,
+  obligationCases,
+  type AcceptanceObligation,
+} from "../shared/acceptance-obligations.js";
 
 /** Assertion identity for a case key. Provenance (id / obligationId) is not part of it. */
 export function browserCaseAssertionHash(
@@ -66,6 +70,144 @@ export function actionVisibleCoveredByUiIdentity(
       ),
   );
   return cover?.id;
+}
+
+/**
+ * Field assertion surface ignores contribution (host binding detail).
+ * Ops besides refresh/restart stay in the key so after-action paths
+ * do not collapse onto initial-host snapshots.
+ */
+export function browserCaseFieldSurfaceKey(
+  c: Pick<BrowserCase, "task" | "steps">,
+) {
+  const fields = c.steps
+    .filter(
+      (s): s is Extract<BrowserCase["steps"][number], { kind: "field" }> =>
+        s.kind === "field",
+    )
+    .map(({ member, field, value, visible }) => ({
+      member,
+      field,
+      value,
+      visible,
+    }));
+  if (!fields.length) return undefined;
+  const ops = c.steps
+    .filter(
+      (s) =>
+        s.kind !== "field" && s.kind !== "refresh" && s.kind !== "restart",
+    )
+    .map((s) => {
+      if (s.kind === "action" || s.kind === "case-action")
+        return {
+          kind: s.kind,
+          member: s.member,
+          action: s.action,
+          input: s.input,
+        };
+      if (s.kind === "error") return { kind: "error", text: s.text };
+      return s;
+    });
+  return `field-surface:${c.task}:${hash({ fields, ops })}`;
+}
+
+/** Current-surface field case already asserts the same contribution-free surface. */
+export function fieldSurfaceCoveredBy(
+  c: Pick<BrowserCase, "task" | "steps" | "id">,
+  browsers: Pick<BrowserCase, "task" | "steps" | "id">[],
+) {
+  const key = browserCaseFieldSurfaceKey(c);
+  if (!key) return undefined;
+  return browsers.find(
+    (b) => b.id !== c.id && browserCaseFieldSurfaceKey(b) === key,
+  )?.id;
+}
+
+/** Cases that become obsolete when a member is disabled (actions/UI gone; keep history only). */
+export function obsoleteDisabledMemberCase(
+  c: Pick<BrowserCase, "id" | "steps">,
+  disabledMember: string,
+) {
+  if (c.id.includes("-historical-")) return false;
+  return c.steps.some(
+    (s) =>
+      (s.kind === "field" && s.member === disabledMember) ||
+      (s.kind === "action" && s.member === disabledMember) ||
+      (s.kind === "case-action" && s.member === disabledMember) ||
+      (s.kind === "action-visible" &&
+        s.member === disabledMember &&
+        s.visible === true) ||
+      (s.kind === "ui-identity" &&
+        s.contributions.some((item) => item.member === disabledMember)),
+  );
+}
+
+export type BrowserCaseRetentionRole =
+  | "current-surface"
+  | "retention-only"
+  | "obsolete";
+
+export type AcceptanceCaseSurface = {
+  disabledMember?: string;
+  currentCases: Pick<BrowserCase, "id" | "task" | "steps">[];
+  obligationIds: ReadonlySet<string>;
+};
+
+/**
+ * Classify an inherited case against the current acceptance surface.
+ * obsolete / covered retention-only must not re-occupy an independent quota slot.
+ */
+export function classifyBrowserCaseAgainstSurface(
+  c: Pick<BrowserCase, "id" | "task" | "steps" | "obligationId">,
+  surface: AcceptanceCaseSurface,
+): { role: BrowserCaseRetentionRole; coveredBy?: string } {
+  if (c.id.includes("-historical-")) return { role: "retention-only" };
+
+  if (
+    surface.disabledMember &&
+    obsoleteDisabledMemberCase(c, surface.disabledMember)
+  )
+    return { role: "obsolete" };
+
+  const uiCover = actionVisibleCoveredByUiIdentity(c, surface.currentCases);
+  if (uiCover) return { role: "retention-only", coveredBy: uiCover };
+
+  const fieldCover = fieldSurfaceCoveredBy(c, surface.currentCases);
+  if (fieldCover) return { role: "obsolete", coveredBy: fieldCover };
+
+  // Only drop orphans once the current plan has a non-empty obligation surface;
+  // empty ids means the caller has not established current obligations yet.
+  if (
+    c.obligationId &&
+    surface.obligationIds.size > 0 &&
+    !surface.obligationIds.has(c.obligationId)
+  )
+    return { role: "obsolete" };
+
+  return { role: "current-surface" };
+}
+
+/**
+ * Emit obligation browser cases for the current acceptance surface.
+ * Disabled members keep history retention only; visible:true action assertions drop.
+ */
+export function obligationCasesForAcceptanceSurface(
+  obligation: AcceptanceObligation,
+  surface: Pick<AcceptanceCaseSurface, "disabledMember">,
+) {
+  const cases = obligationCases(obligation);
+  const disabledMember = surface.disabledMember;
+  if (!disabledMember) return cases;
+  if (obligation.kind === "field" && obligation.member === disabledMember)
+    return cases.filter((c) => c.id.includes("-historical-"));
+  if (
+    obligation.kind === "assertion" &&
+    obligation.expected.kind === "action-visible" &&
+    obligation.expected.member === disabledMember &&
+    obligation.expected.visible === true
+  )
+    return [];
+  return cases;
 }
 
 export function isHostSnapshotQuota(key: string) {

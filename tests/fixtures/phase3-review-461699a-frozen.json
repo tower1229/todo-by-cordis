@@ -1,0 +1,2255 @@
+{
+  "tipSha": "461699a9fca97360a42d8f6d41248db6e020284a",
+  "note": "phase2 settled plan from bounded-probe-461699a; browserCases before phase3 review",
+  "baseVersion": "9347d93c45f9014b5b9ecdd688b5de8fd8a8653486de25556126d1cc8845ba42",
+  "versionId": "9347d93c45f9014b5b9ecdd688b5de8fd8a8653486de25556126d1cc8845ba42",
+  "browserCases": [
+    {
+      "id": "field-47ca9d2f81d11d682a9d72a5-initial-host-existing",
+      "task": "existing",
+      "steps": [
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "（空）"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "（空）"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "（空）"
+        }
+      ],
+      "obligationId": "field-c147f4295b8d198d4b6570b8",
+      "classification": "system-protection"
+    },
+    {
+      "id": "field-47ca9d2f81d11d682a9d72a5-after-de56392b60069f80-existing",
+      "task": "existing",
+      "steps": [
+        {
+          "kind": "action",
+          "action": "setTag",
+          "input": {
+            "tag": "  重要  "
+          },
+          "member": "tags"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "重要"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "重要"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "重要"
+        }
+      ],
+      "prepare": {
+        "actions": [
+          {
+            "kind": "action",
+            "member": "tags",
+            "action": "setTag",
+            "input": {
+              "tag": "  Review ASAP  "
+            }
+          }
+        ],
+        "expected": {
+          "state": "open",
+          "fields": {
+            "tag": "Review ASAP"
+          }
+        },
+        "sourceHash": "6e2fb17042c42f605bd68d13b3e3c370332ff115f904f71358ee2afb1bd4fc1e",
+        "baseVersion": "eb954d4d075babbd6819b48e5fd9575fc16d1d009df29f7aeded9568983db4a8"
+      },
+      "obligationId": "field-c147f4295b8d198d4b6570b8",
+      "classification": "frozen-business"
+    },
+    {
+      "id": "field-47ca9d2f81d11d682a9d72a5-after-514030f9c070c029-existing",
+      "task": "existing",
+      "steps": [
+        {
+          "kind": "action",
+          "action": "setTag",
+          "input": {
+            "tag": "  Review ASAP  "
+          },
+          "member": "tags"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "review asap"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "review asap"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "review asap"
+        }
+      ],
+      "prepare": {
+        "actions": [
+          {
+            "kind": "action",
+            "member": "tags",
+            "action": "setTag",
+            "input": {
+              "tag": "  Review ASAP  "
+            }
+          }
+        ],
+        "expected": {
+          "state": "open",
+          "fields": {
+            "tag": "Review ASAP"
+          }
+        },
+        "sourceHash": "6e2fb17042c42f605bd68d13b3e3c370332ff115f904f71358ee2afb1bd4fc1e",
+        "baseVersion": "eb954d4d075babbd6819b48e5fd9575fc16d1d009df29f7aeded9568983db4a8"
+      },
+      "obligationId": "field-c147f4295b8d198d4b6570b8",
+      "classification": "frozen-business"
+    },
+    {
+      "id": "field-47ca9d2f81d11d682a9d72a5-after-a63b419088f9bf98-existing",
+      "task": "existing",
+      "steps": [
+        {
+          "kind": "action",
+          "action": "setTag",
+          "input": {
+            "tag": "  New Tag  "
+          },
+          "member": "tags"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "new tag"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "new tag"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "new tag"
+        }
+      ],
+      "prepare": {
+        "actions": [
+          {
+            "kind": "action",
+            "member": "tags",
+            "action": "setTag",
+            "input": {
+              "tag": "  Review ASAP  "
+            }
+          }
+        ],
+        "expected": {
+          "state": "open",
+          "fields": {
+            "tag": "Review ASAP"
+          }
+        },
+        "sourceHash": "6e2fb17042c42f605bd68d13b3e3c370332ff115f904f71358ee2afb1bd4fc1e",
+        "baseVersion": "eb954d4d075babbd6819b48e5fd9575fc16d1d009df29f7aeded9568983db4a8"
+      },
+      "obligationId": "field-c147f4295b8d198d4b6570b8",
+      "classification": "frozen-business"
+    },
+    {
+      "id": "field-47ca9d2f81d11d682a9d72a5-initial-host-new",
+      "task": "new",
+      "steps": [
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "（空）"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "（空）"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "（空）"
+        }
+      ],
+      "obligationId": "field-c147f4295b8d198d4b6570b8",
+      "classification": "system-protection"
+    },
+    {
+      "id": "field-47ca9d2f81d11d682a9d72a5-after-de56392b60069f80-new",
+      "task": "new",
+      "steps": [
+        {
+          "kind": "action",
+          "action": "setTag",
+          "input": {
+            "tag": "  重要  "
+          },
+          "member": "tags"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "重要"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "重要"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "重要"
+        }
+      ],
+      "obligationId": "field-c147f4295b8d198d4b6570b8",
+      "classification": "frozen-business"
+    },
+    {
+      "id": "field-47ca9d2f81d11d682a9d72a5-after-514030f9c070c029-new",
+      "task": "new",
+      "steps": [
+        {
+          "kind": "action",
+          "action": "setTag",
+          "input": {
+            "tag": "  Review ASAP  "
+          },
+          "member": "tags"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "review asap"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "review asap"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "review asap"
+        }
+      ],
+      "obligationId": "field-c147f4295b8d198d4b6570b8",
+      "classification": "frozen-business"
+    },
+    {
+      "id": "field-47ca9d2f81d11d682a9d72a5-after-a63b419088f9bf98-new",
+      "task": "new",
+      "steps": [
+        {
+          "kind": "action",
+          "action": "setTag",
+          "input": {
+            "tag": "  New Tag  "
+          },
+          "member": "tags"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "new tag"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "new tag"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "new tag"
+        }
+      ],
+      "obligationId": "field-c147f4295b8d198d4b6570b8",
+      "classification": "frozen-business"
+    },
+    {
+      "id": "field-47ca9d2f81d11d682a9d72a5-historical-eb954d4d075b-6e2fb17042c4",
+      "task": "existing",
+      "steps": [
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "Review ASAP"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "Review ASAP"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "value": "Review ASAP"
+        }
+      ],
+      "prepare": {
+        "actions": [
+          {
+            "kind": "action",
+            "member": "tags",
+            "action": "setTag",
+            "input": {
+              "tag": "  Review ASAP  "
+            }
+          }
+        ],
+        "expected": {
+          "state": "open",
+          "fields": {
+            "tag": "Review ASAP"
+          }
+        },
+        "sourceHash": "6e2fb17042c42f605bd68d13b3e3c370332ff115f904f71358ee2afb1bd4fc1e",
+        "baseVersion": "eb954d4d075babbd6819b48e5fd9575fc16d1d009df29f7aeded9568983db4a8"
+      },
+      "obligationId": "field-c147f4295b8d198d4b6570b8",
+      "classification": "frozen-business"
+    },
+    {
+      "id": "ui-identity-existing",
+      "task": "existing",
+      "steps": [
+        {
+          "kind": "ui-identity",
+          "contributions": [
+            {
+              "member": "counter",
+              "contribution": "counter-detail",
+              "fields": [
+                "count"
+              ],
+              "actions": [
+                "increment"
+              ]
+            },
+            {
+              "member": "tags",
+              "contribution": "tag-detail",
+              "fields": [
+                "tag"
+              ],
+              "actions": [
+                "setTag"
+              ]
+            }
+          ],
+          "workflow": {
+            "id": "default",
+            "fields": [],
+            "actions": [
+              {
+                "id": "complete"
+              },
+              {
+                "id": "reopen"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "ui-identity",
+          "contributions": [
+            {
+              "member": "counter",
+              "contribution": "counter-detail",
+              "fields": [
+                "count"
+              ],
+              "actions": [
+                "increment"
+              ]
+            },
+            {
+              "member": "tags",
+              "contribution": "tag-detail",
+              "fields": [
+                "tag"
+              ],
+              "actions": [
+                "setTag"
+              ]
+            }
+          ],
+          "workflow": {
+            "id": "default",
+            "fields": [],
+            "actions": [
+              {
+                "id": "complete"
+              },
+              {
+                "id": "reopen"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "ui-identity",
+          "contributions": [
+            {
+              "member": "counter",
+              "contribution": "counter-detail",
+              "fields": [
+                "count"
+              ],
+              "actions": [
+                "increment"
+              ]
+            },
+            {
+              "member": "tags",
+              "contribution": "tag-detail",
+              "fields": [
+                "tag"
+              ],
+              "actions": [
+                "setTag"
+              ]
+            }
+          ],
+          "workflow": {
+            "id": "default",
+            "fields": [],
+            "actions": [
+              {
+                "id": "complete"
+              },
+              {
+                "id": "reopen"
+              }
+            ]
+          }
+        }
+      ],
+      "obligationId": "obligation-7cefa56a46ae1a9ea7e9003b",
+      "classification": "frozen-business"
+    },
+    {
+      "id": "ui-identity-new",
+      "task": "new",
+      "steps": [
+        {
+          "kind": "ui-identity",
+          "contributions": [
+            {
+              "member": "counter",
+              "contribution": "counter-detail",
+              "fields": [
+                "count"
+              ],
+              "actions": [
+                "increment"
+              ]
+            },
+            {
+              "member": "tags",
+              "contribution": "tag-detail",
+              "fields": [
+                "tag"
+              ],
+              "actions": [
+                "setTag"
+              ]
+            }
+          ],
+          "workflow": {
+            "id": "default",
+            "fields": [],
+            "actions": [
+              {
+                "id": "complete"
+              },
+              {
+                "id": "reopen"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "ui-identity",
+          "contributions": [
+            {
+              "member": "counter",
+              "contribution": "counter-detail",
+              "fields": [
+                "count"
+              ],
+              "actions": [
+                "increment"
+              ]
+            },
+            {
+              "member": "tags",
+              "contribution": "tag-detail",
+              "fields": [
+                "tag"
+              ],
+              "actions": [
+                "setTag"
+              ]
+            }
+          ],
+          "workflow": {
+            "id": "default",
+            "fields": [],
+            "actions": [
+              {
+                "id": "complete"
+              },
+              {
+                "id": "reopen"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "ui-identity",
+          "contributions": [
+            {
+              "member": "counter",
+              "contribution": "counter-detail",
+              "fields": [
+                "count"
+              ],
+              "actions": [
+                "increment"
+              ]
+            },
+            {
+              "member": "tags",
+              "contribution": "tag-detail",
+              "fields": [
+                "tag"
+              ],
+              "actions": [
+                "setTag"
+              ]
+            }
+          ],
+          "workflow": {
+            "id": "default",
+            "fields": [],
+            "actions": [
+              {
+                "id": "complete"
+              },
+              {
+                "id": "reopen"
+              }
+            ]
+          }
+        }
+      ],
+      "obligationId": "obligation-7cefa56a46ae1a9ea7e9003b",
+      "classification": "frozen-business"
+    },
+    {
+      "id": "field-6d2bb6a51952b1d635e8c01b-initial-host-existing",
+      "task": "existing",
+      "steps": [
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "（空）"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "（空）"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "（空）"
+        }
+      ],
+      "obligationId": "field-6d2bb6a51952b1d635e8c01b",
+      "classification": "system-protection"
+    },
+    {
+      "id": "field-6d2bb6a51952b1d635e8c01b-after-6de465839c36c96a-existing",
+      "task": "existing",
+      "steps": [
+        {
+          "kind": "action",
+          "action": "increment",
+          "input": {},
+          "member": "counter"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "1"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "1"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "1"
+        }
+      ],
+      "obligationId": "field-6d2bb6a51952b1d635e8c01b",
+      "classification": "frozen-business"
+    },
+    {
+      "id": "field-6d2bb6a51952b1d635e8c01b-after-01e1d911131b16df-existing",
+      "task": "existing",
+      "steps": [
+        {
+          "kind": "action",
+          "action": "increment",
+          "input": {},
+          "member": "counter"
+        },
+        {
+          "kind": "action",
+          "action": "increment",
+          "input": {},
+          "member": "counter"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "2"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "2"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "2"
+        }
+      ],
+      "obligationId": "field-6d2bb6a51952b1d635e8c01b",
+      "classification": "frozen-business"
+    },
+    {
+      "id": "field-6d2bb6a51952b1d635e8c01b-initial-host-new",
+      "task": "new",
+      "steps": [
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "（空）"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "（空）"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "（空）"
+        }
+      ],
+      "obligationId": "field-6d2bb6a51952b1d635e8c01b",
+      "classification": "system-protection"
+    },
+    {
+      "id": "field-6d2bb6a51952b1d635e8c01b-after-6de465839c36c96a-new",
+      "task": "new",
+      "steps": [
+        {
+          "kind": "action",
+          "action": "increment",
+          "input": {},
+          "member": "counter"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "1"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "1"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "1"
+        }
+      ],
+      "obligationId": "field-6d2bb6a51952b1d635e8c01b",
+      "classification": "frozen-business"
+    },
+    {
+      "id": "field-6d2bb6a51952b1d635e8c01b-after-01e1d911131b16df-new",
+      "task": "new",
+      "steps": [
+        {
+          "kind": "action",
+          "action": "increment",
+          "input": {},
+          "member": "counter"
+        },
+        {
+          "kind": "action",
+          "action": "increment",
+          "input": {},
+          "member": "counter"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "2"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "2"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "value": "2"
+        }
+      ],
+      "obligationId": "field-6d2bb6a51952b1d635e8c01b",
+      "classification": "frozen-business"
+    },
+    {
+      "id": "assertion-f2ca83b2d2ab2660f1bf8bbe-existing",
+      "task": "existing",
+      "steps": [
+        {
+          "kind": "action-visible",
+          "action": "increment",
+          "visible": true,
+          "member": "counter"
+        }
+      ],
+      "obligationId": "obligation-8430fa88b04f862c99d2b6d7",
+      "classification": "system-protection"
+    },
+    {
+      "id": "assertion-f2ca83b2d2ab2660f1bf8bbe-new",
+      "task": "new",
+      "steps": [
+        {
+          "kind": "action-visible",
+          "action": "increment",
+          "visible": true,
+          "member": "counter"
+        }
+      ],
+      "obligationId": "obligation-8430fa88b04f862c99d2b6d7",
+      "classification": "system-protection"
+    },
+    {
+      "id": "assertion-d57fc053ba7c9428a937dd29-existing",
+      "task": "existing",
+      "steps": [
+        {
+          "kind": "action",
+          "action": "complete",
+          "member": "workflow"
+        },
+        {
+          "kind": "action-visible",
+          "action": "increment",
+          "visible": false,
+          "member": "counter"
+        }
+      ],
+      "obligationId": "obligation-aff1900c0ce4ef07f1cf2a4a",
+      "classification": "system-protection"
+    },
+    {
+      "id": "assertion-d57fc053ba7c9428a937dd29-new",
+      "task": "new",
+      "steps": [
+        {
+          "kind": "action",
+          "action": "complete",
+          "member": "workflow"
+        },
+        {
+          "kind": "action-visible",
+          "action": "increment",
+          "visible": false,
+          "member": "counter"
+        }
+      ],
+      "obligationId": "obligation-aff1900c0ce4ef07f1cf2a4a",
+      "classification": "system-protection"
+    },
+    {
+      "id": "field-c147f4295b8d198d4b6570b8-initial-host-existing",
+      "task": "existing",
+      "steps": [
+        {
+          "kind": "field",
+          "member": "tags",
+          "field": "tag",
+          "value": "（空）"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "field": "tag",
+          "value": "（空）"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "field": "tag",
+          "value": "（空）"
+        }
+      ],
+      "obligationId": "field-c147f4295b8d198d4b6570b8",
+      "classification": "system-protection"
+    },
+    {
+      "id": "field-c147f4295b8d198d4b6570b8-initial-host-new",
+      "task": "new",
+      "steps": [
+        {
+          "kind": "field",
+          "member": "tags",
+          "field": "tag",
+          "value": "（空）"
+        },
+        {
+          "kind": "refresh"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "field": "tag",
+          "value": "（空）"
+        },
+        {
+          "kind": "restart"
+        },
+        {
+          "kind": "field",
+          "member": "tags",
+          "field": "tag",
+          "value": "（空）"
+        }
+      ],
+      "obligationId": "field-c147f4295b8d198d4b6570b8",
+      "classification": "system-protection"
+    },
+    {
+      "id": "obligation-18bc0c87c8a168378335ebb3-1-existing",
+      "task": "existing",
+      "steps": [
+        {
+          "kind": "action",
+          "action": "setTag",
+          "input": {
+            "tag": "   "
+          },
+          "member": "tags"
+        },
+        {
+          "kind": "error",
+          "text": ""
+        }
+      ],
+      "obligationId": "obligation-18bc0c87c8a168378335ebb3",
+      "classification": "frozen-business"
+    },
+    {
+      "id": "obligation-18bc0c87c8a168378335ebb3-1-new",
+      "task": "new",
+      "steps": [
+        {
+          "kind": "action",
+          "action": "setTag",
+          "input": {
+            "tag": "   "
+          },
+          "member": "tags"
+        },
+        {
+          "kind": "error",
+          "text": ""
+        }
+      ],
+      "obligationId": "obligation-18bc0c87c8a168378335ebb3",
+      "classification": "frozen-business"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "requirement-c0c18045a5e33091efd09d81",
+      "description": "请升级标签插件：保存标签时统一为小写，仍去掉首尾空格、拒绝空白。保留计数和其他行为。",
+      "sourceRevision": "a2561676-646f-4416-ab98-1e3c83b87876:1",
+      "sourceQuote": "请升级标签插件：保存标签时统一为小写，仍去掉首尾空格、拒绝空白。保留计数和其他行为。",
+      "type": "behavior",
+      "checks": [
+        {
+          "checker": "workflow/1",
+          "caseId": "workflow/1:1"
+        },
+        {
+          "checker": "workflow/1",
+          "caseId": "workflow/1:2"
+        },
+        {
+          "checker": "workflow/1",
+          "caseId": "workflow/1:3"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:tags:设置标签去除首尾空格"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:tags:设置标签保留大小写"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:tags:已完成任务可设置标签"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:tags:拒绝空白标签"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:counter:未完成任务计数加一"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:counter:计数可连续累加"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:counter:增加计数保留已有标签"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:counter:已完成任务不能增加"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:tags:设置标签保留计数"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-initial-host-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-after-de56392b60069f80-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-after-514030f9c070c029-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-after-a63b419088f9bf98-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-initial-host-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-after-de56392b60069f80-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-after-514030f9c070c029-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-after-a63b419088f9bf98-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-historical-eb954d4d075b-6e2fb17042c4"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "ui-identity-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "ui-identity-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-6d2bb6a51952b1d635e8c01b-initial-host-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-6d2bb6a51952b1d635e8c01b-after-6de465839c36c96a-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-6d2bb6a51952b1d635e8c01b-after-01e1d911131b16df-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-6d2bb6a51952b1d635e8c01b-initial-host-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-6d2bb6a51952b1d635e8c01b-after-6de465839c36c96a-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-6d2bb6a51952b1d635e8c01b-after-01e1d911131b16df-new"
+        }
+      ],
+      "obligations": [
+        {
+          "version": 1,
+          "id": "obligation-6364fefb0488087131dd237b",
+          "kind": "backend",
+          "scope": "checker-suite",
+          "checks": [
+            {
+              "checker": "workflow/1",
+              "caseId": "workflow/1:1"
+            },
+            {
+              "checker": "workflow/1",
+              "caseId": "workflow/1:2"
+            },
+            {
+              "checker": "workflow/1",
+              "caseId": "workflow/1:3"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:tags:设置标签去除首尾空格"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:tags:设置标签保留大小写"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:tags:已完成任务可设置标签"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:tags:拒绝空白标签"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:counter:未完成任务计数加一"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:counter:计数可连续累加"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:counter:增加计数保留已有标签"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:counter:已完成任务不能增加"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:tags:设置标签保留计数"
+            }
+          ]
+        },
+        {
+          "version": 1,
+          "id": "field-c147f4295b8d198d4b6570b8",
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "initialOrigin": "host",
+          "initial": {
+            "kind": "visible",
+            "value": "（空）"
+          },
+          "scenarios": [
+            {
+              "id": "de56392b60069f80",
+              "steps": [
+                {
+                  "kind": "action",
+                  "action": "setTag",
+                  "input": {
+                    "tag": "  重要  "
+                  },
+                  "member": "tags"
+                }
+              ],
+              "value": "重要"
+            },
+            {
+              "id": "514030f9c070c029",
+              "steps": [
+                {
+                  "kind": "action",
+                  "action": "setTag",
+                  "input": {
+                    "tag": "  Review ASAP  "
+                  },
+                  "member": "tags"
+                }
+              ],
+              "value": "review asap"
+            },
+            {
+              "id": "a63b419088f9bf98",
+              "steps": [
+                {
+                  "kind": "action",
+                  "action": "setTag",
+                  "input": {
+                    "tag": "  New Tag  "
+                  },
+                  "member": "tags"
+                }
+              ],
+              "value": "new tag"
+            }
+          ],
+          "derivation": {
+            "checker": "workspace/1"
+          },
+          "history": {
+            "baseVersion": "eb954d4d075babbd6819b48e5fd9575fc16d1d009df29f7aeded9568983db4a8",
+            "sourceHash": "6e2fb17042c42f605bd68d13b3e3c370332ff115f904f71358ee2afb1bd4fc1e",
+            "expected": {
+              "state": "open",
+              "fields": {
+                "tag": "Review ASAP"
+              }
+            },
+            "actions": [
+              {
+                "kind": "action",
+                "member": "tags",
+                "action": "setTag",
+                "input": {
+                  "tag": "  Review ASAP  "
+                }
+              }
+            ]
+          }
+        },
+        {
+          "version": 1,
+          "id": "obligation-f8d053550352e1573fad731f",
+          "kind": "backend-rejection",
+          "action": {
+            "kind": "action",
+            "action": "setTag",
+            "member": "tags"
+          },
+          "cases": [
+            {
+              "checker": "workspace/1",
+              "caseId": "member:tags:拒绝空白标签",
+              "definitionHash": "d7888e069ec614aa5a2988c55e37edecacaf4363a03895bca536dc4a6574605f"
+            }
+          ]
+        },
+        {
+          "version": 1,
+          "id": "obligation-7cefa56a46ae1a9ea7e9003b",
+          "kind": "ui-identity",
+          "contributions": [
+            {
+              "member": "counter",
+              "contribution": "counter-detail",
+              "fields": [
+                "count"
+              ],
+              "actions": [
+                "increment"
+              ]
+            },
+            {
+              "member": "tags",
+              "contribution": "tag-detail",
+              "fields": [
+                "tag"
+              ],
+              "actions": [
+                "setTag"
+              ]
+            }
+          ],
+          "workflow": {
+            "id": "default",
+            "fields": [],
+            "actions": [
+              {
+                "id": "complete"
+              },
+              {
+                "id": "reopen"
+              }
+            ]
+          }
+        },
+        {
+          "version": 1,
+          "id": "field-6d2bb6a51952b1d635e8c01b",
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "initialOrigin": "host",
+          "initial": {
+            "kind": "visible",
+            "value": "（空）"
+          },
+          "scenarios": [
+            {
+              "id": "6de465839c36c96a",
+              "steps": [
+                {
+                  "kind": "action",
+                  "action": "increment",
+                  "input": {},
+                  "member": "counter"
+                }
+              ],
+              "value": "1"
+            },
+            {
+              "id": "01e1d911131b16df",
+              "steps": [
+                {
+                  "kind": "action",
+                  "action": "increment",
+                  "input": {},
+                  "member": "counter"
+                },
+                {
+                  "kind": "action",
+                  "action": "increment",
+                  "input": {},
+                  "member": "counter"
+                }
+              ],
+              "value": "2"
+            },
+            {
+              "id": "6de465839c36c96a",
+              "steps": [
+                {
+                  "kind": "action",
+                  "action": "increment",
+                  "input": {},
+                  "member": "counter"
+                }
+              ],
+              "value": "1"
+            }
+          ],
+          "derivation": {
+            "checker": "workspace/1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "requirement-5f70b3c33b40fb8483fdd7db",
+      "description": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。保留已有标签及其他行为。",
+      "sourceRevision": "1a42c510-ac9a-4188-9958-511b8cc3be1a:1",
+      "sourceQuote": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。保留已有标签及其他行为。",
+      "type": "behavior",
+      "checks": [
+        {
+          "checker": "workflow/1",
+          "caseId": "workflow/1:1"
+        },
+        {
+          "checker": "workflow/1",
+          "caseId": "workflow/1:2"
+        },
+        {
+          "checker": "workflow/1",
+          "caseId": "workflow/1:3"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:tags:设置标签去除首尾空格"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:tags:设置标签保留大小写"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:tags:已完成任务可设置标签"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:tags:拒绝空白标签"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:counter:未完成任务计数加一"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:counter:计数可连续累加"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:counter:增加计数保留已有标签"
+        },
+        {
+          "checker": "workspace/1",
+          "caseId": "member:counter:已完成任务不能增加"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-6d2bb6a51952b1d635e8c01b-initial-host-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-6d2bb6a51952b1d635e8c01b-after-6de465839c36c96a-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-6d2bb6a51952b1d635e8c01b-after-01e1d911131b16df-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-6d2bb6a51952b1d635e8c01b-initial-host-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-6d2bb6a51952b1d635e8c01b-after-6de465839c36c96a-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-6d2bb6a51952b1d635e8c01b-after-01e1d911131b16df-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "assertion-f2ca83b2d2ab2660f1bf8bbe-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "assertion-f2ca83b2d2ab2660f1bf8bbe-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "assertion-d57fc053ba7c9428a937dd29-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "assertion-d57fc053ba7c9428a937dd29-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-initial-host-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-after-de56392b60069f80-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-after-514030f9c070c029-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-after-a63b419088f9bf98-existing"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-initial-host-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-after-de56392b60069f80-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-after-514030f9c070c029-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-after-a63b419088f9bf98-new"
+        },
+        {
+          "checker": "browser/1",
+          "caseId": "field-47ca9d2f81d11d682a9d72a5-historical-eb954d4d075b-6e2fb17042c4"
+        }
+      ],
+      "obligations": [
+        {
+          "version": 1,
+          "id": "obligation-a46e3406c0b43329a59f8b67",
+          "kind": "backend",
+          "scope": "checker-suite",
+          "checks": [
+            {
+              "checker": "workflow/1",
+              "caseId": "workflow/1:1"
+            },
+            {
+              "checker": "workflow/1",
+              "caseId": "workflow/1:2"
+            },
+            {
+              "checker": "workflow/1",
+              "caseId": "workflow/1:3"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:tags:设置标签去除首尾空格"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:tags:设置标签保留大小写"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:tags:已完成任务可设置标签"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:tags:拒绝空白标签"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:counter:未完成任务计数加一"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:counter:计数可连续累加"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:counter:增加计数保留已有标签"
+            },
+            {
+              "checker": "workspace/1",
+              "caseId": "member:counter:已完成任务不能增加"
+            }
+          ]
+        },
+        {
+          "version": 1,
+          "id": "field-6d2bb6a51952b1d635e8c01b",
+          "kind": "field",
+          "member": "counter",
+          "field": "count",
+          "initialOrigin": "host",
+          "initial": {
+            "kind": "visible",
+            "value": "（空）"
+          },
+          "scenarios": [
+            {
+              "id": "6de465839c36c96a",
+              "steps": [
+                {
+                  "kind": "action",
+                  "action": "increment",
+                  "input": {},
+                  "member": "counter"
+                }
+              ],
+              "value": "1"
+            },
+            {
+              "id": "01e1d911131b16df",
+              "steps": [
+                {
+                  "kind": "action",
+                  "action": "increment",
+                  "input": {},
+                  "member": "counter"
+                },
+                {
+                  "kind": "action",
+                  "action": "increment",
+                  "input": {},
+                  "member": "counter"
+                }
+              ],
+              "value": "2"
+            },
+            {
+              "id": "6de465839c36c96a",
+              "steps": [
+                {
+                  "kind": "action",
+                  "action": "increment",
+                  "input": {},
+                  "member": "counter"
+                }
+              ],
+              "value": "1"
+            }
+          ]
+        },
+        {
+          "version": 1,
+          "id": "obligation-8430fa88b04f862c99d2b6d7",
+          "kind": "assertion",
+          "steps": [],
+          "expected": {
+            "kind": "action-visible",
+            "action": "increment",
+            "visible": true,
+            "member": "counter"
+          },
+          "availability": {
+            "origin": "host",
+            "state": "open"
+          }
+        },
+        {
+          "version": 1,
+          "id": "obligation-aff1900c0ce4ef07f1cf2a4a",
+          "kind": "assertion",
+          "steps": [
+            {
+              "kind": "action",
+              "action": "complete",
+              "member": "workflow"
+            }
+          ],
+          "expected": {
+            "kind": "action-visible",
+            "action": "increment",
+            "visible": false,
+            "member": "counter"
+          },
+          "availability": {
+            "origin": "host",
+            "state": "done"
+          }
+        },
+        {
+          "version": 1,
+          "id": "obligation-916d2d3c942720066ce727f2",
+          "kind": "backend-rejection",
+          "action": {
+            "kind": "action",
+            "action": "increment",
+            "member": "counter"
+          },
+          "cases": [
+            {
+              "checker": "workspace/1",
+              "caseId": "member:counter:已完成任务不能增加",
+              "definitionHash": "d3a2795653b3499c4a69f242663cfdb693e93c7e7c4e28e173201c6db3c355e4"
+            }
+          ]
+        },
+        {
+          "version": 1,
+          "id": "field-c147f4295b8d198d4b6570b8",
+          "kind": "field",
+          "member": "tags",
+          "contribution": "tag-detail",
+          "field": "tag",
+          "initialOrigin": "host",
+          "initial": {
+            "kind": "visible",
+            "value": "（空）"
+          },
+          "scenarios": [
+            {
+              "id": "de56392b60069f80",
+              "steps": [
+                {
+                  "kind": "action",
+                  "action": "setTag",
+                  "input": {
+                    "tag": "  重要  "
+                  },
+                  "member": "tags"
+                }
+              ],
+              "value": "重要"
+            },
+            {
+              "id": "514030f9c070c029",
+              "steps": [
+                {
+                  "kind": "action",
+                  "action": "setTag",
+                  "input": {
+                    "tag": "  Review ASAP  "
+                  },
+                  "member": "tags"
+                }
+              ],
+              "value": "review asap"
+            },
+            {
+              "id": "a63b419088f9bf98",
+              "steps": [
+                {
+                  "kind": "action",
+                  "action": "setTag",
+                  "input": {
+                    "tag": "  New Tag  "
+                  },
+                  "member": "tags"
+                }
+              ],
+              "value": "new tag"
+            }
+          ],
+          "derivation": {
+            "checker": "workspace/1"
+          },
+          "history": {
+            "baseVersion": "eb954d4d075babbd6819b48e5fd9575fc16d1d009df29f7aeded9568983db4a8",
+            "sourceHash": "6e2fb17042c42f605bd68d13b3e3c370332ff115f904f71358ee2afb1bd4fc1e",
+            "expected": {
+              "state": "open",
+              "fields": {
+                "tag": "Review ASAP"
+              }
+            },
+            "actions": [
+              {
+                "kind": "action",
+                "member": "tags",
+                "action": "setTag",
+                "input": {
+                  "tag": "  Review ASAP  "
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "memberCases": [
+    {
+      "action": "setTag",
+      "expected": {
+        "fields": {
+          "tag": "重要"
+        },
+        "kind": "commit",
+        "state": "open"
+      },
+      "fields": {},
+      "input": {
+        "tag": "  重要  "
+      },
+      "name": "设置标签去除首尾空格",
+      "state": "open",
+      "member": "tags"
+    },
+    {
+      "action": "setTag",
+      "expected": {
+        "fields": {
+          "tag": "review asap"
+        },
+        "kind": "commit",
+        "state": "open"
+      },
+      "fields": {},
+      "input": {
+        "tag": "  Review ASAP  "
+      },
+      "name": "设置标签保留大小写",
+      "state": "open",
+      "member": "tags"
+    },
+    {
+      "action": "setTag",
+      "expected": {
+        "fields": {
+          "tag": "复核完毕"
+        },
+        "kind": "commit",
+        "state": "done"
+      },
+      "fields": {},
+      "input": {
+        "tag": "复核完毕"
+      },
+      "name": "已完成任务可设置标签",
+      "state": "done",
+      "member": "tags"
+    },
+    {
+      "action": "setTag",
+      "expected": {
+        "kind": "reject"
+      },
+      "fields": {},
+      "input": {
+        "tag": "   "
+      },
+      "name": "拒绝空白标签",
+      "state": "open",
+      "member": "tags"
+    },
+    {
+      "action": "increment",
+      "expected": {
+        "fields": {
+          "count": "1"
+        },
+        "kind": "commit",
+        "state": "open"
+      },
+      "fields": {},
+      "input": {},
+      "name": "未完成任务计数加一",
+      "state": "open",
+      "member": "counter"
+    },
+    {
+      "action": "increment",
+      "expected": {
+        "fields": {
+          "count": "2"
+        },
+        "kind": "commit",
+        "state": "open"
+      },
+      "fields": {
+        "count": "1"
+      },
+      "input": {},
+      "name": "计数可连续累加",
+      "state": "open",
+      "member": "counter"
+    },
+    {
+      "action": "increment",
+      "expected": {
+        "fields": {
+          "count": "1",
+          "tag": "重要"
+        },
+        "kind": "commit",
+        "state": "open"
+      },
+      "fields": {
+        "tag": "重要"
+      },
+      "input": {},
+      "name": "增加计数保留已有标签",
+      "state": "open",
+      "member": "counter"
+    },
+    {
+      "action": "increment",
+      "expected": {
+        "kind": "reject"
+      },
+      "fields": {},
+      "input": {},
+      "name": "已完成任务不能增加",
+      "state": "done",
+      "member": "counter"
+    },
+    {
+      "action": "setTag",
+      "expected": {
+        "fields": {
+          "count": "3",
+          "tag": "new tag"
+        },
+        "kind": "commit",
+        "state": "open"
+      },
+      "fields": {
+        "count": "3"
+      },
+      "input": {
+        "tag": "  New Tag  "
+      },
+      "name": "设置标签保留计数",
+      "state": "open",
+      "member": "tags"
+    }
+  ],
+  "workflowRules": [],
+  "requirementGate": {
+    "gateVersion": "899e296947df47fdc1c4bf5695ae7dee4f70563920e637427609a6dfac7d3ab1",
+    "sources": [
+      {
+        "id": "34dcef96-4a19-4f6f-9434-f7ddc29d9d9c:1",
+        "text": "请增加标签插件：给任务设置一个文本标签，保存时去掉首尾空格，拒绝空白标签，保留大小写；其他行为不变。"
+      },
+      {
+        "id": "1a42c510-ac9a-4188-9958-511b8cc3be1a:1",
+        "text": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。保留已有标签及其他行为。"
+      },
+      {
+        "id": "a2561676-646f-4416-ab98-1e3c83b87876:1",
+        "text": "请升级标签插件：保存标签时统一为小写，仍去掉首尾空格、拒绝空白。保留计数和其他行为。"
+      }
+    ],
+    "requestHash": "0c75f4a1c4dd7fbd95cb709cb57aa52bd4bda138912d196b7a6939f152fc99d5",
+    "definitionHash": "6b1bb2d74057d2777a81700d76d740a4aa2b6774e4f85ffaaab8356929457d89",
+    "review": {
+      "sourceReview": {
+        "reviewedSources": [
+          "34dcef96-4a19-4f6f-9434-f7ddc29d9d9c:1",
+          "1a42c510-ac9a-4188-9958-511b8cc3be1a:1",
+          "a2561676-646f-4416-ab98-1e3c83b87876:1"
+        ],
+        "effects": {
+          "intents": [
+            {
+              "effect": "external-delivery",
+              "verdict": "not-requested"
+            },
+            {
+              "effect": "offline-delivery",
+              "verdict": "not-requested"
+            },
+            {
+              "effect": "online-schedule",
+              "verdict": "not-requested"
+            }
+          ],
+          "sourceHash": "f371f4972b132daa4cb583f66538357963c986701540bf0addbeb0d512578ffc",
+          "factsHash": "51acae2f156c4dca7e46452cdea4dd6fe4f0f9d9131e8b2e0eaa941347140591",
+          "checks": []
+        }
+      },
+      "reviewedIds": [
+        "requirement-c0c18045a5e33091efd09d81",
+        "requirement-5f70b3c33b40fb8483fdd7db"
+      ],
+      "unresolvedChoices": [],
+      "issues": [],
+      "resolutions": [],
+      "defaultReviews": [
+        {
+          "id": "default-95b99f63241c596c70cb4216",
+          "verdict": "safe-default",
+          "detail": "安全默认：仅规范保存标签时的转换，不回溯改写既有历史标签，符合来源 a2561676-646f-4416-ab98-1e3c83b87876:1 中「保存标签时」的作用范围及保留其他行为的要求；未引入额外业务副作用。",
+          "targets": []
+        },
+        {
+          "id": "default-9852d91d2a4ed47ef3cf00e7",
+          "verdict": "safe-default",
+          "detail": "安全默认：先去除首尾空格再按通用 Unicode 规则转为小写，符合来源 a2561676-646f-4416-ab98-1e3c83b87876:1「仍去掉首尾空格、统一为小写」的要求；地区性特殊大小写规则未被用户指定，采用常规规则不构成业务冲突。",
+          "targets": []
+        },
+        {
+          "id": "default-3d99ea24cf0e4aee021e2a0a",
+          "verdict": "safe-default",
+          "detail": "安全默认：沿用既有标签长度、覆盖式保存、任务状态可用性及字段合并规则，空白标签拒绝且不写入，既满足标签来源 a2561676-646f-4416-ab98-1e3c83b87876:1 的升级要求，也满足计数来源 1a42c510-ac9a-4188-9958-511b8cc3be1a:1 对保留标签、计数和其他行为的约束；未增加额外业务限制。",
+          "targets": []
+        }
+      ],
+      "designDecisions": [],
+      "fieldDecisions": [
+        {
+          "obligationId": "field-c147f4295b8d198d4b6570b8",
+          "sourceRevision": "a2561676-646f-4416-ab98-1e3c83b87876:1",
+          "sourceQuote": "请升级标签插件：保存标签时统一为小写，仍去掉首尾空格、拒绝空白。保留计数和其他行为。",
+          "initial": {
+            "kind": "unspecified"
+          },
+          "meaning": {
+            "kind": "unspecified"
+          }
+        },
+        {
+          "obligationId": "field-6d2bb6a51952b1d635e8c01b",
+          "sourceRevision": "1a42c510-ac9a-4188-9958-511b8cc3be1a:1",
+          "sourceQuote": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。保留已有标签及其他行为。",
+          "initial": {
+            "kind": "unspecified"
+          },
+          "meaning": {
+            "kind": "state",
+            "value": "0",
+            "conditionQuote": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。",
+            "effectQuote": "初始为零"
+          }
+        }
+      ],
+      "errorDecisions": [],
+      "technicalDecisions": []
+    },
+    "reviewLedger": {
+      "version": 2,
+      "findings": [],
+      "attempts": [
+        {
+          "revision": 1,
+          "definitionHash": "037f71b73e61320a0aed320ceed5f620567a0e2e405cb27360bdd802879035d9",
+          "review": {
+            "sourceReview": {
+              "reviewedSources": [
+                "34dcef96-4a19-4f6f-9434-f7ddc29d9d9c:1",
+                "1a42c510-ac9a-4188-9958-511b8cc3be1a:1",
+                "a2561676-646f-4416-ab98-1e3c83b87876:1"
+              ],
+              "effects": {
+                "intents": [
+                  {
+                    "effect": "external-delivery",
+                    "verdict": "not-requested"
+                  },
+                  {
+                    "effect": "offline-delivery",
+                    "verdict": "not-requested"
+                  },
+                  {
+                    "effect": "online-schedule",
+                    "verdict": "not-requested"
+                  }
+                ],
+                "sourceHash": "f371f4972b132daa4cb583f66538357963c986701540bf0addbeb0d512578ffc",
+                "factsHash": "51acae2f156c4dca7e46452cdea4dd6fe4f0f9d9131e8b2e0eaa941347140591",
+                "checks": []
+              }
+            },
+            "reviewedIds": [
+              "requirement-c0c18045a5e33091efd09d81",
+              "requirement-5f70b3c33b40fb8483fdd7db"
+            ],
+            "unresolvedChoices": [],
+            "issues": [],
+            "resolutions": [],
+            "defaultReviews": [
+              {
+                "id": "default-95b99f63241c596c70cb4216",
+                "verdict": "safe-default",
+                "detail": "安全默认：仅规范保存标签时的转换，不回溯改写既有历史标签，符合来源 a2561676-646f-4416-ab98-1e3c83b87876:1 中「保存标签时」的作用范围及保留其他行为的要求；未引入额外业务副作用。",
+                "targets": []
+              },
+              {
+                "id": "default-9852d91d2a4ed47ef3cf00e7",
+                "verdict": "safe-default",
+                "detail": "安全默认：先去除首尾空格再按通用 Unicode 规则转为小写，符合来源 a2561676-646f-4416-ab98-1e3c83b87876:1「仍去掉首尾空格、统一为小写」的要求；地区性特殊大小写规则未被用户指定，采用常规规则不构成业务冲突。",
+                "targets": []
+              },
+              {
+                "id": "default-3d99ea24cf0e4aee021e2a0a",
+                "verdict": "safe-default",
+                "detail": "安全默认：沿用既有标签长度、覆盖式保存、任务状态可用性及字段合并规则，空白标签拒绝且不写入，既满足标签来源 a2561676-646f-4416-ab98-1e3c83b87876:1 的升级要求，也满足计数来源 1a42c510-ac9a-4188-9958-511b8cc3be1a:1 对保留标签、计数和其他行为的约束；未增加额外业务限制。",
+                "targets": []
+              }
+            ],
+            "designDecisions": [],
+            "fieldDecisions": [
+              {
+                "obligationId": "field-c147f4295b8d198d4b6570b8",
+                "sourceRevision": "a2561676-646f-4416-ab98-1e3c83b87876:1",
+                "sourceQuote": "请升级标签插件：保存标签时统一为小写，仍去掉首尾空格、拒绝空白。保留计数和其他行为。",
+                "initial": {
+                  "kind": "unspecified"
+                },
+                "meaning": {
+                  "kind": "unspecified"
+                }
+              },
+              {
+                "obligationId": "field-6d2bb6a51952b1d635e8c01b",
+                "sourceRevision": "1a42c510-ac9a-4188-9958-511b8cc3be1a:1",
+                "sourceQuote": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。保留已有标签及其他行为。",
+                "initial": {
+                  "kind": "unspecified"
+                },
+                "meaning": {
+                  "kind": "state",
+                  "value": "0",
+                  "conditionQuote": "请增加独立的计数插件：未完成任务可以将计数加一，初始为零，已完成任务不能增加。",
+                  "effectQuote": "初始为零"
+                }
+              }
+            ],
+            "errorDecisions": [],
+            "technicalDecisions": []
+          }
+        }
+      ]
+    },
+    "coverage": [
+      {
+        "requirementId": "requirement-c0c18045a5e33091efd09d81",
+        "reasons": []
+      },
+      {
+        "requirementId": "requirement-5f70b3c33b40fb8483fdd7db",
+        "reasons": []
+      }
+    ],
+    "seal": "cf55562573affbe31d7e1db0b8145086e111d8260100692aa9c938775e0b6e76"
+  },
+  "fieldIdentities": [
+    {
+      "member": "tags",
+      "field": "tag",
+      "label": "标签",
+      "contribution": "tag-detail"
+    },
+    {
+      "member": "counter",
+      "field": "count",
+      "label": "计数",
+      "contribution": "count-detail"
+    }
+  ],
+  "uiContributions": [
+    {
+      "id": "tag-detail",
+      "providerId": "tags",
+      "fields": [
+        {
+          "key": "tag"
+        }
+      ],
+      "actions": [
+        {
+          "commandId": "setTag"
+        }
+      ]
+    },
+    {
+      "id": "count-detail",
+      "providerId": "counter",
+      "fields": [
+        {
+          "key": "count"
+        }
+      ],
+      "actions": [
+        {
+          "commandId": "increment"
+        }
+      ]
+    }
+  ]
+}

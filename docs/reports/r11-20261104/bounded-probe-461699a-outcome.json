@@ -1,0 +1,96 @@
+{
+  "schema": "cordis.r11-461699a-post-gate-extended-ms-probe-outcome/1",
+  "recordedAt": "2026-11-13T06:18:50.456302+00:00",
+  "tipSha": "461699a9fca97360a42d8f6d41248db6e020284a",
+  "evidenceDir": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-461699a-20261113T054203Z",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-461699a-bind.json",
+  "passed": false,
+  "completeSixStepPass": false,
+  "paidCalls": 18,
+  "ordinals": {
+    "first": 612,
+    "last": 629
+  },
+  "cumulativeOccupied": 629,
+  "remainingCalls": 21,
+  "knownGoalEstimatedPeakUSD": 12.750266171999991,
+  "goalUnknownUsageReserveUSD": 2.359296,
+  "goalFeeGuardOccupiedUSD": 15.109562171999992,
+  "currentCohortKnownEstimatedPeakUSD": 0.7302691560000003,
+  "currentCohortUnknownUsageReserveUSD": 0,
+  "actualModel": "deepseek-flash",
+  "fatalHead": "既有需求 requirement-c0c18045a5e33091efd09d81 改变，须说明验收修订原因；既有需求 requirement-5f70b3c33b40fb8483fdd7db 改变，须说明验收修订原因；浏览器验收案例超出上限：33 条，最多 30 条",
+  "honestNonPass": true,
+  "stop": {
+    "kind": "plan-compilation-mixed",
+    "phase": 3,
+    "planningPhase": "planning",
+    "scope": "bounded-six-step-1",
+    "code": "plan-compilation",
+    "message": "既有需求 requirement-c0c18045a5e33091efd09d81 改变，须说明验收修订原因；既有需求 requirement-5f70b3c33b40fb8483fdd7db 改变，须说明验收修订原因；浏览器验收案例超出上限：33 条，最多 30 条",
+    "notes": [
+      "phase3=复盘步；未到达 phase4 停用标签",
+      "diagnostics include acceptanceReason blockers + browserCases 33>30"
+    ]
+  },
+  "progress": {
+    "phasesReached": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "appliedEvents": 3,
+    "phasesApplied": [
+      0,
+      1,
+      2
+    ],
+    "experienceCheckedEvents": 3,
+    "settledEvents": 12,
+    "phase0Applied": true,
+    "phase1Applied": true,
+    "phase2Applied": true,
+    "phase3Applied": false,
+    "phase3Failed": true,
+    "phase4Reached": false,
+    "extendedMsHarnessUsed": true,
+    "millisecondsAuthorized": 1800000,
+    "millisecondsPauseGrants": true,
+    "browserCasesCapExceededReappeared": true,
+    "acceptanceReasonMissingReappeared": true,
+    "acceptanceObligationIncompleteReappeared": false,
+    "sourceQuoteMultipleRevisionsReappeared": false
+  },
+  "ci": {
+    "pushRunId": 43367511044,
+    "devRunId": 43367511044,
+    "prRunId": null,
+    "headSha": "461699a9fca97360a42d8f6d41248db6e020284a",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-13T05:41:09Z",
+    "devCompletedAt": "2026-11-13T05:41:09Z",
+    "application": {
+      "tests": 899,
+      "pass": 899,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "note": "Dev M1 checks success on tip 461699a (43367511044) before post-gate extended-ms paid confirmation. Stay on dev; no master merge. Fee guard $20; nextOrdinal 612. Exactly ONE paid round."
+  },
+  "comparedToPriorProbe": {
+    "priorTip": "1a4a54f",
+    "priorStop": "browserCases 38>30 on phase4 disable-tags",
+    "priorStopReappeared": false,
+    "priorStopNotReached": true,
+    "newStop": "phase3 review: acceptanceReason missing + browserCases 33>30",
+    "phasesApplied": [
+      0,
+      1,
+      2
+    ]
+  }
+}

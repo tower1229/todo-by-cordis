@@ -2,7 +2,7 @@ import type { InvestigatedPlan, RequirementGate } from "../shared/assistant.js";
 import { hash } from "../release/storage.js";
 import type { BrowserCase, BrowserStep } from "../shared/browser-cases.js";
 import { compileObligations } from "./acceptance-obligations.js";
-import { browserCaseStem, obligationCases } from "../shared/acceptance-obligations.js";
+import { browserCaseStem } from "../shared/acceptance-obligations.js";
 import {
   bindHistoricalCase,
   HistoricalPreparationBlocked,
@@ -19,36 +19,23 @@ import { historicalPreparation } from "./historical-preparation.js";
 import {bindAvailability,type ActionAvailability} from "./action-availability.js";
 import { schedulePolicyChecks } from "../shared/schedule-policy.js";
 import {
-  actionVisibleCoveredByUiIdentity,
   browserCaseAssertionHash,
   browserCaseQuotaKey,
   canSupersedeBrowserCase,
+  classifyBrowserCaseAgainstSurface,
   dedupeBrowserCases,
   isHostSnapshotQuota,
   mergeBrowserCaseAliases,
+  obsoleteDisabledMemberCase,
+  obligationCasesForAcceptanceSurface,
   remapBrowserChecks,
 } from "./browser-case-content.js";
 import { PlanStructureBlocked } from "./historical-preparation.js";
 
-/** Cases that become obsolete when a member is disabled (actions/UI gone; keep history only). */
-export function obsoleteDisabledMemberCase(
-  c: Pick<BrowserCase, "id" | "steps">,
-  disabledMember: string,
-) {
-  if (c.id.includes("-historical-")) return false;
-  return c.steps.some(
-    (s) =>
-      (s.kind === "field" && s.member === disabledMember) ||
-      (s.kind === "action" && s.member === disabledMember) ||
-      (s.kind === "case-action" && s.member === disabledMember) ||
-      (s.kind === "action-visible" &&
-        s.member === disabledMember &&
-        s.visible === true) ||
-      // Stale UI snapshot still advertising the disabled member's contribution.
-      (s.kind === "ui-identity" &&
-        s.contributions.some((item) => item.member === disabledMember)),
-  );
-}
+export {
+  classifyBrowserCaseAgainstSurface,
+  obsoleteDisabledMemberCase,
+} from "./browser-case-content.js";
 
 /** Inherit accepted browser cases and report every explicit revision to the caller. */
 export function inheritBrowserCases(
@@ -64,6 +51,11 @@ export function inheritBrowserCases(
     plan.memberEnabled && plan.memberEnabled.enabled === false
       ? plan.memberEnabled.pluginId
       : undefined;
+  const obligationIds = new Set(
+    (plan.requirements ?? []).flatMap((r) =>
+      (r.obligations ?? []).map((o) => o.id),
+    ),
+  );
   const historicalCover = (old: BrowserCase) => {
     if (!disabledMember || !obsoleteDisabledMemberCase(old, disabledMember))
       return undefined;
@@ -120,15 +112,19 @@ export function inheritBrowserCases(
       browserCases.find((item) => browserCaseQuotaKey(item) === quota) ??
       reboundFieldCase(old);
     if (!replacement) {
+      const retention = classifyBrowserCaseAgainstSurface(old, {
+        disabledMember,
+        currentCases: browserCases,
+        obligationIds,
+      });
       const coveredBy =
-        actionVisibleCoveredByUiIdentity(old, browserCases) ??
-        historicalCover(old);
+        retention.coveredBy ??
+        (retention.role === "obsolete" ? historicalCover(old) : undefined);
       if (coveredBy) {
         aliases.set(old.id, coveredBy);
         continue;
       }
-      if (disabledMember && obsoleteDisabledMemberCase(old, disabledMember))
-        continue;
+      if (retention.role === "obsolete") continue;
       browserCases.push(structuredClone(old));
     } else {
       if (replacement.id !== old.id) aliases.set(old.id, replacement.id);
@@ -228,23 +224,11 @@ export function compileReferences(
     memberEnabled && memberEnabled.enabled === false
       ? memberEnabled.pluginId
       : undefined;
-  /** Disable: field ops/UI are gone — keep history retention cases only. */
+  /** Same acceptance surface as inherit: disabled members → history retention only. */
   const emitObligationCases = (
     obligation: NonNullable<Requirement["obligations"]>[number],
-  ) => {
-    const cases = obligationCases(obligation);
-    if (!disabledMember) return cases;
-    if (obligation.kind === "field" && obligation.member === disabledMember)
-      return cases.filter((c) => c.id.includes("-historical-"));
-    if (
-      obligation.kind === "assertion" &&
-      obligation.expected.kind === "action-visible" &&
-      obligation.expected.member === disabledMember &&
-      obligation.expected.visible === true
-    )
-      return [];
-    return cases;
-  };
+  ) =>
+    obligationCasesForAcceptanceSurface(obligation, { disabledMember });
   const newFieldPreservation: {
     requirementId: string;
     member: string;

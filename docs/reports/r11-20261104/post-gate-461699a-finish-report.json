@@ -1,0 +1,54 @@
+{
+  "tipSha": "461699a9fca97360a42d8f6d41248db6e020284a",
+  "round": "post-gate-confirmation",
+  "ci": {
+    "pushRunId": 43367511044,
+    "devRunId": 43367511044,
+    "prRunId": null,
+    "headSha": "461699a9fca97360a42d8f6d41248db6e020284a",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-13T05:41:09Z",
+    "devCompletedAt": "2026-11-13T05:41:09Z",
+    "application": {
+      "tests": 899,
+      "pass": 899,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "note": "Dev M1 checks success on tip 461699a (43367511044) before post-gate extended-ms paid confirmation. Stay on dev; no master merge. Fee guard $20; nextOrdinal 612. Exactly ONE paid round."
+  },
+  "evidenceDir": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-461699a-20261113T054203Z",
+  "callsFirst": 612,
+  "callsLast": 629,
+  "paidCalls": 18,
+  "feeGuardOccupiedUSD": 15.109562171999992,
+  "feeGuardUSD": 20,
+  "passed": false,
+  "completeSixStepPass": false,
+  "stopMessage": "既有需求 requirement-c0c18045a5e33091efd09d81 改变，须说明验收修订原因；既有需求 requirement-5f70b3c33b40fb8483fdd7db 改变，须说明验收修订原因；浏览器验收案例超出上限：33 条，最多 30 条",
+  "recurrence": {
+    "browserCasesCapExceededReappeared": true,
+    "acceptanceReasonMissingReappeared": true,
+    "acceptanceObligationIncompleteReappeared": false,
+    "sourceQuoteMultipleRevisionsReappeared": false,
+    "phase4DisableTags38NotReached": true
+  },
+  "seriesDecision": "STOP_SERIES",
+  "onePaidRoundOnly": true,
+  "branchPolicy": "dev-only until acceptance",
+  "comparedToPriorProbe": {
+    "priorTip": "1a4a54f",
+    "priorStop": "browserCases 38>30 on phase4 disable-tags",
+    "priorStopReappeared": false,
+    "priorStopNotReached": true,
+    "newStop": "phase3 review: acceptanceReason missing + browserCases 33>30",
+    "phasesApplied": [
+      0,
+      1,
+      2
+    ]
+  }
+}

@@ -46,22 +46,23 @@
    - 结论：强化 **仅 plan 根** `acceptanceReason`，禁止 `requirements[]`；见 [`acceptance-reason-contract.md`](./acceptance-reason-contract.md)  
    - 夹具：`acceptance-reason-contract.test.ts` + 工具描述/schema 文案强化  
 
-3. **单次付费确认（仅维护者授权）** — **已完成三轮（均非通过）**  
+3. **单次付费确认（仅维护者授权）** — **已完成四轮（均非通过）**  
    - tip `6170cd7`：566–573；`验收义务未完整执行`  
    - tip `916faff`：574–587；phase0+1 applied；停在 sourceQuote 多修订  
-   - tip `1a4a54f`（`dev`）：588–611；**sourceQuote 停点未复现**；phase0–3 applied；停在 phase4：`浏览器验收案例超出上限：38 条，最多 30 条`  
-   - 费用约 $14.38/$20；累计 **611/650**；**继续 STOP_SERIES**  
-   - 见 `bounded-probe-1a4a54f-outcome.json` / `post-gate-1a4a54f-finish-report.json`
+   - tip `1a4a54f`（`dev`）：588–611；**sourceQuote 停点未复现**；phase0–3 applied；停在 phase4：`38>30`  
+   - tip `461699a`（`dev`）：612–629；phase0–2 applied；**未到 phase4**；停在 phase3：`须说明验收修订原因` + `33>30`  
+   - 费用约 $15.11/$20；累计 **629/650**；**继续 STOP_SERIES**  
+   - 见 `bounded-probe-461699a-outcome.json` / `post-gate-461699a-finish-report.json`
 
 4. **Dependabot 剩余 moderate**  
    与自迭代主线正交；有空修，不插队挡架构刀。
 
 ## 6. 刚确认后的架构下一刀（零付费优先）
 
-- **已完成**：arrival-state stem/配额（#63）；sourceQuote 多修订夹具（`1a4a54f`）；**停用成员 browserCases 收缩**（call-611 / phase3 冻结夹具 → ≤30，不抬上限）。  
-- **宿主收缩要点**：`memberEnabled.enabled=false` 时该成员 field 义务收成 history-only；启停提案不派生无关字段填充场景；inherit 丢弃仍广告停用成员的过时 UI/操作案例。  
-- **夹具**：`tests/app/phase4-disable-tags-1a4a54f-replay.test.ts` + `tests/fixtures/phase4-disable-tags-1a4a54f-*.json`。  
-- **系列**：继续 `STOP_SERIES`；仍只在 `dev`。是否再开单次付费确认由维护者授权。
+- **已完成**：arrival-state stem/配额；sourceQuote 夹具；停用成员 history-only 收缩（零付费 call-611 形态 ≤30）。  
+- **付费 `461699a` 结论（诚实非通过）**：phase0–2 过；**未验证** phase4 停用 `38>30`（没走到）。停在 phase3 复盘：`acceptanceReason` 缺失 + `33>30`。  
+- **已完成（零付费）**：通用「现行表面 / 仅保留」收缩不变量——`classifyBrowserCaseAgainstSurface` + call-629 / disable-tags / round10 三夹具 ≤30；缺 reason 仍 blockers。见 series-stop §15。  
+- **系列**：继续 `STOP_SERIES`；仍只在 `dev`；**不自动付费**，单次确认另等授权。
 
 ## 5. 明确不做
 
