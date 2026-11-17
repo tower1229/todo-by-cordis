@@ -393,6 +393,7 @@ test("call-629 复盘提案对 phase2 冻结验收：≤30、无悬空、表面�
     id: "field-c147f4295b8d198d4b6570b8-initial-host-existing",
     task: "existing" as const,
     obligationId: "field-c147f4295b8d198d4b6570b8",
+    classification: "system-protection" as const,
     steps: [
       {
         kind: "field" as const,

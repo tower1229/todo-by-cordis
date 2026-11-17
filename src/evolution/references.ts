@@ -112,9 +112,12 @@ export function inheritBrowserCases(
       browserCases.find((item) => browserCaseQuotaKey(item) === quota) ??
       reboundFieldCase(old);
     if (!replacement) {
+      // Judge covers only against compiled plan cases. The accumulating list
+      // would let one retained sibling "cover" another and silently drop
+      // unproven-replaceable assertions.
       const retention = classifyBrowserCaseAgainstSurface(old, {
         disabledMember,
-        currentCases: browserCases,
+        currentCases: compiled,
         obligationIds,
       });
       const coveredBy =

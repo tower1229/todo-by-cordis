@@ -166,7 +166,10 @@ export type AcceptanceCaseSurface = {
  * obsolete / covered retention-only must not re-occupy an independent quota slot.
  */
 export function classifyBrowserCaseAgainstSurface(
-  c: Pick<BrowserCase, "id" | "task" | "steps" | "obligationId">,
+  c: Pick<
+    BrowserCase,
+    "id" | "task" | "steps" | "obligationId" | "classification"
+  >,
   surface: AcceptanceCaseSurface,
 ): { role: BrowserCaseRetentionRole; coveredBy?: string } {
   if (c.id.includes("-historical-")) return { role: "retention-only" };
@@ -180,15 +183,23 @@ export function classifyBrowserCaseAgainstSurface(
   const uiCover = actionVisibleCoveredByUiIdentity(c, surface.currentCases);
   if (uiCover) return { role: "retention-only", coveredBy: uiCover };
 
-  const fieldCover = fieldSurfaceCoveredBy(c, surface.currentCases);
-  if (fieldCover) return { role: "obsolete", coveredBy: fieldCover };
+  // Field-surface collapse is for host system-protection snapshots already
+  // asserted by the current compiled surface. Frozen-business still needs a
+  // proven rebound before it may leave the inventory.
+  if (c.classification === "system-protection") {
+    const fieldCover = fieldSurfaceCoveredBy(c, surface.currentCases);
+    if (fieldCover) return { role: "obsolete", coveredBy: fieldCover };
+  }
 
   // Only drop orphans once the current plan has a non-empty obligation surface;
   // empty ids means the caller has not established current obligations yet.
+  // Field cases whose obligation id was rebound stay until rebound proves a
+  // replacement — dropping them here would discard unproven-replaceable asserts.
   if (
     c.obligationId &&
     surface.obligationIds.size > 0 &&
-    !surface.obligationIds.has(c.obligationId)
+    !surface.obligationIds.has(c.obligationId) &&
+    !c.id.startsWith("field-")
   )
     return { role: "obsolete" };
 

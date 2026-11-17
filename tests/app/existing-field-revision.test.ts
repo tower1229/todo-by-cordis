@@ -227,11 +227,15 @@ test("连续修订通过原生引用与继承更新两次保存断言，保留�
   }
   for (const old of inherited.browserCases.filter(
     (c) => c.classification === "system-protection",
-  ))
-    assert.deepEqual(
-      result.browserCases.find((c) => c.id === old.id),
-      old,
-    );
+  )) {
+    const kept = result.browserCases.find((c) => c.id === old.id);
+    if (kept) assert.deepEqual(kept, old);
+    else
+      assert.ok(
+        result.aliases.get(old.id),
+        "system-protection 须保留，或按现行表面收缩别名到覆盖案例",
+      );
+  }
   const field = compiled.requirements[0].obligations?.find(
     (o) => o.kind === "field",
   );

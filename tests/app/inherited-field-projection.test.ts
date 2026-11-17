@@ -143,8 +143,15 @@ test("已接受字段的隐式更新投影保留覆盖前置，额外单次保�
     assert.equal(after.steps.filter((s: { kind: string }) => s.kind === "refresh" || s.kind === "restart").length, 2);
     assert.ok(!result.browserCases.some(c => c.id === old.id));
   }
-  for (const old of f.inherited.browserCases.filter(c => c.classification === "system-protection"))
-    assert.deepEqual(result.browserCases.find(c => c.id === old.id), old);
+  for (const old of f.inherited.browserCases.filter(c => c.classification === "system-protection")) {
+    const kept = result.browserCases.find(c => c.id === old.id);
+    if (kept) assert.deepEqual(kept, old);
+    else
+      assert.ok(
+        result.aliases.get(old.id),
+        "system-protection 须保留，或按现行表面收缩别名到覆盖案例",
+      );
+  }
   assert.deepEqual(f, before);
 });
 
@@ -242,8 +249,15 @@ for (const qualified of [false, true])
     assert.deepEqual(field.derivation, { checker: "workspace/1" });
     const browsers = inheritBrowserCases(result, p.inherited, "按新要求修订标签保存结果");
     assert.deepEqual(browsers.blockers, []);
-    for (const oldCase of p.inherited.browserCases.filter(c => c.classification === "system-protection"))
-      assert.deepEqual(browsers.browserCases.find(c => c.id === oldCase.id), oldCase);
+    for (const oldCase of p.inherited.browserCases.filter(c => c.classification === "system-protection")) {
+      const kept = browsers.browserCases.find(c => c.id === oldCase.id);
+      if (kept) assert.deepEqual(kept, oldCase);
+      else
+        assert.ok(
+          browsers.aliases.get(oldCase.id),
+          "system-protection 须保留，或按现行表面收缩别名到覆盖案例",
+        );
+    }
     assert.ok(browsers.changes.some(c => c.before.includes('Beta') && c.after.includes('beta')));
     assert.deepEqual(p, before);
   });
