@@ -1,6 +1,6 @@
 # r11 收口进度与下一步（2026-11-13）
 
-基线 tip：日常在 **`dev`**（当前 `0d70e9c`）；**达到验收标准前不合 `master`**。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
+基线 tip：日常在 **`dev`**（当前 `0e09099`）；**达到验收标准前不合 `master`**。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
 
 ## 1. 已收口
 
@@ -62,7 +62,7 @@
 - **已完成**：arrival-state stem/配额；sourceQuote 夹具；停用成员 history-only 收缩（零付费 call-611 形态 ≤30）。  
 - **付费 `461699a` 结论（诚实非通过）**：phase0–2 过；**未验证** phase4 停用 `38>30`（没走到）。停在 phase3 复盘：`acceptanceReason` 缺失 + `33>30`。  
 - **已完成（零付费）**：通用「现行表面 / 仅保留」收缩不变量——`classifyBrowserCaseAgainstSurface` + call-629 / disable-tags / round10 三夹具 ≤30；缺 reason 仍 blockers。见 series-stop §15。  
-- **已完成（零付费）：`propose_plan` 意图 API 交付**（tip `0d70e9c`）  
+- **已完成（零付费）：`propose_plan` 意图 API 交付**（tip `0e09099`）  
   - 启停：仅 `target`+`enabled`；拒绝同轮 `uses`/`defaults`/features/cases。  
   - `compilePlanDraft` 不采纳草案 `browserCases`；清单仅宿主编译。  
   - 复盘/字段：call-629 夹具无 `changes.cases`；宿主出表面；`acceptanceReason` 门禁不回退。  

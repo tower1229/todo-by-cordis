@@ -191,7 +191,7 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 
 | 项 | 值 |
 | --- | --- |
-| tip | `0d70e9c`（`dev`；验收前不合 `master`） |
+| tip | `0e09099`（`dev`；验收前不合 `master`） |
 | 目标 | 模型只交业务意图与修订理由；表面/身份/清单留宿主；实现留冻结后生成 |
 | 契约 | 启停拒绝 `uses`/`defaults`；`compilePlanDraft` 强制无草案 `browserCases`；cases schema/文案标明主流程与 upgrade 可省略 |
 | 夹具 | `propose-plan-intent-api`；phase3 call-629 **无 cases**；phase4/round9 启停意图；round10 复盘 |
