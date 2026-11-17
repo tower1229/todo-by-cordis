@@ -98,12 +98,20 @@ export function browserCaseFieldSurfaceKey(
         s.kind !== "field" && s.kind !== "refresh" && s.kind !== "restart",
     )
     .map((s) => {
-      if (s.kind === "action" || s.kind === "case-action")
+      if (s.kind === "action")
         return {
           kind: s.kind,
           member: s.member,
           action: s.action,
           input: s.input,
+        };
+      if (s.kind === "case-action")
+        return {
+          kind: s.kind,
+          member: s.member,
+          caseId: s.caseId,
+          definitionHash: s.definitionHash,
+          field: s.field,
         };
       if (s.kind === "error") return { kind: "error", text: s.text };
       return s;
