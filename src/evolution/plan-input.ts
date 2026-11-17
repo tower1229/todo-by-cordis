@@ -136,7 +136,11 @@ const changeProperties = {
   actionFields: optionalList(
     object({ key: text, label: text, type: kind("text") }),
   ),
-  cases: optionalList(businessCase),
+  cases: {
+    ...optionalList(businessCase),
+    description:
+      "业务操作正反例。主流程纯字段规则可省略（宿主从 field expectations/examples 推导）；辅助 upgrade 可省略以继承历史 memberCases；辅助 add 须由宿主门禁覆盖成对动作。beforeCommit 等钩子证明不可由此字段臆造。",
+  },
 };
 
 /** Both the advertised contract and host validation use the real target identity. */
@@ -564,6 +568,12 @@ export function compilePlanInput(
   }
   if (enabled && (input.workflow || input.members.length !== 1))
     throw new Error("启停候选只能改变 enabled，不得混入源码或验收变更");
+  // Intent-only toggle: capability uses and defaults are host-derived or
+  // out of scope for enable/disable; model must not declare inventory here.
+  if (enabled && (input.uses?.length || input.defaults?.length))
+    throw new Error(
+      "启停候选只能改变 enabled，不得提交 uses 或 defaults",
+    );
   for (const path of scope.filter(
     (p) =>
       p === "active-source" || (p.endsWith(".ts") && p !== "business/view.ts"),

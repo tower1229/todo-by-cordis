@@ -326,7 +326,23 @@ test("call-629 缺顶层 acceptanceReason：须说明验收修订原因", () => 
 });
 
 test("call-629 复盘提案对 phase2 冻结验收：≤30、无悬空、表面收缩、不抬上限", () => {
-  const proposal = JSON.parse(readFileSync(proposePath, "utf8"));
+  const proposal = JSON.parse(readFileSync(proposePath, "utf8")) as {
+    changes?: { cases?: unknown; fields?: unknown }[];
+    browserCases?: unknown;
+  };
+  assert.equal(
+    proposal.browserCases,
+    undefined,
+    "意图 API：复盘 propose 不得手填 browserCases",
+  );
+  assert.ok(
+    (proposal.changes ?? []).every((c) => !c.cases),
+    "意图 API：纯字段复盘可省略 changes.cases，由宿主编译清单",
+  );
+  assert.ok(
+    (proposal.changes ?? []).some((c) => c.fields),
+    "复盘意图须声明 fields",
+  );
   let step: ReturnType<typeof compileReviewProposal>;
   try {
     step = compileReviewProposal(proposal, { injectAcceptanceReason: true });

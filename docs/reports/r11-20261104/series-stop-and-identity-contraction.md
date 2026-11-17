@@ -186,3 +186,14 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 | 上限 | **仍 30**，不抬；不弱化 `acceptanceReason` |
 | 多触发器 | `phase3-review-461699a-replay`（call-629）+ `phase4-disable-tags-1a4a54f-replay` + `round10-review-cap-replay` |
 | 系列 | **STOP_SERIES**；零付费绿不等于再开付费 |
+
+## 16. 零付费：`propose_plan` 意图 API（已交付）
+
+| 项 | 值 |
+| --- | --- |
+| 目标 | 模型只交业务意图与修订理由；表面/身份/清单留宿主；实现留冻结后生成 |
+| 契约 | 启停拒绝 `uses`/`defaults`；`compilePlanDraft` 强制无草案 `browserCases`；cases schema/文案标明主流程与 upgrade 可省略 |
+| 夹具 | `propose-plan-intent-api`；phase3 call-629 **无 cases**；phase4/round9 启停意图；round10 复盘 |
+| 规划 vs 生成 | **规划**：意图 + 宿主清单；**生成（冻结后）**：写实现。禁止 `propose_plan` 维护浏览器步骤/义务表 |
+| 边界 | 辅助 **add** 仍须成对 memberCases（ready 门禁）；非 browserCases 手填表 |
+| 系列 | **STOP_SERIES**；付费确认另授权 |

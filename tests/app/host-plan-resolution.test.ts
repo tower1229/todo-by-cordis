@@ -439,6 +439,55 @@ test("可选空集合等价且不修复非集合；冻结规则、非空要求�
   );
   assert.deepEqual(compilePlanInput({...base,changes:[{target:"panel",enabled:false}]},context,sources).memberEnabled,{pluginId:"panel",enabled:false});
   for (const empty of [null, []]) assert.throws(()=>compilePlanInput({...base,changes:[{target:"panel",enabled:false,features:empty}]},context,sources),/未授权字段/);
+  // Intent-only toggle: uses/defaults are host-derived or out of scope.
+  assert.throws(
+    () =>
+      compilePlanInput(
+        {
+          ...base,
+          changes: [{ target: "panel", enabled: false }],
+          uses: [{ member: "panel", feature: "commands" }],
+        },
+        context,
+        sources,
+      ),
+    /启停候选只能改变 enabled，不得提交 uses 或 defaults/,
+  );
+  assert.throws(
+    () =>
+      compilePlanInput(
+        {
+          ...base,
+          changes: [{ target: "panel", enabled: false }],
+          defaults: [
+            {
+              scope: "panel",
+              behavior: "keep",
+              basis: "convention",
+              impact: "low",
+            },
+          ],
+        },
+        context,
+        sources,
+      ),
+    /启停候选只能改变 enabled，不得提交 uses 或 defaults/,
+  );
+  const toggle = compilePlanInput(
+    {
+      ...base,
+      changes: [{ target: "panel", enabled: false }],
+      acceptanceReason: "停用面板，保留数据与既有验收表面由宿主收缩",
+    },
+    context,
+    sources,
+  );
+  assert.equal(toggle.memberEnabled?.enabled, false);
+  assert.equal(
+    "browserCases" in toggle,
+    false,
+    "propose 意图路径不得产出 browserCases；清单由宿主编译",
+  );
   assert.throws(
     () =>
       compilePlanInput(

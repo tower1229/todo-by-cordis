@@ -19,40 +19,6 @@
           "label": "复盘",
           "type": "text"
         }
-      ],
-      "cases": [
-        {
-          "name": "完成保存复盘",
-          "state": "open",
-          "fields": {},
-          "action": "complete",
-          "input": {
-            "review": "  本周复盘  "
-          },
-          "expected": {
-            "kind": "commit",
-            "state": "done",
-            "fields": {
-              "review": "本周复盘"
-            }
-          }
-        },
-        {
-          "name": "重新打开保留复盘",
-          "state": "done",
-          "fields": {
-            "review": "本周复盘"
-          },
-          "action": "reopen",
-          "input": {},
-          "expected": {
-            "kind": "commit",
-            "state": "open",
-            "fields": {
-              "review": "本周复盘"
-            }
-          }
-        }
       ]
     }
   ],

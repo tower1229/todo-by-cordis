@@ -62,6 +62,13 @@
 - **已完成**：arrival-state stem/配额；sourceQuote 夹具；停用成员 history-only 收缩（零付费 call-611 形态 ≤30）。  
 - **付费 `461699a` 结论（诚实非通过）**：phase0–2 过；**未验证** phase4 停用 `38>30`（没走到）。停在 phase3 复盘：`acceptanceReason` 缺失 + `33>30`。  
 - **已完成（零付费）**：通用「现行表面 / 仅保留」收缩不变量——`classifyBrowserCaseAgainstSurface` + call-629 / disable-tags / round10 三夹具 ≤30；缺 reason 仍 blockers。见 series-stop §15。  
+- **已完成（零付费）：`propose_plan` 意图 API 交付**  
+  - 启停：仅 `target`+`enabled`；拒绝同轮 `uses`/`defaults`/features/cases。  
+  - `compilePlanDraft` 不采纳草案 `browserCases`；清单仅宿主编译。  
+  - 复盘/字段：call-629 夹具无 `changes.cases`；宿主出表面；`acceptanceReason` 门禁不回退。  
+  - 辅助 upgrade 可省略 cases（继承历史）；add 仍由 ready 门禁要求成对动作（业务案例，非 browserCases 表）。  
+  - 规划 vs 生成：规划交意图；冻结后生成写实现（series-stop §16）。  
+  - 夹具：`propose-plan-intent-api`、phase3/phase4/round9/round10。  
 - **系列**：继续 `STOP_SERIES`；仍只在 `dev`；**不自动付费**，单次确认另等授权。
 
 ## 5. 明确不做
