@@ -1,6 +1,6 @@
 # r11 收口进度与下一步（2026-11-13）
 
-基线 tip：日常在 **`dev`**（当前 `cc7dd57`）；**达到验收标准前不合 `master`**。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
+基线 tip：日常在 **`dev`**（当前 `bc9997a`）；**达到验收标准前不合 `master`**。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
 
 ## 1. 已收口
 
@@ -70,7 +70,10 @@
   - 规划 vs 生成：规划交意图；冻结后生成写实现（series-stop §16）。  
   - 表面收缩 inherit：仅对 compiled 判覆盖；`system-protection` 可 field-surface 收缩；field 义务重绑未证明前不按孤儿丢弃。  
   - 夹具：`propose-plan-intent-api`、phase3/phase4/round9/round10、rebind/revision。  
-- **系列**：继续 `STOP_SERIES`；仍只在 `dev`；**不自动付费**，单次确认另等授权。
+- **已完成（零付费）：生成投影收缩**（tip `bc9997a`）  
+  - `generationPlanProjection`：`candidate-task/1` 不携带 `browserCases` / `obligations` / `checks`；冻结 `changeDefinition` 完整权威不变。  
+  - 夹具：`generation-plan-projection`、`generation-context`。  
+- **系列**：继续 `STOP_SERIES`；仍只在 `dev`；付费尖刀另见单次授权。
 
 ## 5. 明确不做
 
