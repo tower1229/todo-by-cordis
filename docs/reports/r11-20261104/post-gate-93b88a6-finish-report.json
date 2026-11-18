@@ -1,0 +1,50 @@
+{
+  "schema": "cordis.r11-93b88a6-post-gate-finish-report/1",
+  "recordedAt": "2026-11-18T08:25:53.853525+00:00",
+  "tipSha": "93b88a6e118d6cc61e2a3d2bd9bcd70155247d5e",
+  "branch": "dev",
+  "evidenceDir": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-93b88a6-20261118T074454Z",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-93b88a6-bind.json",
+  "outcome": "docs/reports/r11-20261104/bounded-probe-93b88a6-outcome.json",
+  "passed": false,
+  "completeSixStepPass": false,
+  "honestNonPass": true,
+  "seriesDecision": "STOP_SERIES",
+  "paidCalls": 21,
+  "ordinals": {
+    "first": 651,
+    "last": 671
+  },
+  "cumulativeOccupied": 671,
+  "fee": {
+    "goalFeeGuardOccupiedUSD": 16.701266699999987,
+    "feeGuardUSD": 20,
+    "currentCohortKnownEstimatedPeakUSD": 0.8251350960000003
+  },
+  "ci": {
+    "pushRunId": 44252018253,
+    "devRunId": 44252018253,
+    "prRunId": null,
+    "headSha": "93b88a6e118d6cc61e2a3d2bd9bcd70155247d5e",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-18T07:43:45Z",
+    "devCompletedAt": "2026-11-18T07:43:45Z",
+    "application": {
+      "tests": 915,
+      "pass": 915,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "note": "Dev M1 checks success on tip 93b88a6 (44252018253) before post-gate extended-ms paid confirmation. Stay on dev; no master merge. Fee guard $20; nextOrdinal 651. Exactly ONE paid round."
+  },
+  "stopSummary": "phase3 复盘：既有需求改变须说明验收修订原因仍出现；review 协议失败（缺少宿主 result 信封）；调用触顶 cumulativeCeiling 671（ordinal 651–671）；未再现 browserCases 33>30 / 38>30；未到 phase4；未以「验收义务未完整（ui-identity）」作为硬停文案",
+  "next": [
+    "Do not auto-continue paid series.",
+    "Zero-pay next knife should target phase3 acceptanceReason / review protocol friction if continuing architecture work.",
+    "Stay on dev; STOP_SERIES holds."
+  ],
+  "harnessNote": "Reused r11 probe-local extended-ms + meter; accounting inherits 3d069ed as priorOccupied 650; ceiling raised to 671 for one authorized confirmation."
+}

@@ -1,6 +1,6 @@
 # r11 收口进度与下一步（2026-11-13）
 
-基线 tip：日常在 **`dev`**（当前 `3d069ed`）；**达到验收标准前不合 `master`**。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
+基线 tip：日常在 **`dev`**（当前 `93b88a6`）；**达到验收标准前不合 `master`**。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
 
 ## 1. 已收口
 
@@ -52,8 +52,9 @@
    - tip `1a4a54f`（`dev`）：588–611；**sourceQuote 停点未复现**；phase0–3 applied；停在 phase4：`38>30`  
    - tip `461699a`（`dev`）：612–629；phase0–2 applied；**未到 phase4**；停在 phase3：`须说明验收修订原因` + `33>30`  
    - tip `3d069ed`（`dev`）：630–650；phase0–2 applied；**未到 phase4**；停在 phase3：`须说明验收修订原因` + `ui-identity` 义务不完整，随后触顶 **650/650**；**未再现** `33>30`  
-   - 费用约 $15.88/$20；累计 **650/650**；**继续 STOP_SERIES**  
-   - 见 `bounded-probe-3d069ed-outcome.json` / `post-gate-3d069ed-finish-report.json`
+   - tip `93b88a6`（`dev`）：651–671；phase0–2 applied；**未到 phase4**；停在 phase3：reason 摩擦 + review `result 信封` 协议失败，随后触顶 **671/671**；**未再现** `33>30`；ui-identity「义务不完整」硬停未再现  
+   - 费用约 $16.70/$20；累计 **671/671**；**继续 STOP_SERIES**  
+   - 见 `bounded-probe-93b88a6-outcome.json` / `post-gate-93b88a6-finish-report.json`
 
 4. **Dependabot 剩余 moderate**  
    与自迭代主线正交；有空修，不插队挡架构刀。
@@ -75,10 +76,11 @@
   - `generationPlanProjection`：`candidate-task/1` 不携带 `browserCases` / `obligations` / `checks`；冻结 `changeDefinition` 完整权威不变。  
   - 夹具：`generation-plan-projection`、`generation-context`。  
 - **付费 `3d069ed` 结论（诚实非通过；继续 STOP_SERIES）**：调用 630–650（21 次）；费用约 $15.88/$20；累计 **650/650**。phase0–2 `applied`；停在 phase3：`须说明验收修订原因` + `验收义务未完整（ui-identity）`，随后触顶调用上限。**未再现** `33>30`/`38>30`；**未到 phase4**。见 `bounded-probe-3d069ed-outcome.json` / `post-gate-3d069ed-finish-report.json`。  
-- **已完成（零付费）：宿主强制重绑 complete-as-setup**  
+- **已完成（零付费）：宿主强制重绑 complete-as-setup**（tip `93b88a6`）  
   - **根因**：`workflow-input` 出现后，assertion/feedback 仍透传 bare `workflow.complete`，浏览器到不了 `done`。  
   - **刀**：`bindWorkflowCompleteInputs` + `compileReferences`/`bindSteps` 注入宿主合法样本；故意空/短 input 与 `form-invalid` 不动。  
   - 夹具：`workflow-complete-setup-input`（helper + `compileReferences` 新编/晚继承/草案旁路）。  
+- **付费 `93b88a6` 结论（诚实非通过；继续 STOP_SERIES）**：调用 651–671（21 次）；费用约 $16.70/$20；累计 **671/671**。phase0–2 `applied`；停在 phase3：既有需求改变 `须说明验收修订原因` + review `缺少宿主 result 信封`，随后触顶。**未再现** `33>30`；**未到 phase4**；本轮未走到浏览器验收，complete-as-setup 刀对真实浏览器路径**未得证**。见 `bounded-probe-93b88a6-outcome.json` / `post-gate-93b88a6-finish-report.json`。  
 - **系列**：继续 `STOP_SERIES`；仍只在 `dev`；**不自动续跑**，下一次付费须另授权。
 
 ## 5. 明确不做

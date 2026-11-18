@@ -224,3 +224,16 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 | 不动 | 已有 input（空/短校验轨迹）、`form-invalid`、case 上限 30、reason 强度、`STOP_SERIES` |
 | 夹具 | `workflow-complete-setup-input`（含 `compileReferences` 新编 / 晚继承 assertion+feedback / 草案 browserCases） |
 | 系列 | **STOP_SERIES**；不自动付费续跑；付费确认另授权 |
+
+## 19. tip `93b88a6` 单次付费确认（已跑，继续停止）
+
+| 项 | 值 |
+| --- | --- |
+| tip | `93b88a6`（宿主 complete-as-setup 重绑；**仅 `dev`**；CI `44252018253` 绿） |
+| 证据 | `bounded-probe-93b88a6-outcome.json` / `.runtime/.../bounded-probe-93b88a6-20261118T074454Z` |
+| 调用 | 651–671（21 次） |
+| 费用护栏 | 约 $16.70 / $20；累计 **671/671**（本轮抬顶 650→671） |
+| 进度 | phase 0–2 `applied`；停在 phase 3 复盘；**未到 phase4** |
+| 停止 | 既有需求改变 `须说明验收修订原因` 仍出现；review `缺少宿主 result 信封`；随后 **调用触顶 671** |
+| 相对 `3d069ed` | **未再现** `33>30`；**未以**「验收义务未完整（ui-identity）」硬停；reason 摩擦仍在；本轮未走到浏览器验收，故 complete-as-setup 刀对真实浏览器路径**未得证** |
+| 系列 | **STOP_SERIES**（见 `post-gate-93b88a6-finish-report.json`）；不再自动续跑 |

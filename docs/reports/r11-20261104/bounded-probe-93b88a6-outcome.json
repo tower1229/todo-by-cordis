@@ -1,0 +1,117 @@
+{
+  "schema": "cordis.r11-93b88a6-post-gate-extended-ms-probe-outcome/1",
+  "recordedAt": "2026-11-18T08:25:53.853525+00:00",
+  "tipSha": "93b88a6e118d6cc61e2a3d2bd9bcd70155247d5e",
+  "evidenceDir": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-93b88a6-20261118T074454Z",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-93b88a6-bind.json",
+  "passed": false,
+  "completeSixStepPass": false,
+  "honestNonPass": true,
+  "paidCalls": 21,
+  "ordinals": {
+    "first": 651,
+    "last": 671
+  },
+  "cumulativeOccupied": 671,
+  "remainingCalls": 0,
+  "knownGoalEstimatedPeakUSD": 14.341970699999989,
+  "goalUnknownUsageReserveUSD": 2.359296,
+  "goalFeeGuardOccupiedUSD": 16.701266699999987,
+  "currentCohortKnownEstimatedPeakUSD": 0.8251350960000003,
+  "currentCohortUnknownUsageReserveUSD": 0,
+  "actualModel": "deepseek-flash",
+  "fatalHead": "phase3 复盘：既有需求改变须说明验收修订原因仍出现；review 协议失败（缺少宿主 result 信封）；调用触顶 cumulativeCeiling 671（ordinal 651–671）；未再现 browserCases 33>30 / 38>30；未到 phase4；未以「验收义务未完整（ui-identity）」作为硬停文案",
+  "stop": {
+    "kind": "plan-review-protocol-and-call-ceiling",
+    "phase": 3,
+    "planningPhase": "review",
+    "scope": "bounded-six-step-1",
+    "code": "review-envelope+cumulative-ceiling",
+    "message": "phase3 复盘：既有需求改变须说明验收修订原因仍出现；review 协议失败（缺少宿主 result 信封）；调用触顶 cumulativeCeiling 671（ordinal 651–671）；未再现 browserCases 33>30 / 38>30；未到 phase4；未以「验收义务未完整（ui-identity）」作为硬停文案",
+    "notes": [
+      "phase0–2 applied；phase3 reached；phase4 not reached",
+      "acceptanceReason missing / 既有需求改变须说明验收修订原因 reappeared in phase3 review dialogue/blockers",
+      "protocolFailures: 结构化输出缺少有效的宿主 result 信封 (review call)",
+      "hard stop: cumulativeOccupied 671 / ceiling 671",
+      "browserCases 33>30 / 38>30 did not reappear",
+      "验收义务未完整（ui-identity） hard-stop wording did not reappear (ui-identity present as inventory)",
+      "fee guard occupied ~$16.70 / $20 (not exhausted)",
+      "complete-as-setup host rebind was tip under test; this round did not reach browser acceptance on phase3 plan"
+    ]
+  },
+  "progress": {
+    "phasesReached": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "appliedEvents": 3,
+    "phasesApplied": [
+      0,
+      1,
+      2
+    ],
+    "experienceCheckedEvents": 3,
+    "settledEvents": 12,
+    "phase0Applied": true,
+    "phase1Applied": true,
+    "phase2Applied": true,
+    "phase3Applied": false,
+    "phase3Failed": true,
+    "phase4Reached": false,
+    "extendedMsHarnessUsed": true,
+    "millisecondsAuthorized": 1800000,
+    "millisecondsPauseGrants": true,
+    "browserCasesCapExceededReappeared": false,
+    "acceptanceReasonMissingReappeared": true,
+    "acceptanceObligationIncompleteReappeared": false,
+    "sourceQuoteMultipleRevisionsReappeared": false,
+    "reviewResultEnvelopeMissingReappeared": true,
+    "callCeilingHit": true
+  },
+  "ci": {
+    "pushRunId": 44252018253,
+    "devRunId": 44252018253,
+    "prRunId": null,
+    "headSha": "93b88a6e118d6cc61e2a3d2bd9bcd70155247d5e",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-18T07:43:45Z",
+    "devCompletedAt": "2026-11-18T07:43:45Z",
+    "application": {
+      "tests": 915,
+      "pass": 915,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "note": "Dev M1 checks success on tip 93b88a6 (44252018253) before post-gate extended-ms paid confirmation. Stay on dev; no master merge. Fee guard $20; nextOrdinal 651. Exactly ONE paid round."
+  },
+  "accountingAuthority": {
+    "source": "docs/reports/r11-20261104/bounded-probe-3d069ed-outcome.json",
+    "userAuthorizationRefs": [
+      "user-query-commit-then-one-bounded-paid-confirmation-after-complete-as-setup-rebind"
+    ],
+    "style": "inherit 3d069ed outcome cumulativeOccupied=650; stay on dev until acceptance",
+    "weakerAudit": true,
+    "weakerAuditNote": "Calls 309-394 absent on Mac disk. Accounting inherits 3d069ed outcome.",
+    "macDiskEvidenceOnlyThrough": 308,
+    "priorOccupied": 650,
+    "nextOrdinal": 651,
+    "maxNewCalls": 21,
+    "cumulativeCeiling": 671,
+    "priorKnownGoalEstimatedPeakUSD": 13.516835603999988,
+    "priorGoalUnknownUsageReserveUSD": 2.359296,
+    "priorGoalFeeGuardOccupiedUSD": 15.876131603999989,
+    "feeGuardUSD": 20,
+    "perCallUnknownReserveUSD": 0.4718592,
+    "ceilingRaiseNote": "User authorized one paid confirmation on tip after host complete-as-setup rebind. Fee guard $20. Ceiling 671 (21 remaining). Dev-only; not merging to master."
+  },
+  "seriesDecision": "STOP_SERIES",
+  "hypothesis": {
+    "tested": "host complete-as-setup rebind removes bare workflow.complete unreachable-done failures",
+    "result": "inconclusive for browser path: stopped in phase3 planning/review before applied; prior acceptanceReason friction still present; hard stop was call ceiling + review envelope protocol failure"
+  }
+}
