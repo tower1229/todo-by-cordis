@@ -1,6 +1,37 @@
 import type { WorkflowRule } from "./assistant.js";
 import type { BrowserCase, BrowserStep } from "./browser-cases.js";
 
+/** Host-owned valid complete payload for frozen workflow field rules. */
+export function workflowValidCompleteInput(
+  rules: WorkflowRule[],
+): Record<string, string> {
+  return Object.fromEntries(
+    rules.map((r) => [r.key, "验".repeat(Math.max(1, r.minLength))]),
+  );
+}
+
+/**
+ * Rewrite bare workflow.complete setup steps so arrival at done stays reachable
+ * once workflow-input rules exist. Leaves intentional input (empty/short/etc.) alone.
+ */
+export function bindWorkflowCompleteInputs(
+  steps: BrowserStep[],
+  rules: WorkflowRule[],
+): BrowserStep[] {
+  if (!rules.length) return steps;
+  const input = workflowValidCompleteInput(rules);
+  return steps.map((step) => {
+    if (
+      step.kind !== "action" ||
+      step.member !== "workflow" ||
+      step.action !== "complete" ||
+      step.input !== undefined
+    )
+      return step;
+    return { ...step, input: { ...input } };
+  });
+}
+
 /** All data samples and UI mechanics are host projections of frozen field rules.
  * No wording, selector, identity, or validation outcome is supplied by the model.
  */
@@ -21,9 +52,7 @@ export function workflowBrowserCases(
     )
   )
     throw new Error("工作流输入规则超出宿主表单可验证范围，需要维护者扩展");
-  const input = Object.fromEntries(
-    rules.map((r) => [r.key, "验".repeat(Math.max(1, r.minLength))]),
-  );
+  const input = workflowValidCompleteInput(rules);
   const cases: BrowserCase[] = [];
   const groups: BrowserStep[][] = [[]];
   const action = (values: Record<string, string>): BrowserStep => ({

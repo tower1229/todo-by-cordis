@@ -31,6 +31,10 @@ import {
   remapBrowserChecks,
 } from "./browser-case-content.js";
 import { PlanStructureBlocked } from "./historical-preparation.js";
+import {
+  bindWorkflowCompleteInputs,
+  workflowValidCompleteInput,
+} from "../shared/workflow-browser.js";
 
 export {
   classifyBrowserCaseAgainstSurface,
@@ -259,6 +263,20 @@ export function compileReferences(
     key: string;
     required?: boolean;
   }[];
+  const workflowRulesForBind = (
+    Array.isArray(draft.workflowRules) ? draft.workflowRules : []
+  ) as import("../shared/assistant.js").WorkflowRule[];
+  const completeBindRules =
+    workflowRulesForBind.length &&
+    workflowRulesForBind.every(
+      (r) =>
+        typeof r.key === "string" &&
+        typeof r.required === "boolean" &&
+        Number.isInteger(r.minLength) &&
+        Number.isInteger(r.maxLength),
+    )
+      ? workflowRulesForBind
+      : [];
   const owner = (key: unknown, kind: "action" | "field") => {
     if (typeof key !== "string") throw new Error("浏览器业务引用无效");
     const ids = new Set<string>();
@@ -342,12 +360,22 @@ export function compileReferences(
           s.kind === "field" ? "field" : "action",
         );
         if (s.kind === "action") {
+          const action = String(s.action);
+          const injected =
+            member === "workflow" &&
+            action === "complete" &&
+            s.input === undefined &&
+            completeBindRules.length
+              ? workflowValidCompleteInput(completeBindRules)
+              : undefined;
+          const inputValue =
+            injected !== undefined ? injected : s.input;
           if (
             member === "workflow" &&
-            s.action === "complete" &&
-            s.input !== undefined
+            action === "complete" &&
+            inputValue !== undefined
           ) {
-            const input = row(s.input);
+            const input = row(inputValue);
             const missing = rules.filter(
               (f) =>
                 f.required &&
@@ -358,7 +386,11 @@ export function compileReferences(
                 `浏览器案例 ${caseId} 的动作输入被宿主原生必填校验阻止，不能提交或断言页面 alert：${missing.map((f) => f.key).join("、")}`,
               );
           }
-          return { ...s, member };
+          return {
+            ...s,
+            member,
+            ...(injected !== undefined ? { input: injected } : {}),
+          };
         }
         const matches = (inherited.uiContributions ?? []).filter(
           (c) =>
@@ -746,6 +778,20 @@ export function compileReferences(
             }).slice(0, 16),
           }));
       }
+    }
+    // Host rewrite: bare workflow.complete setup cannot arrive at done once
+    // workflow-input rules exist. Keep assertion/feedback steps aligned with cases.
+    for (const obligation of requirement.obligations) {
+      if (obligation.kind === "assertion")
+        obligation.steps = bindWorkflowCompleteInputs(
+          obligation.steps,
+          completeBindRules,
+        );
+      if (obligation.kind === "feedback")
+        obligation.scenarios = obligation.scenarios.map((scenario) => ({
+          ...scenario,
+          steps: bindWorkflowCompleteInputs(scenario.steps, completeBindRules),
+        }));
     }
     bindAvailability([requirement],inherited.actionAvailability);
     requirement.checks = requirement.checks.filter((c) => {

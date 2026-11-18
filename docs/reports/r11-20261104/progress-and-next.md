@@ -75,6 +75,10 @@
   - `generationPlanProjection`：`candidate-task/1` 不携带 `browserCases` / `obligations` / `checks`；冻结 `changeDefinition` 完整权威不变。  
   - 夹具：`generation-plan-projection`、`generation-context`。  
 - **付费 `3d069ed` 结论（诚实非通过；继续 STOP_SERIES）**：调用 630–650（21 次）；费用约 $15.88/$20；累计 **650/650**。phase0–2 `applied`；停在 phase3：`须说明验收修订原因` + `验收义务未完整（ui-identity）`，随后触顶调用上限。**未再现** `33>30`/`38>30`；**未到 phase4**。见 `bounded-probe-3d069ed-outcome.json` / `post-gate-3d069ed-finish-report.json`。  
+- **已完成（零付费）：宿主强制重绑 complete-as-setup**  
+  - **根因**：`workflow-input` 出现后，assertion/feedback 仍透传 bare `workflow.complete`，浏览器到不了 `done`。  
+  - **刀**：`bindWorkflowCompleteInputs` + `compileReferences`/`bindSteps` 注入宿主合法样本；故意空/短 input 与 `form-invalid` 不动。  
+  - 夹具：`workflow-complete-setup-input`（helper + `compileReferences` 新编/晚继承/草案旁路）。  
 - **系列**：继续 `STOP_SERIES`；仍只在 `dev`；**不自动续跑**，下一次付费须另授权。
 
 ## 5. 明确不做

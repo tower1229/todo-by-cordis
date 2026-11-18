@@ -213,3 +213,14 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 | 停止 | `须说明验收修订原因` + `验收义务未完整（ui-identity）`；随后 **调用触顶 650** |
 | 相对 `461699a` | **未再现** `33>30`；reason 缺失仍在；新增 ui-identity 义务不完整 |
 | 系列 | **STOP_SERIES**（见 `post-gate-3d069ed-finish-report.json`）；不再自动续跑 |
+
+## 18. 零付费：宿主强制重绑 complete-as-setup（已交付）
+
+| 项 | 值 |
+| --- | --- |
+| tip 语境 | 付费停点 `3d069ed` 根因刀；**仅 `dev`**；验收前不合 `master` |
+| 根因 | 工作流有必填 `workflow-input` 后，assertion（及 feedback setup）仍透传 bare `workflow.complete`，浏览器无法到达 `done`，后续 `action-visible`（如 counter `increment`/`visible:false`）必挂 |
+| 刀 | `workflowValidCompleteInput` / `bindWorkflowCompleteInputs`；`compileReferences` 在 emit/`bindAvailability` 前重写 assertion/feedback steps；`bindSteps` 对草案旁路同样注入 |
+| 不动 | 已有 input（空/短校验轨迹）、`form-invalid`、case 上限 30、reason 强度、`STOP_SERIES` |
+| 夹具 | `workflow-complete-setup-input`（含 `compileReferences` 新编 / 晚继承 assertion+feedback / 草案 browserCases） |
+| 系列 | **STOP_SERIES**；不自动付费续跑；付费确认另授权 |
