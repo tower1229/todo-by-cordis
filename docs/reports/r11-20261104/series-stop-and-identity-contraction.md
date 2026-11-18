@@ -191,7 +191,7 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 
 | 项 | 值 |
 | --- | --- |
-| tip | `bc9997a`（`dev`；验收前不合 `master`；意图 API 祖先 `cc7dd57`） |
+| tip | `3d069ed`（`dev`；生成投影实质 `bc9997a`；意图 API 祖先 `cc7dd57`；验收前不合 `master`） |
 | 目标 | 模型只交业务意图与修订理由；表面/身份/清单留宿主；实现留冻结后生成 |
 | 契约 | 启停拒绝 `uses`/`defaults`；`compilePlanDraft` 强制无草案 `browserCases`；cases schema/文案标明主流程与 upgrade 可省略 |
 | 夹具 | `propose-plan-intent-api`；phase3 call-629 **无 cases**；phase4/round9 启停意图；round10 复盘 |
@@ -200,3 +200,16 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 | inherit | 覆盖只对 compiled 判定；`system-protection` 可 field-surface 收缩；field 重绑未证明前保留 |
 | 边界 | 辅助 **add** 仍须成对 memberCases（ready 门禁）；非 browserCases 手填表 |
 | 系列 | **STOP_SERIES**；付费确认另授权 |
+
+## 17. tip `3d069ed` 单次付费确认（已跑，继续停止）
+
+| 项 | 值 |
+| --- | --- |
+| tip | `3d069ed`（生成投影 + 意图 API；**仅 `dev`**；CI `44224161451` 绿） |
+| 证据 | `bounded-probe-3d069ed-outcome.json` / `.runtime/.../bounded-probe-3d069ed-20261118T033546Z` |
+| 调用 | 630–650（21 次） |
+| 费用护栏 | 约 $15.88 / $20；累计 **650/650** |
+| 进度 | phase 0–2 `applied`；停在 phase 3 规划；**未到 phase4** |
+| 停止 | `须说明验收修订原因` + `验收义务未完整（ui-identity）`；随后 **调用触顶 650** |
+| 相对 `461699a` | **未再现** `33>30`；reason 缺失仍在；新增 ui-identity 义务不完整 |
+| 系列 | **STOP_SERIES**（见 `post-gate-3d069ed-finish-report.json`）；不再自动续跑 |
