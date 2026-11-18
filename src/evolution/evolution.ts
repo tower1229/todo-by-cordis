@@ -9,7 +9,11 @@ import { assembleCandidate, boundCandidateSchema, candidateDifference, deltaBasi
 import { BudgetScheduler, BudgetExhaustedError, type ModelPhase } from "./budget.js";
 import { InvestigationStore, materialIdentity } from "./investigation.js";
 import { modelInput, modelInputEncoding } from "./model-input.js";
-import { changeDefinition, compileSpec } from "./specification.js";
+import {
+  changeDefinition,
+  compileSpec,
+  generationPlanProjection,
+} from "./specification.js";
 import { recordReview, reviewEvidence, reviewDefinitionHash } from "./review.js";
 import { requirementReviewInput } from "./review-input.js";
 import { clarificationRequest, parseClarificationReview, clarificationBlockers, type ClarificationDecision } from "./clarification-review.js";
@@ -2211,7 +2215,7 @@ export class Evolution {
       kind: "candidate-task/1",
       encoding: modelInputEncoding,
       authority: { specificationHash: hash(plan.changeSpec), requirementSeal: plan.requirementGate?.seal, definitionHash: hash(plan.changeSpec?.definition) },
-      plan: changeDefinition(plan),
+      plan: generationPlanProjection(plan),
       target: {kind: target.kind, baseVersion: target.baseVersion},
       technicalFacts: technicalFacts(plan),
       delta: {...deltaBasis(context.source), members: Object.entries(baseMembers).map(([pluginId, source]) => ({pluginId, hash: hash(source)}))},

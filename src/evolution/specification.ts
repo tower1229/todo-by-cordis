@@ -47,6 +47,33 @@ export function changeDefinition(plan: InvestigatedPlan): ChangeDefinition {
   ) as ChangeDefinition;
 }
 
+/**
+ * Model-facing generation view of a frozen plan.
+ * Host verification and change/3 still use the full changeDefinition;
+ * generation only needs implementation intent, not the acceptance inventory.
+ */
+export function generationPlanProjection(plan: InvestigatedPlan) {
+  const {
+    browserCases: _browserCases,
+    cases: _cases,
+    acceptanceChanges: _acceptanceChanges,
+    affectedAcceptance: _affectedAcceptance,
+    requirements,
+    ...rest
+  } = structuredClone(changeDefinition(plan));
+  return {
+    ...rest,
+    ...(requirements
+      ? {
+          requirements: requirements.map(
+            ({ checks: _checks, obligations: _obligations, ...requirement }) =>
+              requirement,
+          ),
+        }
+      : {}),
+  };
+}
+
 export function compileSpec(
   plan: InvestigatedPlan,
   runId: string,

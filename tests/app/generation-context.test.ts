@@ -72,6 +72,30 @@ test("规划已用九次调用时，首轮精确资料支持直接修正，十�
         assert.equal(view.plan.changeSpec, undefined);
         assert.equal(view.target.payload, undefined);
         assert.equal(view.frozenAcceptance, undefined);
+        assert.equal(
+          view.plan.browserCases,
+          undefined,
+          "生成投影不得携带 host browserCases 机械表",
+        );
+        assert.equal(view.plan.cases, undefined);
+        assert.equal(view.plan.acceptanceChanges, undefined);
+        assert.equal(view.plan.affectedAcceptance, undefined);
+        for (const requirement of view.plan.requirements ?? []) {
+          assert.equal(
+            requirement.obligations,
+            undefined,
+            "生成投影不得携带 obligations",
+          );
+          assert.equal(
+            requirement.checks,
+            undefined,
+            "生成投影不得携带 checks 身份矩阵",
+          );
+        }
+        assert.equal(
+          request.tools?.map((tool) => tool.name).sort().join(","),
+          "report_blocker,submit_candidate",
+        );
         assert.ok(!view.materials.documents.some((d: {ref:string})=>d.ref.startsWith("src/")));
         assert.ok(view.materials.catalog.length >= view.materials.documents.length);
         assert.equal(input.materials.baseVersion, base.id);
