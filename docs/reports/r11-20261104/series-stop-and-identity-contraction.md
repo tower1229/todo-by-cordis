@@ -248,3 +248,16 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 | 不动 | case 上限 30、reason 仅 plan 根、browser-case inherit reason 门禁、review 信封、STOP_SERIES |
 | 夹具 | `acceptance-reason-contract`；phase3 call-629 / round10 call-565「只加复盘无 blocker」 |
 | 系列 | **STOP_SERIES**；不自动付费续跑 |
+
+## 21. tip `144e076` 单次付费确认（已跑，继续停止）
+
+| 项 | 值 |
+| --- | --- |
+| tip | `144e076`（acceptanceSurface 修订门禁；**仅 `dev`**；CI `44441949079` 绿） |
+| 证据 | `bounded-probe-144e076-outcome.json` / `.runtime/.../bounded-probe-144e076-20261119T031243Z` |
+| 调用 | 672–679（8 次）；剩余 13；累计 **679/692** |
+| 费用护栏 | 约 $16.92 / $20；本轮增量约 $0.22 |
+| 进度 | phase0 `applied`；停在 phase1；**未到 phase3/4** |
+| 停止 | `awaiting-input`（counter increment 可见性等澄清）+ 过程出现 `ui-identity` 义务未完整/断言已变化 |
+| 相对 `93b88a6` | **全事件无**「须说明验收修订原因」；**未触顶**；**未到 phase3**，故 surface 刀对 phase3 假阳性**未直接复现检验**（仅有「本轮零 reason blocker」信号） |
+| 系列 | **STOP_SERIES**（见 `post-gate-144e076-finish-report.json`）；不再自动续跑 |

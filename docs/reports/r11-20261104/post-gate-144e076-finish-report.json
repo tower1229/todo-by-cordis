@@ -1,0 +1,50 @@
+{
+  "schema": "cordis.r11-144e076-post-gate-finish-report/1",
+  "recordedAt": "2026-11-19T03:26:35.232524+00:00",
+  "tipSha": "144e076c867ae295d62e52470904e300bc8ab1be",
+  "branch": "dev",
+  "evidenceDir": ".runtime/continuous-revision-study-20261104-r11/real/bounded-probe-144e076-20261119T031243Z",
+  "bind": ".runtime/continuous-revision-study-20261104-r11/bounded-probe-144e076-bind.json",
+  "outcome": "docs/reports/r11-20261104/bounded-probe-144e076-outcome.json",
+  "passed": false,
+  "completeSixStepPass": false,
+  "honestNonPass": true,
+  "seriesDecision": "STOP_SERIES",
+  "paidCalls": 8,
+  "ordinals": {
+    "first": 672,
+    "last": 679
+  },
+  "cumulativeOccupied": 679,
+  "fee": {
+    "goalFeeGuardOccupiedUSD": 16.924883351999984,
+    "feeGuardUSD": 20,
+    "currentCohortKnownEstimatedPeakUSD": 0.22361665199999692
+  },
+  "ci": {
+    "pushRunId": 44441949079,
+    "devRunId": 44441949079,
+    "prRunId": null,
+    "headSha": "144e076c867ae295d62e52470904e300bc8ab1be",
+    "statusAtBind": "completed",
+    "conclusion": "success",
+    "pushCompletedAt": "2026-11-19T03:11:40Z",
+    "devCompletedAt": "2026-11-19T03:11:40Z",
+    "application": {
+      "tests": 916,
+      "pass": 916,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "e2ePassed": 111,
+    "note": "Dev M1 checks success on tip 144e076 (44441949079) before post-gate extended-ms paid confirmation. Stay on dev; no master merge. Fee guard $20; nextOrdinal 672. Exactly ONE paid round."
+  },
+  "stopSummary": "phase1 停在 awaiting-input（counter increment 可见性等澄清）；过程中出现 ui-identity 义务未完整执行/断言已变化；未到 phase3，故 acceptanceSurface 对 phase3 假阳性未在本轮被直接复现检验；全事件未出现「须说明验收修订原因」；未再现 33>30；未触顶调用上限",
+  "next": [
+    "Do not auto-continue paid series.",
+    "Zero-pay next knife may target phase1 clarification / ui-identity incomplete if continuing architecture work.",
+    "Stay on dev; STOP_SERIES holds."
+  ],
+  "harnessNote": "Reused r11 probe-local extended-ms + meter; accounting inherits 93b88a6 as priorOccupied 671; ceiling raised to 692 for one authorized confirmation."
+}

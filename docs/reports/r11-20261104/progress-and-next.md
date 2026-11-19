@@ -1,6 +1,6 @@
 # r11 收口进度与下一步（2026-11-13）
 
-基线 tip：日常在 **`dev`**（当前 `ae8f605`）；**达到验收标准前不合 `master`**。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
+基线 tip：日常在 **`dev`**（当前 `144e076`）；**达到验收标准前不合 `master`**。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
 
 ## 1. 已收口
 
@@ -53,8 +53,9 @@
    - tip `461699a`（`dev`）：612–629；phase0–2 applied；**未到 phase4**；停在 phase3：`须说明验收修订原因` + `33>30`  
    - tip `3d069ed`（`dev`）：630–650；phase0–2 applied；**未到 phase4**；停在 phase3：`须说明验收修订原因` + `ui-identity` 义务不完整，随后触顶 **650/650**；**未再现** `33>30`  
    - tip `93b88a6`（`dev`）：651–671；phase0–2 applied；**未到 phase4**；停在 phase3：reason 摩擦 + review `result 信封` 协议失败，随后触顶 **671/671**；**未再现** `33>30`；ui-identity「义务不完整」硬停未再现  
-   - 费用约 $16.70/$20；累计 **671/671**；**继续 STOP_SERIES**  
-   - 见 `bounded-probe-93b88a6-outcome.json` / `post-gate-93b88a6-finish-report.json`
+   - tip `144e076`（`dev`）：672–679；phase0 applied；停在 phase1：`awaiting-input` + ui-identity 义务未完整；**未到 phase3**；**全事件无** acceptanceReason blocker；累计 **679/692**  
+   - 费用约 $16.92/$20；**继续 STOP_SERIES**  
+   - 见 `bounded-probe-144e076-outcome.json` / `post-gate-144e076-finish-report.json`
 
 4. **Dependabot 剩余 moderate**  
    与自迭代主线正交；有空修，不插队挡架构刀。
@@ -81,10 +82,11 @@
   - **刀**：`bindWorkflowCompleteInputs` + `compileReferences`/`bindSteps` 注入宿主合法样本；故意空/短 input 与 `form-invalid` 不动。  
   - 夹具：`workflow-complete-setup-input`（helper + `compileReferences` 新编/晚继承/草案旁路）。  
 - **付费 `93b88a6` 结论（诚实非通过；继续 STOP_SERIES）**：调用 651–671（21 次）；费用约 $16.70/$20；累计 **671/671**。phase0–2 `applied`；停在 phase3：既有需求改变 `须说明验收修订原因` + review `缺少宿主 result 信封`，随后触顶。**未再现** `33>30`；**未到 phase4**；本轮未走到浏览器验收，complete-as-setup 刀对真实浏览器路径**未得证**。见 `bounded-probe-93b88a6-outcome.json` / `post-gate-93b88a6-finish-report.json`。  
-- **已完成（零付费）：既有需求修订按 acceptanceSurface 比较**  
+- **已完成（零付费）：既有需求修订按 acceptanceSurface 比较**（tip `144e076`）  
   - **根因**：全对象 `hash(Requirement)` 把宿主投影 churn（checks / workflow-input / complete input 等）当成业务修订。  
   - **刀**：`acceptanceSurface` / `requirementAcceptanceChanged`；真改 quote/义务仍须 plan 根 `acceptanceReason`。  
   - 夹具：`acceptance-reason-contract`、phase3 call-629、round10 call-565。见 [`acceptance-reason-contract.md`](./acceptance-reason-contract.md)。  
+- **付费 `144e076` 结论（诚实非通过；继续 STOP_SERIES）**：调用 672–679（8 次）；费用约 $16.92/$20；累计 **679/692**。phase0 `applied`；停在 phase1：`awaiting-input`（counter 可见性澄清）+ `ui-identity` 义务未完整。**未到 phase3**，故 surface 刀对上一轮假阳性**未直接复现检验**；本轮**零**「须说明验收修订原因」。见 `bounded-probe-144e076-outcome.json` / `post-gate-144e076-finish-report.json`。  
 - **系列**：继续 `STOP_SERIES`；仍只在 `dev`；**不自动续跑**，下一次付费须另授权。
 
 ## 5. 明确不做
