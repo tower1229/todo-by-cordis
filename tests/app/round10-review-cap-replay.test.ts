@@ -21,6 +21,10 @@ import type { Requirement } from "../../src/shared/assistant.js";
 import { parseBrowserCases } from "../../src/server/requirement-coverage.js";
 import { v1Requests } from "../../scripts/lib/v1-scenario.js";
 import { hash } from "../../src/release/storage.js";
+import {
+  requirementAcceptanceChanged,
+  requirementRevisionBlockers,
+} from "../../src/evolution/acceptance-surface.js";
 
 const definitionPath = new URL(
   "../../tests/fixtures/round10-phase2-plan-definition.json",
@@ -148,25 +152,6 @@ function assertNoDanglingBrowserChecks(
     [],
     `义务生成案例缺失且无内容等价别名: ${missingGenerated.join(",")}`,
   );
-}
-
-/** Mirrors evolution.ts: changed accepted requirements need plan-root acceptanceReason. */
-function requirementRevisionBlockers(
-  inherited: Requirement[],
-  next: Requirement[],
-  acceptanceReason: unknown,
-) {
-  const blockers: string[] = [];
-  for (const old of inherited) {
-    const replacement = next.find((item) => item.id === old.id);
-    if (!replacement || hash(replacement) === hash(old)) continue;
-    if (
-      typeof acceptanceReason !== "string" ||
-      !acceptanceReason.trim()
-    )
-      blockers.push(`既有需求 ${old.id} 改变，须说明验收修订原因`);
-  }
-  return blockers;
 }
 
 function loadRound10Inherited() {
@@ -317,8 +302,8 @@ test("bdba58e outcome 阻塞在复盘步 plan-compilation 的 33>30", () => {
   assert.equal(frozen.definition.browserCases.length, 23);
 });
 
-test("round-10 call-565 缺顶层 acceptanceReason：须说明验收修订原因", () => {
-  // bdba58e 并列停因；不得靠测试注入 reason 绕过。
+test("round-10 call-565 只加复盘：宿主投影 churn 不要求 acceptanceReason", () => {
+  // Historical bdba58e false-positive: full hash churned; surface gate must not.
   const plans = JSON.parse(readFileSync(plansPath, "utf8")) as {
     calls: Record<string, { uniqueProposePlans: unknown[] }>;
   };
@@ -335,12 +320,22 @@ test("round-10 call-565 缺顶层 acceptanceReason：须说明验收修订原因
   const step = compileReviewProposal(proposal, {
     injectAcceptanceReason: false,
   });
-  assert.ok(
-    step.revisionBlockers.length > 0,
-    "改变已接受需求且无 plan 根原因时必须有修订 blockers",
+  const { inherited } = loadRound10Inherited();
+  for (const old of inherited.requirements as Requirement[]) {
+    const next = step.requirements.find((r) => r.id === old.id);
+    if (!next) continue;
+    if (hash(old) !== hash(next))
+      assert.equal(
+        requirementAcceptanceChanged(old, next),
+        false,
+        `宿主 churn 后 ${old.id} 表面应仍相等`,
+      );
+  }
+  assert.deepEqual(
+    step.revisionBlockers,
+    [],
+    "只加复盘引起的宿主投影 churn 不得触发既有需求修订 blocker",
   );
-  for (const blocker of step.revisionBlockers)
-    assert.match(blocker, /既有需求 .+ 改变，须说明验收修订原因/);
   assert.equal(
     planningStructureTerminal({
       historical: false,
@@ -350,7 +345,7 @@ test("round-10 call-565 缺顶层 acceptanceReason：须说明验收修订原因
       callLimit: 12,
     }),
     true,
-    "验收修订原因缺失与结构缺陷同属不可协议重试终态",
+    "结构缺陷仍属不可协议重试终态",
   );
 });
 

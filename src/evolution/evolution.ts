@@ -46,6 +46,7 @@ import { ModelTransportError } from "./driver.js";
 import { transportFailure, transportTimeoutRetryable } from "./transport-failure.js";
 import { HistoricalPreparationBlocked, PlanStructureBlocked, planningStructureTerminal } from "./historical-preparation.js";
 import { inheritBrowserCases } from "./references.js";
+import { requirementAcceptanceChanged } from "./acceptance-surface.js";
 import {
   danglingBrowserChecks,
   dedupeBrowserCases,
@@ -1774,7 +1775,7 @@ export class Evolution {
                   (item) => item.id === old.id,
                 );
                 if (!replacement) (plan.requirements ??= []).push(old);
-                else if (hash(replacement) !== hash(old)) {
+                else if (requirementAcceptanceChanged(old, replacement)) {
                   if (
                     typeof call.args.acceptanceReason !== "string" ||
                     !call.args.acceptanceReason.trim()

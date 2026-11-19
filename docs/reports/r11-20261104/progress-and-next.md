@@ -1,6 +1,6 @@
 # r11 收口进度与下一步（2026-11-13）
 
-基线 tip：日常在 **`dev`**（当前 `93b88a6`）；**达到验收标准前不合 `master`**。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
+基线 tip：日常在 **`dev`**（当前 `ae8f605`）；**达到验收标准前不合 `master`**。判断标准见根目录 [`CONTEXT.md`](../../../CONTEXT.md)：核心是模型驱动的自迭代架构；Todo 只是验证沙盘。
 
 ## 1. 已收口
 
@@ -41,10 +41,10 @@
    - inherit 超限结构终态；series-stop §3 列入 round10  
    - 见 PR 合入记录与 `round10-review-cap-replay` / `browser-case-identity`
 
-2. **模型驱动闭环的下一结构性缺口（零付费）** — **已完成（结论 A）**  
+2. **模型驱动闭环的下一结构性缺口（零付费）** — **已完成（结论 A + 表面门禁）**  
    - Issue [#62](https://github.com/tower1229/todo-by-cordis/issues/62)  
-   - 结论：强化 **仅 plan 根** `acceptanceReason`，禁止 `requirements[]`；见 [`acceptance-reason-contract.md`](./acceptance-reason-contract.md)  
-   - 夹具：`acceptance-reason-contract.test.ts` + 工具描述/schema 文案强化  
+   - 结论：强化 **仅 plan 根** `acceptanceReason`，禁止 `requirements[]`；修订比较 **acceptanceSurface**（非全对象 hash）；见 [`acceptance-reason-contract.md`](./acceptance-reason-contract.md)  
+   - 夹具：`acceptance-reason-contract` + phase3/round10「只加复盘无假阳性 blocker」 + 工具描述/schema 文案强化  
 
 3. **单次付费确认（仅维护者授权）** — **已完成五轮（均非通过）**  
    - tip `6170cd7`：566–573；`验收义务未完整执行`  
@@ -81,6 +81,10 @@
   - **刀**：`bindWorkflowCompleteInputs` + `compileReferences`/`bindSteps` 注入宿主合法样本；故意空/短 input 与 `form-invalid` 不动。  
   - 夹具：`workflow-complete-setup-input`（helper + `compileReferences` 新编/晚继承/草案旁路）。  
 - **付费 `93b88a6` 结论（诚实非通过；继续 STOP_SERIES）**：调用 651–671（21 次）；费用约 $16.70/$20；累计 **671/671**。phase0–2 `applied`；停在 phase3：既有需求改变 `须说明验收修订原因` + review `缺少宿主 result 信封`，随后触顶。**未再现** `33>30`；**未到 phase4**；本轮未走到浏览器验收，complete-as-setup 刀对真实浏览器路径**未得证**。见 `bounded-probe-93b88a6-outcome.json` / `post-gate-93b88a6-finish-report.json`。  
+- **已完成（零付费）：既有需求修订按 acceptanceSurface 比较**  
+  - **根因**：全对象 `hash(Requirement)` 把宿主投影 churn（checks / workflow-input / complete input 等）当成业务修订。  
+  - **刀**：`acceptanceSurface` / `requirementAcceptanceChanged`；真改 quote/义务仍须 plan 根 `acceptanceReason`。  
+  - 夹具：`acceptance-reason-contract`、phase3 call-629、round10 call-565。见 [`acceptance-reason-contract.md`](./acceptance-reason-contract.md)。  
 - **系列**：继续 `STOP_SERIES`；仍只在 `dev`；**不自动续跑**，下一次付费须另授权。
 
 ## 5. 明确不做

@@ -22,6 +22,10 @@ import type { Requirement } from "../../src/shared/assistant.js";
 import { parseBrowserCases } from "../../src/server/requirement-coverage.js";
 import { v1Requests } from "../../scripts/lib/v1-scenario.js";
 import { hash } from "../../src/release/storage.js";
+import {
+  requirementAcceptanceChanged,
+  requirementRevisionBlockers,
+} from "../../src/evolution/acceptance-surface.js";
 
 const frozenPath = new URL(
   "../../tests/fixtures/phase3-review-461699a-frozen.json",
@@ -147,21 +151,6 @@ function assertNoDanglingBrowserChecks(
     [],
     `义务生成案例缺失且无内容等价别名: ${missingGenerated.join(",")}`,
   );
-}
-
-function requirementRevisionBlockers(
-  inherited: Requirement[],
-  next: Requirement[],
-  acceptanceReason: unknown,
-) {
-  const blockers: string[] = [];
-  for (const old of inherited) {
-    const replacement = next.find((item) => item.id === old.id);
-    if (!replacement || hash(replacement) === hash(old)) continue;
-    if (typeof acceptanceReason !== "string" || !acceptanceReason.trim())
-      blockers.push(`既有需求 ${old.id} 改变，须说明验收修订原因`);
-  }
-  return blockers;
 }
 
 function loadFrozen() {
@@ -294,7 +283,7 @@ test("461699a outcome 阻塞在 phase3 复盘的 33>30 与缺 acceptanceReason",
   assert.equal(frozen.browserCases.length, 25);
 });
 
-test("call-629 缺顶层 acceptanceReason：须说明验收修订原因", () => {
+test("call-629 只加复盘：宿主投影 churn 不要求 acceptanceReason", () => {
   const proposal = JSON.parse(readFileSync(proposePath, "utf8")) as {
     acceptanceReason?: string;
   };
@@ -307,12 +296,24 @@ test("call-629 缺顶层 acceptanceReason：须说明验收修订原因", () => 
   const step = compileReviewProposal(proposal, {
     injectAcceptanceReason: false,
   });
-  assert.ok(
-    step.revisionBlockers.length > 0,
-    "改变已接受需求且无 plan 根原因时必须有修订 blockers",
+  // Full requirement hash may churn (checks / workflow-input / injected complete
+  // input), but business acceptance surface for tags/counter stays equal.
+  const frozen = loadFrozen();
+  for (const old of frozen.requirements) {
+    const next = step.requirements.find((r) => r.id === old.id);
+    if (!next) continue;
+    if (hash(old) !== hash(next))
+      assert.equal(
+        requirementAcceptanceChanged(old, next),
+        false,
+        `宿主 churn 后 ${old.id} 表面应仍相等`,
+      );
+  }
+  assert.deepEqual(
+    step.revisionBlockers,
+    [],
+    "只加复盘引起的宿主投影 churn 不得触发既有需求修订 blocker",
   );
-  for (const blocker of step.revisionBlockers)
-    assert.match(blocker, /既有需求 .+ 改变，须说明验收修订原因/);
   assert.equal(
     planningStructureTerminal({
       historical: false,

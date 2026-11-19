@@ -237,3 +237,14 @@ r11 期间曾用更硬的「暂缓演示域扩张」挡队列冲散；#54/#56/#5
 | 停止 | 既有需求改变 `须说明验收修订原因` 仍出现；review `缺少宿主 result 信封`；随后 **调用触顶 671** |
 | 相对 `3d069ed` | **未再现** `33>30`；**未以**「验收义务未完整（ui-identity）」硬停；reason 摩擦仍在；本轮未走到浏览器验收，故 complete-as-setup 刀对真实浏览器路径**未得证** |
 | 系列 | **STOP_SERIES**（见 `post-gate-93b88a6-finish-report.json`）；不再自动续跑 |
+
+## 20. 零付费：既有需求修订按 acceptanceSurface 比较（已交付）
+
+| 项 | 值 |
+| --- | --- |
+| tip 语境 | `93b88a6` phase3 假阳性刀；**仅 `dev`**；验收前不合 `master` |
+| 根因 | 门禁 `hash(Requirement)` 全对象比较；加复盘时宿主晚继承改写无关 tags/counter 的 checks / workflow-input / assertion.availability / complete input，业务意图未变也要 `acceptanceReason` |
+| 刀 | `acceptanceSurface` + `requirementAcceptanceChanged`；evolution 修订门禁改比表面；真改 quote/非宿主义务仍须 plan 根 reason |
+| 不动 | case 上限 30、reason 仅 plan 根、browser-case inherit reason 门禁、review 信封、STOP_SERIES |
+| 夹具 | `acceptance-reason-contract`；phase3 call-629 / round10 call-565「只加复盘无 blocker」 |
+| 系列 | **STOP_SERIES**；不自动付费续跑 |
