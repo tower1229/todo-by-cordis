@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { artifactKey, validateAndSortComposition } from "./topology.js";
 import type {
+  ActiveClientComposition,
   AppResponse,
   CompositionSnapshot,
   CompositionTopology,
@@ -203,6 +204,13 @@ export class SupervisedCordisRuntime implements ServerCordisRuntime {
   private readonly drainTimeoutMs: number;
 
   private readonly artifacts = new Map<string, PluginArtifact>();
+  private readonly compositionListeners = new Set<
+    (composition: ActiveClientComposition) => void
+  >();
+  private activeClientComposition: ActiveClientComposition = {
+    compositionId: "",
+    plugins: [],
+  };
   private worker: WorkerProcess | null = null;
   private lastGoodComposition: CompositionSnapshot | null = null;
   private closed = false;
@@ -233,6 +241,56 @@ export class SupervisedCordisRuntime implements ServerCordisRuntime {
       artifactKey(artifact.pluginId, artifact.versionId),
       artifact,
     );
+  }
+
+  getArtifact(pluginId: string, versionId: string): PluginArtifact | undefined {
+    return this.artifacts.get(artifactKey(pluginId, versionId));
+  }
+
+  getActiveClientComposition(): ActiveClientComposition {
+    return this.activeClientComposition;
+  }
+
+  subscribeComposition(
+    listener: (composition: ActiveClientComposition) => void,
+  ): () => void {
+    this.compositionListeners.add(listener);
+    return () => {
+      this.compositionListeners.delete(listener);
+    };
+  }
+
+  private buildActiveClientComposition(
+    composition: CompositionSnapshot,
+  ): ActiveClientComposition {
+    const plan = validateAndSortComposition(composition.members, this.artifacts);
+    return {
+      compositionId: composition.compositionId,
+      plugins: plan.orderedEnabled.map(({ member, artifact }) => ({
+        pluginId: member.pluginId,
+        versionId: member.versionId,
+        dependencies: [...artifact.dependencies],
+        ...(artifact.clientCode !== undefined
+          ? {
+              clientEntryUrl: `/plugins/${encodeURIComponent(member.pluginId)}/${encodeURIComponent(member.versionId)}/client.mjs`,
+            }
+          : {}),
+        ...(artifact.styleCss !== undefined
+          ? { styleCss: artifact.styleCss }
+          : {}),
+      })),
+    };
+  }
+
+  private emitCompositionChange(composition: ActiveClientComposition): void {
+    this.activeClientComposition = composition;
+    for (const listener of [...this.compositionListeners]) {
+      try {
+        listener(composition);
+      } catch {
+        // Ignore subscriber errors so one faulty listener never blocks others
+      }
+    }
   }
 
   private materializeServerEntry(artifact: PluginArtifact): string | undefined {
@@ -409,6 +467,8 @@ export class SupervisedCordisRuntime implements ServerCordisRuntime {
         activePlugins: string[];
       }>("applyComposition", payload, this.applyTimeoutMs);
       this.lastGoodComposition = target;
+      const clientSnapshot = this.buildActiveClientComposition(target);
+      this.emitCompositionChange(clientSnapshot);
       return {
         compositionId: result.compositionId,
         mode,

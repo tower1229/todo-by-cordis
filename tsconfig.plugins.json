@@ -4,8 +4,9 @@
     "noEmit": true,
     "rootDir": ".",
     "paths": {
-      "@host/server-sdk": ["./src/v3/server-sdk.ts"]
+      "@host/server-sdk": ["./src/v3/server-sdk.ts"],
+      "@host/client-sdk": ["./src/v3/client-sdk.ts"]
     }
   },
-  "include": ["plugins/**/*.ts", "plugins/**/*.d.ts"]
+  "include": ["plugins/**/*.ts", "plugins/**/*.tsx", "plugins/**/*.d.ts"]
 }

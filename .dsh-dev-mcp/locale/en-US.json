@@ -1,0 +1,4 @@
+{
+  "title": "Dev MCP Servers",
+  "description": "Connects GitHub, Cloudflare (Docs, Workers Bindings, Observability), and Context7 official MCP servers."
+}

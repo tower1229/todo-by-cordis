@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { join, relative } from "node:path";
+import { compileFullStackPluginArtifact } from "./plugin-builder.js";
 import type { PluginArtifact, PluginManifest } from "./types.js";
 
-function computeVersionId(input: {
+export function computeArtifactVersionId(input: {
   pluginId: string;
   name: string;
   dependencies: readonly string[];
@@ -36,51 +37,18 @@ function collectFiles(rootDir: string, subDir = ""): Record<string, string> {
   return result;
 }
 
-export function transpileServerTypeScript(source: string): string {
-  return stripTypeScriptTypes(source, { mode: "strip" });
-}
-
-export function compileServerPluginArtifact(input: {
-  readonly pluginId: string;
-  readonly name: string;
-  readonly dependencies?: readonly string[];
-  readonly contractTypes?: string;
+interface RawPluginPackage {
+  readonly manifest: PluginManifest;
+  readonly contractTypes: string;
   readonly serverSource?: string;
-  readonly sourceFiles?: Readonly<Record<string, string>>;
-  readonly testFiles?: Readonly<Record<string, string>>;
-}): PluginArtifact {
-  const dependencies = input.dependencies ? [...input.dependencies] : [];
-  const contractTypes = input.contractTypes ?? "";
-  const serverCode =
-    input.serverSource !== undefined
-      ? transpileServerTypeScript(input.serverSource)
-      : undefined;
-
-  const versionId = computeVersionId({
-    pluginId: input.pluginId,
-    name: input.name,
-    dependencies,
-    contractTypes,
-    serverCode,
-  });
-
-  return {
-    pluginId: input.pluginId,
-    versionId,
-    name: input.name,
-    dependencies,
-    contractTypes,
-    serverCode,
-    sourceFiles:
-      input.sourceFiles ??
-      (input.serverSource !== undefined
-        ? { "server.ts": input.serverSource }
-        : {}),
-    testFiles: input.testFiles ?? {},
-  };
+  readonly clientEntryPath?: string;
+  readonly clientSource?: string;
+  readonly extraClientSources: readonly string[];
+  readonly sourceFiles: Readonly<Record<string, string>>;
+  readonly testFiles: Readonly<Record<string, string>>;
 }
 
-export function loadServerPluginPackage(packageDir: string): PluginArtifact {
+function readPluginPackageDirectory(packageDir: string): RawPluginPackage {
   const manifestPath = join(packageDir, "manifest.json");
   if (!existsSync(manifestPath)) {
     throw new Error(`Plugin manifest.json not found in ${packageDir}`);
@@ -108,24 +76,122 @@ export function loadServerPluginPackage(packageDir: string): PluginArtifact {
     ? readFileSync(serverTsPath, "utf8")
     : undefined;
 
+  const clientTsxPath = join(packageDir, "client.tsx");
+  const clientTsPath = join(packageDir, "client.ts");
+  const clientEntryPath = existsSync(clientTsxPath)
+    ? clientTsxPath
+    : existsSync(clientTsPath)
+      ? clientTsPath
+      : undefined;
+  const clientSource = clientEntryPath
+    ? readFileSync(clientEntryPath, "utf8")
+    : undefined;
+
   const allFiles = collectFiles(packageDir);
   const sourceFiles: Record<string, string> = {};
   const testFiles: Record<string, string> = {};
+  const extraClientSources: string[] = [];
+
   for (const [relPath, content] of Object.entries(allFiles)) {
     if (relPath.startsWith("tests/")) {
       testFiles[relPath] = content;
     } else {
       sourceFiles[relPath] = content;
+      if (
+        relPath !== "server.ts" &&
+        relPath !== "client.tsx" &&
+        relPath !== "client.ts" &&
+        (relPath.endsWith(".tsx") || relPath.endsWith(".ts")) &&
+        !relPath.endsWith(".d.ts")
+      ) {
+        extraClientSources.push(content);
+      }
     }
   }
 
-  return compileServerPluginArtifact({
-    pluginId: manifest.pluginId,
-    name: manifest.name,
-    dependencies: manifest.dependencies,
+  return {
+    manifest,
     contractTypes,
     serverSource,
+    clientEntryPath,
+    clientSource,
+    extraClientSources,
     sourceFiles,
     testFiles,
+  };
+}
+
+export function transpileServerTypeScript(source: string): string {
+  return stripTypeScriptTypes(source, { mode: "strip" });
+}
+
+export function compileServerPluginArtifact(input: {
+  readonly pluginId: string;
+  readonly name: string;
+  readonly dependencies?: readonly string[];
+  readonly contractTypes?: string;
+  readonly serverSource?: string;
+  readonly sourceFiles?: Readonly<Record<string, string>>;
+  readonly testFiles?: Readonly<Record<string, string>>;
+}): PluginArtifact {
+  const dependencies = input.dependencies ? [...input.dependencies] : [];
+  const contractTypes = input.contractTypes ?? "";
+  const serverCode =
+    input.serverSource !== undefined
+      ? transpileServerTypeScript(input.serverSource)
+      : undefined;
+
+  const versionId = computeArtifactVersionId({
+    pluginId: input.pluginId,
+    name: input.name,
+    dependencies,
+    contractTypes,
+    serverCode,
+  });
+
+  return {
+    pluginId: input.pluginId,
+    versionId,
+    name: input.name,
+    dependencies,
+    contractTypes,
+    serverCode,
+    sourceFiles:
+      input.sourceFiles ??
+      (input.serverSource !== undefined
+        ? { "server.ts": input.serverSource }
+        : {}),
+    testFiles: input.testFiles ?? {},
+  };
+}
+
+export function loadServerPluginPackage(packageDir: string): PluginArtifact {
+  const raw = readPluginPackageDirectory(packageDir);
+  return compileServerPluginArtifact({
+    pluginId: raw.manifest.pluginId,
+    name: raw.manifest.name,
+    dependencies: raw.manifest.dependencies,
+    contractTypes: raw.contractTypes,
+    serverSource: raw.serverSource,
+    sourceFiles: raw.sourceFiles,
+    testFiles: raw.testFiles,
+  });
+}
+
+export async function loadPluginPackage(
+  packageDir: string,
+): Promise<PluginArtifact> {
+  const raw = readPluginPackageDirectory(packageDir);
+  return compileFullStackPluginArtifact({
+    pluginId: raw.manifest.pluginId,
+    name: raw.manifest.name,
+    dependencies: raw.manifest.dependencies,
+    contractTypes: raw.contractTypes,
+    serverSource: raw.serverSource,
+    clientSource: raw.clientSource,
+    clientEntryPath: raw.clientEntryPath,
+    extraClientSources: raw.extraClientSources,
+    sourceFiles: raw.sourceFiles,
+    testFiles: raw.testFiles,
   });
 }

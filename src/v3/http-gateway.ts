@@ -1,7 +1,18 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import type { HttpMethod, ServerCordisRuntime } from "./types.js";
+import { extname, resolve, sep } from "node:path";
+import {
+  ensureV3ClientAssets,
+  renderV3HostHtml,
+} from "./client-bundle-builder.js";
+import type {
+  ActiveClientComposition,
+  ClientDiagnostic,
+  HttpMethod,
+  ServerCordisRuntime,
+} from "./types.js";
 
 const ALLOWED_METHODS = new Set<HttpMethod>([
   "GET",
@@ -11,8 +22,46 @@ const ALLOWED_METHODS = new Set<HttpMethod>([
   "DELETE",
 ]);
 
-export function createV3HttpApp(runtime: ServerCordisRuntime): Hono {
+function contentTypeForFile(filePath: string): string {
+  switch (extname(filePath).toLowerCase()) {
+    case ".mjs":
+    case ".js":
+      return "application/javascript; charset=utf-8";
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".json":
+      return "application/json; charset=utf-8";
+    case ".svg":
+      return "image/svg+xml";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+export interface V3HttpGatewayContext {
+  readonly app: Hono;
+  getClientDiagnostics(): readonly ClientDiagnostic[];
+  disconnectSseClients(): number;
+}
+
+export interface CreateV3HttpAppOptions {
+  readonly clientAssetsDir?: string;
+  readonly htmlTitle?: string;
+  readonly sseHeartbeatMs?: number;
+}
+
+export function createV3HttpGateway(
+  runtime: ServerCordisRuntime,
+  options?: CreateV3HttpAppOptions,
+): V3HttpGatewayContext {
   const app = new Hono();
+  const encoder = new TextEncoder();
+  const activeSseClosers = new Set<() => void>();
+  const diagnostics: ClientDiagnostic[] = [];
+  const heartbeatMs = options?.sseHeartbeatMs ?? 15000;
+  const resolvedAssetsDir = options?.clientAssetsDir
+    ? resolve(options.clientAssetsDir)
+    : null;
 
   app.get("/api/v3/runtime/introspect", async (c) => {
     try {
@@ -22,6 +71,176 @@ export function createV3HttpApp(runtime: ServerCordisRuntime): Hono {
       const err = error as Error;
       return c.json({ error: err?.message ?? String(error) }, 503);
     }
+  });
+
+  app.get("/api/v3/client/composition", (c) => {
+    return c.json(runtime.getActiveClientComposition(), 200);
+  });
+
+  app.get("/api/v3/client/events", (c) => {
+    let cleanup: (() => void) | null = null;
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        let closed = false;
+
+        const sendRaw = (chunk: string) => {
+          if (closed) return;
+          try {
+            controller.enqueue(encoder.encode(chunk));
+          } catch {
+            closeStream();
+          }
+        };
+
+        const sendComposition = (composition: ActiveClientComposition) => {
+          sendRaw(
+            `event: composition\ndata: ${JSON.stringify(composition)}\n\n`,
+          );
+        };
+
+        const unsubscribe = runtime.subscribeComposition((composition) => {
+          sendComposition(composition);
+        });
+
+        const heartbeat = setInterval(() => {
+          sendRaw(": ping\n\n");
+        }, heartbeatMs);
+        heartbeat.unref?.();
+
+        const closeStream = () => {
+          if (closed) return;
+          closed = true;
+          clearInterval(heartbeat);
+          unsubscribe();
+          activeSseClosers.delete(closeStream);
+          try {
+            controller.close();
+          } catch {
+            // Stream already closed
+          }
+        };
+
+        cleanup = closeStream;
+        activeSseClosers.add(closeStream);
+
+        c.req.raw.signal.addEventListener("abort", closeStream, { once: true });
+
+        // Fast reconnect backoff + authoritative full composition snapshot on handshake
+        sendRaw("retry: 300\n\n");
+        sendComposition(runtime.getActiveClientComposition());
+      },
+      cancel() {
+        cleanup?.();
+      },
+    });
+
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+      },
+    });
+  });
+
+  app.post("/api/v3/client-diagnostics", async (c) => {
+    try {
+      const body = (await c.req.json()) as Partial<ClientDiagnostic>;
+      if (!body || typeof body.pluginId !== "string") {
+        return c.json({ error: "pluginId is required" }, 400);
+      }
+      const record: ClientDiagnostic = {
+        id:
+          typeof body.id === "string"
+            ? body.id
+            : `srv-diag-${diagnostics.length + 1}`,
+        timestamp:
+          typeof body.timestamp === "string"
+            ? body.timestamp
+            : new Date().toISOString(),
+        pluginId: body.pluginId,
+        ...(typeof body.versionId === "string"
+          ? { versionId: body.versionId }
+          : {}),
+        kind:
+          body.kind === "render-error" ||
+          body.kind === "load-error" ||
+          body.kind === "reconcile-error"
+            ? body.kind
+            : "render-error",
+        ...(typeof body.slotName === "string"
+          ? { slotName: body.slotName }
+          : {}),
+        ...(typeof body.routePath === "string"
+          ? { routePath: body.routePath }
+          : {}),
+        message: typeof body.message === "string" ? body.message : "",
+        ...(typeof body.stack === "string" ? { stack: body.stack } : {}),
+      };
+      diagnostics.unshift(record);
+      if (diagnostics.length > 100) {
+        diagnostics.length = 100;
+      }
+      return c.json({ recorded: true, diagnostic: record }, 201);
+    } catch {
+      return c.json({ error: "Invalid JSON diagnostic payload" }, 400);
+    }
+  });
+
+  app.get("/api/v3/client-diagnostics", (c) => {
+    return c.json({ diagnostics }, 200);
+  });
+
+  app.get("/plugins/:pluginId/:versionId/client.mjs", (c) => {
+    const pluginId = c.req.param("pluginId");
+    const versionId = c.req.param("versionId");
+    const artifact = runtime.getArtifact(pluginId, versionId);
+    if (!artifact || artifact.clientCode === undefined) {
+      return c.json(
+        { error: `Client module not found for ${pluginId}@${versionId}` },
+        404,
+      );
+    }
+    return new Response(artifact.clientCode, {
+      status: 200,
+      headers: {
+        "content-type": "application/javascript; charset=utf-8",
+        "cache-control": "public, max-age=31536000, immutable",
+      },
+    });
+  });
+
+  app.get("/assets/v3/*", (c) => {
+    if (!resolvedAssetsDir) {
+      return c.json({ error: "Client assets directory is not configured" }, 404);
+    }
+    const url = new URL(c.req.url);
+    const relPath = decodeURIComponent(
+      url.pathname.slice("/assets/v3/".length),
+    );
+    if (!relPath || relPath.includes("\0")) {
+      return c.json({ error: "Invalid asset path" }, 400);
+    }
+    const targetPath = resolve(resolvedAssetsDir, relPath);
+    if (
+      targetPath !== resolvedAssetsDir &&
+      !targetPath.startsWith(`${resolvedAssetsDir}${sep}`)
+    ) {
+      return c.json({ error: "Forbidden asset path" }, 403);
+    }
+    if (!existsSync(targetPath) || !statSync(targetPath).isFile()) {
+      return c.json({ error: "Asset not found" }, 404);
+    }
+    const content = readFileSync(targetPath);
+    return new Response(content, {
+      status: 200,
+      headers: {
+        "content-type": contentTypeForFile(targetPath),
+        "cache-control": "no-cache",
+      },
+    });
   });
 
   app.all("/api/app/*", async (c) => {
@@ -71,7 +290,10 @@ export function createV3HttpApp(runtime: ServerCordisRuntime): Hono {
 
       const responseHeaders = new Headers(res.headers);
       if (res.status === 204 || res.body === undefined) {
-        return new Response(null, { status: res.status, headers: responseHeaders });
+        return new Response(null, {
+          status: res.status,
+          headers: responseHeaders,
+        });
       }
       if (typeof res.body === "string") {
         if (!responseHeaders.has("content-type")) {
@@ -97,36 +319,98 @@ export function createV3HttpApp(runtime: ServerCordisRuntime): Hono {
     }
   });
 
-  return app;
+  const serveHostHtml = () =>
+    new Response(renderV3HostHtml({ title: options?.htmlTitle }), {
+      status: 200,
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-cache",
+      },
+    });
+
+  app.get("/", () => serveHostHtml());
+  // Client-side plugin routes SPA fallback (exclude API, plugins, assets)
+  app.get("*", (c) => {
+    const pathname = new URL(c.req.url).pathname;
+    if (
+      pathname.startsWith("/api/") ||
+      pathname.startsWith("/plugins/") ||
+      pathname.startsWith("/assets/")
+    ) {
+      return c.json({ error: "Not found" }, 404);
+    }
+    return serveHostHtml();
+  });
+
+  return {
+    app,
+    getClientDiagnostics: () => [...diagnostics],
+    disconnectSseClients: () => {
+      const count = activeSseClosers.size;
+      for (const close of [...activeSseClosers]) {
+        close();
+      }
+      return count;
+    },
+  };
+}
+
+export function createV3HttpApp(
+  runtime: ServerCordisRuntime,
+  options?: CreateV3HttpAppOptions,
+): Hono {
+  return createV3HttpGateway(runtime, options).app;
 }
 
 export interface V3HttpServerHandle {
   readonly url: string;
   readonly port: number;
+  getClientDiagnostics(): readonly ClientDiagnostic[];
+  disconnectSseClients(): number;
   close(): Promise<void>;
+}
+
+export interface StartV3HttpServerOptions extends CreateV3HttpAppOptions {
+  readonly port?: number;
+  readonly hostname?: string;
+  readonly enableClientHost?: boolean;
 }
 
 export async function startV3HttpServer(
   runtime: ServerCordisRuntime,
-  options?: { readonly port?: number; readonly hostname?: string },
+  options?: StartV3HttpServerOptions,
 ): Promise<V3HttpServerHandle> {
-  const app = createV3HttpApp(runtime);
+  let clientAssetsDir = options?.clientAssetsDir;
+  if (!clientAssetsDir && options?.enableClientHost !== false) {
+    clientAssetsDir = await ensureV3ClientAssets();
+  }
+
+  const gateway = createV3HttpGateway(runtime, {
+    ...options,
+    ...(clientAssetsDir ? { clientAssetsDir } : {}),
+  });
   const hostname = options?.hostname ?? "127.0.0.1";
   const requestedPort = options?.port ?? 0;
 
-  return new Promise<V3HttpServerHandle>((resolve, reject) => {
+  return new Promise<V3HttpServerHandle>((resolveServer, reject) => {
     const server = serve(
       {
-        fetch: app.fetch,
+        fetch: gateway.app.fetch,
         port: requestedPort,
         hostname,
       },
       (info: AddressInfo) => {
-        resolve({
+        resolveServer({
           url: `http://${hostname}:${info.port}`,
           port: info.port,
+          getClientDiagnostics: gateway.getClientDiagnostics,
+          disconnectSseClients: gateway.disconnectSseClients,
           close: () =>
             new Promise<void>((res, rej) => {
+              gateway.disconnectSseClients();
+              if ("closeAllConnections" in server && typeof server.closeAllConnections === "function") {
+                server.closeAllConnections();
+              }
               server.close((err) => {
                 if (err) rej(err);
                 else res();

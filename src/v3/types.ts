@@ -150,6 +150,18 @@ export interface RuntimeHealth {
   readonly activePlugins: readonly string[];
 }
 
+export interface ClientDiagnostic {
+  readonly id: string;
+  readonly timestamp: string;
+  readonly pluginId: string;
+  readonly versionId?: string;
+  readonly kind: "render-error" | "load-error" | "reconcile-error";
+  readonly slotName?: string;
+  readonly routePath?: string;
+  readonly message: string;
+  readonly stack?: string;
+}
+
 export interface CordisAppRuntime {
   applyComposition(target: CompositionSnapshot): Promise<RuntimeHealth>;
   introspect(): Promise<CompositionTopology>;
@@ -158,5 +170,10 @@ export interface CordisAppRuntime {
 
 export interface ServerCordisRuntime extends CordisAppRuntime {
   registerArtifact(artifact: PluginArtifact): void;
+  getArtifact(pluginId: string, versionId: string): PluginArtifact | undefined;
+  getActiveClientComposition(): ActiveClientComposition;
+  subscribeComposition(
+    listener: (composition: ActiveClientComposition) => void,
+  ): () => void;
   handleHttpRequest(req: HttpDispatchInput): Promise<AppResponse>;
 }

@@ -51,3 +51,24 @@ declare module "cordis" {
     "todo:changed"(task: TaskItem): void;
   }
 }
+
+export interface TodoListSlotContext {
+  readonly tasks: readonly TaskItem[];
+  readonly filter: "open" | "done" | "all";
+  readonly refresh: () => Promise<void>;
+}
+
+export interface TodoItemSlotContext {
+  readonly task: TaskItem;
+  readonly refresh: () => Promise<void>;
+}
+
+declare module "@host/client-sdk" {
+  interface SlotPropsMap {
+    "todo.header.actions": TodoListSlotContext;
+    "todo.sidebar.sections": TodoListSlotContext;
+    "todo.list.banner": TodoListSlotContext;
+    "todo.item.badges": TodoItemSlotContext;
+    "todo.item.detail": TodoItemSlotContext;
+  }
+}
