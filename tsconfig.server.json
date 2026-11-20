@@ -5,6 +5,7 @@
     "src/runtime",
     "src/shared",
     "src/release",
-    "src/evolution"
+    "src/evolution",
+    "src/v3"
   ]
 }

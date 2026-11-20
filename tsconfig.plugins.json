@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "paths": {
+      "@host/server-sdk": ["./src/v3/server-sdk.ts"]
+    }
+  },
+  "include": ["plugins/**/*.ts", "plugins/**/*.d.ts"]
+}

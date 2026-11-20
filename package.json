@@ -12,7 +12,7 @@
     "dev": "node scripts/dev.mjs",
     "build": "tsc -p tsconfig.server.json && vite build",
     "start": "node dist/server/main.js",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.evaluation.json",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.evaluation.json && tsc -p tsconfig.plugins.json",
     "test:e2e": "playwright test",
     "bench:m1": "node scripts/benchmark.mjs",
     "accept:shortened-tags": "node --import tsx scripts/accept-shortened-tags.ts",
