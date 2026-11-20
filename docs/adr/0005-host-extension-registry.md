@@ -1,8 +1,10 @@
 ---
-status: accepted
+status: superseded by ADR-0006
 ---
 
 # 宿主扩展注册表与在线调度地基
+
+> 状态说明（2026-11-19）：本决策中的宿主 Todo 专用 `ExtensionRegistry`、孤立工作流契约与仅限 `task.detail` 的可序列化 UI 槽位已由 [ADR 0006](0006-dual-context-cordis-and-thin-supervisor.md) 取代。保留原文供历史审计参考。
 
 2026-09-08，维护者确认先补齐扩展钩子表面，再谈到期提醒等业务能力。自迭代 Agent 仍不能修改本约束；业务插件通过可选 `contribute` 与约定方法参与，不得直接访问数据库。
 
