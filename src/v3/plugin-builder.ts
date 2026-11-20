@@ -1,6 +1,15 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { execFile } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { build as viteBuild, transformWithOxc } from "vite";
 import { V3_IMPORTMAP_SPECIFIERS } from "./client-bundle-builder.js";
 import {
@@ -9,6 +18,8 @@ import {
 } from "./plugin-loader.js";
 import { compilePluginTailwindCss } from "./tailwind-compiler.js";
 import type { PluginArtifact } from "./types.js";
+
+const execFileAsync = promisify(execFile);
 
 export { V3_IMPORTMAP_SPECIFIERS } from "./client-bundle-builder.js";
 
@@ -141,4 +152,165 @@ export async function compileFullStackPluginArtifact(
     sourceFiles: input.sourceFiles ?? defaultSourceFiles,
     testFiles: input.testFiles ?? {},
   };
+}
+
+export interface TypecheckPluginPackageInput {
+  readonly pluginId: string;
+  readonly contractTypes?: string;
+  readonly upstreamContracts?: Readonly<Record<string, string>>;
+  readonly sourceFiles: Readonly<Record<string, string>>;
+  readonly workspaceRoot?: string;
+}
+
+export interface TypecheckPluginPackageResult {
+  readonly ok: boolean;
+  readonly diagnostics: readonly string[];
+}
+
+export async function typecheckPluginPackage(
+  input: TypecheckPluginPackageInput,
+): Promise<TypecheckPluginPackageResult> {
+  const workspaceRoot = resolve(input.workspaceRoot ?? process.cwd());
+  const tscBin = join(workspaceRoot, "node_modules", ".bin", "tsc");
+  const tempRoot = mkdtempSync(join(tmpdir(), `v3-typecheck-${input.pluginId}-`));
+
+  try {
+    const includePatterns: string[] = [];
+
+    if (input.upstreamContracts) {
+      for (const [depId, dts] of Object.entries(input.upstreamContracts)) {
+        if (!dts.trim()) continue;
+        const depFile = join(tempRoot, "deps", depId, "contract.d.ts");
+        mkdirSync(dirname(depFile), { recursive: true });
+        writeFileSync(depFile, dts, "utf8");
+        includePatterns.push(`deps/${depId}/contract.d.ts`);
+      }
+    }
+
+    if (input.contractTypes && input.contractTypes.trim()) {
+      const contractPath = join(tempRoot, "plugin", "contract.d.ts");
+      mkdirSync(dirname(contractPath), { recursive: true });
+      writeFileSync(contractPath, input.contractTypes, "utf8");
+      includePatterns.push("plugin/contract.d.ts");
+    }
+
+    for (const [relPath, content] of Object.entries(input.sourceFiles)) {
+      if (
+        !relPath.endsWith(".ts") &&
+        !relPath.endsWith(".tsx") &&
+        !relPath.endsWith(".d.ts")
+      ) {
+        continue;
+      }
+      const target = join(tempRoot, "plugin", relPath);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, content, "utf8");
+      includePatterns.push(`plugin/${relPath}`);
+    }
+
+    if (includePatterns.length === 0) {
+      return { ok: true, diagnostics: [] };
+    }
+
+    symlinkSync(
+      join(workspaceRoot, "node_modules"),
+      join(tempRoot, "node_modules"),
+      "dir",
+    );
+
+    const tsconfig = {
+      compilerOptions: {
+        target: "ES2023",
+        module: "ESNext",
+        moduleResolution: "bundler",
+        jsx: "react-jsx",
+        strict: true,
+        noEmit: true,
+        skipLibCheck: true,
+        esModuleInterop: true,
+        resolveJsonModule: true,
+        isolatedModules: true,
+        types: ["node"],
+        paths: {
+          "@host/server-sdk": [join(workspaceRoot, "src/v3/server-sdk.ts")],
+          "@host/client-sdk": [join(workspaceRoot, "src/v3/client-sdk.ts")],
+        },
+      },
+      include: includePatterns,
+    };
+
+    const tsconfigPath = join(tempRoot, "tsconfig.json");
+    writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2), "utf8");
+
+    try {
+      await execFileAsync(tscBin, ["--noEmit", "-p", tsconfigPath, "--pretty", "false"], {
+        cwd: workspaceRoot,
+        maxBuffer: 4 * 1024 * 1024,
+      });
+      return { ok: true, diagnostics: [] };
+    } catch (error) {
+      const err = error as { stdout?: string; stderr?: string; message?: string };
+      const rawOutput = [err.stdout ?? "", err.stderr ?? ""]
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+      const diagnostics = rawOutput
+        ? rawOutput
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+        : [err.message ?? "TypeScript typecheck failed"];
+      return { ok: false, diagnostics };
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+export interface BuildPluginPackageInput extends CompileFullStackPluginInput {
+  readonly upstreamContracts?: Readonly<Record<string, string>>;
+  readonly workspaceRoot?: string;
+}
+
+export class PluginBuildError extends Error {
+  readonly pluginId: string;
+  readonly diagnostics: readonly string[];
+
+  constructor(pluginId: string, diagnostics: readonly string[]) {
+    super(
+      `Plugin "${pluginId}" failed TypeScript typecheck:\n${diagnostics.join("\n")}`,
+    );
+    this.name = "PluginBuildError";
+    this.pluginId = pluginId;
+    this.diagnostics = diagnostics;
+  }
+}
+
+export async function buildPluginPackage(
+  input: BuildPluginPackageInput,
+): Promise<PluginArtifact> {
+  const sourceFiles: Record<string, string> = { ...(input.sourceFiles ?? {}) };
+  if (input.serverSource !== undefined && !("server.ts" in sourceFiles)) {
+    sourceFiles["server.ts"] = input.serverSource;
+  }
+  if (input.clientSource !== undefined && !("client.tsx" in sourceFiles)) {
+    sourceFiles["client.tsx"] = input.clientSource;
+  }
+
+  const check = await typecheckPluginPackage({
+    pluginId: input.pluginId,
+    contractTypes: input.contractTypes,
+    upstreamContracts: input.upstreamContracts,
+    sourceFiles,
+    workspaceRoot: input.workspaceRoot,
+  });
+
+  if (!check.ok) {
+    throw new PluginBuildError(input.pluginId, check.diagnostics);
+  }
+
+  return compileFullStackPluginArtifact({
+    ...input,
+    sourceFiles,
+  });
 }
