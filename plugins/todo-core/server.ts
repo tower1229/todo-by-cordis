@@ -1,5 +1,5 @@
 import { Service, type Context } from "cordis";
-import type { ScopedDb } from "@host/server-sdk";
+import { dispatchServerBail, type ScopedDb } from "@host/server-sdk";
 import type {
   CreateTaskInput,
   TaskItem,
@@ -217,19 +217,20 @@ export default class TodoCoreService extends Service implements TodoService {
       throw httpError(404, "Task not found");
     }
 
-    const hooks = this.ctx.events._hooks["todo:before-transition"] ?? [];
-    for (const hook of [...hooks]) {
-      const verdict = await hook.callback({
+    const verdict = await dispatchServerBail(
+      this.ctx,
+      "todo:before-transition",
+      {
         task: existing,
         nextState,
         meta,
-      });
-      if (verdict === false) {
-        throw httpError(422, "Task transition blocked");
-      }
-      if (typeof verdict === "string" && verdict.length > 0) {
-        throw httpError(422, verdict);
-      }
+      },
+    );
+    if (verdict === false) {
+      throw httpError(422, "Task transition blocked");
+    }
+    if (typeof verdict === "string" && verdict.length > 0) {
+      throw httpError(422, verdict);
     }
 
     const now = new Date().toISOString();

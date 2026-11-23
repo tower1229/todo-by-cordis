@@ -1,5 +1,5 @@
 import { Service, type Context } from "cordis";
-import type { ScopedDb } from "@host/server-sdk";
+import { dispatchServerBail, type ScopedDb } from "@host/server-sdk";
 import type {
   CreateInventoryItemInput,
   InventoryItem,
@@ -200,12 +200,16 @@ export default class InventoryCoreService
       );
     }
 
-    const verdict = await this.ctx.serial("inventory:before-stock-change", {
-      item: existing,
-      delta,
-      nextQuantity,
-      reason,
-    });
+    const verdict = await dispatchServerBail(
+      this.ctx,
+      "inventory:before-stock-change",
+      {
+        item: existing,
+        delta,
+        nextQuantity,
+        reason,
+      },
+    );
     if (verdict === false) {
       throw httpError(400, "Stock change blocked by extension rule");
     }

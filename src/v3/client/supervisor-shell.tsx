@@ -156,6 +156,12 @@ export function SupervisorShell() {
   };
 
   const handleRollback = async (targetCompositionId: string) => {
+    const expectedCurrentCompositionId =
+      releaseStatus?.activeCompositionId ?? snapshot.compositionId;
+    if (!expectedCurrentCompositionId) {
+      setActionError("当前活动组合未就绪，无法执行撤回");
+      return;
+    }
     setBusyAction(`rollback:${targetCompositionId}`);
     setActionError(null);
     setActionNotice(null);
@@ -163,7 +169,10 @@ export function SupervisorShell() {
       const res = await fetch("/api/v3/release/rollback", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ targetCompositionId }),
+        body: JSON.stringify({
+          targetCompositionId,
+          expectedCurrentCompositionId,
+        }),
       });
       const data = (await res.json()) as {
         composition?: { compositionId: string };

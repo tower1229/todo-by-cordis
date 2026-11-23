@@ -850,7 +850,9 @@ async function runFullCompositionSmoke(
           d.kind === "reconcile-error",
       );
       const domBoundaryCount = await initialSession.page
-        .locator('[data-v3-error-boundary="true"], [data-error-boundary="true"]')
+        .locator(
+          '[data-plugin-error-boundary], [data-v3-error-boundary="true"], [data-error-boundary="true"]',
+        )
         .count();
       errorBoundaryCount = Math.max(boundaryDiags.length, domBoundaryCount);
 
@@ -1043,6 +1045,20 @@ export async function verifyCandidate(
     const warnings: string[] = [];
     let noBehaviorDiffWarning = false;
 
+    // Gate 2 Case A (upstream-seam): an existing upstream plugin whose tests were untouched
+    // and passed ablation without its changed downstream plugin(s) only opened a generic seam;
+    // the new behavior is proven via Red-Green differential on the downstream plugin(s).
+    const upstreamSeamExemptIds = new Set<string>();
+    for (const ablation of g12.ablationResults) {
+      if (
+        ablation.kind === "upstream-seam" &&
+        ablation.passed &&
+        ablation.ablatedPlugins.some((depId) => changedSet.has(depId))
+      ) {
+        upstreamSeamExemptIds.add(ablation.targetPluginId);
+      }
+    }
+
     for (const pluginId of affectedEnabled) {
       const closureIds = computeDependencyClosure(pluginId, enabledArtifactById);
       const closureSnapshot = buildClosureSnapshot(
@@ -1083,7 +1099,7 @@ export async function verifyCandidate(
         };
       }
 
-      if (!changedSet.has(pluginId)) {
+      if (!changedSet.has(pluginId) || upstreamSeamExemptIds.has(pluginId)) {
         subgraphResults.push({
           pluginId,
           closurePlugins: [...closureIds],

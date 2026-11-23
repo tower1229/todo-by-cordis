@@ -3,8 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
+import { DeepSeek } from "../../src/evolution/deepseek.js";
 import { CompositionRelease } from "../../src/v3/composition-release.js";
 import {
+  createDeepSeekModelDriver,
   EVOLUTION_TOOLS,
   EvolutionLoop,
   type ModelDriver,
@@ -635,6 +637,155 @@ export function apply(ctx: Context) {
       const settled = await loop.waitForRun(started.runId);
       assert.equal(settled.status, "cancelled");
       assert.equal(loop.getRun(started.runId)?.status, "cancelled");
+    } finally {
+      await loop.close();
+      await release.close();
+    }
+  });
+
+  it("createDeepSeekModelDriver records valid assistant messages across multi-turn tool calls and feeds back protocolErrors without executing invalid tools", async () => {
+    const dir = createTempDir("v3-evo-deepseek-adapter-");
+    const { release } = await createSeedRelease(dir);
+
+    const outboundBodies: Array<{ messages: Array<Record<string, unknown>> }> = [];
+    let httpTurn = 0;
+
+    const fakeFetch: typeof fetch = async (_input, init) => {
+      httpTurn += 1;
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        messages: Array<Record<string, unknown>>;
+      };
+      outboundBodies.push(body);
+
+      let responsePayload: Record<string, unknown>;
+      if (httpTurn === 1) {
+        // Turn 1: malformed JSON arguments -> DeepSeek emits protocolErrors
+        responsePayload = {
+          id: "chatcmpl-1",
+          choices: [
+            {
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: "",
+                reasoning_content: "first attempt",
+                tool_calls: [
+                  {
+                    id: "call_bad_1",
+                    type: "function",
+                    function: {
+                      name: "stage_plugin_changes",
+                      arguments: "{not valid json",
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 },
+        };
+      } else if (httpTurn === 2) {
+        // Turn 2: valid inspect_plugin tool call
+        responsePayload = {
+          id: "chatcmpl-2",
+          choices: [
+            {
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: "",
+                reasoning_content: "inspect core first",
+                tool_calls: [
+                  {
+                    id: "call_inspect_2",
+                    type: "function",
+                    function: {
+                      name: "inspect_plugin",
+                      arguments: JSON.stringify({ pluginId: "core-notes" }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { prompt_tokens: 150, completion_tokens: 25, total_tokens: 175 },
+        };
+      } else {
+        // Turn 3: clarify_request to finish cleanly
+        responsePayload = {
+          id: "chatcmpl-3",
+          choices: [
+            {
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: "",
+                tool_calls: [
+                  {
+                    id: "call_clarify_3",
+                    type: "function",
+                    function: {
+                      name: "clarify_request",
+                      arguments: JSON.stringify({
+                        question: "确认是否保留历史记录？",
+                        options: ["保留", "清空"],
+                      }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: { prompt_tokens: 180, completion_tokens: 30, total_tokens: 210 },
+        };
+      }
+
+      return new Response(JSON.stringify(responsePayload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    const deepSeek = new DeepSeek("test-key", fakeFetch);
+    const driver = createDeepSeekModelDriver(deepSeek);
+
+    const loop = new EvolutionLoop({
+      release,
+      modelDriver: driver,
+      verifyFn: async () => makePassingReport(["core-notes"]),
+    });
+
+    try {
+      const started = await loop.startRun("测试 DeepSeek 多轮协议兼容");
+      const finished = await loop.waitForRun(started.runId);
+      assert.equal(finished.status, "awaiting_clarification");
+      assert.equal(httpTurn, 3);
+
+      // Every outbound message on turns 2 and 3 must have a valid role (never raw HTTP envelope)
+      for (const reqBody of outboundBodies) {
+        for (const msg of reqBody.messages) {
+          assert.equal(typeof msg.role, "string");
+          assert.equal("choices" in msg, false);
+        }
+      }
+
+      // Turn 2 must carry assistant message with reasoning_content + tool error receipt for call_bad_1
+      const turn2Msgs = outboundBodies[1]!.messages;
+      const turn2Assistant = turn2Msgs.find((m) => m.role === "assistant");
+      assert.ok(turn2Assistant);
+      assert.equal(turn2Assistant.reasoning_content, "first attempt");
+      const turn2Tool = turn2Msgs.find(
+        (m) => m.role === "tool" && m.tool_call_id === "call_bad_1",
+      );
+      assert.ok(turn2Tool);
+      assert.match(String(turn2Tool.content), /protocolErrors/);
+
+      // Turn 3 must carry inspect_plugin tool receipt for call_inspect_2
+      const turn3Tool = outboundBodies[2]!.messages.find(
+        (m) => m.role === "tool" && m.tool_call_id === "call_inspect_2",
+      );
+      assert.ok(turn3Tool);
+      assert.match(String(turn3Tool.content), /core-notes/);
     } finally {
       await loop.close();
       await release.close();

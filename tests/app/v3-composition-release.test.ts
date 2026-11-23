@@ -298,8 +298,16 @@ describe("V3 CompositionRelease lifecycle", () => {
       });
       assert.equal(v2TaskRes.status, 201);
 
+      // Stale optimistic lock on rollback must be rejected with 409 without mutating active state
+      await assert.rejects(
+        () => release!.rollback("comp-v1", "comp-v1"),
+        (err: unknown) =>
+          err instanceof ReleaseConflictError && err.statusCode === 409,
+      );
+      assert.equal(release.controlStore.getActiveCompositionId(), "comp-v2");
+
       // Rollback to comp-v1 -> does NOT revert business.db; creates new rollback revision
-      const rolledBack = await release.rollback("comp-v1");
+      const rolledBack = await release.rollback("comp-v1", "comp-v2");
       assert.equal(rolledBack.composition.kind, "rollback");
       assert.equal(rolledBack.composition.targetCompositionId, "comp-v1");
       assert.equal(rolledBack.health.mode, "in-process-hot-swap");

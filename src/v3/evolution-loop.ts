@@ -70,6 +70,7 @@ export interface ModelDriverRequest {
 export interface ModelDriverReply {
   readonly text?: string;
   readonly calls?: readonly ModelToolCall[];
+  readonly protocolErrors?: readonly string[];
   readonly raw: unknown;
   readonly usage?: {
     readonly promptTokens?: number;
@@ -240,14 +241,51 @@ export function createDeepSeekModelDriver(driver: Driver): ModelDriver {
         promptTokens === undefined &&
         completionTokens === undefined &&
         totalTokens === undefined;
+      const normalizedCalls = reply.calls?.map((c, idx) => ({
+        id: c.id ?? `call-${idx}-${randomUUID().slice(0, 8)}`,
+        name: c.name,
+        args: c.args,
+      }));
+      const missingCallId = Boolean(
+        reply.calls?.some((c) => typeof c.id !== "string" || c.id.length === 0),
+      );
+      const lastHistoryEntry =
+        Array.isArray(reply.history) && reply.history.length > 0
+          ? reply.history[reply.history.length - 1]
+          : undefined;
+      const historyAssistantMsg =
+        lastHistoryEntry &&
+        typeof lastHistoryEntry === "object" &&
+        !Array.isArray(lastHistoryEntry) &&
+        (lastHistoryEntry as Record<string, unknown>).role === "assistant"
+          ? (lastHistoryEntry as Record<string, unknown>)
+          : null;
+      const assistantMessage: Record<string, unknown> =
+        historyAssistantMsg && !missingCallId
+          ? historyAssistantMsg
+          : {
+              role: "assistant",
+              content: reply.text ?? "",
+              ...(!missingCallId && normalizedCalls && normalizedCalls.length > 0
+                ? {
+                    tool_calls: normalizedCalls.map((c) => ({
+                      id: c.id,
+                      type: "function",
+                      function: {
+                        name: c.name,
+                        arguments: JSON.stringify(c.args ?? {}),
+                      },
+                    })),
+                  }
+                : {}),
+            };
       return {
         text: reply.text,
-        calls: reply.calls?.map((c, idx) => ({
-          id: c.id ?? `call-${idx}-${randomUUID().slice(0, 8)}`,
-          name: c.name,
-          args: c.args,
-        })),
-        raw: reply.raw,
+        calls: normalizedCalls,
+        ...(reply.protocolErrors && reply.protocolErrors.length > 0
+          ? { protocolErrors: reply.protocolErrors }
+          : {}),
+        raw: assistantMessage,
         usage: {
           promptTokens,
           completionTokens,
@@ -981,6 +1019,44 @@ export class EvolutionLoop {
       this.persistAndEmit(run);
 
       const calls = reply.calls ?? [];
+      if (reply.protocolErrors && reply.protocolErrors.length > 0) {
+        const rawObj =
+          reply.raw && typeof reply.raw === "object" && !Array.isArray(reply.raw)
+            ? (reply.raw as Record<string, unknown>)
+            : null;
+        const rawHasToolCalls =
+          Array.isArray(rawObj?.tool_calls) && rawObj.tool_calls.length > 0;
+        const nextHistoryMessage =
+          rawHasToolCalls && calls.length > 0
+            ? {
+                parts: calls.map((call) => ({
+                  functionResponse: {
+                    id: call.id,
+                    name: call.name,
+                    response: {
+                      ok: false,
+                      protocolErrors: reply.protocolErrors,
+                      error: `协议或参数校验失败，未执行工具调用：${reply.protocolErrors!.join("；")}`,
+                    },
+                  },
+                })),
+              }
+            : {
+                role: "user",
+                content: `上一轮模型响应存在协议错误（${reply.protocolErrors.join("；")}），未执行任何工具调用，请修正后重新调用工具。`,
+              };
+        run = this.appendEvent(
+          {
+            ...run,
+            messages: [...run.messages, nextHistoryMessage],
+          },
+          "calling_model",
+          `模型响应协议校验失败，已回喂修正：${reply.protocolErrors.join("；")}`,
+        );
+        this.persistAndEmit(run);
+        continue;
+      }
+
       if (calls.length === 0) {
         // Model returned plain text without tool calls; remind it to use tools
         run = this.appendEvent(

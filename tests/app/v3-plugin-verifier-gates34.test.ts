@@ -728,4 +728,156 @@ export default async function () {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("allows Gate 2 Case A (upstream-seam without upstream test changes) through Gate 3 while still enforcing Red-Green on standalone upstream edits", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "v3-gate2a-gate3-"));
+    const browser = await chromium.launch();
+    try {
+      const prodDbPath = join(dir, "prod.db");
+      openAppDatabase(prodDbPath).close();
+
+      const todoV1 = makeTodoCoreArtifact("v1");
+      // todoV2 opens an extra generic hook seam without modifying todo-core.test.ts
+      const todoV2Server = todoV1.serverCode!.replace(
+        "const completeHooks = [];",
+        "const completeHooks = [];\n  const seamMeta = { opened: true };\n  void seamMeta;",
+      );
+      const todoV2: PluginArtifact = {
+        ...todoV1,
+        versionId: "v2",
+        serverCode: todoV2Server,
+        sourceFiles: {
+          ...todoV1.sourceFiles,
+          "server/index.ts": todoV2Server,
+        },
+        testFiles: { ...todoV1.testFiles },
+      };
+      const reviewV1 = makeReviewGateArtifact("v1");
+
+      const artifacts = new Map<string, PluginArtifact>([
+        ["todo-core@v1", todoV1],
+        ["todo-core@v2", todoV2],
+        [`${reviewV1.pluginId}@${reviewV1.versionId}`, reviewV1],
+      ]);
+
+      const baseline = makeSnapshot("c1", [
+        { pluginId: "todo-core", versionId: "v1" },
+      ]);
+      const seamPlusReview = makeSnapshot("c2", [
+        { pluginId: "todo-core", versionId: "v2" },
+        { pluginId: reviewV1.pluginId, versionId: reviewV1.versionId },
+      ]);
+
+      // Positive: Gate 2 Case A (upstream-seam) + downstream review passes all gates
+      const passReport = await verifyCandidate({
+        baseline,
+        candidate: seamPlusReview,
+        artifacts,
+        productionDbPath: prodDbPath,
+        browser,
+      });
+      assert.equal(passReport.ok, true, passReport.errors.join("\n"));
+      const coreAblation = passReport.ablationResults.find(
+        (a) => a.targetPluginId === "todo-core",
+      );
+      assert.equal(coreAblation?.kind, "upstream-seam");
+      assert.equal(coreAblation?.passed, true);
+      const reviewSub = passReport.subgraphResults.find(
+        (s) => s.pluginId === reviewV1.pluginId,
+      );
+      assert.equal(reviewSub?.baselineRedVerified, true);
+
+      // Negative: modifying todo-core alone without a downstream plugin or new test is still rejected
+      const soloUpstream = makeSnapshot("c2-solo", [
+        { pluginId: "todo-core", versionId: "v2" },
+      ]);
+      const failReport = await verifyCandidate({
+        baseline,
+        candidate: soloUpstream,
+        artifacts,
+        productionDbPath: prodDbPath,
+        browser,
+      });
+      assert.equal(failReport.ok, false);
+      assert.equal(failReport.failedGate, "gate3-red-green-diff");
+    } finally {
+      await browser.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("detects client PluginErrorBoundary via DOM selector during full-composition smoke", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "v3-smoke-error-boundary-"));
+    const browser = await chromium.launch();
+    try {
+      const prodDbPath = join(dir, "prod.db");
+      openAppDatabase(prodDbPath).close();
+
+      const todoV1 = makeTodoCoreArtifact("v1");
+      const crashClient = `
+import React from "react";
+export const name = "crash-slot";
+export function apply(ctx) {
+  ctx.slots.register("task.complete.modal", function BoomComponent() {
+    throw new Error("boom-render-fault");
+  });
+}
+`;
+      const crashServer = `
+export const name = "crash-slot";
+export function apply(ctx) {
+  ctx.http.route("GET", "/ping", () => ({ status: 200, body: { ok: true } }));
+}
+`;
+      const crashV1: PluginArtifact = {
+        pluginId: "crash-slot",
+        versionId: "v1",
+        name: "Crash Slot",
+        dependencies: ["todo-core"],
+        contractTypes: "",
+        serverCode: crashServer,
+        clientCode: crashClient,
+        sourceFiles: {
+          "server/index.ts": crashServer,
+          "client/index.tsx": crashClient,
+        },
+        testFiles: {
+          "ping.test.ts": `
+import assert from "node:assert/strict";
+export default async function testPing(ctx) {
+  const res = await ctx.request({ method: "GET", path: "/api/app/crash-slot/ping" });
+  assert.equal(res.status, 200);
+}
+`,
+        },
+      };
+
+      const artifacts = new Map<string, PluginArtifact>([
+        ["todo-core@v1", todoV1],
+        ["crash-slot@v1", crashV1],
+      ]);
+
+      const baseline = makeSnapshot("c1", [
+        { pluginId: "todo-core", versionId: "v1" },
+      ]);
+      const candidate = makeSnapshot("c2", [
+        { pluginId: "todo-core", versionId: "v1" },
+        { pluginId: "crash-slot", versionId: "v1" },
+      ]);
+
+      const report = await verifyCandidate({
+        baseline,
+        candidate,
+        artifacts,
+        productionDbPath: prodDbPath,
+        browser,
+      });
+      assert.equal(report.ok, false);
+      assert.equal(report.failedGate, "gate3-full-composition-smoke");
+      assert.ok((report.fullCompositionSmoke?.errorBoundaryCount ?? 0) >= 1);
+    } finally {
+      await browser.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

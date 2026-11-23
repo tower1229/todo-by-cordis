@@ -34,7 +34,10 @@ export interface ReleaseHttpController {
   closePreview(sessionId: string): Promise<boolean>;
   getPreviewSession(sessionId: string): PreviewSessionInfo | undefined;
   apply(input: ApplyCandidateInput): Promise<ReleaseTransitionResult>;
-  rollback(targetCompositionId: string): Promise<ReleaseTransitionResult>;
+  rollback(
+    targetCompositionId: string,
+    expectedCurrentCompositionId: string,
+  ): Promise<ReleaseTransitionResult>;
 }
 
 export interface EvolutionHttpController {
@@ -341,11 +344,27 @@ export function createV3HttpGateway(
 
     app.post("/api/v3/release/rollback", async (c) => {
       try {
-        const body = (await c.req.json()) as { targetCompositionId?: string };
-        if (!body || typeof body.targetCompositionId !== "string") {
-          return c.json({ error: "targetCompositionId is required" }, 400);
+        const body = (await c.req.json()) as {
+          targetCompositionId?: string;
+          expectedCurrentCompositionId?: string;
+        };
+        if (
+          !body ||
+          typeof body.targetCompositionId !== "string" ||
+          typeof body.expectedCurrentCompositionId !== "string"
+        ) {
+          return c.json(
+            {
+              error:
+                "targetCompositionId and expectedCurrentCompositionId are required",
+            },
+            400,
+          );
         }
-        const result = await release.rollback(body.targetCompositionId);
+        const result = await release.rollback(
+          body.targetCompositionId,
+          body.expectedCurrentCompositionId,
+        );
         return c.json(result, 200);
       } catch (error) {
         const mapped = toReleaseErrorResponse(error);

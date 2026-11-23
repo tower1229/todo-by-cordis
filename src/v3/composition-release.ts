@@ -435,7 +435,10 @@ export class CompositionRelease implements ReleaseHttpController {
     });
   }
 
-  async rollback(targetCompositionId: string): Promise<ReleaseTransitionResult> {
+  async rollback(
+    targetCompositionId: string,
+    expectedCurrentCompositionId: string,
+  ): Promise<ReleaseTransitionResult> {
     return await this.enqueueTransition(async () => {
       const target = this.controlStore.getComposition(targetCompositionId);
       if (!target) {
@@ -452,6 +455,13 @@ export class CompositionRelease implements ReleaseHttpController {
           "No active composition to roll back from",
           400,
           "NO_ACTIVE_COMPOSITION",
+        );
+      }
+      if (currentActiveId !== expectedCurrentCompositionId) {
+        throw new ReleaseConflictError(
+          `Optimistic lock conflict during rollback: expected active composition ${expectedCurrentCompositionId}, but current is ${currentActiveId}`,
+          expectedCurrentCompositionId,
+          currentActiveId,
         );
       }
 
@@ -471,7 +481,7 @@ export class CompositionRelease implements ReleaseHttpController {
       const health = await this.runtime.applyComposition(rollbackComposition);
 
       const cas = this.controlStore.compareAndSetActiveComposition(
-        currentActiveId,
+        expectedCurrentCompositionId,
         rollbackComposition,
       );
       if (!cas.committed) {
@@ -481,7 +491,7 @@ export class CompositionRelease implements ReleaseHttpController {
         }
         throw new ReleaseConflictError(
           `Optimistic lock conflict during rollback: active composition changed to ${cas.actualActiveCompositionId}`,
-          currentActiveId,
+          expectedCurrentCompositionId,
           cas.actualActiveCompositionId,
         );
       }

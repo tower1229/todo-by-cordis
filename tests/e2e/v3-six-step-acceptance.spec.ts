@@ -29,25 +29,10 @@ const TODO_CORE_CLIENT = readFileSync(
   "utf8",
 );
 
-const TODO_CORE_CONTRACT_TEST = `
-import assert from "node:assert/strict";
-export default async function (ctx) {
-  const created = await ctx.request({
-    method: "POST",
-    path: "/api/app/todo-core/tasks",
-    body: { title: "Contract Core Task" },
-  });
-  assert.equal(created.status, 201);
-  const taskId = created.body.task.id;
-  const done = await ctx.request({
-    method: "POST",
-    path: \`/api/app/todo-core/tasks/\${taskId}/transition\`,
-    body: { nextState: "done" },
-  });
-  assert.equal(done.status, 200);
-  assert.equal(done.body.task.state, "done");
-}
-`;
+const TODO_CORE_CONTRACT_TEST = readFileSync(
+  join(TODO_CORE_DIR, "tests", "todo-core.spec.ts"),
+  "utf8",
+);
 
 // Step 1: todo-tags v1 (preserves case)
 const TODO_TAGS_SERVER_V1 = `
@@ -353,23 +338,24 @@ declare module "@host/client-sdk" {
 `;
 
 const TODO_CORE_SERVER_V2 = TODO_CORE_SERVER.replace(
-  'const hooks = this.ctx.events._hooks["todo:before-transition"] ?? [];',
+  'const verdict = await dispatchServerBail(',
   `if (nextState === "done") {
-      const completeHooks = this.ctx.events._hooks["todo:before-complete"] ?? [];
-      for (const hook of [...completeHooks]) {
-        const verdict = await hook.callback({
+      const completeVerdict = await dispatchServerBail(
+        this.ctx,
+        "todo:before-complete",
+        {
           task: existing,
           meta,
-        });
-        if (verdict === false) {
-          throw httpError(422, "Task completion blocked");
-        }
-        if (typeof verdict === "string" && verdict.length > 0) {
-          throw httpError(422, verdict);
-        }
+        },
+      );
+      if (completeVerdict === false) {
+        throw httpError(422, "Task completion blocked");
+      }
+      if (typeof completeVerdict === "string" && completeVerdict.length > 0) {
+        throw httpError(422, completeVerdict);
       }
     }
-    const hooks = this.ctx.events._hooks["todo:before-transition"] ?? [];`,
+    const verdict = await dispatchServerBail(`,
 );
 
 const TODO_CORE_CLIENT_V2 = TODO_CORE_CLIENT.replace(
@@ -729,19 +715,6 @@ test.describe("V3 Six-Step Todo Self-Iteration Acceptance (Zero-Cost Stub + Real
               },
               testFiles: {
                 "todo-core.contract.test.ts": TODO_CORE_CONTRACT_TEST,
-                "todo-core.seam.test.ts": `
-import assert from "node:assert/strict";
-export default async function (ctx) {
-  const session = await ctx.openBrowserPage("/");
-  try {
-    await session.page.locator("[data-todo-overlays-slot]").waitFor({ state: "attached", timeout: 5000 });
-    const count = await session.page.locator("[data-todo-overlays-slot]").count();
-    assert.equal(count, 1);
-  } finally {
-    await session.close();
-  }
-}
-`,
               },
             },
             {
@@ -911,6 +884,7 @@ export default async function (ctx) {
               a.targetPluginId === "todo-core" &&
               a.ablatedPlugins.includes("todo-review"),
           );
+          expect(coreAblation?.kind).toBe("upstream-seam");
           expect(coreAblation?.passed).toBe(true);
           // Sibling plugins (todo-tags, todo-counter) are isolated from todo-review in subgraph tests
           const reviewSubgraph = report?.subgraphResults?.find(
@@ -1069,7 +1043,12 @@ export default async function (ctx) {
       });
 
       // Data-preserving rollback to Step 5 (todo-tags disabled)
-      const rollbackResult = await recoveredRelease.rollback(step5CompositionId);
+      const activeBeforeRollback =
+        recoveredRelease.controlStore.getActiveCompositionId()!;
+      const rollbackResult = await recoveredRelease.rollback(
+        step5CompositionId,
+        activeBeforeRollback,
+      );
       expect(rollbackResult.composition.compositionId).toMatch(/^comp-rb-/);
       expect(
         rollbackResult.composition.members.find(

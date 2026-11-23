@@ -29,25 +29,10 @@ const INVENTORY_CORE_CLIENT = readFileSync(
   "utf8",
 );
 
-const INVENTORY_CORE_TEST = `
-import assert from "node:assert/strict";
-export default async function (ctx) {
-  const created = await ctx.request({
-    method: "POST",
-    path: "/api/app/inventory-core/items",
-    body: { sku: "CONTRACT-SKU", name: "测试商品", quantity: 10 },
-  });
-  assert.equal(created.status, 201);
-  const id = created.body.item.id;
-  const stocked = await ctx.request({
-    method: "POST",
-    path: \`/api/app/inventory-core/items/\${id}/stock\`,
-    body: { delta: -4 },
-  });
-  assert.equal(stocked.status, 200);
-  assert.equal(stocked.body.item.quantity, 6);
-}
-`;
+const INVENTORY_CORE_TEST = readFileSync(
+  join(INVENTORY_CORE_DIR, "tests", "inventory-core.spec.ts"),
+  "utf8",
+);
 
 // Step 1: inventory-low-stock plugin
 const LOW_STOCK_SERVER = `
