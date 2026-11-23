@@ -254,7 +254,7 @@ test.describe("V3 CompositionRelease end-to-end (Issue #71)", () => {
       expect(prodTasksData.version).toBe("V1");
       expect(prodTasksData.tasks.map((t) => t.title)).toEqual(["Formal Task 1"]);
 
-      // 4. Stale base optimistic lock rejection (409)
+      // 4. Stale base optimistic lock rejection (409) & verify both sides remain unchanged
       const staleRes = await fetch(`${server.url}/api/v3/release/apply`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -264,6 +264,23 @@ test.describe("V3 CompositionRelease end-to-end (Issue #71)", () => {
         }),
       });
       expect(staleRes.status).toBe(409);
+
+      const statusAfterConflictRes = await fetch(`${server.url}/api/v3/release/status`);
+      const statusAfterConflict = (await statusAfterConflictRes.json()) as {
+        activeCompositionId: string;
+        candidates: Array<{ candidateId: string; status: string }>;
+        activePreviews: Array<{ candidateId: string }>;
+      };
+      expect(statusAfterConflict.activeCompositionId).toBe("comp-v1");
+      expect(
+        statusAfterConflict.candidates.find((c) => c.candidateId === "cand-v2")?.status,
+      ).toBe("verified");
+      expect(statusAfterConflict.activePreviews.length).toBe(1);
+      await expect(page.getByTestId("app-heading")).toHaveText("Todo App (V2)");
+      await expect(page.getByTestId("task-item")).toHaveText([
+        "Formal Task 1",
+        "Preview Only Task",
+      ]);
 
       // 5. Click "确认应用" in preview banner -> redirects to production with V2 hot-swapped
       await page.locator('[data-supervisor-preview-banner="true"] [data-supervisor-apply-btn="true"]').click();

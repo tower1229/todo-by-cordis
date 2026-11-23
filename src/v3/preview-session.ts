@@ -37,13 +37,17 @@ export interface OpenPreviewSessionInput {
   readonly enableClientHost?: boolean;
   readonly releaseController?: ReleaseHttpController;
   readonly productionUrl?: string;
+  readonly idleTimeoutMs?: number;
 }
+
+const DEFAULT_PREVIEW_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
 interface ManagedPreviewSession {
   readonly info: PreviewSessionInfo;
   readonly tempDir: string;
   readonly runtime: SupervisedCordisRuntime;
   readonly server: V3HttpServerHandle;
+  readonly idleTimer?: NodeJS.Timeout;
 }
 
 export class PreviewSessionHost {
@@ -101,11 +105,22 @@ export class PreviewSessionHost {
         createdAt: new Date().toISOString(),
       };
 
+      const idleTimeoutMs =
+        input.idleTimeoutMs ?? DEFAULT_PREVIEW_IDLE_TIMEOUT_MS;
+      let idleTimer: NodeJS.Timeout | undefined;
+      if (idleTimeoutMs > 0) {
+        idleTimer = setTimeout(() => {
+          void this.closeSession(sessionId);
+        }, idleTimeoutMs);
+        idleTimer.unref?.();
+      }
+
       this.sessions.set(sessionId, {
         info,
         tempDir,
         runtime,
         server,
+        ...(idleTimer ? { idleTimer } : {}),
       });
 
       return info;
@@ -133,6 +148,9 @@ export class PreviewSessionHost {
     const session = this.sessions.get(sessionId);
     if (!session) return false;
     this.sessions.delete(sessionId);
+    if (session.idleTimer) {
+      clearTimeout(session.idleTimer);
+    }
 
     await session.server.close().catch(() => {});
     await session.runtime.close().catch(() => {});

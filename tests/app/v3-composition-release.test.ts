@@ -9,6 +9,7 @@ import {
   ReleaseError,
 } from "../../src/v3/composition-release.js";
 import { ControlStore } from "../../src/v3/control-store.js";
+import { PreviewSessionHost } from "../../src/v3/preview-session.js";
 import type { VerificationReport } from "../../src/v3/plugin-verifier.js";
 import type { CompositionSnapshot, PluginArtifact } from "../../src/v3/types.js";
 
@@ -352,6 +353,40 @@ describe("V3 CompositionRelease lifecycle", () => {
       if (release) {
         await release.close();
       }
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("auto-closes idle preview session and cleans up temp directory after idleTimeoutMs", async () => {
+    const dir = makeTempDir("v3-preview-idle-");
+    const businessDbPath = join(dir, "business.db");
+    const host = new PreviewSessionHost();
+    const artV1 = makeTaskPluginArtifact("v1", "Idle Test");
+    const compV1: CompositionSnapshot = {
+      compositionId: "comp-v1",
+      parentCompositionId: null,
+      members: [{ pluginId: "todo-core", versionId: "v1", enabled: true }],
+      createdAt: "2026-11-23T00:00:00.000Z",
+    };
+
+    try {
+      const session = await host.openSession({
+        candidateId: "cand-idle",
+        baseCompositionId: "comp-v0",
+        candidateComposition: compV1,
+        artifacts: [artV1],
+        productionDbPath: businessDbPath,
+        enableClientHost: false,
+        idleTimeoutMs: 80,
+      });
+      const previewTempDir = dirname(session.previewDbPath);
+      assert.equal(host.listSessions().length, 1);
+
+      await new Promise((r) => setTimeout(r, 250));
+      assert.equal(host.listSessions().length, 0);
+      assert.equal(existsSync(previewTempDir), false);
+    } finally {
+      await host.closeAll();
       rmSync(dir, { recursive: true, force: true });
     }
   });
