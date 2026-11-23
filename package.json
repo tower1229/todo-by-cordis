@@ -19,7 +19,8 @@
     "accept:interaction": "node --import tsx scripts/accept-interaction.ts",
     "accept:v1": "node --import tsx scripts/accept-v1.ts",
     "accept:stability-baseline": "node --import tsx scripts/accept-stability-baseline.ts",
-    "accept:stability-current": "node --import tsx scripts/accept-stability-baseline.ts --current"
+    "accept:stability-current": "node --import tsx scripts/accept-stability-baseline.ts --current",
+    "accept:v3": "playwright test tests/e2e/v3-six-step-acceptance.spec.ts tests/e2e/v3-inventory-migration.spec.ts"
   },
   "dependencies": {
     "@babel/parser": "7.29.9",
