@@ -7,7 +7,10 @@ import {
   ControlStore,
 } from "./control-store.js";
 import { SupervisedCordisRuntime } from "./cordis-runtime.js";
-import type { ReleaseHttpController } from "./http-gateway.js";
+import type {
+  EvolutionHttpController,
+  ReleaseHttpController,
+} from "./http-gateway.js";
 import {
   NO_BEHAVIOR_DIFF_WARNING,
   type VerificationReport,
@@ -164,6 +167,7 @@ export class CompositionRelease implements ReleaseHttpController {
   readonly businessDbPath: string;
   private clientAssetsDir?: string;
   private productionUrl?: string;
+  private evolutionController?: EvolutionHttpController;
   private readonly enablePreviewClientHost: boolean;
   private transitionChain: Promise<unknown> = Promise.resolve();
 
@@ -191,6 +195,10 @@ export class CompositionRelease implements ReleaseHttpController {
 
   setClientAssetsDir(dir: string): void {
     this.clientAssetsDir = dir;
+  }
+
+  setEvolutionController(controller: EvolutionHttpController): void {
+    this.evolutionController = controller;
   }
 
   async bootstrap(initial?: {
@@ -296,8 +304,50 @@ export class CompositionRelease implements ReleaseHttpController {
       ...(this.clientAssetsDir ? { clientAssetsDir: this.clientAssetsDir } : {}),
       enableClientHost: this.enablePreviewClientHost,
       releaseController: this,
+      ...(this.evolutionController
+        ? { evolutionController: this.evolutionController }
+        : {}),
       ...(this.productionUrl ? { productionUrl: this.productionUrl } : {}),
     });
+  }
+
+  async refreshOrOpenPreview(
+    existingSessionId: string | null,
+    candidateId: string,
+  ): Promise<PreviewSessionInfo> {
+    const receipt = this.controlStore.getCandidateReceipt(candidateId);
+    if (!receipt) {
+      throw new ReleaseError(
+        `Candidate ${candidateId} not found`,
+        404,
+        "CANDIDATE_NOT_FOUND",
+      );
+    }
+    if (!receipt.verificationReport.ok || receipt.status !== "verified") {
+      throw new ReleaseError(
+        `Candidate ${candidateId} is not verified and eligible for preview (status=${receipt.status})`,
+        400,
+        "CANDIDATE_NOT_VERIFIED",
+      );
+    }
+
+    if (existingSessionId && this.previewHost.getSession(existingSessionId)) {
+      const artifacts = this.controlStore.listArtifacts();
+      const refreshed = await this.previewHost.refreshSession(
+        existingSessionId,
+        {
+          candidateId: receipt.candidateId,
+          baseCompositionId: receipt.baseCompositionId,
+          candidateComposition: receipt.candidateComposition,
+          artifacts,
+        },
+      );
+      if (refreshed) {
+        return refreshed;
+      }
+    }
+
+    return await this.openPreview(candidateId);
   }
 
   async closePreview(sessionId: string): Promise<boolean> {

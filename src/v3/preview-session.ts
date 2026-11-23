@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { SupervisedCordisRuntime } from "./cordis-runtime.js";
 import { cloneSqliteDatabaseOnline } from "./db-snapshot.js";
 import {
+  type EvolutionHttpController,
   type ReleaseHttpController,
   type V3HttpServerHandle,
   startV3HttpServer,
@@ -36,14 +37,28 @@ export interface OpenPreviewSessionInput {
   readonly clientAssetsDir?: string;
   readonly enableClientHost?: boolean;
   readonly releaseController?: ReleaseHttpController;
+  readonly evolutionController?: EvolutionHttpController;
   readonly productionUrl?: string;
   readonly idleTimeoutMs?: number;
+}
+
+export interface RefreshPreviewSessionInput {
+  readonly candidateId: string;
+  readonly baseCompositionId: string;
+  readonly candidateComposition: CompositionSnapshot;
+  readonly artifacts: readonly PluginArtifact[];
 }
 
 const DEFAULT_PREVIEW_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
 interface ManagedPreviewSession {
-  readonly info: PreviewSessionInfo;
+  info: PreviewSessionInfo;
+  readonly previewContext: {
+    sessionId: string;
+    candidateId: string;
+    baseCompositionId: string;
+    productionUrl?: string;
+  };
   readonly tempDir: string;
   readonly runtime: SupervisedCordisRuntime;
   readonly server: V3HttpServerHandle;
@@ -80,6 +95,13 @@ export class PreviewSessionHost {
 
       await runtime.applyComposition(input.candidateComposition);
 
+      const previewContext: ManagedPreviewSession["previewContext"] = {
+        sessionId,
+        candidateId: input.candidateId,
+        baseCompositionId: input.baseCompositionId,
+        ...(input.productionUrl ? { productionUrl: input.productionUrl } : {}),
+      };
+
       server = await startV3HttpServer(runtime, {
         ...(input.clientAssetsDir
           ? { clientAssetsDir: input.clientAssetsDir }
@@ -88,12 +110,10 @@ export class PreviewSessionHost {
         ...(input.releaseController
           ? { releaseController: input.releaseController }
           : {}),
-        previewContext: {
-          sessionId,
-          candidateId: input.candidateId,
-          baseCompositionId: input.baseCompositionId,
-          ...(input.productionUrl ? { productionUrl: input.productionUrl } : {}),
-        },
+        ...(input.evolutionController
+          ? { evolutionController: input.evolutionController }
+          : {}),
+        previewContext,
       });
 
       const info: PreviewSessionInfo = {
@@ -117,6 +137,7 @@ export class PreviewSessionHost {
 
       this.sessions.set(sessionId, {
         info,
+        previewContext,
         tempDir,
         runtime,
         server,
@@ -138,6 +159,28 @@ export class PreviewSessionHost {
 
   getSession(sessionId: string): PreviewSessionInfo | undefined {
     return this.sessions.get(sessionId)?.info;
+  }
+
+  async refreshSession(
+    sessionId: string,
+    input: RefreshPreviewSessionInput,
+  ): Promise<PreviewSessionInfo | null> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+
+    for (const artifact of input.artifacts) {
+      session.runtime.registerArtifact(artifact);
+    }
+    await session.runtime.applyComposition(input.candidateComposition);
+
+    session.previewContext.candidateId = input.candidateId;
+    session.previewContext.baseCompositionId = input.baseCompositionId;
+    session.info = {
+      ...session.info,
+      candidateId: input.candidateId,
+      baseCompositionId: input.baseCompositionId,
+    };
+    return session.info;
   }
 
   listSessions(): PreviewSessionInfo[] {

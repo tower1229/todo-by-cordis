@@ -20,6 +20,7 @@ import {
 import type { ReleaseStatusSnapshot } from "../composition-release.js";
 import type { CandidateReceipt } from "../control-store.js";
 import type { PreviewBannerContext } from "../preview-session.js";
+import { EvolutionSidebarSection } from "./evolution-sidebar-section.js";
 
 interface ReleaseStatusPayload extends ReleaseStatusSnapshot {
   readonly previewContext: PreviewBannerContext | null;
@@ -359,6 +360,13 @@ export function SupervisorShell() {
                   {actionNotice}
                 </div>
               )}
+
+              <EvolutionSidebarSection
+                onApplied={() => {
+                  void fetchReleaseStatus();
+                }}
+                productionUrl={previewCtx?.productionUrl}
+              />
 
               <section className="space-y-2">
                 <div className="text-[11px] font-medium uppercase tracking-wide text-muted">

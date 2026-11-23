@@ -45,6 +45,96 @@ export interface ChangeBrief {
 
 export type CandidateReceiptStatus = "verified" | "applied" | "rejected";
 
+export type EvolutionRunStatus =
+  | "running"
+  | "awaiting_clarification"
+  | "awaiting_budget"
+  | "preview_ready"
+  | "applied"
+  | "cancelled"
+  | "interrupted"
+  | "failed";
+
+export type EvolutionRunStage =
+  | "queued"
+  | "calling_model"
+  | "inspecting_plugin"
+  | "staging_changes"
+  | "verifying_candidate"
+  | "opening_preview"
+  | "awaiting_clarification"
+  | "awaiting_budget"
+  | "preview_ready"
+  | "applied"
+  | "cancelled"
+  | "interrupted"
+  | "failed";
+
+export interface EvolutionClarificationPrompt {
+  readonly question: string;
+  readonly options?: readonly string[];
+  readonly toolCallId: string;
+  readonly askedAt: string;
+}
+
+export interface EvolutionBudgetLedger {
+  readonly callLimit: number;
+  readonly callsUsed: number;
+  readonly activeMsLimit: number;
+  readonly activeMsUsed: number;
+  readonly unknownUsageCount: number;
+  readonly estimatedTokens: number;
+  readonly exhaustedResource?: "calls" | "milliseconds" | null;
+}
+
+export interface EvolutionProgressEvent {
+  readonly seq: number;
+  readonly timestamp: string;
+  readonly stage: EvolutionRunStage;
+  readonly message: string;
+  readonly detail?: string;
+}
+
+export interface StagedPluginPackage {
+  readonly pluginId: string;
+  readonly name: string;
+  readonly dependencies: readonly string[];
+  readonly contractTypes: string;
+  readonly sourceFiles: Readonly<Record<string, string>>;
+  readonly testFiles: Readonly<Record<string, string>>;
+}
+
+export interface StagedWorkspaceState {
+  readonly upserts: Readonly<Record<string, StagedPluginPackage>>;
+  readonly toggles: Readonly<Record<string, boolean>>;
+  readonly workspaceHash: string;
+  readonly lastVerifiedHash: string | null;
+  readonly lastVerificationReport?: VerificationReport | null;
+  readonly lastBuiltArtifacts?: readonly PluginArtifact[];
+  readonly lastCandidateComposition?: CompositionSnapshot | null;
+}
+
+export interface EvolutionRunRecord {
+  readonly runId: string;
+  readonly baseCompositionId: string;
+  readonly status: EvolutionRunStatus;
+  readonly stage: EvolutionRunStage;
+  readonly prompt: string;
+  readonly messages: readonly unknown[];
+  readonly stagedWorkspace: StagedWorkspaceState;
+  readonly clarification: EvolutionClarificationPrompt | null;
+  readonly budget: EvolutionBudgetLedger;
+  readonly candidateId: string | null;
+  readonly previewSessionId: string | null;
+  readonly previewUrl: string | null;
+  readonly changeBrief: ChangeBrief | null;
+  readonly highlights: readonly string[];
+  readonly events: readonly EvolutionProgressEvent[];
+  readonly error: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
 export interface CandidateReceipt {
   readonly candidateId: string;
   readonly baseCompositionId: string;
@@ -111,6 +201,28 @@ export class ControlStore {
         status TEXT NOT NULL,
         created_at TEXT NOT NULL,
         applied_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS evolution_runs (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL UNIQUE,
+        base_composition_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        messages_json TEXT NOT NULL,
+        staged_workspace_json TEXT NOT NULL,
+        clarification_json TEXT,
+        budget_json TEXT NOT NULL,
+        candidate_id TEXT,
+        preview_session_id TEXT,
+        preview_url TEXT,
+        change_brief_json TEXT,
+        highlights_json TEXT NOT NULL,
+        events_json TEXT NOT NULL,
+        error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
       );
     `);
   }
@@ -362,6 +474,113 @@ export class ControlStore {
     return rows.map((row) => this.mapReceiptRow(row));
   }
 
+  saveEvolutionRun(run: EvolutionRunRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO evolution_runs (
+           run_id, base_composition_id, status, stage, prompt,
+           messages_json, staged_workspace_json, clarification_json,
+           budget_json, candidate_id, preview_session_id, preview_url,
+           change_brief_json, highlights_json, events_json, error,
+           created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(run_id) DO UPDATE SET
+           base_composition_id = excluded.base_composition_id,
+           status = excluded.status,
+           stage = excluded.stage,
+           prompt = excluded.prompt,
+           messages_json = excluded.messages_json,
+           staged_workspace_json = excluded.staged_workspace_json,
+           clarification_json = excluded.clarification_json,
+           budget_json = excluded.budget_json,
+           candidate_id = excluded.candidate_id,
+           preview_session_id = excluded.preview_session_id,
+           preview_url = excluded.preview_url,
+           change_brief_json = excluded.change_brief_json,
+           highlights_json = excluded.highlights_json,
+           events_json = excluded.events_json,
+           error = excluded.error,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        run.runId,
+        run.baseCompositionId,
+        run.status,
+        run.stage,
+        run.prompt,
+        JSON.stringify(run.messages),
+        JSON.stringify(run.stagedWorkspace),
+        run.clarification ? JSON.stringify(run.clarification) : null,
+        JSON.stringify(run.budget),
+        run.candidateId,
+        run.previewSessionId,
+        run.previewUrl,
+        run.changeBrief ? JSON.stringify(run.changeBrief) : null,
+        JSON.stringify(run.highlights),
+        JSON.stringify(run.events),
+        run.error,
+        run.createdAt,
+        run.updatedAt,
+      );
+  }
+
+  getEvolutionRun(runId: string): EvolutionRunRecord | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT run_id, base_composition_id, status, stage, prompt,
+                messages_json, staged_workspace_json, clarification_json,
+                budget_json, candidate_id, preview_session_id, preview_url,
+                change_brief_json, highlights_json, events_json, error,
+                created_at, updated_at
+         FROM evolution_runs WHERE run_id = ?`,
+      )
+      .get(runId) as EvolutionRunRow | undefined;
+
+    if (!row) return undefined;
+    return this.mapEvolutionRunRow(row);
+  }
+
+  listEvolutionRuns(): EvolutionRunRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT run_id, base_composition_id, status, stage, prompt,
+                messages_json, staged_workspace_json, clarification_json,
+                budget_json, candidate_id, preview_session_id, preview_url,
+                change_brief_json, highlights_json, events_json, error,
+                created_at, updated_at
+         FROM evolution_runs ORDER BY seq DESC`,
+      )
+      .all() as unknown as EvolutionRunRow[];
+
+    return rows.map((row) => this.mapEvolutionRunRow(row));
+  }
+
+  markRunningRunsInterrupted(
+    reason = "服务重启，在途运行已标记中断且不会自动续调付费模型",
+  ): number {
+    const running = this.listEvolutionRuns().filter(
+      (r) => r.status === "running",
+    );
+    const now = new Date().toISOString();
+    for (const run of running) {
+      const nextEvent: EvolutionProgressEvent = {
+        seq: run.events.length + 1,
+        timestamp: now,
+        stage: "interrupted",
+        message: reason,
+      };
+      this.saveEvolutionRun({
+        ...run,
+        status: "interrupted",
+        stage: "interrupted",
+        error: reason,
+        events: [...run.events, nextEvent],
+        updatedAt: now,
+      });
+    }
+    return running.length;
+  }
+
   close(): void {
     this.db.close();
   }
@@ -413,4 +632,54 @@ export class ControlStore {
       appliedAt: row.applied_at,
     };
   }
+
+  private mapEvolutionRunRow(row: EvolutionRunRow): EvolutionRunRecord {
+    return {
+      runId: row.run_id,
+      baseCompositionId: row.base_composition_id,
+      status: row.status,
+      stage: row.stage,
+      prompt: row.prompt,
+      messages: JSON.parse(row.messages_json) as unknown[],
+      stagedWorkspace: JSON.parse(
+        row.staged_workspace_json,
+      ) as StagedWorkspaceState,
+      clarification: row.clarification_json
+        ? (JSON.parse(row.clarification_json) as EvolutionClarificationPrompt)
+        : null,
+      budget: JSON.parse(row.budget_json) as EvolutionBudgetLedger,
+      candidateId: row.candidate_id,
+      previewSessionId: row.preview_session_id,
+      previewUrl: row.preview_url,
+      changeBrief: row.change_brief_json
+        ? (JSON.parse(row.change_brief_json) as ChangeBrief)
+        : null,
+      highlights: JSON.parse(row.highlights_json) as string[],
+      events: JSON.parse(row.events_json) as EvolutionProgressEvent[],
+      error: row.error,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+}
+
+interface EvolutionRunRow {
+  run_id: string;
+  base_composition_id: string;
+  status: EvolutionRunStatus;
+  stage: EvolutionRunStage;
+  prompt: string;
+  messages_json: string;
+  staged_workspace_json: string;
+  clarification_json: string | null;
+  budget_json: string;
+  candidate_id: string | null;
+  preview_session_id: string | null;
+  preview_url: string | null;
+  change_brief_json: string | null;
+  highlights_json: string;
+  events_json: string;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
 }
