@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { startV3App } from "../../src/v3/main.js";
+import {
+  createDeepSeekModelDriver,
+  type DeepSeekCallRecord,
+} from "../../src/v3/deepseek-driver.js";
+import { loadDotEnvIfPresent, startV3App } from "../../src/v3/main.js";
 import {
   createBudgetGuardedDriver,
   parseRealModelArgs,
+  TODO_SIX_STEP_PROMPTS,
   validateRealModelAuthorization,
   type UsageAccounting,
 } from "../../scripts/accept-v3-real-model.js";
@@ -121,4 +126,140 @@ test("Real-model budget guardrail blocks calls once callLimit or costLimit is re
     () => stub.generate({ system: "", history: [], tools: [] }, ac.signal),
     /cost guardrail exceeded/,
   );
+});
+
+test("Production deepseek-driver normalizes assistant messages for multi-turn history and preserves onRecord rawUsage", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "v3-deepseek-driver-prod-"));
+  const outboundBodies: Array<{ messages: Array<Record<string, unknown>> }> = [];
+  const records: DeepSeekCallRecord[] = [];
+  let turn = 0;
+
+  const mockFetch: typeof fetch = async (_input, init) => {
+    turn += 1;
+    outboundBodies.push(
+      JSON.parse(String(init?.body ?? "{}")) as {
+        messages: Array<Record<string, unknown>>;
+      },
+    );
+    const payload =
+      turn === 1
+        ? {
+            id: "resp-1",
+            choices: [
+              {
+                finish_reason: "tool_calls",
+                message: {
+                  role: "assistant",
+                  content: "",
+                  reasoning_content: "inspect todo-core first",
+                  tool_calls: [
+                    {
+                      id: "call_1",
+                      type: "function",
+                      function: {
+                        name: "inspect_plugin",
+                        arguments: JSON.stringify({ pluginId: "todo-core" }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+            usage: { prompt_tokens: 120, completion_tokens: 20, total_tokens: 140 },
+          }
+        : {
+            id: "resp-2",
+            choices: [
+              {
+                finish_reason: "tool_calls",
+                message: {
+                  role: "assistant",
+                  content: "",
+                  tool_calls: [
+                    {
+                      id: "call_2",
+                      type: "function",
+                      function: {
+                        name: "clarify_request",
+                        arguments: JSON.stringify({
+                          question: "需要区分大小写吗？",
+                        }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+            usage: { prompt_tokens: 180, completion_tokens: 30, total_tokens: 210 },
+          };
+
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  const driver = createDeepSeekModelDriver({
+    apiKey: "test-key",
+    http: mockFetch,
+    onRecord: (record) => records.push(record),
+  });
+
+  const app = await startV3App({
+    dataDir: dir,
+    seedPluginDir: resolve("plugins/todo-core"),
+    port: 0,
+    driver,
+  });
+
+  try {
+    const started = await app.evolution.startRun("测试真实入口 DeepSeek 多轮驱动");
+    const settled = await app.evolution.waitForRun(started.runId);
+    assert.equal(settled.status, "awaiting_clarification");
+    assert.equal(turn, 2);
+    assert.equal(records.length, 2);
+    assert.deepEqual(records[0]?.rawUsage, {
+      prompt_tokens: 120,
+      completion_tokens: 20,
+      total_tokens: 140,
+    });
+
+    // Turn 2 outbound HTTP request must contain only valid role messages (no raw { choices } envelope)
+    const turn2Messages = outboundBodies[1]!.messages;
+    for (const msg of turn2Messages) {
+      assert.equal(typeof msg.role, "string");
+      assert.equal("choices" in msg, false);
+    }
+    const assistantMsg = turn2Messages.find((m) => m.role === "assistant");
+    assert.equal(assistantMsg?.reasoning_content, "inspect todo-core first");
+    const toolMsg = turn2Messages.find(
+      (m) => m.role === "tool" && m.tool_call_id === "call_1",
+    );
+    assert.ok(toolMsg);
+  } finally {
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Real-model six-step prompts match 5-tool contract (step 6 re-enables todo-tags) and loadDotEnvIfPresent populates missing keys", () => {
+  assert.equal(TODO_SIX_STEP_PROMPTS.length, 6);
+  assert.match(TODO_SIX_STEP_PROMPTS[5]!, /重新启用.*todo-tags/);
+  assert.doesNotMatch(TODO_SIX_STEP_PROMPTS[5]!, /撤回/);
+
+  const dir = mkdtempSync(join(tmpdir(), "v3-dotenv-"));
+  try {
+    const envFile = join(dir, ".env");
+    writeFileSync(
+      envFile,
+      '# comment\nDEEPSEEK_API_KEY="from-dotenv-key"\nEXISTING_KEY=ignored\n',
+      "utf8",
+    );
+    const targetEnv: NodeJS.ProcessEnv = { EXISTING_KEY: "keep-me" };
+    loadDotEnvIfPresent(envFile, targetEnv);
+    assert.equal(targetEnv.DEEPSEEK_API_KEY, "from-dotenv-key");
+    assert.equal(targetEnv.EXISTING_KEY, "keep-me");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

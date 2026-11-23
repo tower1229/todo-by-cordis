@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,7 +8,7 @@ import {
   type DeepSeekCallRecord,
 } from "../src/v3/deepseek-driver.js";
 import type { ModelDriver } from "../src/v3/evolution-loop.js";
-import { startV3App } from "../src/v3/main.js";
+import { loadDotEnvIfPresent, startV3App } from "../src/v3/main.js";
 
 export type RealModelScenario =
   | "todo-six-step"
@@ -48,11 +48,11 @@ export const DEFAULT_REAL_MODEL_MAX_COST_CNY = 8.0;
 
 export const TODO_SIX_STEP_PROMPTS: readonly string[] = [
   "新增一个 todo-tags 标签插件：为任务提供自有标签表、标签增删查接口，以及在任务行展示标签和编辑标签的界面。",
-  "将 todo-tags 升级为标签自动标准化为大写并去重，同时保留历史标签数据不丢失。",
-  "新增一个 todo-counter 计数插件，在页面顶部状态插槽展示当前未完成与已完成任务数量。",
-  "新增一个 todo-review 复盘插件：完成任务前必须填写复盘总结，通过拦截完成动作并弹出复盘弹窗实现，不得修改 todo-core 的原有独立行为。",
-  "停用 todo-tags 插件（零代码变更），确认任务与复盘功能继续正常运行且历史标签数据未丢失。",
-  "撤回到停用 todo-tags 之前的版本，确认标签界面与历史标签数据完整恢复。",
+  "新增一个 todo-counter 计数插件，在页面顶部状态插槽展示当前未完成与已完成任务数量，不要修改 todo-core 与 todo-tags。",
+  "升级 todo-tags 插件：新保存的标签自动标准化为小写并去重，同时保留历史标签数据原样可读，并同步更新 todo-tags 测试。",
+  "新增一个 todo-review 复盘插件：完成任务前必须填写复盘总结，通过为 todo-core 开放通用双端拦截接缝并在 todo-review 中弹窗收集与服务端强校验实现，不得把复盘逻辑写进 todo-core。",
+  "停用 todo-tags 插件（零业务代码变更），确认计数与复盘功能继续正常运行且历史标签数据未丢失。",
+  "重新启用 todo-tags 插件（零业务代码变更），确认标签界面、功能与历史标签数据完整恢复。",
 ];
 
 export const INVENTORY_MIGRATION_PROMPTS: readonly string[] = [
@@ -273,6 +273,7 @@ async function runScenario(
   } finally {
     await browser.close();
     await app.close();
+    rmSync(dataDir, { recursive: true, force: true });
   }
 
   return { scenario: scenarioName, seedPluginDir, steps };
@@ -347,6 +348,7 @@ const isDirectEntry =
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 
 if (isDirectEntry) {
+  loadDotEnvIfPresent();
   const options = parseRealModelArgs(process.argv.slice(2), process.env);
   runRealModelAcceptance(options).catch((err) => {
     console.error(err instanceof Error ? err.message : String(err));

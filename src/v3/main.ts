@@ -39,7 +39,10 @@ interface SeedPluginManifest {
   readonly dependencies?: readonly string[];
 }
 
-function loadDotEnvIfPresent(envPath = resolve(".env")): void {
+export function loadDotEnvIfPresent(
+  envPath = resolve(".env"),
+  targetEnv: NodeJS.ProcessEnv = process.env,
+): void {
   if (!existsSync(envPath)) return;
   const content = readFileSync(envPath, "utf8");
   for (const rawLine of content.split(/\r?\n/)) {
@@ -48,7 +51,7 @@ function loadDotEnvIfPresent(envPath = resolve(".env")): void {
     const eqIdx = line.indexOf("=");
     if (eqIdx <= 0) continue;
     const key = line.slice(0, eqIdx).trim();
-    if (!key || process.env[key] !== undefined) continue;
+    if (!key || targetEnv[key] !== undefined) continue;
     let value = line.slice(eqIdx + 1).trim();
     if (
       (value.startsWith('"') && value.endsWith('"')) ||
@@ -56,7 +59,7 @@ function loadDotEnvIfPresent(envPath = resolve(".env")): void {
     ) {
       value = value.slice(1, -1);
     }
-    process.env[key] = value;
+    targetEnv[key] = value;
   }
 }
 
