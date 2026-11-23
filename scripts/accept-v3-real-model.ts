@@ -221,7 +221,13 @@ async function runScenario(
   const steps: Array<{
     readonly step: number;
     readonly prompt: string;
+    readonly runId: string;
     readonly status: string;
+    readonly highlights?: readonly string[];
+    readonly changeBrief?: unknown;
+    readonly budget: unknown;
+    readonly error?: string | null;
+    readonly events: readonly unknown[];
     readonly screenshotPath: string;
     readonly activeCompositionId?: string;
   }> = [];
@@ -236,8 +242,9 @@ async function runScenario(
 
     for (let i = 0; i < prompts.length; i += 1) {
       const prompt = prompts[i]!;
-      const run = await app.evolution.startRun(prompt);
-      if (run.state === "preview_ready") {
+      const started = await app.evolution.startRun(prompt);
+      const run = await app.evolution.waitForRun(started.runId);
+      if (run.status === "preview_ready") {
         await app.evolution.applyRun(run.runId);
       }
       await page.reload({ waitUntil: "networkidle" });
@@ -246,11 +253,22 @@ async function runScenario(
       steps.push({
         step: i + 1,
         prompt,
-        status: run.state,
+        runId: run.runId,
+        status: run.status,
+        ...(run.highlights !== undefined ? { highlights: run.highlights } : {}),
+        ...(run.changeBrief !== undefined
+          ? { changeBrief: run.changeBrief }
+          : {}),
+        budget: run.budget,
+        ...(run.error !== undefined ? { error: run.error } : {}),
+        events: run.events,
         screenshotPath,
         activeCompositionId:
           app.release.getStatus().activeComposition?.compositionId,
       });
+      if (run.status !== "preview_ready") {
+        break;
+      }
     }
   } finally {
     await browser.close();

@@ -107,6 +107,7 @@ export function createDeepSeekModelDriver(
           ...(result.protocolErrors !== undefined
             ? { protocolErrors: result.protocolErrors }
             : {}),
+          ...(result.history !== undefined ? { history: result.history } : {}),
           raw: result.raw,
           usage: normalizeUsage(result.usage),
         };

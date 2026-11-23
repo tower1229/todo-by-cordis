@@ -71,6 +71,7 @@ export interface ModelDriverReply {
   readonly text?: string;
   readonly calls?: readonly ModelToolCall[];
   readonly protocolErrors?: readonly string[];
+  readonly history?: readonly unknown[];
   readonly raw: unknown;
   readonly usage?: {
     readonly promptTokens?: number;

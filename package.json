@@ -12,7 +12,7 @@
     "dev": "node scripts/dev.mjs",
     "build": "tsc -p tsconfig.server.json && node scripts/build-v3-client.mjs",
     "start": "node dist/v3/main.js",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.plugins.json",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.plugins.json && tsc -p tsconfig.scripts.json",
     "test:e2e": "playwright test",
     "accept:v3": "playwright test tests/e2e/v3-six-step-acceptance.spec.ts tests/e2e/v3-inventory-migration.spec.ts",
     "accept:v3:real-model": "node --import tsx scripts/accept-v3-real-model.ts"
