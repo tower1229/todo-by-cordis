@@ -8,11 +8,29 @@ import {
   renderV3HostHtml,
 } from "./client-bundle-builder.js";
 import type {
+  ApplyCandidateInput,
+  ReleaseStatusSnapshot,
+  ReleaseTransitionResult,
+} from "./composition-release.js";
+import type {
+  PreviewBannerContext,
+  PreviewSessionInfo,
+} from "./preview-session.js";
+import type {
   ActiveClientComposition,
   ClientDiagnostic,
   HttpMethod,
   ServerCordisRuntime,
 } from "./types.js";
+
+export interface ReleaseHttpController {
+  getStatus(): ReleaseStatusSnapshot;
+  openPreview(candidateId: string): Promise<PreviewSessionInfo>;
+  closePreview(sessionId: string): Promise<boolean>;
+  getPreviewSession(sessionId: string): PreviewSessionInfo | undefined;
+  apply(input: ApplyCandidateInput): Promise<ReleaseTransitionResult>;
+  rollback(targetCompositionId: string): Promise<ReleaseTransitionResult>;
+}
 
 const ALLOWED_METHODS = new Set<HttpMethod>([
   "GET",
@@ -48,6 +66,8 @@ export interface CreateV3HttpAppOptions {
   readonly clientAssetsDir?: string;
   readonly htmlTitle?: string;
   readonly sseHeartbeatMs?: number;
+  readonly releaseController?: ReleaseHttpController;
+  readonly previewContext?: PreviewBannerContext;
 }
 
 export function createV3HttpGateway(
@@ -192,6 +212,139 @@ export function createV3HttpGateway(
   app.get("/api/v3/client-diagnostics", (c) => {
     return c.json({ diagnostics }, 200);
   });
+
+  if (options?.releaseController) {
+    const release = options.releaseController;
+    const previewContext = options.previewContext ?? null;
+
+    const toReleaseErrorResponse = (error: unknown) => {
+      const err = error as {
+        message?: string;
+        statusCode?: number;
+        code?: string;
+        expectedBaseCompositionId?: string;
+        actualActiveCompositionId?: string | null;
+      };
+      const status =
+        typeof err?.statusCode === "number"
+          ? (err.statusCode as 400 | 404 | 409 | 500)
+          : 500;
+      return {
+        status,
+        body: {
+          error: err?.message ?? String(error),
+          ...(err?.code ? { code: err.code } : {}),
+          ...(err?.expectedBaseCompositionId !== undefined
+            ? { expectedBaseCompositionId: err.expectedBaseCompositionId }
+            : {}),
+          ...(err?.actualActiveCompositionId !== undefined
+            ? { actualActiveCompositionId: err.actualActiveCompositionId }
+            : {}),
+        },
+      };
+    };
+
+    app.get("/api/v3/release/status", (c) => {
+      return c.json(
+        {
+          ...release.getStatus(),
+          previewContext,
+        },
+        200,
+      );
+    });
+
+    app.post("/api/v3/release/preview", async (c) => {
+      try {
+        const body = (await c.req.json()) as { candidateId?: string };
+        if (!body || typeof body.candidateId !== "string") {
+          return c.json({ error: "candidateId is required" }, 400);
+        }
+        const session = await release.openPreview(body.candidateId);
+        return c.json({ session }, 201);
+      } catch (error) {
+        const mapped = toReleaseErrorResponse(error);
+        return c.json(mapped.body, mapped.status);
+      }
+    });
+
+    app.delete("/api/v3/release/preview/:sessionId", async (c) => {
+      const sessionId = c.req.param("sessionId");
+      const closed = await release.closePreview(sessionId);
+      if (!closed) {
+        return c.json({ error: `Preview session ${sessionId} not found` }, 404);
+      }
+      return c.json({ closed: true, sessionId }, 200);
+    });
+
+    app.post("/api/v3/release/apply", async (c) => {
+      try {
+        const body = (await c.req.json()) as {
+          candidateId?: string;
+          expectedBaseCompositionId?: string;
+        };
+        if (
+          !body ||
+          typeof body.candidateId !== "string" ||
+          typeof body.expectedBaseCompositionId !== "string"
+        ) {
+          return c.json(
+            {
+              error:
+                "candidateId and expectedBaseCompositionId are required",
+            },
+            400,
+          );
+        }
+        const result = await release.apply({
+          candidateId: body.candidateId,
+          expectedBaseCompositionId: body.expectedBaseCompositionId,
+          ...(previewContext ? { deferPreviewCleanupMs: 100 } : {}),
+        });
+        return c.json(result, 200);
+      } catch (error) {
+        const mapped = toReleaseErrorResponse(error);
+        return c.json(mapped.body, mapped.status);
+      }
+    });
+
+    app.post("/api/v3/release/rollback", async (c) => {
+      try {
+        const body = (await c.req.json()) as { targetCompositionId?: string };
+        if (!body || typeof body.targetCompositionId !== "string") {
+          return c.json({ error: "targetCompositionId is required" }, 400);
+        }
+        const result = await release.rollback(body.targetCompositionId);
+        return c.json(result, 200);
+      } catch (error) {
+        const mapped = toReleaseErrorResponse(error);
+        return c.json(mapped.body, mapped.status);
+      }
+    });
+
+    app.get("/preview/:sessionId", (c) => {
+      const sessionId = c.req.param("sessionId");
+      const session = release.getPreviewSession(sessionId);
+      if (!session) {
+        return c.json({ error: `Preview session ${sessionId} not found` }, 404);
+      }
+      return c.redirect(session.previewUrl, 302);
+    });
+  } else {
+    app.get("/api/v3/release/status", (c) => {
+      return c.json(
+        {
+          activeCompositionId: null,
+          activeComposition: null,
+          compositions: [],
+          candidates: [],
+          activePreviews: [],
+          previewContext: null,
+        },
+        200,
+      );
+    });
+  }
 
   app.get("/plugins/:pluginId/:versionId/client.mjs", (c) => {
     const pluginId = c.req.param("pluginId");
