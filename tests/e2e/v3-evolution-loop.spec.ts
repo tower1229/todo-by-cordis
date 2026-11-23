@@ -279,4 +279,134 @@ export function apply(ctx: Context) {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test("handles clarification pause/resume and budget exhaustion/extension in SupervisorShell sidebar", async ({
+    page,
+  }) => {
+    const dir = mkdtempSync(join(tmpdir(), "v3-evo-e2e-flows-"));
+    const assetsDir = await ensureV3ClientAssets();
+    const release = new CompositionRelease({
+      controlDbPath: join(dir, "supervisor.db"),
+      businessDbPath: join(dir, "app.db"),
+      workDir: join(dir, "work"),
+      clientAssetsDir: assetsDir,
+      enablePreviewClientHost: true,
+    });
+
+    const seed = await createSeedPlugin();
+    const initComp: CompositionSnapshot = {
+      compositionId: "comp-e2e-init-2",
+      parentCompositionId: null,
+      members: [
+        { pluginId: seed.pluginId, versionId: seed.versionId, enabled: true },
+      ],
+      createdAt: new Date().toISOString(),
+    };
+    await release.bootstrap({ composition: initComp, artifacts: [seed] });
+
+    let step = 0;
+    const stubDriver: ModelDriver = {
+      async generate(): Promise<ModelDriverReply> {
+        step += 1;
+        if (step === 1) {
+          return {
+            calls: [
+              {
+                id: "q1",
+                name: "clarify_request",
+                args: {
+                  question: "是否保留历史记录？",
+                  options: ["保留历史", "直接清空"],
+                },
+              },
+            ],
+            raw: { role: "assistant", content: "clarify" },
+            usage: { totalTokens: 40 },
+          };
+        }
+        if (step === 2) {
+          return {
+            calls: [
+              {
+                id: "s1",
+                name: "stage_plugin_changes",
+                args: {
+                  toggles: [{ pluginId: "seed-app", enabled: true }],
+                },
+              },
+              { id: "v1", name: "verify_candidate", args: {} },
+            ],
+            raw: { role: "assistant", content: "stage" },
+            usage: { totalTokens: 40 },
+          };
+        }
+        return {
+          calls: [
+            {
+              id: "p1",
+              name: "present_preview",
+              args: { summary: "保留历史方案预览就绪" },
+            },
+          ],
+          raw: { role: "assistant", content: "preview" },
+          usage: { totalTokens: 40 },
+        };
+      },
+    };
+
+    const loop = new EvolutionLoop({
+      release,
+      modelDriver: stubDriver,
+      defaultBudget: { callLimit: 2, activeMsLimit: 60_000 },
+      verifyFn: async () => makePassingReport(["seed-app"]),
+    });
+    release.setEvolutionController(loop);
+
+    const server = await startV3HttpServer(release.runtime, {
+      clientAssetsDir: assetsDir,
+      enableClientHost: true,
+      releaseController: release,
+      evolutionController: loop,
+    });
+    release.setProductionUrl(server.url);
+
+    try {
+      await page.goto(server.url);
+      await page.getByRole("button", { name: "组合状态" }).click();
+
+      await page.locator("[data-evolution-prompt-input]").fill("清理旧数据");
+      await page.locator("[data-evolution-submit-btn]").click();
+
+      // Clarification pause
+      await expect(page.locator("[data-evolution-clarification]")).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.locator("[data-evolution-clarification]")).toContainText(
+        "需要你选择",
+      );
+      await page
+        .locator('[data-evolution-clarify-option="保留历史"]')
+        .click();
+
+      // After 2nd call, budget (callLimit=2) is exhausted -> awaiting_budget & prompt input hidden
+      await expect(page.locator("[data-evolution-budget-paused]")).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.locator("[data-evolution-prompt-input]")).toHaveCount(0);
+
+      // Click "继续进行" to extend budget and resume
+      await page.locator("[data-evolution-extend-budget-btn]").click();
+      await expect(page.locator("[data-evolution-preview-ready]")).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.locator("[data-evolution-preview-ready]")).toContainText(
+        "尚未应用",
+      );
+    } finally {
+      await loop.close();
+      await server.close();
+      await release.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

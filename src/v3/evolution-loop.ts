@@ -946,6 +946,12 @@ export class EvolutionLoop {
         return toEvolutionRunView(failed);
       }
 
+      if (this.isCancelled(runId, signal)) {
+        return toEvolutionRunView(
+          this.release.controlStore.getEvolutionRun(runId) ?? run,
+        );
+      }
+
       const elapsed = Math.max(1, Date.now() - callStarted);
       const usageUnknown =
         !reply.usage ||
@@ -1115,6 +1121,11 @@ export class EvolutionLoop {
           const pureVisualOrRefactor = Boolean(call.args.pureVisualOrRefactor);
           const { nextWorkspace, response, summaryMessage } =
             await this.handleVerifyCandidate(run, pureVisualOrRefactor);
+          if (this.isCancelled(runId, signal)) {
+            return toEvolutionRunView(
+              this.release.controlStore.getEvolutionRun(runId) ?? run,
+            );
+          }
           run = this.appendEvent(
             {
               ...run,
@@ -1189,6 +1200,14 @@ export class EvolutionLoop {
             run.previewSessionId,
             receipt.candidateId,
           );
+          if (this.isCancelled(runId, signal)) {
+            if (!run.previewSessionId) {
+              await this.release.closePreview(session.sessionId).catch(() => {});
+            }
+            return toEvolutionRunView(
+              this.release.controlStore.getEvolutionRun(runId) ?? run,
+            );
+          }
 
           toolResponses.push({
             functionResponse: {
@@ -1586,6 +1605,11 @@ export class EvolutionLoop {
       },
       summaryMessage: "四道验证门禁全部通过，可调用 present_preview 挂载隔离预览",
     };
+  }
+
+  private isCancelled(runId: string, signal: AbortSignal): boolean {
+    if (signal.aborted) return true;
+    return this.release.controlStore.getEvolutionRun(runId)?.status === "cancelled";
   }
 
   private requireRunRecord(runId: string): EvolutionRunRecord {

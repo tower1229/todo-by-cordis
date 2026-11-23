@@ -1,5 +1,5 @@
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
+import { type Context as HonoContext, Hono } from "hono";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { extname, resolve, sep } from "node:path";
@@ -392,6 +392,20 @@ export function createV3HttpGateway(
       };
     };
 
+    const evoPost = (
+      path: string,
+      handler: (c: HonoContext) => Promise<Response>,
+    ) => {
+      app.post(path, async (c) => {
+        try {
+          return await handler(c);
+        } catch (error) {
+          const mapped = mapEvoError(error);
+          return c.json(mapped.body, mapped.status as 400);
+        }
+      });
+    };
+
     app.get("/api/v3/evolution/runs", (c) => {
       return c.json({ runs: evolutionController.listRuns() }, 200);
     });
@@ -404,101 +418,66 @@ export function createV3HttpGateway(
       return c.json({ run }, 200);
     });
 
-    app.post("/api/v3/evolution/runs", async (c) => {
-      try {
-        const body = (await c.req.json()) as {
-          prompt?: string;
-          budget?: Partial<EvolutionBudgetConfig>;
-        };
-        const run = await evolutionController.startRun(
-          body.prompt ?? "",
-          body.budget ? { budget: body.budget } : undefined,
-        );
-        return c.json({ run }, 201);
-      } catch (error) {
-        const mapped = mapEvoError(error);
-        return c.json(mapped.body, mapped.status as 400);
-      }
+    evoPost("/api/v3/evolution/runs", async (c) => {
+      const body = (await c.req.json()) as {
+        prompt?: string;
+        budget?: Partial<EvolutionBudgetConfig>;
+      };
+      const run = await evolutionController.startRun(
+        body.prompt ?? "",
+        body.budget ? { budget: body.budget } : undefined,
+      );
+      return c.json({ run }, 201);
     });
 
-    app.post("/api/v3/evolution/runs/:runId/clarify", async (c) => {
-      try {
-        const body = (await c.req.json()) as { answer?: string };
-        const run = await evolutionController.answerClarification(
-          c.req.param("runId"),
-          body.answer ?? "",
-        );
-        return c.json({ run }, 200);
-      } catch (error) {
-        const mapped = mapEvoError(error);
-        return c.json(mapped.body, mapped.status as 400);
-      }
+    evoPost("/api/v3/evolution/runs/:runId/clarify", async (c) => {
+      const body = (await c.req.json()) as { answer?: string };
+      const run = await evolutionController.answerClarification(
+        c.req.param("runId") ?? "",
+        body.answer ?? "",
+      );
+      return c.json({ run }, 200);
     });
 
-    app.post("/api/v3/evolution/runs/:runId/budget", async (c) => {
-      try {
-        const body = (await c.req.json()) as {
-          additionalCalls?: number;
-          additionalActiveMs?: number;
-        };
-        const run = await evolutionController.extendBudget(
-          c.req.param("runId"),
-          {
-            additionalCalls: body.additionalCalls,
-            additionalActiveMs: body.additionalActiveMs,
-          },
-        );
-        return c.json({ run }, 200);
-      } catch (error) {
-        const mapped = mapEvoError(error);
-        return c.json(mapped.body, mapped.status as 400);
-      }
+    evoPost("/api/v3/evolution/runs/:runId/budget", async (c) => {
+      const body = (await c.req.json()) as {
+        additionalCalls?: number;
+        additionalActiveMs?: number;
+      };
+      const run = await evolutionController.extendBudget(
+        c.req.param("runId") ?? "",
+        {
+          additionalCalls: body.additionalCalls,
+          additionalActiveMs: body.additionalActiveMs,
+        },
+      );
+      return c.json({ run }, 200);
     });
 
-    app.post("/api/v3/evolution/runs/:runId/continue", async (c) => {
-      try {
-        const body = (await c.req.json()) as { message?: string };
-        const run = await evolutionController.continueInPreview(
-          c.req.param("runId"),
-          body.message ?? "",
-        );
-        return c.json({ run }, 200);
-      } catch (error) {
-        const mapped = mapEvoError(error);
-        return c.json(mapped.body, mapped.status as 400);
-      }
+    evoPost("/api/v3/evolution/runs/:runId/continue", async (c) => {
+      const body = (await c.req.json()) as { message?: string };
+      const run = await evolutionController.continueInPreview(
+        c.req.param("runId") ?? "",
+        body.message ?? "",
+      );
+      return c.json({ run }, 200);
     });
 
-    app.post("/api/v3/evolution/runs/:runId/cancel", async (c) => {
-      try {
-        const run = await evolutionController.cancelRun(c.req.param("runId"));
-        return c.json({ run }, 200);
-      } catch (error) {
-        const mapped = mapEvoError(error);
-        return c.json(mapped.body, mapped.status as 400);
-      }
+    evoPost("/api/v3/evolution/runs/:runId/cancel", async (c) => {
+      const run = await evolutionController.cancelRun(c.req.param("runId") ?? "");
+      return c.json({ run }, 200);
     });
 
-    app.post("/api/v3/evolution/runs/:runId/restore-preview", async (c) => {
-      try {
-        const session = await evolutionController.restorePreview(
-          c.req.param("runId"),
-        );
-        return c.json({ session }, 200);
-      } catch (error) {
-        const mapped = mapEvoError(error);
-        return c.json(mapped.body, mapped.status as 400);
-      }
+    evoPost("/api/v3/evolution/runs/:runId/restore-preview", async (c) => {
+      const session = await evolutionController.restorePreview(
+        c.req.param("runId") ?? "",
+      );
+      return c.json({ session }, 200);
     });
 
-    app.post("/api/v3/evolution/runs/:runId/apply", async (c) => {
-      try {
-        const result = await evolutionController.applyRun(c.req.param("runId"));
-        return c.json({ result }, 200);
-      } catch (error) {
-        const mapped = mapEvoError(error);
-        return c.json(mapped.body, mapped.status as 400);
-      }
+    evoPost("/api/v3/evolution/runs/:runId/apply", async (c) => {
+      const result = await evolutionController.applyRun(c.req.param("runId") ?? "");
+      return c.json({ result }, 200);
     });
 
     app.get("/api/v3/evolution/events", (c) => {

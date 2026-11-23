@@ -592,4 +592,52 @@ export function apply(ctx: Context) {
       await release2.close();
     }
   });
+
+  it("cancels an in-flight run without executeLoop overwriting cancelled status", async () => {
+    const dir = createTempDir("v3-evo-cancel-");
+    const { release } = await createSeedRelease(dir);
+
+    let resolveModel!: (reply: ModelDriverReply) => void;
+    const modelPromise = new Promise<ModelDriverReply>((resolve) => {
+      resolveModel = resolve;
+    });
+
+    const stubDriver: ModelDriver = {
+      async generate(): Promise<ModelDriverReply> {
+        return await modelPromise;
+      },
+    };
+
+    const loop = new EvolutionLoop({
+      release,
+      modelDriver: stubDriver,
+      verifyFn: async () => makePassingReport(["core-notes"]),
+    });
+
+    try {
+      const started = await loop.startRun("测试取消在途运行");
+      const cancelled = await loop.cancelRun(started.runId);
+      assert.equal(cancelled.status, "cancelled");
+
+      // Even if the in-flight model promise resolves afterward, status must stay cancelled
+      resolveModel({
+        calls: [
+          {
+            id: "late-1",
+            name: "stage_plugin_changes",
+            args: { toggles: [{ pluginId: "core-notes", enabled: true }] },
+          },
+        ],
+        raw: { role: "assistant", content: "late reply" },
+        usage: { totalTokens: 50 },
+      });
+
+      const settled = await loop.waitForRun(started.runId);
+      assert.equal(settled.status, "cancelled");
+      assert.equal(loop.getRun(started.runId)?.status, "cancelled");
+    } finally {
+      await loop.close();
+      await release.close();
+    }
+  });
 });

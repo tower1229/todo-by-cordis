@@ -48,6 +48,10 @@ export function EvolutionSidebarSection({
     setRuns((prev) => {
       const idx = prev.findIndex((r) => r.runId === incoming.runId);
       if (idx === -1) return [incoming, ...prev];
+      const existing = prev[idx]!;
+      if (incoming.events.length < existing.events.length) {
+        return prev;
+      }
       const next = [...prev];
       next[idx] = incoming;
       return next;
@@ -98,205 +102,139 @@ export function EvolutionSidebarSection({
   }, [fetchRuns, upsertRun]);
 
   const activeRun = runs[0] ?? null;
+  const hidePromptEditor =
+    activeRun?.status === "running" || activeRun?.status === "awaiting_budget";
 
-  const handleStartRun = async () => {
+  const postEvolution = async <T extends { error?: string }>(
+    url: string,
+    body: Record<string, unknown> | undefined,
+    fallbackError: string,
+    onSuccess: (data: T) => void,
+  ) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        ...(body
+          ? {
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(body),
+            }
+          : {}),
+      });
+      const data = (await res.json()) as T;
+      if (!res.ok) {
+        setError(data.error ?? `${fallbackError} (${res.status})`);
+        return;
+      }
+      onSuccess(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleStartRun = () => {
     const trimmed = promptInput.trim();
     if (!trimmed) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/v3/evolution/runs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt: trimmed }),
-      });
-      const data = (await res.json()) as {
-        run?: EvolutionRunView;
-        error?: string;
-      };
-      if (!res.ok || !data.run) {
-        setError(data.error ?? `启动自迭代失败 (${res.status})`);
-        return;
-      }
-      setPromptInput("");
-      upsertRun(data.run);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    void postEvolution<{ run?: EvolutionRunView; error?: string }>(
+      "/api/v3/evolution/runs",
+      { prompt: trimmed },
+      "启动自迭代失败",
+      (data) => {
+        if (!data.run) return;
+        setPromptInput("");
+        upsertRun(data.run);
+      },
+    );
   };
 
-  const handleAnswerClarification = async (runId: string, answer: string) => {
+  const handleAnswerClarification = (runId: string, answer: string) => {
     const trimmed = answer.trim();
     if (!trimmed) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/v3/evolution/runs/${encodeURIComponent(runId)}/clarify`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ answer: trimmed }),
-        },
-      );
-      const data = (await res.json()) as {
-        run?: EvolutionRunView;
-        error?: string;
-      };
-      if (!res.ok || !data.run) {
-        setError(data.error ?? `提交澄清失败 (${res.status})`);
-        return;
-      }
-      setClarifyInput("");
-      upsertRun(data.run);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    void postEvolution<{ run?: EvolutionRunView; error?: string }>(
+      `/api/v3/evolution/runs/${encodeURIComponent(runId)}/clarify`,
+      { answer: trimmed },
+      "提交澄清失败",
+      (data) => {
+        if (!data.run) return;
+        setClarifyInput("");
+        upsertRun(data.run);
+      },
+    );
   };
 
-  const handleExtendBudget = async (runId: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/v3/evolution/runs/${encodeURIComponent(runId)}/budget`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            additionalCalls: 5,
-            additionalActiveMs: 120_000,
-          }),
-        },
-      );
-      const data = (await res.json()) as {
-        run?: EvolutionRunView;
-        error?: string;
-      };
-      if (!res.ok || !data.run) {
-        setError(data.error ?? `追加预算失败 (${res.status})`);
-        return;
-      }
-      upsertRun(data.run);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+  const handleExtendBudget = (runId: string) => {
+    void postEvolution<{ run?: EvolutionRunView; error?: string }>(
+      `/api/v3/evolution/runs/${encodeURIComponent(runId)}/budget`,
+      { additionalCalls: 5, additionalActiveMs: 120_000 },
+      "追加预算失败",
+      (data) => {
+        if (data.run) upsertRun(data.run);
+      },
+    );
   };
 
-  const handleContinueInPreview = async (runId: string) => {
+  const handleContinueInPreview = (runId: string) => {
     const trimmed = refineInput.trim();
     if (!trimmed) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/v3/evolution/runs/${encodeURIComponent(runId)}/continue`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: trimmed }),
-        },
-      );
-      const data = (await res.json()) as {
-        run?: EvolutionRunView;
-        error?: string;
-      };
-      if (!res.ok || !data.run) {
-        setError(data.error ?? `提交微调失败 (${res.status})`);
-        return;
-      }
-      setRefineInput("");
-      upsertRun(data.run);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+    void postEvolution<{ run?: EvolutionRunView; error?: string }>(
+      `/api/v3/evolution/runs/${encodeURIComponent(runId)}/continue`,
+      { message: trimmed },
+      "提交微调失败",
+      (data) => {
+        if (!data.run) return;
+        setRefineInput("");
+        upsertRun(data.run);
+      },
+    );
   };
 
-  const handleCancel = async (runId: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/v3/evolution/runs/${encodeURIComponent(runId)}/cancel`,
-        { method: "POST" },
-      );
-      const data = (await res.json()) as {
-        run?: EvolutionRunView;
-        error?: string;
-      };
-      if (!res.ok || !data.run) {
-        setError(data.error ?? `取消失败 (${res.status})`);
-        return;
-      }
-      upsertRun(data.run);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+  const handleCancel = (runId: string) => {
+    void postEvolution<{ run?: EvolutionRunView; error?: string }>(
+      `/api/v3/evolution/runs/${encodeURIComponent(runId)}/cancel`,
+      undefined,
+      "取消失败",
+      (data) => {
+        if (data.run) upsertRun(data.run);
+      },
+    );
   };
 
-  const handleRestorePreview = async (runId: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/v3/evolution/runs/${encodeURIComponent(runId)}/restore-preview`,
-        { method: "POST" },
-      );
-      const data = (await res.json()) as {
-        session?: { previewUrl: string };
-        error?: string;
-      };
-      if (!res.ok || !data.session) {
-        setError(data.error ?? `打开预览失败 (${res.status})`);
-        return;
-      }
-      window.location.href = data.session.previewUrl;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+  const handleRestorePreview = (runId: string) => {
+    void postEvolution<{ session?: { previewUrl: string }; error?: string }>(
+      `/api/v3/evolution/runs/${encodeURIComponent(runId)}/restore-preview`,
+      undefined,
+      "打开预览失败",
+      (data) => {
+        if (data.session) {
+          window.location.href = data.session.previewUrl;
+        }
+      },
+    );
   };
 
-  const handleApplyRun = async (runId: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/v3/evolution/runs/${encodeURIComponent(runId)}/apply`,
-        { method: "POST" },
-      );
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        setError(data.error ?? `确认应用失败 (${res.status})`);
-        return;
-      }
-      onApplied?.();
-      if (productionUrl) {
-        window.location.href = productionUrl;
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+  const handleApplyRun = (runId: string) => {
+    void postEvolution<{ error?: string }>(
+      `/api/v3/evolution/runs/${encodeURIComponent(runId)}/apply`,
+      undefined,
+      "确认应用失败",
+      () => {
+        onApplied?.();
+        if (productionUrl) {
+          window.location.href = productionUrl;
+        }
+      },
+    );
   };
 
   return (
     <section data-evolution-panel="true" className="space-y-3">
       <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted">
         <Sparkles className="size-3.5 text-accent" aria-hidden="true" />
-        <span>自迭代助手</span>
+        <span>自迭代 Agent</span>
       </div>
 
       {error && (
@@ -308,28 +246,30 @@ export function EvolutionSidebarSection({
         </div>
       )}
 
-      <div className="space-y-2 rounded-lg border border-line bg-canvas p-2.5">
-        <textarea
-          data-evolution-prompt-input="true"
-          value={promptInput}
-          onChange={(e) => setPromptInput(e.target.value)}
-          placeholder="用自然语言描述你想改进或新增的功能..."
-          rows={2}
-          className="w-full resize-none rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs text-ink outline-none focus:border-accent"
-        />
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            data-evolution-submit-btn="true"
-            disabled={busy || !promptInput.trim()}
-            onClick={() => void handleStartRun()}
-            className="inline-flex h-7 items-center gap-1 rounded-md bg-accent px-2.5 font-medium text-white hover:opacity-90 disabled:opacity-50"
-          >
-            <Send className="size-3" aria-hidden="true" />
-            <span>提交需求</span>
-          </Button>
+      {!hidePromptEditor && (
+        <div className="space-y-2 rounded-lg border border-line bg-canvas p-2.5">
+          <textarea
+            data-evolution-prompt-input="true"
+            value={promptInput}
+            onChange={(e) => setPromptInput(e.target.value)}
+            placeholder="用自然语言描述你想改进或新增的功能..."
+            rows={2}
+            className="w-full resize-none rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs text-ink outline-none focus:border-accent"
+          />
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              data-evolution-submit-btn="true"
+              disabled={busy || !promptInput.trim()}
+              onClick={handleStartRun}
+              className="inline-flex h-7 items-center gap-1 rounded-md bg-accent px-2.5 font-medium text-white hover:opacity-90 disabled:opacity-50"
+            >
+              <Send className="size-3" aria-hidden="true" />
+              <span>提交需求</span>
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {activeRun && (
         <div
@@ -344,7 +284,7 @@ export function EvolutionSidebarSection({
             </span>
             <span
               data-evolution-stage-label="true"
-              className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-medium text-ink"
+              className="rounded-full border border-line bg-surface px-2 py-0.5 text-[11px] font-medium text-ink"
             >
               {STAGE_LABELS[activeRun.stage] ?? activeRun.stage}
             </span>
@@ -372,11 +312,11 @@ export function EvolutionSidebarSection({
                 type="button"
                 data-evolution-cancel-btn="true"
                 disabled={busy}
-                onClick={() => void handleCancel(activeRun.runId)}
+                onClick={() => handleCancel(activeRun.runId)}
                 className="inline-flex h-7 items-center gap-1 rounded-md border border-danger/30 bg-surface px-2 text-danger hover:bg-danger/10 disabled:opacity-50"
               >
                 <Square className="size-3" aria-hidden="true" />
-                <span>取消运行</span>
+                <span>停止</span>
               </Button>
             </div>
           )}
@@ -385,9 +325,12 @@ export function EvolutionSidebarSection({
             activeRun.clarification && (
               <div
                 data-evolution-clarification="true"
-                className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5"
+                className="space-y-2 rounded-md border border-accent/30 bg-accent-soft p-2.5"
               >
-                <div className="font-medium text-amber-950 dark:text-amber-100">
+                <div className="text-[11px] font-medium text-accent">
+                  需要你选择
+                </div>
+                <div className="font-medium text-ink">
                   {activeRun.clarification.question}
                 </div>
                 {activeRun.clarification.options &&
@@ -400,9 +343,9 @@ export function EvolutionSidebarSection({
                           data-evolution-clarify-option={opt}
                           disabled={busy}
                           onClick={() =>
-                            void handleAnswerClarification(activeRun.runId, opt)
+                            handleAnswerClarification(activeRun.runId, opt)
                           }
-                          className="rounded-md border border-line bg-surface px-2 py-1 text-[11px] text-ink hover:bg-accent-soft"
+                          className="rounded-md border border-line bg-surface px-2 py-1 text-[11px] text-ink hover:bg-canvas"
                         >
                           {opt}
                         </Button>
@@ -423,14 +366,11 @@ export function EvolutionSidebarSection({
                     data-evolution-clarify-submit="true"
                     disabled={busy || !clarifyInput.trim()}
                     onClick={() =>
-                      void handleAnswerClarification(
-                        activeRun.runId,
-                        clarifyInput,
-                      )
+                      handleAnswerClarification(activeRun.runId, clarifyInput)
                     }
                     className="rounded-md bg-accent px-2.5 py-1 text-white disabled:opacity-50"
                   >
-                    回答
+                    提交回答
                   </Button>
                 </div>
               </div>
@@ -439,22 +379,36 @@ export function EvolutionSidebarSection({
           {activeRun.status === "awaiting_budget" && (
             <div
               data-evolution-budget-paused="true"
-              className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5"
+              className="space-y-2 rounded-md border border-line bg-surface p-2.5"
             >
-              <div className="flex items-center gap-1.5 font-medium text-amber-950 dark:text-amber-100">
-                <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+              <div className="flex items-center gap-1.5 font-medium text-ink">
+                <AlertTriangle
+                  className="size-3.5 shrink-0 text-accent"
+                  aria-hidden="true"
+                />
                 <span>{activeRun.error ?? "已达到单次运行预算上限"}</span>
               </div>
-              <Button
-                type="button"
-                data-evolution-extend-budget-btn="true"
-                disabled={busy}
-                onClick={() => void handleExtendBudget(activeRun.runId)}
-                className="inline-flex h-7 items-center gap-1 rounded-md bg-accent px-2.5 font-medium text-white hover:opacity-90 disabled:opacity-50"
-              >
-                <PlusCircle className="size-3.5" aria-hidden="true" />
-                <span>追加预算（+5 次调用）并继续</span>
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  data-evolution-extend-budget-btn="true"
+                  disabled={busy}
+                  onClick={() => handleExtendBudget(activeRun.runId)}
+                  className="inline-flex h-7 items-center gap-1 rounded-md bg-accent px-2.5 font-medium text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  <PlusCircle className="size-3.5" aria-hidden="true" />
+                  <span>继续进行</span>
+                </Button>
+                <Button
+                  type="button"
+                  data-evolution-end-btn="true"
+                  disabled={busy}
+                  onClick={() => handleCancel(activeRun.runId)}
+                  className="inline-flex h-7 items-center gap-1 rounded-md border border-line bg-canvas px-2.5 font-medium text-muted hover:text-ink disabled:opacity-50"
+                >
+                  <span>结束本次改进</span>
+                </Button>
+              </div>
             </div>
           )}
 
@@ -472,6 +426,11 @@ export function EvolutionSidebarSection({
               data-evolution-preview-ready="true"
               className="space-y-2.5 rounded-md border border-accent/30 bg-surface p-2.5"
             >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium text-accent">
+                  尚未应用
+                </span>
+              </div>
               {activeRun.changeBrief && (
                 <div className="space-y-1">
                   <div className="font-medium text-ink">
@@ -495,7 +454,7 @@ export function EvolutionSidebarSection({
                   type="button"
                   data-evolution-open-preview-btn="true"
                   disabled={busy}
-                  onClick={() => void handleRestorePreview(activeRun.runId)}
+                  onClick={() => handleRestorePreview(activeRun.runId)}
                   className="inline-flex h-7 items-center gap-1 rounded-md border border-line bg-canvas px-2.5 font-medium text-ink hover:bg-accent-soft disabled:opacity-50"
                 >
                   <Eye className="size-3.5" aria-hidden="true" />
@@ -505,7 +464,7 @@ export function EvolutionSidebarSection({
                   type="button"
                   data-evolution-apply-btn="true"
                   disabled={busy}
-                  onClick={() => void handleApplyRun(activeRun.runId)}
+                  onClick={() => handleApplyRun(activeRun.runId)}
                   className="inline-flex h-7 items-center gap-1 rounded-md bg-accent px-2.5 font-medium text-white hover:opacity-90 disabled:opacity-50"
                 >
                   <CheckCircle2 className="size-3.5" aria-hidden="true" />
@@ -531,7 +490,7 @@ export function EvolutionSidebarSection({
                     type="button"
                     data-evolution-refine-submit="true"
                     disabled={busy || !refineInput.trim()}
-                    onClick={() => void handleContinueInPreview(activeRun.runId)}
+                    onClick={() => handleContinueInPreview(activeRun.runId)}
                     className="rounded-md bg-accent px-2.5 py-1 text-white disabled:opacity-50"
                   >
                     微调
