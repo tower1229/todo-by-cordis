@@ -3,18 +3,36 @@ import { stripTypeScriptTypes } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  type Browser,
+  type BrowserContext,
+  type Page,
+  chromium,
+} from "playwright";
 import { SupervisedCordisRuntime } from "./cordis-runtime.js";
+import { startV3HttpServer } from "./http-gateway.js";
 import type {
   AppResponse,
+  ClientDiagnostic,
   CompositionSnapshot,
   CompositionTopology,
   HttpDispatchInput,
   PluginArtifact,
 } from "./types.js";
 
+export interface PluginBrowserSession {
+  readonly baseUrl: string;
+  readonly page: Page;
+  readonly pageErrors: readonly string[];
+  readonly consoleErrors: readonly string[];
+  getClientDiagnostics(): readonly ClientDiagnostic[];
+  close(): Promise<void>;
+}
+
 export interface PluginTestContext {
   request(input: HttpDispatchInput): Promise<AppResponse>;
   introspect(): Promise<CompositionTopology>;
+  openBrowserPage(path?: string): Promise<PluginBrowserSession>;
 }
 
 export interface SingleTestFileResult {
@@ -34,6 +52,8 @@ export interface RunPluginContractTestsInput {
   readonly artifacts: ReadonlyMap<string, PluginArtifact>;
   readonly testFiles: Readonly<Record<string, string>>;
   readonly applyTimeoutMs?: number;
+  readonly dbPath?: string;
+  readonly browser?: Browser;
 }
 
 export async function runPluginContractTests(
@@ -41,10 +61,30 @@ export async function runPluginContractTests(
 ): Promise<PluginTestRunResult> {
   const tempDir = mkdtempSync(join(tmpdir(), "v3-plugin-tests-"));
   const runtime = new SupervisedCordisRuntime({
-    dbPath: join(tempDir, "sandbox.db"),
+    dbPath: input.dbPath ?? join(tempDir, "sandbox.db"),
     workDir: tempDir,
     applyTimeoutMs: input.applyTimeoutMs ?? 15_000,
   });
+
+  type RunningV3HttpServer = Awaited<ReturnType<typeof startV3HttpServer>>;
+  let httpServer: RunningV3HttpServer | null = null;
+  let ownedBrowser: Browser | null = null;
+  const openContexts: BrowserContext[] = [];
+
+  const ensureServer = async (): Promise<RunningV3HttpServer> => {
+    if (!httpServer) {
+      httpServer = await startV3HttpServer(runtime, { port: 0 });
+    }
+    return httpServer;
+  };
+
+  const ensureBrowser = async (): Promise<Browser> => {
+    if (input.browser) return input.browser;
+    if (!ownedBrowser) {
+      ownedBrowser = await chromium.launch();
+    }
+    return ownedBrowser;
+  };
 
   try {
     for (const artifact of input.artifacts.values()) {
@@ -72,6 +112,37 @@ export async function runPluginContractTests(
     const ctx: PluginTestContext = {
       request: (req) => runtime.handleHttpRequest(req),
       introspect: () => runtime.introspect(),
+      openBrowserPage: async (path = "/") => {
+        const server = await ensureServer();
+        const browser = await ensureBrowser();
+        const browserCtx = await browser.newContext();
+        openContexts.push(browserCtx);
+        const page = await browserCtx.newPage();
+        const pageErrors: string[] = [];
+        const consoleErrors: string[] = [];
+        page.on("pageerror", (err) => {
+          pageErrors.push(err instanceof Error ? err.message : String(err));
+        });
+        page.on("console", (msg) => {
+          if (msg.type() === "error") {
+            consoleErrors.push(msg.text());
+          }
+        });
+        const targetPath = path.startsWith("/") ? path : `/${path}`;
+        await page.goto(`${server.url}${targetPath}`, {
+          waitUntil: "networkidle",
+        });
+        return {
+          baseUrl: server.url,
+          page,
+          pageErrors,
+          consoleErrors,
+          getClientDiagnostics: () => server.getClientDiagnostics(),
+          close: async () => {
+            await browserCtx.close();
+          },
+        };
+      },
     };
 
     const results: SingleTestFileResult[] = [];
@@ -140,6 +211,15 @@ export async function runPluginContractTests(
       error: error instanceof Error ? error.message : String(error),
     };
   } finally {
+    for (const browserCtx of openContexts) {
+      await browserCtx.close().catch(() => {});
+    }
+    if (ownedBrowser) {
+      await ownedBrowser.close().catch(() => {});
+    }
+    if (httpServer) {
+      await httpServer.close().catch(() => {});
+    }
     await runtime.close();
     rmSync(tempDir, { recursive: true, force: true });
   }

@@ -1,16 +1,42 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { type Browser, type BrowserContext, chromium } from "playwright";
 import { ClientCordisRuntime } from "./client/client-runtime.js";
 import { SupervisedCordisRuntime } from "./cordis-runtime.js";
-import { runPluginContractTests } from "./plugin-test-runner.js";
+import {
+  type DataFingerprintDiff,
+  type PluginDataFingerprint,
+  cloneSqliteDatabaseOnline,
+  comparePluginDataFingerprints,
+  snapshotPluginDataFingerprint,
+} from "./db-snapshot.js";
+import { startV3HttpServer } from "./http-gateway.js";
+import {
+  type PluginTestContext,
+  type SingleTestFileResult,
+  runPluginContractTests,
+} from "./plugin-test-runner.js";
 import {
   type DagViolation,
   type StaticViolation,
   verifyCompositionDag,
   verifyStaticBoundaries,
 } from "./static-verifier.js";
+import {
+  type TestChangeDisclosure,
+  type TestFileDiffEntry,
+  computeTestChangeDisclosures,
+  diffPluginTestFiles,
+} from "./test-diff.js";
 import { artifactKey, validateAndSortComposition } from "./topology.js";
 import type {
   ActiveClientComposition,
@@ -19,16 +45,41 @@ import type {
   PluginArtifact,
 } from "./types.js";
 
+export type { DataFingerprintDiff, TestChangeDisclosure, TestFileDiffEntry };
+
+export const NO_BEHAVIOR_DIFF_WARNING = "无行为差分断言，请人工核验预览";
+
+export type CandidateChangeKind = "behavior" | "visual-only" | "refactor-only";
+
 export type FailedGate =
   | "gate1-static-dag"
   | "gate1-hotswap-probe"
-  | "gate2-ablation";
+  | "gate2-ablation"
+  | "gate3-subgraph-contract"
+  | "gate3-red-green-diff"
+  | "gate3-full-composition-smoke"
+  | "gate3-disabled-data-preservation";
 
-export interface TestChangeDisclosure {
+export interface SubgraphVerificationResult {
   readonly pluginId: string;
-  readonly modifiedFiles: readonly string[];
-  readonly addedFiles: readonly string[];
-  readonly removedFiles: readonly string[];
+  readonly closurePlugins: readonly string[];
+  readonly candidatePassed: boolean;
+  readonly candidateTestResults: readonly SingleTestFileResult[];
+  readonly redGreenChecked: boolean;
+  readonly baselineRedVerified?: boolean;
+  readonly noBehaviorDiffWarning?: boolean;
+  readonly error?: string;
+}
+
+export interface FullCompositionSmokeResult {
+  readonly passed: boolean;
+  readonly clonedFromProductionDb: boolean;
+  readonly activePlugins: readonly string[];
+  readonly errorBoundaryCount: number;
+  readonly pageErrors: readonly string[];
+  readonly consoleErrors: readonly string[];
+  readonly disabledPluginDataChecks: readonly DataFingerprintDiff[];
+  readonly error?: string;
 }
 
 export interface AblationCheckResult {
@@ -54,6 +105,10 @@ export interface VerificationReport {
   readonly probedPlugins: readonly string[];
   readonly ablationResults: readonly AblationCheckResult[];
   readonly testChangeDisclosures: readonly TestChangeDisclosure[];
+  readonly warnings?: readonly string[];
+  readonly noBehaviorDiffWarning?: boolean;
+  readonly subgraphResults?: readonly SubgraphVerificationResult[];
+  readonly fullCompositionSmoke?: FullCompositionSmokeResult;
 }
 
 export interface VerifyCandidateInput {
@@ -61,6 +116,10 @@ export interface VerifyCandidateInput {
   readonly candidate: CompositionSnapshot;
   readonly artifacts: ReadonlyMap<string, PluginArtifact>;
   readonly applyTimeoutMs?: number;
+  readonly changeKind?: CandidateChangeKind;
+  readonly productionDbPath?: string;
+  readonly fullCompositionSmokeTest?: (ctx: PluginTestContext) => Promise<void>;
+  readonly browser?: Browser;
 }
 
 function getChangedEnabledPlugins(
@@ -148,44 +207,6 @@ function computeDependencyClosure(
   };
   visit(targetId);
   return closure;
-}
-
-function diffTestFiles(
-  pluginId: string,
-  baselineTests: Readonly<Record<string, string>>,
-  candidateTests: Readonly<Record<string, string>>,
-): TestChangeDisclosure | null {
-  const modifiedFiles: string[] = [];
-  const addedFiles: string[] = [];
-  const removedFiles: string[] = [];
-
-  for (const [file, content] of Object.entries(baselineTests)) {
-    if (!(file in candidateTests)) {
-      removedFiles.push(file);
-    } else if (candidateTests[file] !== content) {
-      modifiedFiles.push(file);
-    }
-  }
-  for (const file of Object.keys(candidateTests)) {
-    if (!(file in baselineTests)) {
-      addedFiles.push(file);
-    }
-  }
-
-  if (
-    modifiedFiles.length === 0 &&
-    addedFiles.length === 0 &&
-    removedFiles.length === 0
-  ) {
-    return null;
-  }
-
-  return {
-    pluginId,
-    modifiedFiles: modifiedFiles.sort(),
-    addedFiles: addedFiles.sort(),
-    removedFiles: removedFiles.sort(),
-  };
 }
 
 function buildClosureSnapshot(
@@ -548,7 +569,7 @@ export async function verifyCandidateGates1And2(
     );
     const baselineTests = baseArtifact?.testFiles ?? {};
     const candidateTests = candidateArtifact.testFiles ?? {};
-    const disclosure = diffTestFiles(pluginId, baselineTests, candidateTests);
+    const disclosure = diffPluginTestFiles(pluginId, baselineTests, candidateTests);
 
     const closureIds = computeDependencyClosure(pluginId, enabledArtifactById);
     const closureSnapshot = buildClosureSnapshot(
@@ -680,4 +701,581 @@ export async function verifyCandidateGates1And2(
     ablationResults,
     testChangeDisclosures,
   };
+}
+
+function getDisabledPlugins(
+  baseline: CompositionSnapshot | undefined,
+  candidate: CompositionSnapshot,
+): string[] {
+  if (!baseline) return [];
+  const candById = new Map(candidate.members.map((m) => [m.pluginId, m]));
+  const disabled: string[] = [];
+  for (const baseMember of baseline.members) {
+    if (!baseMember.enabled) continue;
+    const candMember = candById.get(baseMember.pluginId);
+    if (!candMember || !candMember.enabled) {
+      disabled.push(baseMember.pluginId);
+    }
+  }
+  return disabled.sort();
+}
+
+function buildBaselineClosureSnapshot(
+  baseline: CompositionSnapshot | undefined,
+  closureIds: ReadonlySet<string>,
+  excludePluginId: string | null,
+  suffix: string,
+): CompositionSnapshot {
+  const members = (baseline?.members ?? [])
+    .filter(
+      (m) =>
+        m.enabled &&
+        closureIds.has(m.pluginId) &&
+        m.pluginId !== excludePluginId,
+    )
+    .map((m) => ({
+      pluginId: m.pluginId,
+      versionId: m.versionId,
+      enabled: true,
+    }));
+  return {
+    compositionId: `${baseline?.compositionId ?? "empty-baseline"}__base_${suffix}`,
+    parentCompositionId: baseline?.compositionId ?? null,
+    members,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function selectDifferentialTestFiles(
+  isNewOrReenabled: boolean,
+  baselineTests: Readonly<Record<string, string>>,
+  candidateTests: Readonly<Record<string, string>>,
+): Record<string, string> {
+  if (isNewOrReenabled) {
+    return { ...candidateTests };
+  }
+  const diffFiles: Record<string, string> = {};
+  for (const [file, content] of Object.entries(candidateTests)) {
+    if (!(file in baselineTests) || baselineTests[file] !== content) {
+      diffFiles[file] = content;
+    }
+  }
+  return diffFiles;
+}
+
+async function runFullCompositionSmoke(
+  input: VerifyCandidateInput,
+  disabledPlugins: readonly string[],
+  sharedBrowser: Browser,
+): Promise<{
+  readonly result: FullCompositionSmokeResult;
+  readonly failedGate?: "gate3-full-composition-smoke" | "gate3-disabled-data-preservation";
+  readonly errors: readonly string[];
+}> {
+  const tempDir = mkdtempSync(join(tmpdir(), "v3-gate3-full-smoke-"));
+  const sandboxDbPath = join(tempDir, "sandbox.db");
+  const clonedFromProductionDb = Boolean(input.productionDbPath);
+  const errors: string[] = [];
+
+  try {
+    if (input.productionDbPath) {
+      await cloneSqliteDatabaseOnline(input.productionDbPath, sandboxDbPath);
+    }
+
+    const beforeFingerprints = new Map<string, PluginDataFingerprint>();
+    if (existsSync(sandboxDbPath)) {
+      for (const pluginId of disabledPlugins) {
+        beforeFingerprints.set(
+          pluginId,
+          snapshotPluginDataFingerprint(sandboxDbPath, pluginId),
+        );
+      }
+    }
+
+    const runtime = new SupervisedCordisRuntime({
+      dbPath: sandboxDbPath,
+      workDir: tempDir,
+      applyTimeoutMs: input.applyTimeoutMs ?? 15_000,
+    });
+    let httpServer: Awaited<ReturnType<typeof startV3HttpServer>> | null = null;
+    const openContexts: BrowserContext[] = [];
+
+    let activePlugins: string[] = [];
+    let errorBoundaryCount = 0;
+    const pageErrors: string[] = [];
+    const consoleErrors: string[] = [];
+
+    try {
+      for (const artifact of input.artifacts.values()) {
+        runtime.registerArtifact(artifact);
+      }
+      await runtime.applyComposition(input.candidate);
+
+      const topology = await runtime.introspect();
+      const expectedEnabledIds = new Set(
+        input.candidate.members.filter((m) => m.enabled).map((m) => m.pluginId),
+      );
+      const activeErrors = assertAllEnabledActive(
+        topology,
+        expectedEnabledIds,
+        "full-composition-smoke",
+      );
+      errors.push(...activeErrors);
+      activePlugins = topology.plugins
+        .filter((p) => p.state === "ACTIVE")
+        .map((p) => p.pluginId)
+        .sort();
+
+      httpServer = await startV3HttpServer(runtime, { port: 0 });
+
+      const browserCtx = await sharedBrowser.newContext();
+      openContexts.push(browserCtx);
+      const page = await browserCtx.newPage();
+      page.on("pageerror", (err) => {
+        pageErrors.push(err instanceof Error ? err.message : String(err));
+      });
+      page.on("console", (msg) => {
+        if (msg.type() === "error") {
+          consoleErrors.push(msg.text());
+        }
+      });
+
+      await page.goto(`${httpServer.url}/`, { waitUntil: "networkidle" });
+      await page.waitForTimeout(100);
+
+      const diagnostics = httpServer.getClientDiagnostics();
+      const boundaryDiags = diagnostics.filter(
+        (d) =>
+          d.kind === "render-error" ||
+          d.kind === "load-error" ||
+          d.kind === "reconcile-error",
+      );
+      const domBoundaryCount = await page
+        .locator('[data-v3-error-boundary="true"], [data-error-boundary="true"]')
+        .count();
+      errorBoundaryCount = boundaryDiags.length + domBoundaryCount;
+
+      if (errorBoundaryCount > 0) {
+        errors.push(
+          `Full-composition smoke triggered ${errorBoundaryCount} ErrorBoundary instance(s)`,
+        );
+      }
+      if (pageErrors.length > 0) {
+        errors.push(
+          `Full-composition smoke encountered uncaught page error(s): ${pageErrors.join("; ")}`,
+        );
+      }
+      if (consoleErrors.length > 0) {
+        errors.push(
+          `Full-composition smoke encountered console error(s): ${consoleErrors.join("; ")}`,
+        );
+      }
+
+      if (input.fullCompositionSmokeTest && errors.length === 0) {
+        const smokeCtx: PluginTestContext = {
+          request: (req) => runtime.handleHttpRequest(req),
+          introspect: () => runtime.introspect(),
+          openBrowserPage: async (path = "/") => {
+            const extraCtx = await sharedBrowser.newContext();
+            openContexts.push(extraCtx);
+            const extraPage = await extraCtx.newPage();
+            const extraPageErrors: string[] = [];
+            const extraConsoleErrors: string[] = [];
+            extraPage.on("pageerror", (err) => {
+              extraPageErrors.push(
+                err instanceof Error ? err.message : String(err),
+              );
+            });
+            extraPage.on("console", (msg) => {
+              if (msg.type() === "error") {
+                extraConsoleErrors.push(msg.text());
+              }
+            });
+            const targetPath = path.startsWith("/") ? path : `/${path}`;
+            await extraPage.goto(`${httpServer!.url}${targetPath}`, {
+              waitUntil: "networkidle",
+            });
+            return {
+              baseUrl: httpServer!.url,
+              page: extraPage,
+              pageErrors: extraPageErrors,
+              consoleErrors: extraConsoleErrors,
+              getClientDiagnostics: () => httpServer!.getClientDiagnostics(),
+              close: async () => {
+                await extraCtx.close();
+              },
+            };
+          },
+        };
+        try {
+          await input.fullCompositionSmokeTest(smokeCtx);
+        } catch (err) {
+          errors.push(
+            `Full-composition smoke test failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    } finally {
+      for (const ctx of openContexts) {
+        await ctx.close().catch(() => {});
+      }
+      if (httpServer) {
+        await httpServer.close().catch(() => {});
+      }
+      await runtime.close();
+    }
+
+    // Verify disabled plugins' own-namespace tables suffered zero data loss
+    const disabledPluginDataChecks: DataFingerprintDiff[] = [];
+    const dataErrors: string[] = [];
+    if (existsSync(sandboxDbPath)) {
+      for (const pluginId of disabledPlugins) {
+        const before = beforeFingerprints.get(pluginId);
+        if (!before) continue;
+        const after = snapshotPluginDataFingerprint(sandboxDbPath, pluginId);
+        const diff = comparePluginDataFingerprints(before, after);
+        disabledPluginDataChecks.push(diff);
+        if (!diff.preserved) {
+          dataErrors.push(...diff.violations);
+        }
+      }
+    }
+
+    if (dataErrors.length > 0) {
+      return {
+        result: {
+          passed: false,
+          clonedFromProductionDb,
+          activePlugins,
+          errorBoundaryCount,
+          pageErrors,
+          consoleErrors,
+          disabledPluginDataChecks,
+          error: dataErrors.join("; "),
+        },
+        failedGate: "gate3-disabled-data-preservation",
+        errors: dataErrors,
+      };
+    }
+
+    if (errors.length > 0) {
+      return {
+        result: {
+          passed: false,
+          clonedFromProductionDb,
+          activePlugins,
+          errorBoundaryCount,
+          pageErrors,
+          consoleErrors,
+          disabledPluginDataChecks,
+          error: errors.join("; "),
+        },
+        failedGate: "gate3-full-composition-smoke",
+        errors,
+      };
+    }
+
+    return {
+      result: {
+        passed: true,
+        clonedFromProductionDb,
+        activePlugins,
+        errorBoundaryCount,
+        pageErrors,
+        consoleErrors,
+        disabledPluginDataChecks,
+      },
+      errors: [],
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      result: {
+        passed: false,
+        clonedFromProductionDb,
+        activePlugins: [],
+        errorBoundaryCount: 0,
+        pageErrors: [],
+        consoleErrors: [],
+        disabledPluginDataChecks: [],
+        error: msg,
+      },
+      failedGate: "gate3-full-composition-smoke",
+      errors: [msg],
+    };
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+export async function verifyCandidate(
+  input: VerifyCandidateInput,
+): Promise<VerificationReport> {
+  const { baseline, candidate, artifacts, applyTimeoutMs } = input;
+  const changeKind: CandidateChangeKind = input.changeKind ?? "behavior";
+  const isNonBehavioral =
+    changeKind === "visual-only" || changeKind === "refactor-only";
+
+  // Gate 4: Deterministic test diff disclosure for all existing plugins
+  const allTestDisclosures = computeTestChangeDisclosures(
+    baseline,
+    candidate,
+    artifacts,
+  );
+
+  // Gates 1 & 2
+  const g12 = await verifyCandidateGates1And2(input);
+  if (!g12.ok) {
+    return {
+      ...g12,
+      testChangeDisclosures:
+        allTestDisclosures.length > 0
+          ? allTestDisclosures
+          : g12.testChangeDisclosures,
+      warnings: [],
+      noBehaviorDiffWarning: false,
+      subgraphResults: [],
+    };
+  }
+
+  const plan = validateAndSortComposition(candidate.members, artifacts);
+  const enabledArtifactById = new Map<string, PluginArtifact>(
+    plan.orderedEnabled.map((e) => [e.member.pluginId, e.artifact]),
+  );
+  const baselineMemberById = new Map(
+    (baseline?.members ?? []).map((m) => [m.pluginId, m]),
+  );
+
+  const changedEnabled = getChangedEnabledPlugins(baseline, candidate);
+  const changedSet = new Set(changedEnabled);
+  const affectedEnabledSet = new Set<string>();
+  for (const id of changedEnabled) {
+    for (const dep of computeTransitiveDependents(id, plan.orderedEnabled)) {
+      affectedEnabledSet.add(dep);
+    }
+  }
+  const affectedEnabled = plan.orderedEnabled
+    .map((e) => e.member.pluginId)
+    .filter((id) => affectedEnabledSet.has(id));
+
+  let ownedBrowser: Browser | null = null;
+  const getSharedBrowser = async (): Promise<Browser> => {
+    if (input.browser) return input.browser;
+    if (!ownedBrowser) {
+      ownedBrowser = await chromium.launch();
+    }
+    return ownedBrowser;
+  };
+
+  try {
+    // --- Gate 3 Layer 1: Minimum dependency subgraph closure(P) + Red-Green differential ---
+    const subgraphResults: SubgraphVerificationResult[] = [];
+    const warnings: string[] = [];
+    let noBehaviorDiffWarning = false;
+
+    for (const pluginId of affectedEnabled) {
+      const closureIds = computeDependencyClosure(pluginId, enabledArtifactById);
+      const closureSnapshot = buildClosureSnapshot(
+        candidate,
+        closureIds,
+        `subgraph-${pluginId}`,
+      );
+      const candArtifact = enabledArtifactById.get(pluginId)!;
+      const browser = await getSharedBrowser();
+
+      const candRun = await runPluginContractTests({
+        composition: closureSnapshot,
+        artifacts,
+        testFiles: candArtifact.testFiles,
+        applyTimeoutMs,
+        browser,
+      });
+
+      if (!candRun.ok) {
+        const errMsg = `Subgraph contract tests failed for "${pluginId}" in closure [${[...closureIds].join(", ")}]: ${candRun.error ?? "failed"}`;
+        subgraphResults.push({
+          pluginId,
+          closurePlugins: [...closureIds],
+          candidatePassed: false,
+          candidateTestResults: candRun.results,
+          redGreenChecked: false,
+          error: errMsg,
+        });
+        return {
+          ...g12,
+          ok: false,
+          failedGate: "gate3-subgraph-contract",
+          errors: [errMsg],
+          testChangeDisclosures: allTestDisclosures,
+          warnings,
+          noBehaviorDiffWarning,
+          subgraphResults,
+        };
+      }
+
+      if (!changedSet.has(pluginId)) {
+        subgraphResults.push({
+          pluginId,
+          closurePlugins: [...closureIds],
+          candidatePassed: true,
+          candidateTestResults: candRun.results,
+          redGreenChecked: false,
+        });
+        continue;
+      }
+
+      // Changed or newly added/enabled plugin: enforce Red-Green differential
+      const baseMember = baselineMemberById.get(pluginId);
+      const isNewOrReenabled = !baseMember || !baseMember.enabled;
+      const baseArtifact =
+        baseMember && !isNewOrReenabled
+          ? artifacts.get(artifactKey(baseMember.pluginId, baseMember.versionId))
+          : undefined;
+      const diffTests = selectDifferentialTestFiles(
+        isNewOrReenabled,
+        baseArtifact?.testFiles ?? {},
+        candArtifact.testFiles,
+      );
+
+      if (Object.keys(diffTests).length === 0) {
+        if (isNonBehavioral) {
+          noBehaviorDiffWarning = true;
+          if (!warnings.includes(NO_BEHAVIOR_DIFF_WARNING)) {
+            warnings.push(NO_BEHAVIOR_DIFF_WARNING);
+          }
+          subgraphResults.push({
+            pluginId,
+            closurePlugins: [...closureIds],
+            candidatePassed: true,
+            candidateTestResults: candRun.results,
+            redGreenChecked: true,
+            baselineRedVerified: false,
+            noBehaviorDiffWarning: true,
+          });
+          continue;
+        }
+        const errMsg = `Red-Green differential check failed for "${pluginId}": no new or modified test file provided to distinguish behavior change`;
+        subgraphResults.push({
+          pluginId,
+          closurePlugins: [...closureIds],
+          candidatePassed: true,
+          candidateTestResults: candRun.results,
+          redGreenChecked: true,
+          baselineRedVerified: false,
+          error: errMsg,
+        });
+        return {
+          ...g12,
+          ok: false,
+          failedGate: "gate3-red-green-diff",
+          errors: [errMsg],
+          testChangeDisclosures: allTestDisclosures,
+          warnings,
+          noBehaviorDiffWarning,
+          subgraphResults,
+        };
+      }
+
+      const baseClosureSnapshot = buildBaselineClosureSnapshot(
+        baseline,
+        closureIds,
+        isNewOrReenabled ? pluginId : null,
+        pluginId,
+      );
+      const baseRun = await runPluginContractTests({
+        composition: baseClosureSnapshot,
+        artifacts,
+        testFiles: diffTests,
+        applyTimeoutMs,
+        browser,
+      });
+
+      if (baseRun.ok) {
+        if (isNonBehavioral) {
+          noBehaviorDiffWarning = true;
+          if (!warnings.includes(NO_BEHAVIOR_DIFF_WARNING)) {
+            warnings.push(NO_BEHAVIOR_DIFF_WARNING);
+          }
+          subgraphResults.push({
+            pluginId,
+            closurePlugins: [...closureIds],
+            candidatePassed: true,
+            candidateTestResults: candRun.results,
+            redGreenChecked: true,
+            baselineRedVerified: false,
+            noBehaviorDiffWarning: true,
+          });
+          continue;
+        }
+        const errMsg = `Red-Green differential check failed for "${pluginId}": new/modified tests passed on baseline closure (possible empty or tautological assertions)`;
+        subgraphResults.push({
+          pluginId,
+          closurePlugins: [...closureIds],
+          candidatePassed: true,
+          candidateTestResults: candRun.results,
+          redGreenChecked: true,
+          baselineRedVerified: false,
+          error: errMsg,
+        });
+        return {
+          ...g12,
+          ok: false,
+          failedGate: "gate3-red-green-diff",
+          errors: [errMsg],
+          testChangeDisclosures: allTestDisclosures,
+          warnings,
+          noBehaviorDiffWarning,
+          subgraphResults,
+        };
+      }
+
+      subgraphResults.push({
+        pluginId,
+        closurePlugins: [...closureIds],
+        candidatePassed: true,
+        candidateTestResults: candRun.results,
+        redGreenChecked: true,
+        baselineRedVerified: true,
+      });
+    }
+
+    // --- Gate 3 Layer 2: Online Cloned DB + Full-Composition Smoke + Disabled-Plugin Data Preservation ---
+    const disabledPlugins = getDisabledPlugins(baseline, candidate);
+    const sharedBrowser = await getSharedBrowser();
+    const smokeOutcome = await runFullCompositionSmoke(
+      input,
+      disabledPlugins,
+      sharedBrowser,
+    );
+
+    if (!smokeOutcome.result.passed) {
+      return {
+        ...g12,
+        ok: false,
+        failedGate: smokeOutcome.failedGate ?? "gate3-full-composition-smoke",
+        errors: smokeOutcome.errors,
+        testChangeDisclosures: allTestDisclosures,
+        warnings,
+        noBehaviorDiffWarning,
+        subgraphResults,
+        fullCompositionSmoke: smokeOutcome.result,
+      };
+    }
+
+    return {
+      ...g12,
+      ok: true,
+      errors: [],
+      testChangeDisclosures: allTestDisclosures,
+      warnings,
+      noBehaviorDiffWarning,
+      subgraphResults,
+      fullCompositionSmoke: smokeOutcome.result,
+    };
+  } finally {
+    const toClose = ownedBrowser as Browser | null;
+    if (toClose) {
+      await toClose.close().catch(() => {});
+    }
+  }
 }
