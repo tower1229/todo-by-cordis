@@ -1,18 +1,19 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ensureV3ClientAssets } from "../../src/v3/client-bundle-builder.js";
 import { CompositionRelease } from "../../src/v3/composition-release.js";
-import {
-  EvolutionLoop,
-  type ModelDriver,
-  type ModelDriverReply,
-} from "../../src/v3/evolution-loop.js";
+import { EvolutionLoop } from "../../src/v3/evolution-loop.js";
 import { startV3HttpServer } from "../../src/v3/http-gateway.js";
 import { buildPluginPackage } from "../../src/v3/plugin-builder.js";
 import type { CompositionSnapshot } from "../../src/v3/types.js";
+import {
+  createStepStubDriver,
+  executeEvolutionStepInBrowser,
+  type EvolutionStepPlan,
+} from "./v3-acceptance-helpers.js";
 
 const TODO_CORE_DIR = resolve("plugins/todo-core");
 const TODO_CORE_CONTRACT = readFileSync(
@@ -601,45 +602,6 @@ export default async function (ctx) {
 }
 `;
 
-interface StepPlan {
-  readonly prompt: string;
-  readonly stageArgs: Record<string, unknown>;
-  readonly summary: string;
-  readonly highlights: readonly string[];
-}
-
-async function executeEvolutionStepInBrowser(
-  page: Page,
-  productionUrl: string,
-  prompt: string,
-  expectedSummary: string,
-  onPreviewReady?: () => Promise<void>,
-) {
-  await page.getByRole("button", { name: "组合状态" }).click();
-  await expect(page.locator("[data-evolution-panel]")).toBeVisible();
-  await page.locator("[data-evolution-prompt-input]").fill(prompt);
-  await page.locator("[data-evolution-submit-btn]").click();
-
-  await expect(page.locator("[data-evolution-preview-ready]")).toBeVisible({
-    timeout: 60_000,
-  });
-  await expect(page.locator("[data-evolution-preview-ready]")).toContainText(
-    expectedSummary,
-  );
-  if (onPreviewReady) {
-    await onPreviewReady();
-  }
-
-  await page.locator("[data-evolution-open-preview-btn]").click();
-  await expect(page.locator("[data-supervisor-preview-banner]")).toBeVisible({
-    timeout: 30_000,
-  });
-
-  await page.getByRole("button", { name: "组合状态" }).click();
-  await page.locator("[data-evolution-apply-btn]").click();
-  await page.waitForURL(`${productionUrl}/`, { timeout: 30_000 });
-}
-
 test.describe("V3 Six-Step Todo Self-Iteration Acceptance (Zero-Cost Stub + Real Chromium)", () => {
   test("runs full 0->5 six-step Todo evolution, restart recovery, and data-preserving rollback", async ({
     page,
@@ -685,7 +647,7 @@ test.describe("V3 Six-Step Todo Self-Iteration Acceptance (Zero-Cost Stub + Real
     };
     await release.bootstrap({ composition: initComp, artifacts: [todoCoreV1] });
 
-    const steps: readonly StepPlan[] = [
+    const steps: readonly EvolutionStepPlan[] = [
       {
         prompt: "Step 1: 新增标签插件（自有表、接口与客户端标签展示编辑）",
         stageArgs: {
@@ -818,51 +780,7 @@ export default async function (ctx) {
       },
     ];
 
-    let currentStepIndex = 0;
-    let phaseInStep: "stage" | "present" = "stage";
-    const stubDriver: ModelDriver = {
-      async generate(): Promise<ModelDriverReply> {
-        const plan = steps[currentStepIndex];
-        if (!plan) {
-          throw new Error(`Unexpected extra model call at step ${currentStepIndex}`);
-        }
-        if (phaseInStep === "stage") {
-          phaseInStep = "present";
-          return {
-            calls: [
-              {
-                id: `s${currentStepIndex}-stage`,
-                name: "stage_plugin_changes",
-                args: plan.stageArgs,
-              },
-              {
-                id: `s${currentStepIndex}-verify`,
-                name: "verify_candidate",
-                args: {},
-              },
-            ],
-            raw: { role: "assistant", content: `stage step ${currentStepIndex + 1}` },
-            usage: { totalTokens: 60 },
-          };
-        }
-        phaseInStep = "stage";
-        currentStepIndex += 1;
-        return {
-          calls: [
-            {
-              id: `s${currentStepIndex}-present`,
-              name: "present_preview",
-              args: {
-                summary: plan.summary,
-                highlights: [...plan.highlights],
-              },
-            },
-          ],
-          raw: { role: "assistant", content: `present step ${currentStepIndex}` },
-          usage: { totalTokens: 30 },
-        };
-      },
-    };
+    const stubDriver = createStepStubDriver(steps, "todo");
 
     // Real 4-gate verifyCandidate is used by default (no verifyFn override!)
     const loop = new EvolutionLoop({
@@ -955,6 +873,11 @@ export default async function (ctx) {
             ),
           ).toBe(true);
         },
+        async () => {
+          const dialog = page.getByRole("dialog", { name: "运行组合与发布控制" });
+          await expect(dialog).toContainText('"URGENT"');
+          await expect(dialog).toContainText('"urgent"');
+        },
       );
 
       // Historical uppercase "URGENT" remains readable; new "Backend" becomes "backend"
@@ -1001,10 +924,9 @@ export default async function (ctx) {
             const sub = report?.subgraphResults?.find(
               (s) => s.pluginId === siblingId,
             );
-            if (sub) {
-              expect(sub.closurePlugins).not.toContain("todo-review");
-              expect(sub.candidatePassed).toBe(true);
-            }
+            expect(sub).toBeDefined();
+            expect(sub!.closurePlugins).not.toContain("todo-review");
+            expect(sub!.candidatePassed).toBe(true);
           }
         },
       );
@@ -1050,6 +972,37 @@ export default async function (ctx) {
       step5CompositionId = release.getStatus().activeComposition!.compositionId;
       await expect(page.locator('[data-todo-tag="URGENT"]')).toHaveCount(0);
       await expect(page.locator("[data-todo-counter]")).toContainText("已完成 1");
+
+      // Verify todo-review continues to run normally while todo-tags is disabled
+      const reviewsStep5 = await fetch(`${server.url}/api/app/todo-review/reviews`);
+      expect(reviewsStep5.status).toBe(200);
+      const reviewsStep5Json = (await reviewsStep5.json()) as {
+        reviews: Array<{ summary: string }>;
+      };
+      expect(reviewsStep5Json.reviews.map((r) => r.summary)).toEqual([
+        "已完成全部回归验证",
+      ]);
+      const probeTaskRes = await fetch(`${server.url}/api/app/todo-core/tasks`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "Step 5 Review Probe" }),
+      });
+      const probeTaskId = (
+        (await probeTaskRes.json()) as { task: { id: string } }
+      ).task.id;
+      const probeBlocked = await fetch(
+        `${server.url}/api/app/todo-core/tasks/${encodeURIComponent(probeTaskId)}/transition`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ nextState: "done" }),
+        },
+      );
+      expect(probeBlocked.status).toBe(422);
+      await fetch(
+        `${server.url}/api/app/todo-core/tasks/${encodeURIComponent(probeTaskId)}`,
+        { method: "DELETE" },
+      );
 
       // Verify tag table data zero loss in SQLite
       const dbAfterStep5 = new DatabaseSync(businessDbPath, { readOnly: true });

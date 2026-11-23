@@ -1,18 +1,19 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ensureV3ClientAssets } from "../../src/v3/client-bundle-builder.js";
 import { CompositionRelease } from "../../src/v3/composition-release.js";
-import {
-  EvolutionLoop,
-  type ModelDriver,
-  type ModelDriverReply,
-} from "../../src/v3/evolution-loop.js";
+import { EvolutionLoop } from "../../src/v3/evolution-loop.js";
 import { startV3HttpServer } from "../../src/v3/http-gateway.js";
 import { buildPluginPackage } from "../../src/v3/plugin-builder.js";
 import type { CompositionSnapshot } from "../../src/v3/types.js";
+import {
+  createStepStubDriver,
+  executeEvolutionStepInBrowser,
+  type EvolutionStepPlan,
+} from "./v3-acceptance-helpers.js";
 
 const INVENTORY_CORE_DIR = resolve("plugins/inventory-core");
 const INVENTORY_CORE_CONTRACT = readFileSync(
@@ -327,34 +328,6 @@ export default async function (ctx) {
 }
 `;
 
-async function runStep(
-  page: Page,
-  productionUrl: string,
-  prompt: string,
-  expectedSummary: string,
-) {
-  await page.getByRole("button", { name: "组合状态" }).click();
-  await expect(page.locator("[data-evolution-panel]")).toBeVisible();
-  await page.locator("[data-evolution-prompt-input]").fill(prompt);
-  await page.locator("[data-evolution-submit-btn]").click();
-
-  await expect(page.locator("[data-evolution-preview-ready]")).toBeVisible({
-    timeout: 60_000,
-  });
-  await expect(page.locator("[data-evolution-preview-ready]")).toContainText(
-    expectedSummary,
-  );
-
-  await page.locator("[data-evolution-open-preview-btn]").click();
-  await expect(page.locator("[data-supervisor-preview-banner]")).toBeVisible({
-    timeout: 30_000,
-  });
-
-  await page.getByRole("button", { name: "组合状态" }).click();
-  await page.locator("[data-evolution-apply-btn]").click();
-  await page.waitForURL(`${productionUrl}/`, { timeout: 30_000 });
-}
-
 test.describe("V3 Second-Business Migration Acceptance (inventory-core, Zero Host Changes)", () => {
   test("runs 2-step self-iteration + disable/re-enable data preservation on inventory-core", async ({
     page,
@@ -408,7 +381,7 @@ test.describe("V3 Second-Business Migration Acceptance (inventory-core, Zero Hos
       artifacts: [inventoryCore],
     });
 
-    const steps = [
+    const steps: readonly EvolutionStepPlan[] = [
       {
         prompt: "Step 1: 新增低库存预警插件",
         stageArgs: {
@@ -471,48 +444,7 @@ test.describe("V3 Second-Business Migration Acceptance (inventory-core, Zero Hos
       },
     ];
 
-    let stepIndex = 0;
-    let phase: "stage" | "present" = "stage";
-    const stubDriver: ModelDriver = {
-      async generate(): Promise<ModelDriverReply> {
-        const plan = steps[stepIndex]!;
-        if (phase === "stage") {
-          phase = "present";
-          return {
-            calls: [
-              {
-                id: `inv-${stepIndex}-stage`,
-                name: "stage_plugin_changes",
-                args: plan.stageArgs,
-              },
-              {
-                id: `inv-${stepIndex}-verify`,
-                name: "verify_candidate",
-                args: {},
-              },
-            ],
-            raw: { role: "assistant", content: `stage inv ${stepIndex + 1}` },
-            usage: { totalTokens: 60 },
-          };
-        }
-        phase = "stage";
-        stepIndex += 1;
-        return {
-          calls: [
-            {
-              id: `inv-${stepIndex}-present`,
-              name: "present_preview",
-              args: {
-                summary: plan.summary,
-                highlights: [...plan.highlights],
-              },
-            },
-          ],
-          raw: { role: "assistant", content: `present inv ${stepIndex}` },
-          usage: { totalTokens: 30 },
-        };
-      },
-    };
+    const stubDriver = createStepStubDriver(steps, "inv");
 
     const loop = new EvolutionLoop({
       release,
@@ -552,7 +484,12 @@ test.describe("V3 Second-Business Migration Acceptance (inventory-core, Zero Hos
       );
 
       // Step 1: Add inventory-low-stock
-      await runStep(page, server.url, steps[0]!.prompt, steps[0]!.summary);
+      await executeEvolutionStepInBrowser(
+        page,
+        server.url,
+        steps[0]!.prompt,
+        steps[0]!.summary,
+      );
       await expect(page.locator("[data-low-stock-banner]")).toBeVisible({
         timeout: 10_000,
       });
@@ -564,7 +501,12 @@ test.describe("V3 Second-Business Migration Acceptance (inventory-core, Zero Hos
       ).toBeVisible({ timeout: 10_000 });
 
       // Step 2: Add inventory-stats route page
-      await runStep(page, server.url, steps[1]!.prompt, steps[1]!.summary);
+      await executeEvolutionStepInBrowser(
+        page,
+        server.url,
+        steps[1]!.prompt,
+        steps[1]!.summary,
+      );
       await page.locator('[data-inventory-nav="/stats"]').click();
       await expect(page.locator("[data-inventory-stats-page]")).toBeVisible({
         timeout: 10_000,
@@ -579,7 +521,12 @@ test.describe("V3 Second-Business Migration Acceptance (inventory-core, Zero Hos
       await expect(page.locator("[data-inventory-workspace]")).toBeVisible();
 
       // Step 3: Disable inventory-low-stock (zero data loss)
-      await runStep(page, server.url, steps[2]!.prompt, steps[2]!.summary);
+      await executeEvolutionStepInBrowser(
+        page,
+        server.url,
+        steps[2]!.prompt,
+        steps[2]!.summary,
+      );
       await expect(
         page.locator('[data-low-stock-alert="SKU-001"]'),
       ).toHaveCount(0);
@@ -591,7 +538,12 @@ test.describe("V3 Second-Business Migration Acceptance (inventory-core, Zero Hos
       expect(thresholdRows).toEqual([{ sku: "SKU-001", min_qty: 15 }]);
 
       // Step 4: Re-enable inventory-low-stock (alert restored)
-      await runStep(page, server.url, steps[3]!.prompt, steps[3]!.summary);
+      await executeEvolutionStepInBrowser(
+        page,
+        server.url,
+        steps[3]!.prompt,
+        steps[3]!.summary,
+      );
       await expect(
         page.locator('[data-low-stock-alert="SKU-001"]'),
       ).toBeVisible({ timeout: 10_000 });
