@@ -329,7 +329,7 @@ test.describe("V3 browser importmap Cordis runtime, per-plugin CSS, and todo-cor
     await expect(page.locator("[data-todo-detail]")).toBeVisible();
     await page.locator("#todo-detail-notes").fill("已通过 importmap 单例加载");
     await page.locator("[data-todo-detail-save='true']").click();
-    await expect(page.getByText("已通过 importmap 单例加载")).toBeVisible();
+    await expect(page.getByText("已通过 importmap 单例加载").first()).toBeVisible();
 
     // Delete second task from detail panel
     await page.getByText("待删除临时任务").click();

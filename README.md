@@ -1,12 +1,12 @@
-# 哆啦AI梦 · Todo by Cordis
+# 哆啦AI梦 · Todo by Cordis (V3)
 
-以探索简单、通用、可跨业务迁移的 LLM 软件自迭代架构为核心目标，当前为本地单所有者的参考原型，Todo 仅作为验证业务。任务优先，AI 助手按需呼出。当前能力与尚未证明的迁移性分开说明，见 [项目经验与架构复盘](docs/engineering/00-core-direction-v2.md#10-项目经验与架构复盘2026-10-23)。
+以探索简单、通用、可跨业务迁移的 LLM 软件自迭代架构为核心目标。当前主线已全面切换至 **V3 双端对称真 Cordis 全栈插件热插拔架构**：宿主监督壳（`SupervisorShell`）保持极薄且零具体业务硬编码，Todo（`plugins/todo-core`）与库存管理（`plugins/inventory-core`）均作为平等的标准全栈业务插件运行。
 
-当前界面使用 Tailwind CSS 4.3.3、Base UI 1.8.0 和 Lucide 图标，参考 Microsoft To Do 的极简布局。任务直接在列表底部添加，点击任务编辑备注；完成、重新打开、搜索、分页、删除与撤销均已接入持久化数据。
+架构设计与演进复盘见 [基于真 Cordis 的全栈自迭代架构 V3](docs/engineering/07-cordis-self-iteration-v3.md)、[领域契约](CONTEXT.md) 与 [设计规范](DESIGN.md)。
 
-## 运行
+## 快速开始
 
-Node 24.18.0、pnpm 12.3.4：
+Node 24.18.x、pnpm 12.3.4：
 
 ```sh
 pnpm install --frozen-lockfile
@@ -14,25 +14,26 @@ pnpm build
 pnpm start
 ```
 
-打开 http://127.0.0.1:4517 。首次启动为空列表。服务仅监听本机，数据库默认在 `.runtime/workspace.db`；`DATABASE_PATH` 可指定独立数据库，`PORT` 可更换端口。开发时 `pnpm dev`，访问 http://127.0.0.1:5173 。开发与生产默认共用数据库和后端端口，不要同时启动。
+默认打开 http://127.0.0.1:4517 ，首次启动自动加载 `plugins/todo-core` 种子插件组合。
 
-停止服务后复制 `.runtime` 目录即可备份；恢复时同样先停止服务。
+- **开发模式**：`pnpm dev`（直接运行 `src/v3/main.ts`，支持通过环境变量配置端口与数据目录）
+- **常用环境变量**：
+  - `PORT`（默认 `4517`）、`HOST`（默认 `127.0.0.1`）
+  - `V3_DATA_DIR`（默认 `.runtime/v3`，保存 `control.db`、`business.db` 与运行工作目录）
+  - `V3_SEED_PLUGIN_DIR`（默认 `plugins/todo-core`，切换为 `plugins/inventory-core` 即可零代码改写启动库存业务）
+  - `DEEPSEEK_API_KEY`（可选，保存在本地 `.env`；未配置时日常插件与监督壳照常运行，不发起任何付费模型调用）
 
-## 界面与 AI 边界
+## 架构概览
 
-- 主界面只显示任务、筛选、搜索与添加；详情在侧栏中编辑，关闭时保留草稿。
-- AI 助手通过常驻按钮呼出，不占用导航或独立页面。工作区设置和版本记录位于右上角“更多选项”。
-- AI 面板已支持服务端状态契约：需求分析、追问、方案确认、执行步骤、成功、失败和取消；收起不取消执行，刷新后从服务端读取状态。
-- 服务端通过 DeepSeek 官方 Chat Completions API 使用 DeepSeek V4.1 Flash（`deepseek-flash`），由宿主显式处理工具调用及结构化输出。密钥保存在 Git 忽略的本地 `.env`：`DEEPSEEK_API_KEY=...`；没有密钥时如实显示未连接。密钥不传给浏览器或插件。
-- Agent 只处理应用改进，结合精确实现、能力和公开契约形成方案；用户开始后才构建和执行，候选体验后仍需独立应用确认。普通任务操作由现有界面完成。
-- 当前支持现有工作流中的文本字段和动作表单。模型只提交 TypeScript 候选，宿主固定验收条件并独立构建、运行保护回归，通过后原子切换。修改保留插件身份和历史字段。
-- 已通过验证的待应用候选支持完整组合的隔离体验，标注“候选体验 · 测试数据 · 尚未应用”。刷新可重连，结束体验不应用候选；超时或宿主重启后需重建。辅助成员启停也经方案、候选、体验与独立应用确认，保留实现版本与任务字段。
-- 版本记录在工作区设置中，可撤回上个可用版本或选择历史版本；撤回不回滚任务数据。SQLite 与其旁边的 `artifacts/` 必须一起备份。
-- 正式入口的初始授权默认是 12 次模型调用、3 个候选和 30 分钟活动时间，等待用户不计时；调用次数同时是效率目标。宿主配置在新运行创建时持久化，用户可在资源暂停时为同一运行追加，Agent 无权自行追加，也不清零累计消耗或改写原效率目标。刷新、收起只恢复观察；重启保留待确认及预算暂停状态，将正在进行的阶段按既有恢复规则中断，不自动再次调用模型。冻结验收脚本可以使用其另行声明的固定预算，不能与生产默认值混算。
+- `src/v3/`：V3 监督壳与双端 Cordis 运行时
+  - 服务端：`cordis-runtime.ts`、`worker-child.ts`、`scoped-db.ts`（SQLite `setAuthorizer` 表前缀隔离）、`http-router.ts`、`scheduler.ts`
+  - 构建与四道验证门禁：`plugin-builder.ts`、`static-verifier.ts`、`plugin-verifier.ts`、`plugin-test-runner.ts`、`test-diff.ts`
+  - 预览、发布与自迭代闭环：`composition-release.ts`、`preview-session.ts`、`control-store.ts`、`evolution-loop.ts`、`http-gateway.ts`、`main.ts`
+  - 浏览器端：`src/v3/client/`（`importmap` 共享基座、`ClientCordisRuntime` SSE 幂等热插拔、带独立 `ErrorBoundary` 的 `<Slot>`、`SupervisorShell` 组合状态与自迭代抽屉）
+- `src/evolution/`：复用的底层 DeepSeek 流式传输、预算与错误分类模块
+- `plugins/`：标准全栈业务插件（`todo-core`、`inventory-core`）
 
-`src/server` 持有 Todo 契约、数据和保护验收；`src/runtime` 只管理 Cordis 子进程；`src/evolution` 分离模型驱动、规划和工具循环；`src/release` 管理产物、构建和切换。它们共处一个工程，不建立额外平台。
-
-## 验证与工程边界
+## 验证与测试（默认零付费）
 
 ```sh
 pnpm typecheck
@@ -40,39 +41,28 @@ pnpm build
 pnpm exec playwright install chromium
 pnpm test
 pnpm test:e2e
-pnpm bench:m1
-# 真实模型验收（需要 .env，会调用 DeepSeek 并产生 usage）
-node --import tsx scripts/accept-m2.ts
-# #33 缩短试跑：新增标签 → 升级小写（显式授权；无候选体验；不覆盖旧证据）
-ACCEPT_REAL_MODEL=1 pnpm accept:shortened-tags
-# #35 完整六步，两次独立合成工作区；先审查并提交代码，再显式授权
-pnpm accept:v1 --authorize-real-model
-# #37 改造前稳定性基线（默认模型桩；真实模型需显式授权，会产生费用）
-pnpm accept:stability-baseline
-# pnpm accept:stability-baseline --authorize-real-model
+pnpm accept:v3
 ```
 
-应用测试、浏览器测试与基准使用生产构建；应用和浏览器测试还依赖 Chromium，因此构建与浏览器安装必须在 `pnpm test` 之前完成。浏览器测试监听 4518，使用临时数据库，截图和失败证据写入忽略的 `test-results/`。覆盖 320、390、768、1280 宽度、任务操作、草稿、幂等重试，以及 AI 前端契约。
+所有 CI 检查、应用单测与 Playwright E2E 回归均使用确定性零付费模型桩，覆盖双端热插拔、四道验证门禁、在线克隆预览、乐观锁应用与紧急撤回、Todo 六步连续自迭代以及 `inventory-core` 跨业务迁移。
 
-已移除 M0 的重复实验运行器、对应探针、示例数据按钮、手写流程切换界面和 `/api/releases` 演示接口。保留正式 Workspace/Runtime 的崩溃恢复、超时、版本切换及数据保留回归。旧数据库仍可加载已有复盘流程，设置中的版本恢复保留历史字段；兼容插件不再提供安装入口。
+## 受控真机验收（默认关闭，遵守 STOP_SERIES 纪律）
 
-真实验收脚本使用独立数据库，将需求、方案、调用、真实 usage、候选源码、失败诊断、版本与行为证据保存到 `.runtime/acceptance-*/evidence.json`。自动回归使用显式 FixtureDriver，不能冒充真实模型证据。`pnpm accept:shortened-tags` 写入运行目录下的 `issue-33-shortened-evidence.json`（`kind=real-model-shortened-trial`），与完整六步 / `issue-8-*` 历史记录可区分，且不覆盖旧文件。
+仓库提供受显式授权标志、调用上限与费用护栏保护的 V3 真机验收入口 `scripts/accept-v3-real-model.ts`，**默认 fail-closed 关闭**，不会自动触发任何付费模型调用。仅在用户单次明确授权时执行：
 
-`accept:v1` 固定场景为标签 → 计数 → 标签小写 → 完成前复盘 → 停用/启用标签 → 重启与撤回。只向内置 Agent 提交业务需求；确认由验收驱动器模拟用户在各个独立入口完成，记录方案、规则修订、候选体验与应用回执。源码必须已提交且干净；脚本从该提交重建页面，再依次创建两个独立空数据库。每次变更共用宿主的 12 次调用、3 个候选、10 分钟预算，失败即停，不外层重试、不手改生成代码。主机修复必须提交后重跑两次。
+```sh
+V3_REAL_MODEL_AUTHORIZED=1 pnpm accept:v3:real-model \
+  --authorize-paid-run \
+  --scenario=all \
+  --max-calls=24 \
+  --max-cost-cny=8.0
+```
 
-`accept:stability-baseline` 默认跑模型桩，证据写入 [`docs/reports/issue-37-baseline/`](docs/reports/issue-37-baseline/)；桩层结果不得冒充真实 LLM 能力。真实模型须加 `--authorize-real-model`。闸门校验 `src/` 相对冻结 `productCommit`，允许 harness（`scripts/lib/stability-eval/**` 等）演进。
-完整驱动器在系统临时目录 `cordis-v1-pair-*` 保留 `pair.json`、每轮 `events.jsonl`、数据库与候选产物、浏览器截图。事件逐条落盘并脱敏，包含固定 SHA、需求原文、确认、模型调用及 usage、冻结案例结果、成员版本锁、应用回执和浏览器摘要。失败目录不会自动删除。仅完整 `pair.json` 中两轮均通过才构成可重复证据；归档时复制脱敏事件、pair 与截图到 `docs/reports/` 的新目录，不覆盖历史报告，不提交数据库、凭据或私有材料。
+执行后将自动归档原始模型调用（`calls.jsonl`）、真实 usage 与估算费用、验证证据（`summary.json`）及浏览器截图至 `docs/reports/v3-real-model/<timestamp>/`。
 
-当前 [#35 交付状态](docs/reports/issue-35-validation.json) 明确区分桩层与真实模型。[十九次历史试跑](docs/reports/issue-30-acceptance/) 已保留失败或中断证据，包含一次完整单轮通过，尚无完整通过的双轮，不能据此认定 #30 完成。第十六次试跑发现计数候选丢失既有标签；宿主现在在原冻结业务案例之外，使用相同动作与输入单独检查未知字段保留，失败候选不能进入待应用。业务事实和系统保护分别留证。第十七次试跑因规划工具漏传必填 rules 而停止；参数校验现返回可纠正诊断，无有效参数不生成验收定义或已读证据。第十八次试跑在标签候选体验中发现缺输入时直接拒绝，无法打开表单；对冻结案例明确需要输入的辅助动作，宿主另验证表单可收集并提交冻结正例所需数据，保留原业务案例。最新试跑在标签生成的第七次 Gemini 调用返回 fetch failed，未生成候选；停止并归档，尚未完成真实双轮。只读参数错误可在原预算内纠正，精确版本与源码访问限制不变。未自动重试或复用旧轮次。最新修补按实际成员注册与冻结案例绑定能力证据，修正了内置源码导入和保护词误判；完整文件内容不变时，JSON 键序或文件顺序变化不会改变主工作流版本锁。规划阶段拒绝同一初始数据和输入下互相矛盾的冻结案例；修订既有预期必须沿用原案例名、说明原因并独立确认。单测按文件串行执行，避免候选构建子进程争用资源造成短等待超时。CI 通过 `pnpm test` 和 `pnpm test:e2e` 运行无密钥模型桩，包括六步控制面、浏览器体验、隔离与数据保留。故障夹具只证明确定性修复流程；真实调用中的失败标记为 `natural-flow`，只有内置 Agent 在原预算内生成的修复才可计作真实修复证据。首版仍须“验收可靠、体验完整、真实连续迭代可复现、交付说明一致”四项同时成立。
+## 文档与历史归档
 
-基础 Todo 不依赖模型。Workspace 是唯一数据提交入口，Cordis 业务组合运行在常驻子进程中。当前不提供远程部署、多租户或恶意插件隔离保证。
-
-## 文档
-
-- [核心目标、已验证经验、架构评估与后续重点](docs/engineering/00-core-direction-v2.md)
-- [Agent 技术契约与按日期保留的开发记录](docs/engineering/06-agent-redesign.md)
-- [产品约束](PRODUCT.md) 与 [设计规范](DESIGN.md)
-- [历史 M0 报告](docs/reports/m0-validation.md)、[历史 M1 报告](docs/reports/m1-validation.md)
-- [原始 PRD](docs/product/dora_ai_todo_prd_v1.0.md)
-
-M0/M1 报告和截图保留为历史证据，所描述的演示入口已退出当前产品；实验源码可从 Git 历史恢复。旧工程方案与本轮产品方向冲突时，以当前实施基线和上述界面边界为准。
+- [V3 架构与迁移蓝图](docs/engineering/07-cordis-self-iteration-v3.md)
+- [核心目标与 V2 复盘](docs/engineering/00-core-direction-v2.md)
+- [领域术语与约束](CONTEXT.md)、[产品约束](PRODUCT.md)、[设计规范](DESIGN.md)、`docs/adr/`
+- `docs/reports/` 中的历史 V2 验收归档、M0/M1 报告与付费台账均保持原样不可篡改，供历史审计追溯。

@@ -1,5 +1,19 @@
+import { createHash } from "node:crypto";
 import type { ModelPhase } from "./budget.js";
-import { hash } from "../release/storage.js";
+
+export function hash(value: unknown): string {
+  function canonical(input: unknown): string {
+    if (input === undefined) return "null";
+    if (Array.isArray(input)) return `[${input.map(canonical).join(",")}]`;
+    if (input && typeof input === "object")
+      return `{${Object.entries(input)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`)
+        .join(",")}}`;
+    return JSON.stringify(input);
+  }
+  return createHash("sha256").update(canonical(value)).digest("hex");
+}
 
 export type ModelOutputPolicy = {
   version: 4;

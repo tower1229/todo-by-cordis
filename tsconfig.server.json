@@ -1,11 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "include": [
-    "src/server",
-    "src/runtime",
-    "src/shared",
-    "src/release",
-    "src/evolution",
-    "src/v3"
+    "src/v3",
+    "src/evolution"
   ]
 }

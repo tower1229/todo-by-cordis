@@ -6,10 +6,9 @@ import {
   schemaProblems,
   parseToolArguments,
 } from "./model-protocol.js";
-import { hash } from "../release/storage.js";
 import { configureModelNetwork } from "./model-network.js";
 import { transportFailure } from "./transport-failure.js";
-import { modelPolicy, type ModelOutputPolicy } from "./model-policy.js";
+import { hash, modelPolicy, type ModelOutputPolicy } from "./model-policy.js";
 
 export const DEEPSEEK_MODEL = "deepseek-flash";
 type Row = Record<string, unknown>;

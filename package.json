@@ -10,17 +10,12 @@
   "scripts": {
     "test": "node --import tsx --test --test-concurrency=1 tests/app/*.test.ts",
     "dev": "node scripts/dev.mjs",
-    "build": "tsc -p tsconfig.server.json && vite build",
-    "start": "node dist/server/main.js",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.evaluation.json && tsc -p tsconfig.plugins.json",
+    "build": "tsc -p tsconfig.server.json && node scripts/build-v3-client.mjs",
+    "start": "node dist/v3/main.js",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.plugins.json",
     "test:e2e": "playwright test",
-    "bench:m1": "node scripts/benchmark.mjs",
-    "accept:shortened-tags": "node --import tsx scripts/accept-shortened-tags.ts",
-    "accept:interaction": "node --import tsx scripts/accept-interaction.ts",
-    "accept:v1": "node --import tsx scripts/accept-v1.ts",
-    "accept:stability-baseline": "node --import tsx scripts/accept-stability-baseline.ts",
-    "accept:stability-current": "node --import tsx scripts/accept-stability-baseline.ts --current",
-    "accept:v3": "playwright test tests/e2e/v3-six-step-acceptance.spec.ts tests/e2e/v3-inventory-migration.spec.ts"
+    "accept:v3": "playwright test tests/e2e/v3-six-step-acceptance.spec.ts tests/e2e/v3-inventory-migration.spec.ts",
+    "accept:v3:real-model": "node --import tsx scripts/accept-v3-real-model.ts"
   },
   "dependencies": {
     "@babel/parser": "7.29.9",
