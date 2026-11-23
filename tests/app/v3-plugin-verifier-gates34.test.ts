@@ -283,12 +283,21 @@ export function apply(ctx) {
 }
 `;
   const clientCode = `
+import React from "react";
+import { Slot } from "@host/client-sdk";
 export const name = "todo-core";
 export function apply(ctx) {
   ctx.router.registerPage({
     path: "/",
     navLabel: "Todos",
-    component: () => null,
+    component: function TodoPage() {
+      return React.createElement(
+        "main",
+        { "data-testid": "todo-page" },
+        React.createElement("h1", null, "Todos"),
+        React.createElement(Slot, { name: "task.complete.modal" }),
+      );
+    },
   });
 }
 `;
@@ -413,11 +422,15 @@ export function apply(ctx) {
 }
 `;
   const clientCode = `
+import React from "react";
 export const name = "review-gate";
 export function apply(ctx) {
-  ctx.slots.register({
-    slot: "task.complete.modal",
-    component: () => null,
+  ctx.slots.register("task.complete.modal", function ReviewBailModal() {
+    return React.createElement(
+      "div",
+      { "data-testid": "review-bail-modal", role: "dialog" },
+      "Review note required before completion",
+    );
   });
 }
 `;
@@ -449,12 +462,27 @@ describe("V3 PluginVerifier Gates 3 & 4: End-to-End Positive & Negative Acceptan
     const browser = await chromium.launch();
     try {
       const todoV1 = makeTodoCoreArtifact("v1");
+      const todoV2: PluginArtifact = {
+        ...makeTodoCoreArtifact("v2"),
+        testFiles: {
+          ...todoV1.testFiles,
+          "todo-core-seam.test.ts": `
+import assert from "node:assert/strict";
+export default async function testSeamAvailable(ctx) {
+  const topo = await ctx.introspect();
+  const core = topo.plugins.find((p) => p.pluginId === "todo-core");
+  assert.equal(core?.versionId, "v2");
+}
+`,
+        },
+      };
       const tagsV1 = makeTagsArtifact("v1");
       const counterV1 = makeCounterArtifact("v1");
       const reviewV1 = makeReviewGateArtifact("v1");
 
       const artifacts = new Map<string, PluginArtifact>([
         ["todo-core@v1", todoV1],
+        ["todo-core@v2", todoV2],
         ["tags@v1", tagsV1],
         ["counter@v1", counterV1],
         ["review-gate@v1", reviewV1],
@@ -466,7 +494,7 @@ describe("V3 PluginVerifier Gates 3 & 4: End-to-End Positive & Negative Acceptan
         { pluginId: "counter", versionId: "v1" },
       ]);
       const candidate = makeSnapshot("c2", [
-        { pluginId: "todo-core", versionId: "v1" },
+        { pluginId: "todo-core", versionId: "v2" },
         { pluginId: "tags", versionId: "v1" },
         { pluginId: "counter", versionId: "v1" },
         { pluginId: "review-gate", versionId: "v1" },
@@ -485,7 +513,7 @@ describe("V3 PluginVerifier Gates 3 & 4: End-to-End Positive & Negative Acceptan
           });
           assert.equal(created.status, 201);
           const id = (created.body as { id: number }).id;
-          // In full composition, review-gate bail IS active
+          // In full composition, server-side review-gate bail IS active
           const blocked = await ctx.request({
             method: "POST",
             path: `/api/app/todo-core/todos/${id}/complete`,
@@ -498,11 +526,28 @@ describe("V3 PluginVerifier Gates 3 & 4: End-to-End Positive & Negative Acceptan
             body: { reviewNote: "All good" },
           });
           assert.equal(done.status, 200);
+          // In full composition, client-side review-gate bail modal IS rendered in Chromium
+          const session = await ctx.openBrowserPage("/");
+          await session.page.waitForSelector('[data-testid="review-bail-modal"]');
+          assert.equal(session.pageErrors.length, 0);
+          await session.close();
         },
       });
 
       assert.equal(report.ok, true, `Unexpected errors: ${report.errors.join("; ")}`);
       assert.equal(report.noBehaviorDiffWarning, false);
+
+      // Verify tags & counter subgraphs were actually executed without review-gate
+      const tagsSubgraph = report.subgraphResults?.find((r) => r.pluginId === "tags");
+      assert.ok(tagsSubgraph, "tags subgraph must be executed");
+      assert.equal(tagsSubgraph.candidatePassed, true);
+      assert.ok(!tagsSubgraph.closurePlugins.includes("review-gate"));
+
+      const counterSubgraph = report.subgraphResults?.find((r) => r.pluginId === "counter");
+      assert.ok(counterSubgraph, "counter subgraph must be executed");
+      assert.equal(counterSubgraph.candidatePassed, true);
+      assert.ok(!counterSubgraph.closurePlugins.includes("review-gate"));
+
       const reviewSubgraph = report.subgraphResults?.find(
         (r) => r.pluginId === "review-gate",
       );
@@ -644,6 +689,38 @@ export default async function () {
         okReport.fullCompositionSmoke?.disabledPluginDataChecks[0].preserved,
         true,
       );
+
+      // Negative 1: row deletion on disabled plugin's table is rejected by verifyCandidate
+      const deleteReport = await verifyCandidate({
+        baseline,
+        candidate,
+        artifacts,
+        productionDbPath: prodDbPath,
+        browser,
+        fullCompositionSmokeTest: async (_ctx, { sandboxDbPath }) => {
+          const tamper = openAppDatabase(sandboxDbPath);
+          tamper.exec("DELETE FROM plg_tags__items;");
+          tamper.close();
+        },
+      });
+      assert.equal(deleteReport.ok, false);
+      assert.equal(deleteReport.failedGate, "gate3-disabled-data-preservation");
+
+      // Negative 2: table schema alteration on disabled plugin's table is rejected by verifyCandidate
+      const alterReport = await verifyCandidate({
+        baseline,
+        candidate,
+        artifacts,
+        productionDbPath: prodDbPath,
+        browser,
+        fullCompositionSmokeTest: async (_ctx, { sandboxDbPath }) => {
+          const tamper = openAppDatabase(sandboxDbPath);
+          tamper.exec("ALTER TABLE plg_tags__items ADD COLUMN extra TEXT;");
+          tamper.close();
+        },
+      });
+      assert.equal(alterReport.ok, false);
+      assert.equal(alterReport.failedGate, "gate3-disabled-data-preservation");
 
       prodDb.close();
     } finally {

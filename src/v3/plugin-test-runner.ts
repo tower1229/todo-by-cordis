@@ -56,6 +56,41 @@ export interface RunPluginContractTestsInput {
   readonly browser?: Browser;
 }
 
+export async function openTrackedBrowserPage(
+  browser: Browser,
+  server: Awaited<ReturnType<typeof startV3HttpServer>>,
+  path: string,
+  openContexts: BrowserContext[],
+): Promise<PluginBrowserSession> {
+  const browserCtx = await browser.newContext();
+  openContexts.push(browserCtx);
+  const page = await browserCtx.newPage();
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(err instanceof Error ? err.message : String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") {
+      consoleErrors.push(msg.text());
+    }
+  });
+  const targetPath = path.startsWith("/") ? path : `/${path}`;
+  await page.goto(`${server.url}${targetPath}`, {
+    waitUntil: "networkidle",
+  });
+  return {
+    baseUrl: server.url,
+    page,
+    pageErrors,
+    consoleErrors,
+    getClientDiagnostics: () => server.getClientDiagnostics(),
+    close: async () => {
+      await browserCtx.close();
+    },
+  };
+}
+
 export async function runPluginContractTests(
   input: RunPluginContractTestsInput,
 ): Promise<PluginTestRunResult> {
@@ -115,33 +150,7 @@ export async function runPluginContractTests(
       openBrowserPage: async (path = "/") => {
         const server = await ensureServer();
         const browser = await ensureBrowser();
-        const browserCtx = await browser.newContext();
-        openContexts.push(browserCtx);
-        const page = await browserCtx.newPage();
-        const pageErrors: string[] = [];
-        const consoleErrors: string[] = [];
-        page.on("pageerror", (err) => {
-          pageErrors.push(err instanceof Error ? err.message : String(err));
-        });
-        page.on("console", (msg) => {
-          if (msg.type() === "error") {
-            consoleErrors.push(msg.text());
-          }
-        });
-        const targetPath = path.startsWith("/") ? path : `/${path}`;
-        await page.goto(`${server.url}${targetPath}`, {
-          waitUntil: "networkidle",
-        });
-        return {
-          baseUrl: server.url,
-          page,
-          pageErrors,
-          consoleErrors,
-          getClientDiagnostics: () => server.getClientDiagnostics(),
-          close: async () => {
-            await browserCtx.close();
-          },
-        };
+        return openTrackedBrowserPage(browser, server, path, openContexts);
       },
     };
 

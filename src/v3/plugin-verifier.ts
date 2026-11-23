@@ -23,6 +23,7 @@ import { startV3HttpServer } from "./http-gateway.js";
 import {
   type PluginTestContext,
   type SingleTestFileResult,
+  openTrackedBrowserPage,
   runPluginContractTests,
 } from "./plugin-test-runner.js";
 import {
@@ -118,7 +119,10 @@ export interface VerifyCandidateInput {
   readonly applyTimeoutMs?: number;
   readonly changeKind?: CandidateChangeKind;
   readonly productionDbPath?: string;
-  readonly fullCompositionSmokeTest?: (ctx: PluginTestContext) => Promise<void>;
+  readonly fullCompositionSmokeTest?: (
+    ctx: PluginTestContext,
+    meta: { readonly sandboxDbPath: string },
+  ) => Promise<void>;
   readonly browser?: Browser;
 }
 
@@ -828,20 +832,15 @@ async function runFullCompositionSmoke(
 
       httpServer = await startV3HttpServer(runtime, { port: 0 });
 
-      const browserCtx = await sharedBrowser.newContext();
-      openContexts.push(browserCtx);
-      const page = await browserCtx.newPage();
-      page.on("pageerror", (err) => {
-        pageErrors.push(err instanceof Error ? err.message : String(err));
-      });
-      page.on("console", (msg) => {
-        if (msg.type() === "error") {
-          consoleErrors.push(msg.text());
-        }
-      });
-
-      await page.goto(`${httpServer.url}/`, { waitUntil: "networkidle" });
-      await page.waitForTimeout(100);
+      const initialSession = await openTrackedBrowserPage(
+        sharedBrowser,
+        httpServer,
+        "/",
+        openContexts,
+      );
+      await initialSession.page.waitForTimeout(100);
+      pageErrors.push(...initialSession.pageErrors);
+      consoleErrors.push(...initialSession.consoleErrors);
 
       const diagnostics = httpServer.getClientDiagnostics();
       const boundaryDiags = diagnostics.filter(
@@ -850,10 +849,10 @@ async function runFullCompositionSmoke(
           d.kind === "load-error" ||
           d.kind === "reconcile-error",
       );
-      const domBoundaryCount = await page
+      const domBoundaryCount = await initialSession.page
         .locator('[data-v3-error-boundary="true"], [data-error-boundary="true"]')
         .count();
-      errorBoundaryCount = boundaryDiags.length + domBoundaryCount;
+      errorBoundaryCount = Math.max(boundaryDiags.length, domBoundaryCount);
 
       if (errorBoundaryCount > 0) {
         errors.push(
@@ -875,40 +874,11 @@ async function runFullCompositionSmoke(
         const smokeCtx: PluginTestContext = {
           request: (req) => runtime.handleHttpRequest(req),
           introspect: () => runtime.introspect(),
-          openBrowserPage: async (path = "/") => {
-            const extraCtx = await sharedBrowser.newContext();
-            openContexts.push(extraCtx);
-            const extraPage = await extraCtx.newPage();
-            const extraPageErrors: string[] = [];
-            const extraConsoleErrors: string[] = [];
-            extraPage.on("pageerror", (err) => {
-              extraPageErrors.push(
-                err instanceof Error ? err.message : String(err),
-              );
-            });
-            extraPage.on("console", (msg) => {
-              if (msg.type() === "error") {
-                extraConsoleErrors.push(msg.text());
-              }
-            });
-            const targetPath = path.startsWith("/") ? path : `/${path}`;
-            await extraPage.goto(`${httpServer!.url}${targetPath}`, {
-              waitUntil: "networkidle",
-            });
-            return {
-              baseUrl: httpServer!.url,
-              page: extraPage,
-              pageErrors: extraPageErrors,
-              consoleErrors: extraConsoleErrors,
-              getClientDiagnostics: () => httpServer!.getClientDiagnostics(),
-              close: async () => {
-                await extraCtx.close();
-              },
-            };
-          },
+          openBrowserPage: (path = "/") =>
+            openTrackedBrowserPage(sharedBrowser, httpServer!, path, openContexts),
         };
         try {
-          await input.fullCompositionSmokeTest(smokeCtx);
+          await input.fullCompositionSmokeTest(smokeCtx, { sandboxDbPath });
         } catch (err) {
           errors.push(
             `Full-composition smoke test failed: ${err instanceof Error ? err.message : String(err)}`,
