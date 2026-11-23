@@ -44,6 +44,7 @@ function isClientFile(relPath: string): boolean {
   return (
     normalized === "client.tsx" ||
     normalized === "client.ts" ||
+    normalized === "__compiled__/client.mjs" ||
     normalized.endsWith(".tsx") ||
     normalized.endsWith(".jsx") ||
     normalized.startsWith("client/") ||
@@ -140,9 +141,11 @@ export function verifyStaticBoundaries(artifact: PluginArtifact): StaticViolatio
   const violations: StaticViolation[] = [];
   const files: Record<string, string> = { ...artifact.sourceFiles };
 
-  if (Object.keys(files).length === 0) {
-    if (artifact.serverCode) files["server.ts"] = artifact.serverCode;
-    if (artifact.clientCode) files["client.tsx"] = artifact.clientCode;
+  if (artifact.serverCode) {
+    files["__compiled__/server.mjs"] = artifact.serverCode;
+  }
+  if (artifact.clientCode) {
+    files["__compiled__/client.mjs"] = artifact.clientCode;
   }
 
   for (const [relPath, code] of Object.entries(files)) {

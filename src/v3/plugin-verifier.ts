@@ -1,6 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { ClientCordisRuntime } from "./client/client-runtime.js";
 import { SupervisedCordisRuntime } from "./cordis-runtime.js";
 import { runPluginContractTests } from "./plugin-test-runner.js";
 import {
@@ -11,6 +13,7 @@ import {
 } from "./static-verifier.js";
 import { artifactKey, validateAndSortComposition } from "./topology.js";
 import type {
+  ActiveClientComposition,
   CompositionSnapshot,
   CompositionTopology,
   PluginArtifact,
@@ -223,6 +226,130 @@ function failReport(
   };
 }
 
+async function runClientHotSwapProbe(
+  orderedEnabled: readonly {
+    readonly member: { readonly pluginId: string; readonly versionId: string };
+    readonly artifact: PluginArtifact;
+  }[],
+  changedEnabled: readonly string[],
+  compositionId: string,
+): Promise<string[]> {
+  const clientPlugins = orderedEnabled.filter(
+    (e) => e.artifact.clientCode !== undefined,
+  );
+  if (clientPlugins.length === 0) return [];
+
+  const tempDir = mkdtempSync(join(tmpdir(), "v3-verifier-client-"));
+  symlinkSync(
+    join(process.cwd(), "node_modules"),
+    join(tempDir, "node_modules"),
+    "dir",
+  );
+  const clientSdkUrl = pathToFileURL(
+    join(process.cwd(), "src/v3/client-sdk.ts"),
+  ).href;
+
+  const entryPaths = new Map<string, string>();
+  const pluginsDir = join(tempDir, "plugins");
+  mkdirSync(pluginsDir, { recursive: true });
+
+  for (const { artifact } of clientPlugins) {
+    const entryUrl = `/plugins/${artifact.pluginId}/${artifact.versionId}/client.mjs`;
+    const filePath = join(
+      pluginsDir,
+      `${artifact.pluginId}-${artifact.versionId}.mjs`,
+    );
+    const rewritten = artifact.clientCode!.replace(
+      /(["'])@host\/client-sdk\1/g,
+      JSON.stringify(clientSdkUrl),
+    );
+    writeFileSync(filePath, rewritten, "utf8");
+    entryPaths.set(entryUrl, filePath);
+  }
+
+  const clientRuntime = new ClientCordisRuntime({
+    diagnosticsUrl: "",
+    moduleImporter: async (url) => {
+      const filePath = entryPaths.get(url);
+      if (!filePath) {
+        throw new Error(`Client probe module not found: ${url}`);
+      }
+      return (await import(pathToFileURL(filePath).href)) as Record<
+        string,
+        unknown
+      >;
+    },
+  });
+
+  const toClientSnapshot = (
+    id: string,
+    exclude: ReadonlySet<string>,
+  ): ActiveClientComposition => ({
+    compositionId: id,
+    plugins: clientPlugins
+      .filter((e) => !exclude.has(e.member.pluginId))
+      .map((e) => ({
+        pluginId: e.member.pluginId,
+        versionId: e.member.versionId,
+        dependencies: e.artifact.dependencies,
+        clientEntryUrl: `/plugins/${e.member.pluginId}/${e.member.versionId}/client.mjs`,
+        ...(e.artifact.styleCss ? { styleCss: e.artifact.styleCss } : {}),
+      })),
+  });
+
+  try {
+    await clientRuntime.reconcile(toClientSnapshot(compositionId, new Set()));
+    const initialDiags = clientRuntime.getDiagnostics();
+    if (initialDiags.length > 0) {
+      return initialDiags.map(
+        (d) => `[client-initial-mount] ${d.pluginId} (${d.kind}): ${d.message}`,
+      );
+    }
+
+    const clientIdSet = new Set(clientPlugins.map((e) => e.member.pluginId));
+    for (const pluginId of changedEnabled) {
+      if (!clientIdSet.has(pluginId)) continue;
+      const toDisable = computeTransitiveDependents(pluginId, orderedEnabled);
+
+      clientRuntime.clearDiagnostics();
+      await clientRuntime.reconcile(
+        toClientSnapshot(`${compositionId}-client-dispose-${pluginId}`, toDisable),
+      );
+      const disposeDiags = clientRuntime.getDiagnostics();
+      if (disposeDiags.length > 0) {
+        return disposeDiags.map(
+          (d) => `[client-dispose:${pluginId}] ${d.pluginId} (${d.kind}): ${d.message}`,
+        );
+      }
+
+      const residualClientRoutes = clientRuntime
+        .getRoutes()
+        .filter((r) => toDisable.has(r.pluginId));
+      if (residualClientRoutes.length > 0) {
+        return [
+          `[client-dispose:${pluginId}] Left ${residualClientRoutes.length} residual client route(s): ${residualClientRoutes.map((r) => r.path).join(", ")}`,
+        ];
+      }
+
+      clientRuntime.clearDiagnostics();
+      await clientRuntime.reconcile(
+        toClientSnapshot(`${compositionId}-client-remount-${pluginId}`, new Set()),
+      );
+      const remountDiags = clientRuntime.getDiagnostics();
+      if (remountDiags.length > 0) {
+        return remountDiags.map(
+          (d) => `[client-remount:${pluginId}] ${d.pluginId} (${d.kind}): ${d.message}`,
+        );
+      }
+    }
+
+    return [];
+  } finally {
+    await clientRuntime.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 export async function verifyCandidateGates1And2(
   input: VerifyCandidateInput,
 ): Promise<VerificationReport> {
@@ -376,6 +503,17 @@ export async function verifyCandidateGates1And2(
   } finally {
     await runtime.close();
     rmSync(tempDir, { recursive: true, force: true });
+  }
+
+  const clientProbeErrors = await runClientHotSwapProbe(
+    plan.orderedEnabled,
+    changedEnabled,
+    candidate.compositionId,
+  );
+  if (clientProbeErrors.length > 0) {
+    return failReport("gate1-hotswap-probe", clientProbeErrors, {
+      probedPlugins,
+    });
   }
 
   // --- Gate 2: Ablation Invariant ---

@@ -289,6 +289,22 @@ export class PluginBuildError extends Error {
 export async function buildPluginPackage(
   input: BuildPluginPackageInput,
 ): Promise<PluginArtifact> {
+  const declaredDeps = new Set(input.dependencies ?? []);
+  if (input.upstreamContracts) {
+    const undeclared = Object.keys(input.upstreamContracts).filter(
+      (depId) => !declaredDeps.has(depId),
+    );
+    if (undeclared.length > 0) {
+      throw new PluginBuildError(
+        input.pluginId,
+        undeclared.map(
+          (depId) =>
+            `Upstream contract "${depId}" is not declared in plugin "${input.pluginId}" dependencies`,
+        ),
+      );
+    }
+  }
+
   const sourceFiles: Record<string, string> = { ...(input.sourceFiles ?? {}) };
   if (input.serverSource !== undefined && !("server.ts" in sourceFiles)) {
     sourceFiles["server.ts"] = input.serverSource;

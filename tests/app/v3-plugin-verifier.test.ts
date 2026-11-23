@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { compileFullStackPluginArtifact } from "../../src/v3/plugin-builder.js";
 import { compileServerPluginArtifact } from "../../src/v3/plugin-loader.js";
 import {
   verifyCompositionDag,
@@ -79,6 +80,24 @@ export async function apply() {
     assert.ok(violations.some((v) => v.specifier.includes("../todo-core/server.ts")));
     assert.ok(violations.some((v) => v.reason.includes("dynamic import")));
     assert.ok(violations.some((v) => v.reason.includes("require")));
+  });
+
+  it("scans compiled serverCode/clientCode even when sourceFiles look clean", () => {
+    const tampered: PluginArtifact = {
+      pluginId: "tampered",
+      versionId: "v1",
+      name: "Tampered",
+      dependencies: [],
+      contractTypes: "",
+      sourceFiles: {
+        "server.ts": `export const name = "tampered"; export function apply() {}`,
+      },
+      serverCode: `import fs from "node:fs"; export const name = "tampered"; export function apply() { void fs; }`,
+      testFiles: {},
+    };
+
+    const violations = verifyStaticBoundaries(tampered);
+    assert.ok(violations.some((v) => v.file === "__compiled__/server.mjs" && v.specifier === "node:fs"));
   });
 
   it("rejects cyclic dependencies and disabled upstream dependencies in DAG check", () => {
@@ -204,6 +223,80 @@ export function apply(ctx: Context) {
     assert.equal(report.ok, false);
     assert.equal(report.failedGate, "gate1-hotswap-probe");
     assert.ok(report.errors.length > 0);
+  });
+
+  it("probes client-side mount -> dispose -> remount and rejects client route conflicts", async () => {
+    const pluginA = await compileFullStackPluginArtifact({
+      pluginId: "client-a",
+      name: "Client A",
+      dependencies: [],
+      serverSource: `export const name = "client-a"; export function apply() {}`,
+      clientSource: `
+import type { Context } from "cordis";
+import "@host/client-sdk";
+export const name = "client-a";
+export function apply(ctx: Context) {
+  ctx.router.registerPage({
+    path: "/shared",
+    navLabel: "A",
+    component: () => <div>A</div>,
+  });
+}
+`,
+    });
+
+    const pluginB = await compileFullStackPluginArtifact({
+      pluginId: "client-b",
+      name: "Client B",
+      dependencies: [],
+      serverSource: `export const name = "client-b"; export function apply() {}`,
+      clientSource: `
+import type { Context } from "cordis";
+import "@host/client-sdk";
+export const name = "client-b";
+export function apply(ctx: Context) {
+  ctx.router.registerPage({
+    path: "/shared",
+    navLabel: "B",
+    component: () => <div>B</div>,
+  });
+}
+`,
+    });
+
+    const artifacts = new Map<string, PluginArtifact>([
+      [artifactKey(pluginA.pluginId, pluginA.versionId), pluginA],
+      [artifactKey(pluginB.pluginId, pluginB.versionId), pluginB],
+    ]);
+
+    // Single valid client plugin passes mount -> dispose -> remount
+    const okReport = await verifyCandidateGates1And2({
+      candidate: {
+        compositionId: "c-client-ok",
+        parentCompositionId: null,
+        createdAt: new Date().toISOString(),
+        members: [{ pluginId: "client-a", versionId: pluginA.versionId, enabled: true }],
+      },
+      artifacts,
+    });
+    assert.equal(okReport.ok, true, `Expected ok, got: ${JSON.stringify(okReport.errors)}`);
+
+    // Two client plugins registering the same route "/shared" are rejected
+    const conflictReport = await verifyCandidateGates1And2({
+      candidate: {
+        compositionId: "c-client-conflict",
+        parentCompositionId: null,
+        createdAt: new Date().toISOString(),
+        members: [
+          { pluginId: "client-a", versionId: pluginA.versionId, enabled: true },
+          { pluginId: "client-b", versionId: pluginB.versionId, enabled: true },
+        ],
+      },
+      artifacts,
+    });
+    assert.equal(conflictReport.ok, false);
+    assert.equal(conflictReport.failedGate, "gate1-hotswap-probe");
+    assert.ok(conflictReport.errors.some((e) => e.includes("/shared")));
   });
 });
 

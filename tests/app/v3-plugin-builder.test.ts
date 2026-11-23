@@ -99,4 +99,20 @@ export function apply(ctx: Context) {
       `Expected diagnostic mentioning nonExistentMethod, got: ${result.diagnostics.join("\n")}`,
     );
   });
+
+  it("rejects upstreamContracts that are not declared in plugin dependencies", async () => {
+    await assert.rejects(
+      () =>
+        buildPluginPackage({
+          pluginId: "review",
+          name: "Review",
+          dependencies: [],
+          upstreamContracts: {
+            "todo-core": TODO_CORE_CONTRACT,
+          },
+          serverSource: `export const name = "review"; export function apply() {}`,
+        }),
+      /not declared in plugin "review" dependencies/,
+    );
+  });
 });
