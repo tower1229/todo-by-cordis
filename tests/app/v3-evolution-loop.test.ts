@@ -675,7 +675,7 @@ export function apply(ctx: Context) {
                     type: "function",
                     function: {
                       name: "stage_plugin_changes",
-                      arguments: "{not valid json",
+                      arguments: '{"upserts":[{"pluginId":"todo-core"}]}}',
                     },
                   },
                 ],
@@ -779,6 +779,8 @@ export function apply(ctx: Context) {
       );
       assert.ok(turn2Tool);
       assert.match(String(turn2Tool.content), /protocolErrors/);
+      assert.match(String(turn2Tool.content), /near:/);
+      assert.match(String(turn2Tool.content), /todo-core/);
 
       // Turn 3 must carry inspect_plugin tool receipt for call_inspect_2
       const turn3Tool = outboundBodies[2]!.messages.find(
@@ -786,6 +788,145 @@ export function apply(ctx: Context) {
       );
       assert.ok(turn3Tool);
       assert.match(String(turn3Tool.content), /core-notes/);
+    } finally {
+      await loop.close();
+      await release.close();
+    }
+  });
+
+  it("stage_plugin_changes rejects no-op payloads and incrementally merges partial updates with staged and baseline packages", async () => {
+    const dir = createTempDir("v3-evo-stage-merge-");
+    const { release } = await createSeedRelease(dir);
+
+    let turn = 0;
+
+    const driver: ModelDriver = {
+      async generate() {
+        turn += 1;
+
+        if (turn === 1) {
+          // Malformed nesting: wrapped inside `arguments` instead of top-level `upserts`/`toggles`
+          return {
+            calls: [
+              {
+                id: "call_noop",
+                name: "stage_plugin_changes",
+                args: {
+                  arguments: {
+                    upserts: [{ pluginId: "core-notes", contractTypes: "export {};" }],
+                  },
+                },
+              },
+            ],
+          };
+        }
+        if (turn === 2) {
+          // Partial update 1: only contractTypes on baseline plugin `core-notes`
+          return {
+            calls: [
+              {
+                id: "call_part_1",
+                name: "stage_plugin_changes",
+                args: {
+                  upserts: [
+                    {
+                      pluginId: "core-notes",
+                      contractTypes: "export interface CoreNotesService { version: 2; }\n",
+                    },
+                  ],
+                },
+              },
+            ],
+          };
+        }
+        if (turn === 3) {
+          // Partial update 2: only server.ts on already-staged `core-notes`
+          return {
+            calls: [
+              {
+                id: "call_part_2",
+                name: "stage_plugin_changes",
+                args: {
+                  upserts: [
+                    {
+                      pluginId: "core-notes",
+                      sourceFiles: {
+                        "server.ts": "export const name = 'core-notes';\nexport function apply() {}\n",
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          };
+        }
+        return {
+          calls: [
+            {
+              id: "call_done",
+              name: "clarify_request",
+              args: { question: "done" },
+            },
+          ],
+        };
+      },
+    };
+
+    const loop = new EvolutionLoop({
+      release,
+      modelDriver: driver,
+      verifyFn: async () => makePassingReport(["core-notes"]),
+    });
+
+    try {
+      const started = await loop.startRun("测试增量 stage 与空操作拦截");
+      const finished = await loop.waitForRun(started.runId);
+      assert.equal(finished.status, "awaiting_clarification", finished.error ?? "no error");
+
+      const persisted = release.controlStore.getEvolutionRun(started.runId);
+      assert.ok(persisted);
+
+      const findToolReceipt = (callId: string): Record<string, unknown> => {
+        for (const msg of persisted.messages) {
+          if (!msg || typeof msg !== "object") continue;
+          const parts = (msg as { parts?: unknown[] }).parts;
+          if (!Array.isArray(parts)) continue;
+          for (const part of parts) {
+            const fr = (part as { functionResponse?: { id?: string; response?: Record<string, unknown> } })
+              ?.functionResponse;
+            if (fr?.id === callId && fr.response) {
+              return fr.response;
+            }
+          }
+        }
+        assert.fail(`expected tool receipt for ${callId}`);
+      };
+
+      // Turn 1 tool response must reject no-op payload
+      const noopResp = findToolReceipt("call_noop");
+      assert.equal(noopResp.ok, false);
+      assert.match(String(noopResp.error ?? ""), /upserts|toggles/i);
+
+      // Turn 2 & 3 must succeed and preserve merged fields
+      assert.equal(findToolReceipt("call_part_1").ok, true);
+      assert.equal(findToolReceipt("call_part_2").ok, true);
+
+      const stagedCore = persisted.stagedWorkspace.upserts["core-notes"];
+      assert.ok(stagedCore);
+      // Preserved baseline name & testFiles, kept Turn 2 contractTypes, updated Turn 3 server.ts
+      assert.equal(stagedCore.name, "Core Notes");
+      assert.equal(
+        stagedCore.contractTypes,
+        "export interface CoreNotesService { version: 2; }\n",
+      );
+      assert.equal(
+        stagedCore.sourceFiles["server.ts"],
+        "export const name = 'core-notes';\nexport function apply() {}\n",
+      );
+      assert.ok(
+        Object.keys(stagedCore.testFiles).length > 0,
+        "baseline testFiles should be preserved during incremental stage",
+      );
     } finally {
       await loop.close();
       await release.close();

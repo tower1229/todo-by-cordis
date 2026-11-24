@@ -471,7 +471,8 @@ const SYSTEM_PROMPT = [
   "Rules:",
   "- When the user's intent is clear, proceed directly to inspect/stage/verify without asking for pre-execution confirmation.",
   "- Use clarify_request ONLY for major business goal ambiguity or destructive data intent.",
-  "- After stage_plugin_changes, you MUST call verify_candidate and get ok=true before calling present_preview.",
+  "- `stage_plugin_changes` incrementally merges fields/files into any already-staged or baseline plugin package for the same `pluginId`. Stage changes in small batches (per plugin or per file) to avoid oversized JSON payloads, and always pass top-level `upserts` or `toggles`.",
+  "- After stage_plugin_changes succeeds, immediately call verify_candidate and get ok=true before calling present_preview; do not blindly rewrite unchanged files.",
   "- If verify_candidate fails, read the real build/test diagnostics, fix the staged plugin code, and re-verify.",
   "- You cannot modify host budget, verification gates, or execution policy.",
   "Plugin contract tests (tests/*.spec.ts):",
@@ -1439,6 +1440,22 @@ export class EvolutionLoop {
       ...run.stagedWorkspace.toggles,
     };
 
+    const baselineArtifacts = new Map<string, PluginArtifact>();
+    const baseline = this.release.controlStore.getComposition(
+      run.baseCompositionId,
+    );
+    if (baseline) {
+      for (const member of baseline.members) {
+        const artifact = this.release.controlStore.getArtifact(
+          member.pluginId,
+          member.versionId,
+        );
+        if (artifact) {
+          baselineArtifacts.set(member.pluginId, artifact);
+        }
+      }
+    }
+
     const stagedIds: string[] = [];
     if (Array.isArray(args.upserts)) {
       for (const raw of args.upserts) {
@@ -1447,16 +1464,25 @@ export class EvolutionLoop {
         const pluginId =
           typeof item.pluginId === "string" ? item.pluginId.trim() : "";
         if (!pluginId) continue;
+
+        const existing = nextUpserts[pluginId];
+        const baseArtifact = existing ? undefined : baselineArtifacts.get(pluginId);
+
         const name =
           typeof item.name === "string" && item.name.trim()
             ? item.name.trim()
-            : pluginId;
+            : existing?.name ?? baseArtifact?.name ?? pluginId;
         const dependencies = Array.isArray(item.dependencies)
           ? item.dependencies.filter((d): d is string => typeof d === "string")
-          : [];
+          : existing?.dependencies ?? baseArtifact?.dependencies ?? [];
         const contractTypes =
-          typeof item.contractTypes === "string" ? item.contractTypes : "";
-        const sourceFiles: Record<string, string> = {};
+          typeof item.contractTypes === "string"
+            ? item.contractTypes
+            : existing?.contractTypes ?? baseArtifact?.contractTypes ?? "";
+
+        const sourceFiles: Record<string, string> = {
+          ...(existing?.sourceFiles ?? baseArtifact?.sourceFiles ?? {}),
+        };
         if (item.sourceFiles && typeof item.sourceFiles === "object") {
           for (const [k, v] of Object.entries(
             item.sourceFiles as Record<string, unknown>,
@@ -1464,7 +1490,9 @@ export class EvolutionLoop {
             if (typeof v === "string") sourceFiles[k] = v;
           }
         }
-        const testFiles: Record<string, string> = {};
+        const testFiles: Record<string, string> = {
+          ...(existing?.testFiles ?? baseArtifact?.testFiles ?? {}),
+        };
         if (item.testFiles && typeof item.testFiles === "object") {
           for (const [k, v] of Object.entries(
             item.testFiles as Record<string, unknown>,
@@ -1495,6 +1523,19 @@ export class EvolutionLoop {
         nextToggles[pluginId] = item.enabled;
         toggledIds.push(`${pluginId}=${item.enabled}`);
       }
+    }
+
+    if (stagedIds.length === 0 && toggledIds.length === 0) {
+      return {
+        nextWorkspace: run.stagedWorkspace,
+        response: {
+          ok: false,
+          error:
+            "stage_plugin_changes requires at least one valid entry in top-level `upserts` or `toggles` (do not wrap parameters inside an extra `arguments` object).",
+          stagedPlugins: [],
+          toggledPlugins: [],
+        },
+      };
     }
 
     const workspaceHash = computeWorkspaceHash(nextUpserts, nextToggles);

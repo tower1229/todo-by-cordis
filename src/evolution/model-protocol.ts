@@ -8,7 +8,18 @@ const schemas = (v: unknown): Schema[] =>
   Array.isArray(v) ? v.filter(record) : [];
 /** JSON syntax is checked first; the AST is data only and is never evaluated. */
 export function parseToolArguments(text: string): unknown {
-  const value: unknown = JSON.parse(text);
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const posMatch = /position\s+(\d+)/i.exec(message);
+    const pos = posMatch ? Number(posMatch[1]) : text.length;
+    const start = Math.max(0, pos - 60);
+    const end = Math.min(text.length, pos + 60);
+    const snippet = text.slice(start, end);
+    throw new ModelProtocolError(`${message} (near: ${JSON.stringify(snippet)})`);
+  }
   const visit = (node: unknown) => {
     if (!record(node)) return;
     if (node.type === "ObjectExpression" && Array.isArray(node.properties)) {
