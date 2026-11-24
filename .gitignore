@@ -11,3 +11,10 @@ playwright-report/
 
 .playwright-cli/
 output/playwright/
+
+# Large raw telemetry & SQLite WAL files under docs/reports/
+docs/reports/**/calls.jsonl
+docs/reports/**/events.jsonl
+docs/reports/**/*.db-wal
+docs/reports/**/*.db-shm
+docs/reports/**/workspace-evidence.json

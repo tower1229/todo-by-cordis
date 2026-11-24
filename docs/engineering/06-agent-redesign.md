@@ -1,3 +1,5 @@
+> **历史归档（Superseded by V3）**：本文为 V2 阶段 Agent 设计，现已被 [07-cordis-self-iteration-v3.md](07-cordis-self-iteration-v3.md) 及 ADR 0006/0007 取代，仅作历史复盘保留。
+
 # 自迭代 Agent 重构详细设计
 
 日期：2026-09-07。状态：调查、执行进度、候选体验、绑定式 apply、持续迭代与恢复主线已有公开验收。恢复侧：`activationPending` 区分已提交未开放写入；提交后 abort 不补偿、仅就绪失败补偿；重启时 pending 且启动失败会补偿回旧组合并持久化 `recovery`；A12/A13 含 app 故障注入与浏览器真实撤回保数据。

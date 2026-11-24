@@ -366,7 +366,7 @@ export interface SlotRegistry {
   - 子进程生命周期监督、超时 `SIGKILL` 与串行激活骨架（参考 `src/runtime/runtime.ts`、`src/release/release.ts` 重构为 `CordisAppRuntime` 与 `CompositionRelease`）；
   - `@babel/parser` AST 导入检查能力（参考 `src/release/business-bundle.ts` 升级为双端白名单与 DAG 检查）；
   - DeepSeek 流式传输保活、错误分类、未知用量保守预留与预算账本（保留 `src/evolution/deepseek.ts`、`transport-failure.ts`、`budget.ts`）；
-  - Microsoft To Do 极简视觉令牌与外层助手侧栏交互规范（保留 `DESIGN.md` 与 `src/web/style.css` 主题基调）。
+  - Microsoft To Do 极简视觉令牌与外层助手侧栏交互规范（保留 `DESIGN.md` 与 `src/v3/v3-theme.css` / `src/v3/client/host-base.css` 主题基调）。
 - **整体退役不再接入新主线的旧模块**：
   - `src/runtime/child.ts` 中的孤立 `node:vm` `SourceTextModule` JSON 反射包装；
   - `src/server/workspace.ts` 中的 Todo 专属表与状态机、`src/server/extensions/registry.ts`、`ui-slots.ts`；
