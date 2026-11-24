@@ -20,13 +20,13 @@ import {
 
 test("V3 default entry starts SupervisorShell with todo-core seed plugin and serves CRUD + HTML", async () => {
   const dir = mkdtempSync(join(tmpdir(), "v3-main-smoke-"));
-  const app = await startV3App({
-    dataDir: dir,
-    seedPluginDir: resolve("plugins/todo-core"),
-    port: 0,
-  });
-
+  let app: Awaited<ReturnType<typeof startV3App>> | undefined;
   try {
+    app = await startV3App({
+      dataDir: dir,
+      seedPluginDir: resolve("plugins/todo-core"),
+      port: 0,
+    });
     const htmlRes = await fetch(app.url);
     assert.equal(htmlRes.status, 200);
     const html = await htmlRes.text();

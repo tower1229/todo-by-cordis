@@ -413,14 +413,19 @@ declare module "cordis" {
 }
 
 declare module "@host/client-sdk" {
+  export interface SlotPropsMap {}
+  export type SlotPropsFor<K extends string> = K extends keyof SlotPropsMap
+    ? SlotPropsMap[K]
+    : Record<string, unknown>;
   export function Slot<K extends string>(props: {
     readonly name: K;
-    readonly props?: Record<string, unknown>;
+    readonly props?: SlotPropsFor<K>;
     readonly className?: string;
   }): import("react").ReactElement | null;
   export function useClientContext(): import("cordis").Context;
   export function useClientRoutes(): ReadonlyArray<{
     readonly pluginId: string;
+    readonly versionId: string;
     readonly path: string;
     readonly navLabel?: string;
     readonly order: number;

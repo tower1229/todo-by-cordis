@@ -390,7 +390,13 @@ describe("V3 CompositionRelease lifecycle", () => {
       const previewTempDir = dirname(session.previewDbPath);
       assert.equal(host.listSessions().length, 1);
 
-      await new Promise((r) => setTimeout(r, 250));
+      const deadline = Date.now() + 3000;
+      while (
+        Date.now() < deadline &&
+        (host.listSessions().length > 0 || existsSync(previewTempDir))
+      ) {
+        await new Promise((r) => setTimeout(r, 30));
+      }
       assert.equal(host.listSessions().length, 0);
       assert.equal(existsSync(previewTempDir), false);
     } finally {

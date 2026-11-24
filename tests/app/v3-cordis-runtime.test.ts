@@ -281,7 +281,7 @@ describe("V3 SupervisedCordisRuntime", () => {
           ctx.schedule.at(new Date(Date.now() + 25).toISOString(), "once", () => {
             db.prepare("INSERT INTO plg_ticker__ticks (version) VALUES (?)").run("at-v1");
           });
-          ctx.http.route("GET", "/api/app/shared/ping", () => ({ version: "v1" }));
+          ctx.http.route("GET", "/api/app/ticker/ping", () => ({ version: "v1" }));
           ctx.http.route("GET", "/ticks", () => ({
             count: db.prepare("SELECT COUNT(*) AS c FROM plg_ticker__ticks").get().c,
           }));
@@ -293,7 +293,7 @@ describe("V3 SupervisedCordisRuntime", () => {
       pluginId: "conflicting",
       serverCode: `
         export function apply(ctx) {
-          ctx.http.route("GET", "/api/app/shared/ping", () => ({ version: "conflict" }));
+          ctx.http.route("GET", "/api/app/ticker/ping", () => ({ version: "conflict" }));
         }
       `,
     });
@@ -303,7 +303,7 @@ describe("V3 SupervisedCordisRuntime", () => {
       serverCode: `
         export function apply(ctx) {
           const db = ctx.db;
-          ctx.http.route("GET", "/api/app/shared/ping", () => ({ version: "v2" }));
+          ctx.http.route("GET", "/api/app/ticker/ping", () => ({ version: "v2" }));
           ctx.http.route("GET", "/ticks", () => ({
             count: db.prepare("SELECT COUNT(*) AS c FROM plg_ticker__ticks").get().c,
           }));
@@ -340,13 +340,13 @@ describe("V3 SupervisedCordisRuntime", () => {
             "c1",
           ),
         ),
-      /route conflict/i,
+      /outside its namespace|route conflict/i,
     );
 
     // Previous composition remains healthy
     const stillV1 = await runtime.handleHttpRequest({
       method: "GET",
-      path: "/api/app/shared/ping",
+      path: "/api/app/ticker/ping",
     });
     assert.equal(stillV1.status, 200);
     assert.deepEqual(stillV1.body, { version: "v1" });
@@ -361,7 +361,7 @@ describe("V3 SupervisedCordisRuntime", () => {
     );
     const notFound = await runtime.handleHttpRequest({
       method: "GET",
-      path: "/api/app/shared/ping",
+      path: "/api/app/ticker/ping",
     });
     assert.equal(notFound.status, 404);
 
@@ -376,7 +376,7 @@ describe("V3 SupervisedCordisRuntime", () => {
     assert.equal(h3.mode, "in-process-hot-swap");
     const v2Ping = await runtime.handleHttpRequest({
       method: "GET",
-      path: "/api/app/shared/ping",
+      path: "/api/app/ticker/ping",
     });
     assert.equal(v2Ping.status, 200);
     assert.deepEqual(v2Ping.body, { version: "v2" });

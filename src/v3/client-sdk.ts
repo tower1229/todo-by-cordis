@@ -2,6 +2,7 @@ import {
   Component,
   createContext,
   createElement,
+  useCallback,
   useContext,
   useSyncExternalStore,
   type ComponentType,
@@ -174,11 +175,15 @@ export function useNavigate(): (path: string) => void {
 
 export function useSlotEntries(slotName: string): readonly RegisteredSlotEntry[] {
   const bridge = useClientRuntimeBridge();
-  return useSyncExternalStore(
-    (listener) => bridge.subscribeSlot(slotName, listener),
-    () => bridge.getSlotEntries(slotName),
-    () => bridge.getSlotEntries(slotName),
+  const subscribe = useCallback(
+    (listener: () => void) => bridge.subscribeSlot(slotName, listener),
+    [bridge, slotName],
   );
+  const getSnapshot = useCallback(
+    () => bridge.getSlotEntries(slotName),
+    [bridge, slotName],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 export function useClientDiagnostics(): readonly ClientDiagnostic[] {

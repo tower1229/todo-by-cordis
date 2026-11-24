@@ -613,6 +613,7 @@ export class ClientCordisRuntime implements ClientRuntimeBridge {
       if (meta.clientEntryUrl) {
         try {
           const mod = await this.moduleImporter(meta.clientEntryUrl);
+          if (this.closed) return;
           loadedPluginExport = extractClientPluginExport(mod, meta.pluginId);
         } catch (error) {
           failedPlugins.add(meta.pluginId);
@@ -666,6 +667,10 @@ export class ClientCordisRuntime implements ClientRuntimeBridge {
       const fiber = pluginCtx.plugin(wrapperPlugin);
       try {
         await fiber;
+        if (this.closed) {
+          await fiber.dispose();
+          return;
+        }
         if (fiber.state !== FiberState.ACTIVE) {
           throw new Error(
             `Client plugin "${meta.pluginId}@${meta.versionId}" did not enter ACTIVE state (state=${fiber.state})`,

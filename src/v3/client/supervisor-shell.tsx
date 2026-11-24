@@ -44,8 +44,10 @@ export function SupervisorShell() {
     null,
   );
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const statusRequestSeqRef = useRef(0);
 
   const fetchReleaseStatus = useCallback(async () => {
+    const seq = ++statusRequestSeqRef.current;
     try {
       const res = await fetch("/api/v3/release/status", {
         headers: { accept: "application/json" },
@@ -54,7 +56,9 @@ export function SupervisorShell() {
         return;
       }
       const data = (await res.json()) as ReleaseStatusPayload;
-      setReleaseStatus(data);
+      if (seq === statusRequestSeqRef.current) {
+        setReleaseStatus(data);
+      }
     } catch {
       // Release control endpoints are optional in bare runtime mode
     }

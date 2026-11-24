@@ -577,6 +577,11 @@ export class SupervisedCordisRuntime implements ServerCordisRuntime {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    const release = this.releaseGate;
+    this.gateDepth = 0;
+    this.gatePromise = null;
+    this.releaseGate = null;
+    release?.();
     const w = this.worker;
     this.worker = null;
     if (w) {

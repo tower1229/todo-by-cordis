@@ -30,10 +30,16 @@ function stripTrailingSlash(path: string): string {
 
 export function normalizeRoutePath(pluginId: string, subPath: string): string {
   const trimmed = subPath.trim();
-  if (trimmed.startsWith("/api/app/")) {
-    return stripTrailingSlash(trimmed.replace(/\/{2,}/g, "/"));
-  }
   const base = `/api/app/${pluginId}`;
+  if (trimmed.startsWith("/api/app/")) {
+    const normalized = stripTrailingSlash(trimmed.replace(/\/{2,}/g, "/"));
+    if (normalized !== base && !normalized.startsWith(`${base}/`)) {
+      throw new Error(
+        `Plugin "${pluginId}" cannot register route "${normalized}" outside its namespace "${base}"`,
+      );
+    }
+    return normalized;
+  }
   if (!trimmed || trimmed === "/") {
     return base;
   }
@@ -185,7 +191,18 @@ export class HttpRouteRegistry {
 
     for (const candidate of this.routesById.values()) {
       if (candidate.method !== input.method) continue;
-      const m = matchSegments(candidate.segments, requestSegments);
+      let m: Record<string, string> | null;
+      try {
+        m = matchSegments(candidate.segments, requestSegments);
+      } catch (error) {
+        if (error instanceof URIError) {
+          return {
+            status: 400,
+            body: { error: `Malformed URL encoding in path "${input.path}"` },
+          };
+        }
+        throw error;
+      }
       if (m) {
         matched = candidate;
         params = m;

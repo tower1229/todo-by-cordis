@@ -58,23 +58,53 @@ export function EvolutionSidebarSection({
     });
   }, []);
 
-  const fetchRuns = useCallback(async () => {
-    try {
-      const res = await fetch("/api/v3/evolution/runs", {
-        headers: { accept: "application/json" },
+  const mergeRuns = useCallback((incoming: readonly EvolutionRunView[]) => {
+    setRuns((prev) => {
+      const prevById = new Map(prev.map((r) => [r.runId, r]));
+      const merged = incoming.map((item) => {
+        const existing = prevById.get(item.runId);
+        if (existing && existing.events.length > item.events.length) {
+          return existing;
+        }
+        return item;
       });
-      if (!res.ok) return;
-      const data = (await res.json()) as { runs?: EvolutionRunView[] };
-      if (Array.isArray(data.runs)) {
-        setRuns(data.runs);
+      const incomingIds = new Set(incoming.map((r) => r.runId));
+      for (const existing of prev) {
+        if (!incomingIds.has(existing.runId)) {
+          merged.push(existing);
+        }
       }
-    } catch {
-      // ignore
-    }
+      return merged;
+    });
   }, []);
 
+  const fetchRuns = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        const res = await fetch("/api/v3/evolution/runs", {
+          headers: { accept: "application/json" },
+          ...(signal ? { signal } : {}),
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { runs?: EvolutionRunView[] };
+        if (Array.isArray(data.runs)) {
+          mergeRuns(data.runs);
+        }
+      } catch {
+        // ignore abort / transient fetch errors
+      }
+    },
+    [mergeRuns],
+  );
+
   useEffect(() => {
-    void fetchRuns();
+    const ac = new AbortController();
+    void fetchRuns(ac.signal);
+    if (typeof EventSource === "undefined") {
+      return () => {
+        ac.abort();
+      };
+    }
     const es = new EventSource("/api/v3/evolution/events");
     es.addEventListener("snapshot", (ev) => {
       try {
@@ -82,7 +112,7 @@ export function EvolutionSidebarSection({
           runs?: EvolutionRunView[];
         };
         if (Array.isArray(data.runs)) {
-          setRuns(data.runs);
+          mergeRuns(data.runs);
         }
       } catch {
         // ignore
@@ -96,10 +126,14 @@ export function EvolutionSidebarSection({
         // ignore
       }
     });
+    es.onerror = () => {
+      // Browser EventSource retries automatically; ignore transient disconnect
+    };
     return () => {
+      ac.abort();
       es.close();
     };
-  }, [fetchRuns, upsertRun]);
+  }, [fetchRuns, mergeRuns, upsertRun]);
 
   const activeRun = runs[0] ?? null;
   const hidePromptEditor =
