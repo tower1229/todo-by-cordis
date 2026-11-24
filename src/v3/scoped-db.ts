@@ -233,8 +233,11 @@ function assertNoCrossPluginForeignKeys(
 export function createScopedDb(db: DatabaseSync, pluginId: string): ScopedDb {
   const tablePrefix = pluginTablePrefix(pluginId);
 
-  const runWithDdlGuard = <T>(run: () => T): T => {
-    const touchedDdlTables = new Set<string>();
+  const runWithDdlGuard = <T>(
+    run: () => T,
+    preTouchedTables?: ReadonlySet<string>,
+  ): T => {
+    const touchedDdlTables = new Set<string>(preTouchedTables);
     const authorizer = buildAuthorizer(tablePrefix, touchedDdlTables);
     return withSavepoint(db, "sp_scoped", () => {
       const result = withAuthorizer(db, authorizer, run);
@@ -260,7 +263,7 @@ export function createScopedDb(db: DatabaseSync, pluginId: string): ScopedDb {
 
       const wrapExec = <R>(invoke: () => R): R => {
         if (touchedDdlTables.size > 0) {
-          return runWithDdlGuard(invoke);
+          return runWithDdlGuard(invoke, touchedDdlTables);
         }
         return withAuthorizer(db, authorizer, invoke);
       };

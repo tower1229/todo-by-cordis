@@ -236,6 +236,20 @@ describe("V3 ScopedDb engine-level isolation", () => {
         .prepare("INSERT INTO plg_tags__items (id, task_id, tag) VALUES (?, ?, ?)")
         .run("tg1", "t1", "urgent");
 
+      // Cross-plugin FK via prepare().run() must also be denied
+      assert.throws(
+        () =>
+          tagsDb
+            .prepare(
+              `CREATE TABLE plg_tags__evil_fk (
+                id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL REFERENCES plg_todo_core__tasks(id)
+              )`,
+            )
+            .run(),
+        /Cross-plugin physical foreign key/,
+      );
+
       // Intra-plugin FK between own tables is allowed
       tagsDb.exec(`
         CREATE TABLE plg_tags__meta (

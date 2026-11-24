@@ -65,7 +65,10 @@ export async function apply() {
   const mod = "node:os";
   await import(mod);
   const cp = require("node:path");
-  return { fs, exec, SupervisedCordisRuntime, todoApply, cp };
+  const builtin = process.getBuiltinModule("node:fs");
+  eval("1+1");
+  const fn = new Function("return 1");
+  return { fs, exec, SupervisedCordisRuntime, todoApply, cp, builtin, fn };
 }
 `,
       },
@@ -73,13 +76,16 @@ export async function apply() {
     };
 
     const violations = verifyStaticBoundaries(artifact);
-    assert.ok(violations.length >= 6, `Expected >= 6 violations, got ${violations.length}`);
+    assert.ok(violations.length >= 9, `Expected >= 9 violations, got ${violations.length}`);
     assert.ok(violations.some((v) => v.specifier === "node:fs"));
     assert.ok(violations.some((v) => v.specifier === "child_process"));
     assert.ok(violations.some((v) => v.specifier.includes("src/v3/cordis-runtime")));
     assert.ok(violations.some((v) => v.specifier.includes("../todo-core/server.ts")));
     assert.ok(violations.some((v) => v.reason.includes("dynamic import")));
     assert.ok(violations.some((v) => v.reason.includes("require")));
+    assert.ok(violations.some((v) => v.specifier === "process.getBuiltinModule"));
+    assert.ok(violations.some((v) => v.specifier === "eval"));
+    assert.ok(violations.some((v) => v.specifier === "new Function"));
   });
 
   it("scans compiled serverCode/clientCode even when sourceFiles look clean", () => {

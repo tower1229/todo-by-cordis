@@ -270,8 +270,9 @@ async function runClientHotSwapProbe(
     join(tempDir, "node_modules"),
     "dir",
   );
-  const clientSdkUrl = pathToFileURL(
-    join(process.cwd(), "src/v3/client-sdk.ts"),
+  const clientSdkUrl = new URL(
+    import.meta.url.endsWith(".ts") ? "./client-sdk.ts" : "./client-sdk.js",
+    import.meta.url,
   ).href;
 
   const entryPaths = new Map<string, string>();

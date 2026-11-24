@@ -34,8 +34,21 @@ registerHooks({
   },
 });
 
-const HOST_PLUGIN_ID = Symbol("host.pluginId");
+const hostContextPluginId = new WeakMap<object, string>();
 const FIBER_STATE_ACTIVE = 2;
+
+if (
+  typeof (process as unknown as { getBuiltinModule?: unknown })
+    .getBuiltinModule === "function"
+) {
+  Object.defineProperty(process, "getBuiltinModule", {
+    value: () => {
+      throw new Error("process.getBuiltinModule is forbidden in plugin worker");
+    },
+    writable: false,
+    configurable: false,
+  });
+}
 
 function fiberStateName(state: number): FiberStateName {
   switch (state) {
@@ -96,13 +109,24 @@ const routeRegistry = new HttpRouteRegistry();
 const scheduler = new SchedulerEngine();
 const scopedDbCache = new Map<string, ScopedDb>();
 
+function lookupHostPluginId(ctx: unknown): string | undefined {
+  let cur: object | null =
+    ctx && typeof ctx === "object" ? (ctx as object) : null;
+  while (cur) {
+    const found = hostContextPluginId.get(cur);
+    if (found) return found;
+    cur = Object.getPrototypeOf(cur) as object | null;
+  }
+  return undefined;
+}
+
 function resolveOwnerContext(ctx: Context): { pluginId: string; fiber: Fiber } {
   const ctxRecord = ctx as unknown as Record<PropertyKey, unknown>;
   const shadow = ctxRecord[symbols.shadow] as
     | (Context & Record<PropertyKey, unknown>)
     | undefined;
   const origin = shadow ?? (ctx as unknown as Context & Record<PropertyKey, unknown>);
-  const pluginId = origin[HOST_PLUGIN_ID];
+  const pluginId = lookupHostPluginId(origin);
   if (typeof pluginId !== "string" || pluginId.length === 0) {
     throw new Error(
       "Host plugin identity is missing; root services cannot be accessed without host-injected plugin identity",
@@ -197,7 +221,8 @@ async function applyComposition(payload: ApplyCompositionPayload): Promise<{
   const targetById = new Map(payload.orderedEnabled.map((m) => [m.pluginId, m]));
   for (const item of plan.toMount) {
     const meta = targetById.get(item.pluginId)!;
-    const pluginCtx = rootCtx.extend({ [HOST_PLUGIN_ID]: meta.pluginId });
+    const pluginCtx = rootCtx.extend();
+    hostContextPluginId.set(pluginCtx, meta.pluginId);
 
     let pluginExport: Plugin;
     if (meta.entryPath) {
@@ -270,9 +295,7 @@ function collectServicesByPlugin(): {
   for (const key of Reflect.ownKeys(store)) {
     const impl = store[key];
     if (!impl || typeof impl.name !== "string") continue;
-    const ownerId = (
-      impl.fiber?.ctx as unknown as Record<PropertyKey, unknown> | undefined
-    )?.[HOST_PLUGIN_ID];
+    const ownerId = lookupHostPluginId(impl.fiber?.ctx);
     if (typeof ownerId !== "string") continue;
     if (!allServices.includes(impl.name)) {
       allServices.push(impl.name);

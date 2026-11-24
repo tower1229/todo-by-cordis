@@ -895,12 +895,22 @@ export class EvolutionLoop {
       controller.abort(new Error("用户已取消运行"));
     }
 
+    if (run.previewSessionId) {
+      try {
+        await this.release.closePreview(run.previewSessionId);
+      } catch {
+        // Ignore already-closed preview session errors
+      }
+    }
+
     const updated = this.appendEvent(
       {
         ...run,
         status: "cancelled",
         stage: "cancelled",
         clarification: null,
+        previewSessionId: null,
+        previewUrl: null,
         error: "用户已取消运行",
       },
       "cancelled",
@@ -1236,12 +1246,41 @@ export class EvolutionLoop {
             toolCallId: call.id,
             askedAt: new Date().toISOString(),
           };
+          // Preserve receipts for any sibling tool_calls in the same turn so
+          // tool_call_id counts stay balanced when answerClarification resumes.
+          const callIndex = calls.indexOf(call);
+          const skippedResponses = calls.slice(callIndex + 1).map((skipped) => ({
+            functionResponse: {
+              id: skipped.id,
+              name: skipped.name,
+              response: {
+                ok: false,
+                skipped: true,
+                reason: "paused_for_clarification",
+              },
+            },
+          }));
+          const pendingSiblingResponses = [
+            ...toolResponses,
+            ...skippedResponses,
+          ];
+          const messagesWithSiblings =
+            pendingSiblingResponses.length > 0
+              ? [
+                  ...run.messages,
+                  {
+                    role: "user",
+                    parts: pendingSiblingResponses,
+                  },
+                ]
+              : run.messages;
           run = this.appendEvent(
             {
               ...run,
               status: "awaiting_clarification",
               stage: "awaiting_clarification",
               clarification,
+              messages: messagesWithSiblings,
             },
             "awaiting_clarification",
             `等待用户澄清：${clarification.question}`,

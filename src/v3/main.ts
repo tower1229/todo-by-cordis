@@ -180,6 +180,7 @@ export async function startV3App(
       ? { defaultBudget: options.defaultBudget }
       : {}),
   });
+  evolution.recoverOnStartup();
   release.setEvolutionController(evolution);
 
   const server = await startV3HttpServer(release.runtime, {
@@ -204,6 +205,7 @@ export async function startV3App(
     async close() {
       if (closed) return;
       closed = true;
+      await evolution.close();
       await server.close();
       await release.close();
     },

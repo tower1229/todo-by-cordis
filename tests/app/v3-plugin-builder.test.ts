@@ -115,4 +115,31 @@ export function apply(ctx: Context) {
       /not declared in plugin "review" dependencies/,
     );
   });
+
+  it("rejects path traversal in sourceFiles and invalid pluginId before writing temp files", async () => {
+    await assert.rejects(
+      () =>
+        buildPluginPackage({
+          pluginId: "evil-plugin",
+          name: "Evil",
+          dependencies: [],
+          sourceFiles: {
+            "../../escape.ts": "export const x = 1;",
+          },
+          serverSource: `export const name = "evil-plugin"; export function apply() {}`,
+        }),
+      /Path traversal detected/,
+    );
+
+    await assert.rejects(
+      () =>
+        buildPluginPackage({
+          pluginId: "../bad-id",
+          name: "Bad",
+          dependencies: [],
+          serverSource: `export const name = "bad"; export function apply() {}`,
+        }),
+      /Invalid pluginId/,
+    );
+  });
 });

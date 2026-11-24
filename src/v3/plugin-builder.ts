@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { build as viteBuild, transformWithOxc } from "vite";
 import { V3_IMPORTMAP_SPECIFIERS } from "./client-bundle-builder.js";
@@ -167,9 +167,40 @@ export interface TypecheckPluginPackageResult {
   readonly diagnostics: readonly string[];
 }
 
+const SAFE_PLUGIN_ID_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+function assertSafePluginId(id: string, label: string): void {
+  if (!SAFE_PLUGIN_ID_RE.test(id)) {
+    throw new PluginBuildError(id || "unknown", [
+      `Invalid ${label} "${id}": must match ${SAFE_PLUGIN_ID_RE}`,
+    ]);
+  }
+}
+
+function resolveSafeSubPath(
+  pluginId: string,
+  baseDir: string,
+  relPath: string,
+): string {
+  if (!relPath || relPath.includes("\0")) {
+    throw new PluginBuildError(pluginId, [
+      `Invalid source file path "${relPath}"`,
+    ]);
+  }
+  const normalizedBase = resolve(baseDir);
+  const target = resolve(normalizedBase, relPath);
+  if (!target.startsWith(`${normalizedBase}${sep}`)) {
+    throw new PluginBuildError(pluginId, [
+      `Path traversal detected in source file path "${relPath}"`,
+    ]);
+  }
+  return target;
+}
+
 export async function typecheckPluginPackage(
   input: TypecheckPluginPackageInput,
 ): Promise<TypecheckPluginPackageResult> {
+  assertSafePluginId(input.pluginId, "pluginId");
   const workspaceRoot = resolve(input.workspaceRoot ?? process.cwd());
   const tscBin = join(workspaceRoot, "node_modules", ".bin", "tsc");
   const tempRoot = mkdtempSync(join(tmpdir(), `v3-typecheck-${input.pluginId}-`));
@@ -180,7 +211,12 @@ export async function typecheckPluginPackage(
     if (input.upstreamContracts) {
       for (const [depId, dts] of Object.entries(input.upstreamContracts)) {
         if (!dts.trim()) continue;
-        const depFile = join(tempRoot, "deps", depId, "contract.d.ts");
+        assertSafePluginId(depId, "dependency pluginId");
+        const depFile = resolveSafeSubPath(
+          input.pluginId,
+          join(tempRoot, "deps"),
+          join(depId, "contract.d.ts"),
+        );
         mkdirSync(dirname(depFile), { recursive: true });
         writeFileSync(depFile, dts, "utf8");
         includePatterns.push(`deps/${depId}/contract.d.ts`);
@@ -194,6 +230,7 @@ export async function typecheckPluginPackage(
       includePatterns.push("plugin/contract.d.ts");
     }
 
+    const pluginDir = join(tempRoot, "plugin");
     for (const [relPath, content] of Object.entries(input.sourceFiles)) {
       if (
         !relPath.endsWith(".ts") &&
@@ -202,7 +239,7 @@ export async function typecheckPluginPackage(
       ) {
         continue;
       }
-      const target = join(tempRoot, "plugin", relPath);
+      const target = resolveSafeSubPath(input.pluginId, pluginDir, relPath);
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, content, "utf8");
       includePatterns.push(`plugin/${relPath}`);

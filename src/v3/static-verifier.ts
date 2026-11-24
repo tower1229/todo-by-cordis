@@ -232,6 +232,53 @@ export function verifyStaticBoundaries(artifact: PluginArtifact): StaticViolatio
             reason: `CommonJS require("${spec}") is forbidden in plugin code`,
             line,
           });
+          return;
+        }
+
+        if (
+          callee?.type === "Identifier" &&
+          (callee.name === "eval" || callee.name === "Function")
+        ) {
+          violations.push({
+            pluginId: artifact.pluginId,
+            file: relPath,
+            specifier: callee.name,
+            reason: `Dynamic code execution via ${callee.name}() is forbidden in plugin code`,
+            line,
+          });
+          return;
+        }
+
+        if (callee?.type === "MemberExpression") {
+          const prop = callee.property as Record<string, unknown> | undefined;
+          const propName =
+            !callee.computed && prop?.type === "Identifier"
+              ? prop.name
+              : prop?.type === "StringLiteral"
+                ? prop.value
+                : undefined;
+          if (propName === "getBuiltinModule") {
+            violations.push({
+              pluginId: artifact.pluginId,
+              file: relPath,
+              specifier: "process.getBuiltinModule",
+              reason: "process.getBuiltinModule() is forbidden in plugin code",
+              line,
+            });
+          }
+        }
+      }
+
+      if (node.type === "NewExpression") {
+        const callee = node.callee as Record<string, unknown> | undefined;
+        if (callee?.type === "Identifier" && callee.name === "Function") {
+          violations.push({
+            pluginId: artifact.pluginId,
+            file: relPath,
+            specifier: "new Function",
+            reason: "Dynamic code execution via new Function() is forbidden in plugin code",
+            line,
+          });
         }
       }
     });
