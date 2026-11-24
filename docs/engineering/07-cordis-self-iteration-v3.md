@@ -1,6 +1,8 @@
 # 基于真 Cordis 的全栈自迭代架构 V3
 
-日期：2026-11-20（经架构完整性与工程颗粒度审查定稿）。状态：现行设计基线，覆盖 `00-core-direction-v2.md` 与 `06-agent-redesign.md` 中冲突的宿主 Todo 扩展注册表、孤立 VM 插件桥、形式化规格编译与前置空历史复核机制。关联决策见 [ADR 0001](../adr/0001-evolution-scope-and-application-confirmation.md)–[ADR 0004](../adr/0004-freeze-request-and-show-execution-progress.md)、[ADR 0006](../adr/0006-dual-context-cordis-and-thin-supervisor.md)、[ADR 0007](../adr/0007-executable-subgraph-verification-and-direct-preview.md)；领域术语以根目录 [`CONTEXT.md`](../../CONTEXT.md) 为准。
+日期：2026-11-20（经架构完整性与工程颗粒度审查定稿；2026-11-24 随仓库模块化重构完成目录与命名对齐）。状态：现行设计基线，覆盖 `00-core-direction-v2.md` 与 `06-agent-redesign.md` 中冲突的宿主 Todo 扩展注册表、孤立 VM 插件桥、形式化规格编译与前置空历史复核机制。关联决策见 [ADR 0001](../adr/0001-evolution-scope-and-application-confirmation.md)–[ADR 0004](../adr/0004-freeze-request-and-show-execution-progress.md)、[ADR 0006](../adr/0006-dual-context-cordis-and-thin-supervisor.md)、[ADR 0007](../adr/0007-executable-subgraph-verification-and-direct-preview.md)、[ADR 0008](../adr/0008-controlled-real-model-acceptance-guardrails.md)；领域术语以根目录 [`CONTEXT.md`](../../CONTEXT.md) 为准。
+
+> **落地结构映射（2026-11-24）**：本蓝图已全面落地并去除过渡 `v3` 路径前缀，对应当前代码树：`src/contracts/`（契约与双端 SDK）、`src/runtime/{server,client}/`（双端真 Cordis 运行时与 `ScopedDb`）、`src/build/`（插件构建与按需 CSS）、`src/verify/`（四道确定性门禁）、`src/release/`（`supervisor.db` 发布、撤回与隔离预览）、`src/evolution/`（5 工具闭环与 DeepSeek 传输层）、`src/supervisor/{server,ui}/`（`/api/host/*` 控制面网关与 `SupervisorShell` 外壳）。
 
 ---
 
@@ -120,7 +122,7 @@ plugins/<pluginId>/
 ```mermaid
 flowchart TB
   subgraph Browser["浏览器（Browser）"]
-    SupBar["SupervisorHost 外层根（对话 / 真实阶段进度 / 预览横幅 / 应用确认 / 紧急撤回）"]
+    SupBar["SupervisorShell 外层根（对话 / 真实阶段进度 / 预览横幅 / 应用确认 / 紧急撤回）"]
     subgraph ClientApp["应用挂载根（Browser Cordis Context + importmap 单例）"]
       ClientBase["客户端底座：ClientRouter / SlotRegistry（独立 ErrorBoundary） / StyleEffect"]
       ClientPlugins["全栈插件客户端模块：todo-core/client, tags/client, review/client ..."]
@@ -352,7 +354,7 @@ export interface SlotRegistry {
 6. **第 6 步：重新启用标签插件**
    - 直接调用 `stage_plugin_changes({ toggles: [{ pluginId: "tags", enabled: true }] })`。双端重新挂载原 `tags@versionId`，`closure(tags)` 测试与真实历史标签数据即刻恢复展示。
 7. **跨业务迁移检验（如替换为库存管理 `inventory-core`）**
-   - 将种子插件目录由 `plugins/todo-core/` 换为 `plugins/inventory-core/`（表前缀 `plg_inventory_core__*`，暴露 `InventoryService` 与出入库钩子/页面插槽），后续连续迭代“批次效期预警插件”、“出库审批拦截插件”、“盘点图表路由页插件”时，**`SupervisorHost`、`CordisAppRuntime`、`CompositionRelease`、`PluginVerifier` 与 `EvolutionLoop` 零行代码修改**。
+   - 将种子插件目录由 `plugins/todo-core/` 换为 `plugins/inventory-core/`（表前缀 `plg_inventory_core__*`，暴露 `InventoryService` 与出入库钩子/页面插槽），后续连续迭代“批次效期预警插件”、“出库审批拦截插件”、“盘点图表路由页插件”时，**`SupervisorShell`、`CordisAppRuntime`、`CompositionRelease`、`PluginVerifier` 与 `EvolutionLoop` 零行代码修改**。
 
 ---
 
@@ -365,8 +367,8 @@ export interface SlotRegistry {
 - **复用或演进的底层资产**：
   - 子进程生命周期监督、超时 `SIGKILL` 与串行激活骨架（参考 `src/runtime/runtime.ts`、`src/release/release.ts` 重构为 `CordisAppRuntime` 与 `CompositionRelease`）；
   - `@babel/parser` AST 导入检查能力（参考 `src/release/business-bundle.ts` 升级为双端白名单与 DAG 检查）；
-  - DeepSeek 流式传输保活、错误分类、未知用量保守预留与预算账本（保留 `src/evolution/deepseek.ts`、`transport-failure.ts`、`budget.ts`）；
-  - Microsoft To Do 极简视觉令牌与外层助手侧栏交互规范（保留 `DESIGN.md` 与 `src/v3/v3-theme.css` / `src/v3/client/host-base.css` 主题基调）。
+  - DeepSeek 流式传输保活、错误分类、未知用量保守预留与预算账本（保留 `src/evolution/model/deepseek.ts`、`src/evolution/model/transport-failure.ts`、`src/evolution/budget.ts`）；
+  - Microsoft To Do 极简视觉令牌与外层助手侧栏交互规范（保留 `DESIGN.md` 与 `src/runtime/client/theme.css` / `src/runtime/client/host-base.css` 主题基调）。
 - **整体退役不再接入新主线的旧模块**：
   - `src/runtime/child.ts` 中的孤立 `node:vm` `SourceTextModule` JSON 反射包装；
   - `src/server/workspace.ts` 中的 Todo 专属表与状态机、`src/server/extensions/registry.ts`、`ui-slots.ts`；
@@ -388,7 +390,7 @@ export interface SlotRegistry {
    - 交付物：
      - 全栈插件构建器（`tsc` 类型校验 + 客户端 external ESM 打包 + Tailwind v4 按需编译）；
      - `PluginVerifier` 完整四道门禁（AST/DAG + 热插拔循环探针 + 门禁 ② 情形 A/B 剥离不变量 + `closure(P)` 子图红绿差分 + `sqlite.backup` 克隆库全组合冒烟 + 测试 diff 提取）；
-     - 隔离预览会话（独立克隆库与端口/前缀路由隔离）+ 外层 `SupervisorHost` 控制栏（预览横幅、《变更简报》、乐观锁“确认应用”与“紧急撤回”）。
+     - 隔离预览会话（独立克隆库与端口/前缀路由隔离）+ 外层 `SupervisorShell` 控制栏（预览横幅、《变更简报》、乐观锁“确认应用”与“紧急撤回”）。
    - 验收门禁：
      - 构造“把复盘必填偷塞进 `todo-core`”的耦合候选反例，验证门禁 ② `dispose` 剥离探针 100% 确定性拒绝；
      - 构造“空测试 / 恒真测试”反例，验证门禁 ③ 红绿差分拦截；

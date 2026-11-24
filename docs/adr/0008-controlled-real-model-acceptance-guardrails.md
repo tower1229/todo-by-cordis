@@ -15,3 +15,9 @@ V3 自迭代架构的日常开发、CI 与回归测试全部依赖确定性零�
 2. **STOP_SERIES 纪律**：任何自动流程或 Agent 严禁在未经用户单次显式授权的情况下触发付费真机调用；每轮失败或完成后必须停止并汇报，不得自动续跑下一轮。
 3. **双层预算硬顶**：外层由 `--max-calls` 与 `--max-cost-cny` 硬性封顶（超限立即中止并记账），内层单步 `EvolutionLoop` 受 `REAL_MODEL_EVOLUTION_BUDGET`（默认 `callLimit: 24`、`activeMsLimit: 20 min`）约束。
 4. **归档治理**：Git 仓库仅保留精简的 `summary.json`、`*-outcome.md` 与关键最终截图；大体积原始调用日志（`calls.jsonl`、`events.jsonl`、`*.db-wal`）不纳入 Git 跟踪。
+
+## 演进注记（2026-11-24 全仓去过渡版本号重构）
+
+在 V3 架构全量成为主线并完成目录重组后，本 ADR 确立的 fail-closed、双层预算硬顶、归档治理与 `STOP_SERIES` 纪律**保持 100% 不变**，入口命令与环境变量同步去除过渡 `v3` 前缀：
+- 脚本入口：`pnpm accept:real-model`（[`scripts/accept-real-model.ts`](../../scripts/accept-real-model.ts)）
+- 环境变量确认：`REAL_MODEL_AUTHORIZED=1`（仍须同时配合 `--authorize-paid-run` 与有效 `DEEPSEEK_API_KEY`）

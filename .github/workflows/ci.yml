@@ -1,4 +1,4 @@
-name: V3 checks
+name: CI checks
 on: [push, pull_request]
 jobs:
   verify:

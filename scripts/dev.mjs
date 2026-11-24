@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-const child = spawn(process.execPath, ["--import", "tsx", "src/v3/main.ts"], {
+const child = spawn(process.execPath, ["--import", "tsx", "src/main.ts"], {
   stdio: "inherit",
   windowsHide: true,
 });

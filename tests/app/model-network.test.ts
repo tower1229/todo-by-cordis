@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { modelNetworkPolicy } from "../../src/evolution/model-network.js";
-import { DeepSeek } from "../../src/evolution/deepseek.js";
-import { ModelTransportError } from "../../src/evolution/driver.js";
+import { modelNetworkPolicy } from "../../src/evolution/model/network.js";
+import { DeepSeekDriver } from "../../src/evolution/model/deepseek.js";
+import { ModelTransportError } from "../../src/evolution/model/types.js";
 
 const system = `<dictionary> {
   HTTPSProxy : 127.0.0.1
@@ -106,12 +106,12 @@ test("默认DeepSeek客户端实际使用显式代理且只请求一次，隔离
     const a = server.address();
     if (!a || typeof a === "string") throw new Error("缺少本机端口");
     const moduleUrl = new URL(
-      "../../src/evolution/deepseek.ts",
+      "../../src/evolution/model/deepseek.ts",
       import.meta.url,
     ).href;
-    const script = `import { DeepSeek } from ${JSON.stringify(moduleUrl)};
+    const script = `import { DeepSeekDriver } from ${JSON.stringify(moduleUrl)};
       let error;
-      try { await new DeepSeek('synthetic-key').generate({instruction:'synthetic',history:[],message:'synthetic'},AbortSignal.timeout(3000)); }
+      try { await new DeepSeekDriver({ apiKey: 'synthetic-key' }).generate({ system: 'synthetic', history: [{ role: 'user', content: 'synthetic' }], tools: [] }, AbortSignal.timeout(3000)); }
       catch(e) {error={message:e.message,transport:e.transport};}
       const local = await fetch('http://127.0.0.1:${a.port}/isolated',{signal:AbortSignal.timeout(3000)}).then(r=>r.text());
       console.log(JSON.stringify({error,local}));`;
@@ -158,12 +158,19 @@ for (const [code, kind] of [
       new Error("https://user:proxy-secret@localhost/path?key=synthetic-key"),
       { code },
     );
-    const g = new DeepSeek("synthetic-key", async () => {
-      throw new TypeError("fetch failed", { cause });
+    const g = new DeepSeekDriver({
+      apiKey: "synthetic-key",
+      http: async () => {
+        throw new TypeError("fetch failed", { cause });
+      },
     });
     await assert.rejects(
       g.generate(
-        { instruction: "合成", history: [], message: "合成" },
+        {
+          system: "合成",
+          history: [{ role: "user", content: "合成" }],
+          tools: [],
+        },
         new AbortController().signal,
       ),
       (error) => {
