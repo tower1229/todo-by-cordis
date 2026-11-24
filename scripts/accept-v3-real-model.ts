@@ -48,7 +48,7 @@ export const DEFAULT_REAL_MODEL_MAX_COST_CNY = 8.0;
 
 /** Per-run EvolutionLoop budget for real DeepSeek reasoner latency (outer call/cost caps still apply). */
 export const REAL_MODEL_EVOLUTION_BUDGET = {
-  callLimit: 24,
+  callLimit: 36,
   activeMsLimit: 20 * 60_000,
 } as const;
 

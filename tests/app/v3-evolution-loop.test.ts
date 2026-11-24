@@ -932,4 +932,40 @@ export function apply(ctx: Context) {
       await release.close();
     }
   });
+
+  it("system prompt documents the canonical client/server plugin authoring surface", async () => {
+    const dir = createTempDir("v3-evo-system-prompt-");
+    const { release } = await createSeedRelease(dir);
+
+    let capturedSystem = "";
+    const driver: ModelDriver = {
+      async generate(request) {
+        capturedSystem = request.system;
+        return {
+          calls: [
+            { id: "call_done", name: "clarify_request", args: { question: "阅读提示" } },
+          ],
+        };
+      },
+    };
+
+    const loop = new EvolutionLoop({
+      release,
+      modelDriver: driver,
+      verifyFn: async () => makePassingReport(["core-notes"]),
+    });
+
+    try {
+      const started = await loop.startRun("读取 system prompt");
+      await loop.waitForRun(started.runId);
+      assert.match(capturedSystem, /@host\/client-sdk/);
+      assert.match(capturedSystem, /ctx\.router\.registerPage\(/);
+      assert.match(capturedSystem, /ctx\.slots\.register\(/);
+      assert.match(capturedSystem, /@host\/server-sdk/);
+      assert.match(capturedSystem, /ctx\.http\.route\(/);
+    } finally {
+      await loop.close();
+      await release.close();
+    }
+  });
 });

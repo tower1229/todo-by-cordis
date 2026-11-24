@@ -1,0 +1,403 @@
+{
+  "executedAt": "2026-11-24T03:14:34.045Z",
+  "scenario": "inventory-migration",
+  "limits": {
+    "maxCalls": 72,
+    "maxCostCny": 40
+  },
+  "evolutionBudget": {
+    "callLimit": 24,
+    "activeMsLimit": 1200000
+  },
+  "usage": {
+    "calls": 24,
+    "promptTokens": 1884202,
+    "completionTokens": 105144,
+    "unknownUsageCalls": 0,
+    "estimatedCostCny": 9.219111999999999
+  },
+  "results": [
+    {
+      "scenario": "inventory-migration",
+      "seedPluginDir": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/plugins/inventory-core",
+      "steps": [
+        {
+          "step": 1,
+          "prompt": "新增一个 inventory-expiry 效期预警插件：为库存批次提供效期登记与临期预警展示，不破坏 inventory-core 原有功能。",
+          "runId": "evo-0668a5d9",
+          "status": "awaiting_budget",
+          "highlights": [],
+          "changeBrief": null,
+          "budget": {
+            "callLimit": 24,
+            "callsUsed": 24,
+            "activeMsLimit": 1200000,
+            "activeMsUsed": 434932,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 1989346,
+            "exhaustedResource": "calls"
+          },
+          "error": "已达到 24 次模型调用上限",
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-24T03:07:13.977Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-24T03:07:13.978Z",
+              "stage": "calling_model",
+              "message": "第 1/24 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-24T03:07:14.740Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：inventory-core"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-24T03:07:14.744Z",
+              "stage": "calling_model",
+              "message": "第 2/24 次模型调用中"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-24T03:08:49.716Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-core"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-24T03:08:49.721Z",
+              "stage": "calling_model",
+              "message": "第 3/24 次模型调用中"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-24T03:10:27.720Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-24T03:10:27.729Z",
+              "stage": "calling_model",
+              "message": "第 4/24 次模型调用中"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-24T03:10:55.903Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 10,
+              "timestamp": "2026-11-24T03:10:55.911Z",
+              "stage": "calling_model",
+              "message": "第 5/24 次模型调用中"
+            },
+            {
+              "seq": 11,
+              "timestamp": "2026-11-24T03:11:06.658Z",
+              "stage": "calling_model",
+              "message": "模型响应协议校验失败，已回喂修正：工具参数不符合 JSON 业务契约：stage_plugin_changes：$o.upserts[0].sourceFiles: 缺少必填字段"
+            },
+            {
+              "seq": 12,
+              "timestamp": "2026-11-24T03:11:06.664Z",
+              "stage": "calling_model",
+              "message": "第 6/24 次模型调用中"
+            },
+            {
+              "seq": 13,
+              "timestamp": "2026-11-24T03:11:15.739Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 14,
+              "timestamp": "2026-11-24T03:11:15.757Z",
+              "stage": "calling_model",
+              "message": "第 7/24 次模型调用中"
+            },
+            {
+              "seq": 15,
+              "timestamp": "2026-11-24T03:11:17.145Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 16,
+              "timestamp": "2026-11-24T03:11:17.553Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate1-hotswap-probe)：[client-initial-mount] inventory-expiry (load-error): cannot get property \"slot\" without inject"
+            },
+            {
+              "seq": 17,
+              "timestamp": "2026-11-24T03:11:17.557Z",
+              "stage": "calling_model",
+              "message": "第 8/24 次模型调用中"
+            },
+            {
+              "seq": 18,
+              "timestamp": "2026-11-24T03:12:07.440Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 19,
+              "timestamp": "2026-11-24T03:12:07.471Z",
+              "stage": "calling_model",
+              "message": "第 9/24 次模型调用中"
+            },
+            {
+              "seq": 20,
+              "timestamp": "2026-11-24T03:12:32.599Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 21,
+              "timestamp": "2026-11-24T03:12:32.617Z",
+              "stage": "calling_model",
+              "message": "第 10/24 次模型调用中"
+            },
+            {
+              "seq": 22,
+              "timestamp": "2026-11-24T03:12:33.887Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 23,
+              "timestamp": "2026-11-24T03:12:34.235Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate1-hotswap-probe)：[client-initial-mount] inventory-expiry (load-error): Client plugin \"inventory-expiry@bddd279e7e29c9a6\" did not enter ACTIVE state (state=0)"
+            },
+            {
+              "seq": 24,
+              "timestamp": "2026-11-24T03:12:34.246Z",
+              "stage": "calling_model",
+              "message": "第 11/24 次模型调用中"
+            },
+            {
+              "seq": 25,
+              "timestamp": "2026-11-24T03:12:51.387Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 26,
+              "timestamp": "2026-11-24T03:12:51.400Z",
+              "stage": "calling_model",
+              "message": "第 12/24 次模型调用中"
+            },
+            {
+              "seq": 27,
+              "timestamp": "2026-11-24T03:12:52.370Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 28,
+              "timestamp": "2026-11-24T03:12:52.781Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate1-hotswap-probe)：[client-initial-mount] inventory-expiry (load-error): DIAG_SDK[ClientRuntimeProvider,PluginErrorBoundary,Slot,dispatchClientBail,useClientContext,useClientDiagnostics,useClientRoutes,useClientRuntimeBridge,useClientRuntimeSnapshot,useCurrentPath,useNavigate,useSlotEntries] DIAG_CTX[fiber] DIAG_PROTO[fiber]"
+            },
+            {
+              "seq": 29,
+              "timestamp": "2026-11-24T03:12:52.786Z",
+              "stage": "calling_model",
+              "message": "第 13/24 次模型调用中"
+            },
+            {
+              "seq": 30,
+              "timestamp": "2026-11-24T03:13:11.824Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 31,
+              "timestamp": "2026-11-24T03:13:11.838Z",
+              "stage": "calling_model",
+              "message": "第 14/24 次模型调用中"
+            },
+            {
+              "seq": 32,
+              "timestamp": "2026-11-24T03:13:13.294Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 33,
+              "timestamp": "2026-11-24T03:13:13.464Z",
+              "stage": "verifying_candidate",
+              "message": "插件 inventory-expiry 构建/类型检查失败（2 条诊断）"
+            },
+            {
+              "seq": 34,
+              "timestamp": "2026-11-24T03:13:13.469Z",
+              "stage": "calling_model",
+              "message": "第 15/24 次模型调用中"
+            },
+            {
+              "seq": 35,
+              "timestamp": "2026-11-24T03:13:16.210Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 36,
+              "timestamp": "2026-11-24T03:13:16.224Z",
+              "stage": "calling_model",
+              "message": "第 16/24 次模型调用中"
+            },
+            {
+              "seq": 37,
+              "timestamp": "2026-11-24T03:13:17.088Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 38,
+              "timestamp": "2026-11-24T03:13:17.326Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate1-hotswap-probe)：[client-initial-mount] inventory-expiry (load-error): DIAG2[slot=ERR ;; slots=object{k:register;p:constructor|__defineGetter__|__defineSetter__|hasOwnProperty|__lookupGetter__|__lookupSetter__|isPrototypeOf|propertyIsEnumerable|toString|valueOf|__proto__|toLocaleString} ;; slotRegistry=ERR ;; registerSlot=ERR ;; registerSlots=ERR ;; registerClientSlot=ERR ;; contribute=ERR ;; client=ERR ;; ui=ERR ;; view=ERR ;; router=object{k:registerPage;p:constructor|__defineGetter__|__defineSetter__|hasOwnProperty|__lookupGetter__|__lookupSetter__|isPrototypeOf|propertyIsEnumerable|toString|valueOf|__proto__|toLocaleString} ;; routes=ERR]"
+            },
+            {
+              "seq": 39,
+              "timestamp": "2026-11-24T03:13:17.331Z",
+              "stage": "calling_model",
+              "message": "第 17/24 次模型调用中"
+            },
+            {
+              "seq": 40,
+              "timestamp": "2026-11-24T03:13:23.472Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 41,
+              "timestamp": "2026-11-24T03:13:23.485Z",
+              "stage": "calling_model",
+              "message": "第 18/24 次模型调用中"
+            },
+            {
+              "seq": 42,
+              "timestamp": "2026-11-24T03:13:24.835Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 43,
+              "timestamp": "2026-11-24T03:13:25.062Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate1-hotswap-probe)：[client-initial-mount] inventory-expiry (load-error): DIAG3[len=3;keys=register;src=(slotName,component,options)=>self.registerSlotForPlugin(pluginId,versionId,fiber,slotName,component,options)]"
+            },
+            {
+              "seq": 44,
+              "timestamp": "2026-11-24T03:13:25.067Z",
+              "stage": "calling_model",
+              "message": "第 19/24 次模型调用中"
+            },
+            {
+              "seq": 45,
+              "timestamp": "2026-11-24T03:13:46.630Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 46,
+              "timestamp": "2026-11-24T03:13:46.645Z",
+              "stage": "calling_model",
+              "message": "第 20/24 次模型调用中"
+            },
+            {
+              "seq": 47,
+              "timestamp": "2026-11-24T03:13:48.420Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 48,
+              "timestamp": "2026-11-24T03:13:49.213Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate3-subgraph-contract)：Subgraph contract tests failed for \"inventory-expiry\" in closure [inventory-expiry, inventory-core]: inventory-expiry.spec.ts: Expected values to be strictly equal:\n\n404 !== 200\n"
+            },
+            {
+              "seq": 49,
+              "timestamp": "2026-11-24T03:13:49.221Z",
+              "stage": "calling_model",
+              "message": "第 21/24 次模型调用中"
+            },
+            {
+              "seq": 50,
+              "timestamp": "2026-11-24T03:14:07.413Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 51,
+              "timestamp": "2026-11-24T03:14:07.428Z",
+              "stage": "calling_model",
+              "message": "第 22/24 次模型调用中"
+            },
+            {
+              "seq": 52,
+              "timestamp": "2026-11-24T03:14:08.511Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 53,
+              "timestamp": "2026-11-24T03:14:09.184Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate3-subgraph-contract)：Subgraph contract tests failed for \"inventory-expiry\" in closure [inventory-expiry, inventory-core]: inventory-expiry.spec.ts: step:get-item-batches\n\n404 !== 200\n"
+            },
+            {
+              "seq": 54,
+              "timestamp": "2026-11-24T03:14:09.192Z",
+              "stage": "calling_model",
+              "message": "第 23/24 次模型调用中"
+            },
+            {
+              "seq": 55,
+              "timestamp": "2026-11-24T03:14:29.211Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 56,
+              "timestamp": "2026-11-24T03:14:29.228Z",
+              "stage": "calling_model",
+              "message": "第 24/24 次模型调用中"
+            },
+            {
+              "seq": 57,
+              "timestamp": "2026-11-24T03:14:32.635Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 58,
+              "timestamp": "2026-11-24T03:14:33.273Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate3-subgraph-contract)：Subgraph contract tests failed for \"inventory-expiry\" in closure [inventory-expiry, inventory-core]: inventory-expiry.spec.ts: step:get-item-batches\n\n404 !== 200\n"
+            },
+            {
+              "seq": 59,
+              "timestamp": "2026-11-24T03:14:33.280Z",
+              "stage": "awaiting_budget",
+              "message": "预算耗尽暂停：已达到 24 次模型调用上限"
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-24T03-07-12-471Z/inventory-migration/step-1.png",
+          "activeCompositionId": "seed-inventory-core-v1"
+        }
+      ]
+    }
+  ]
+}
