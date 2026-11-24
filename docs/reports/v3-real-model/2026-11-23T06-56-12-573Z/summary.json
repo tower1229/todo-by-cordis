@@ -1,0 +1,742 @@
+{
+  "executedAt": "2026-11-23T07:13:01.995Z",
+  "scenario": "todo-six-step",
+  "limits": {
+    "maxCalls": 72,
+    "maxCostCny": 40
+  },
+  "evolutionBudget": {
+    "callLimit": 18,
+    "activeMsLimit": 1200000
+  },
+  "usage": {
+    "calls": 36,
+    "promptTokens": 2353726,
+    "completionTokens": 237097,
+    "unknownUsageCalls": 0,
+    "estimatedCostCny": 13.208456000000002
+  },
+  "results": [
+    {
+      "scenario": "todo-six-step",
+      "seedPluginDir": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/plugins/todo-core",
+      "steps": [
+        {
+          "step": 1,
+          "prompt": "新增一个 todo-tags 标签插件：为任务提供自有标签表、标签增删查接口，以及在任务行展示标签和编辑标签的界面。",
+          "runId": "evo-b0889e48",
+          "status": "preview_ready",
+          "highlights": [
+            "自有存储：plg_todo_tags__tags（名称唯一、颜色枚举、大小写不敏感去重）与 plg_todo_tags__task_tags（以 task_id 为不透明外键，无跨插件内部依赖）",
+            "HTTP 接口：GET/POST /api/app/todo-tags/tags、DELETE /tags/:id，GET/POST/PUT/DELETE /tasks/:taskId/tags（整体替换与单条挂载/解绑），校验齐全（400/404/409）",
+            "服务与事件：提供服务 tags（TagService：list/get/create/delete/listForTask/attach/detach/setForTask），并在变更时派发 tags:changed 事件",
+            "任务行展示：TaskTagBadges 注入 todo.item.badges，渲染彩色标签胶囊（行内样式取色，不依赖额外主题调色板）",
+            "标签编辑：TaskTagEditor 注入 todo.item.detail，标签点选即保存、支持内联新建并自动挂载；刻意不使用嵌套 <form>（该插槽嵌在详情表单内），改用 type=\"button\" + Enter 键处理",
+            "跨组件同步：编辑后派发 window 事件 todo-tags:changed，任务行标签即时刷新",
+            "客户端注入：slot 属于 Cordis 客户端服务，已通过 export const inject = ['slot'] + ctx.inject(['slot'], …) 声明后再注册插槽",
+            "插件无硬依赖：仅向 todo-core 发布的插槽投影 UI，todo-core 单独消融时仍可正常工作"
+          ],
+          "changeBrief": {
+            "summary": "新增 todo-tags 插件：自带标签表与任务关联表，提供标签增删查 / 任务标签设置接口，并通过 todo-core 的插槽在任务行展示标签、在任务详情内编辑标签。已通过全部四个验证门（构建/DAG/热插拔、消融、子图红绿与克隆库冒烟、测试差异披露）。",
+            "affectedPlugins": [
+              {
+                "pluginId": "todo-tags",
+                "action": "added",
+                "toVersionId": "c5222f9fd46b5d91"
+              }
+            ],
+            "dataCompatibility": {
+              "compatible": true,
+              "summary": "已通过真实克隆数据冒烟验证，与当前业务库兼容",
+              "disabledPluginDataChecks": []
+            },
+            "testChangeDisclosures": [],
+            "noBehaviorDiffWarning": false,
+            "warnings": []
+          },
+          "budget": {
+            "callLimit": 18,
+            "callsUsed": 7,
+            "activeMsLimit": 1200000,
+            "activeMsUsed": 212492,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 282375,
+            "exhaustedResource": null
+          },
+          "error": null,
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-23T06:56:14.424Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-23T06:56:14.425Z",
+              "stage": "calling_model",
+              "message": "第 1/18 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-23T06:56:15.133Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-core"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-23T06:56:15.134Z",
+              "stage": "calling_model",
+              "message": "第 2/18 次模型调用中"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-23T06:56:32.261Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-tags"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-23T06:56:32.263Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：@host/client-sdk"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-23T06:56:32.265Z",
+              "stage": "calling_model",
+              "message": "第 3/18 次模型调用中"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-23T06:58:47.368Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-23T06:58:47.378Z",
+              "stage": "calling_model",
+              "message": "第 4/18 次模型调用中"
+            },
+            {
+              "seq": 10,
+              "timestamp": "2026-11-23T06:58:48.099Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 11,
+              "timestamp": "2026-11-23T06:58:49.110Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate1-hotswap-probe)：[client-initial-mount] todo-tags (load-error): cannot get property \"slot\" without inject"
+            },
+            {
+              "seq": 12,
+              "timestamp": "2026-11-23T06:58:49.114Z",
+              "stage": "calling_model",
+              "message": "第 5/18 次模型调用中"
+            },
+            {
+              "seq": 13,
+              "timestamp": "2026-11-23T06:59:43.295Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 14,
+              "timestamp": "2026-11-23T06:59:43.306Z",
+              "stage": "calling_model",
+              "message": "第 6/18 次模型调用中"
+            },
+            {
+              "seq": 15,
+              "timestamp": "2026-11-23T06:59:44.082Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 16,
+              "timestamp": "2026-11-23T06:59:45.872Z",
+              "stage": "verifying_candidate",
+              "message": "四道验证门禁全部通过，可调用 present_preview 挂载隔离预览"
+            },
+            {
+              "seq": 17,
+              "timestamp": "2026-11-23T06:59:45.880Z",
+              "stage": "calling_model",
+              "message": "第 7/18 次模型调用中"
+            },
+            {
+              "seq": 18,
+              "timestamp": "2026-11-23T06:59:49.789Z",
+              "stage": "opening_preview",
+              "message": "门禁全绿，正在挂载隔离预览会话"
+            },
+            {
+              "seq": 19,
+              "timestamp": "2026-11-23T06:59:49.898Z",
+              "stage": "preview_ready",
+              "message": "隔离预览已就绪 (prev-50e60b2e)：新增 todo-tags 插件：自带标签表与任务关联表，提供标签增删查 / 任务标签设置接口，并通过 todo-core 的插槽在任务行展示标签、在任务详情内编辑标签。已通过全部四个验证门（构建/DAG/热插拔、消融、子图红绿与克隆库冒烟、测试差异披露）。"
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-23T06-56-12-573Z/todo-six-step/step-1.png",
+          "activeCompositionId": "cand-comp-3afa98f1"
+        },
+        {
+          "step": 2,
+          "prompt": "新增一个 todo-counter 计数插件，在页面顶部状态插槽展示当前未完成与已完成任务数量，不要修改 todo-core 与 todo-tags。",
+          "runId": "evo-73d0e0a6",
+          "status": "preview_ready",
+          "highlights": [
+            "客户端在 todo.header.actions 插槽挂载紧凑状态胶囊（未完成 N / 已完成 M），直接根据 todo-core 传入的 tasks 实时计算，无需额外请求",
+            "服务端提供只读计数服务 todoCounter 与 GET /api/app/todo-counter/counts，通过注入 todo 服务聚合 open/done/total",
+            "仅在 todo-core 提供的插槽内渲染，todo-core 与 todo-tags 源码零修改",
+            "契约测试经公开 HTTP API 验证计数随任务创建与状态流转正确变化"
+          ],
+          "changeBrief": {
+            "summary": "新增 todo-counter 插件：顶部状态栏实时展示未完成/已完成任务数量，不对 todo-core 与 todo-tags 做任何改动。",
+            "affectedPlugins": [
+              {
+                "pluginId": "todo-counter",
+                "action": "added",
+                "toVersionId": "ad4e6bfe44799167"
+              }
+            ],
+            "dataCompatibility": {
+              "compatible": true,
+              "summary": "已通过真实克隆数据冒烟验证，与当前业务库兼容",
+              "disabledPluginDataChecks": []
+            },
+            "testChangeDisclosures": [],
+            "noBehaviorDiffWarning": false,
+            "warnings": []
+          },
+          "budget": {
+            "callLimit": 18,
+            "callsUsed": 6,
+            "activeMsLimit": 1200000,
+            "activeMsUsed": 118321,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 219699,
+            "exhaustedResource": null
+          },
+          "error": null,
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-23T06:59:50.536Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-23T06:59:50.536Z",
+              "stage": "calling_model",
+              "message": "第 1/18 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-23T06:59:52.060Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-core"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-23T06:59:52.061Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-tags"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-23T06:59:52.064Z",
+              "stage": "calling_model",
+              "message": "第 2/18 次模型调用中"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-23T07:01:34.108Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-23T07:01:34.116Z",
+              "stage": "calling_model",
+              "message": "第 3/18 次模型调用中"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-23T07:01:35.235Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-23T07:01:35.431Z",
+              "stage": "verifying_candidate",
+              "message": "插件 todo-counter 构建/类型检查失败（1 条诊断）"
+            },
+            {
+              "seq": 10,
+              "timestamp": "2026-11-23T07:01:35.434Z",
+              "stage": "calling_model",
+              "message": "第 4/18 次模型调用中"
+            },
+            {
+              "seq": 11,
+              "timestamp": "2026-11-23T07:01:45.579Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 12,
+              "timestamp": "2026-11-23T07:01:45.586Z",
+              "stage": "calling_model",
+              "message": "第 5/18 次模型调用中"
+            },
+            {
+              "seq": 13,
+              "timestamp": "2026-11-23T07:01:47.174Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 14,
+              "timestamp": "2026-11-23T07:01:48.764Z",
+              "stage": "verifying_candidate",
+              "message": "四道验证门禁全部通过，可调用 present_preview 挂载隔离预览"
+            },
+            {
+              "seq": 15,
+              "timestamp": "2026-11-23T07:01:48.768Z",
+              "stage": "calling_model",
+              "message": "第 6/18 次模型调用中"
+            },
+            {
+              "seq": 16,
+              "timestamp": "2026-11-23T07:01:50.691Z",
+              "stage": "opening_preview",
+              "message": "门禁全绿，正在挂载隔离预览会话"
+            },
+            {
+              "seq": 17,
+              "timestamp": "2026-11-23T07:01:50.791Z",
+              "stage": "preview_ready",
+              "message": "隔离预览已就绪 (prev-84de9a5d)：新增 todo-counter 插件：顶部状态栏实时展示未完成/已完成任务数量，不对 todo-core 与 todo-tags 做任何改动。"
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-23T06-56-12-573Z/todo-six-step/step-2.png",
+          "activeCompositionId": "cand-comp-d1571d4d"
+        },
+        {
+          "step": 3,
+          "prompt": "升级 todo-tags 插件：新保存的标签自动标准化为小写并去重，同时保留历史标签数据原样可读，并同步更新 todo-tags 测试。",
+          "runId": "evo-1f51f5fa",
+          "status": "preview_ready",
+          "highlights": [
+            "写入规范化：新标签名先去除首尾空白、折叠内部空白并转小写后存储，name_key 与展示名一致",
+            "保存即去重：大小写/空白变体命中已有标签时直接复用（HTTP 200 + deduplicated: true），不再插入重复行，也不再返回 409",
+            "历史数据零迁移：不执行任何 UPDATE 重写，旧标签的名字、颜色、createdAt 原样返回；查询 key 未命中时按规范化名称做内存兜底匹配，旧数据同样能被正确去重",
+            "任务关联去重：attach / setForTask 继续保证同一任务下标签不重复",
+            "UI 提示：标签编辑器新增说明“新标签会以小写保存；重名会自动复用已有标签”",
+            "测试更新：覆盖小写+空白规范化、去重幂等（同 id/name/color/createdAt）、目录唯一性、输入校验、关联去重与历史数据不被改写"
+          ],
+          "changeBrief": {
+            "summary": "升级 todo-tags：新保存标签统一小写规范化并大小写无感去重，历史标签保持原样可读，测试同步更新并通过全部验证。",
+            "affectedPlugins": [
+              {
+                "pluginId": "todo-tags",
+                "action": "upgraded",
+                "fromVersionId": "c5222f9fd46b5d91",
+                "toVersionId": "1a390422c08d64d4"
+              }
+            ],
+            "dataCompatibility": {
+              "compatible": true,
+              "summary": "已通过真实克隆数据冒烟验证，与当前业务库兼容",
+              "disabledPluginDataChecks": []
+            },
+            "testChangeDisclosures": [
+              {
+                "pluginId": "todo-tags",
+                "modifiedFiles": [
+                  "todo-tags.spec.ts"
+                ],
+                "addedFiles": [],
+                "removedFiles": [],
+                "fileDiffs": [
+                  {
+                    "file": "todo-tags.spec.ts",
+                    "status": "modified",
+                    "affectedTestCases": [
+                      "default",
+                      "tagsOf"
+                    ],
+                    "diffSummary": " \n+interface Tag {\n+  readonly id: string;\n+  readonly name: string;\n+  readonly color: string;\n+  readonly createdAt: string;\n+}\n+\n interface TagPayload {\n-  readonly tag: { readonly id: string; readonly name: string; readonly color: string };\n+  readonly tag: Tag;\n+  readonly deduplicated: boolean;\n }\n...\n interface TagListPayload {\n-  readonly tags: ReadonlyArray<{ readonly id: string; readonly name: string }>;\n+  readonly tags: readonly Tag[];\n }\n \n+function tagsOf(body: unknown): readonly Tag[] {\n+  return (body as TagListPayload).tags;\n+}\n+\n export default async function (ctx: PluginTestContext): Promise<void> {\n   const suffix = globalThis.crypto.randomUUID().slice(0, 8);\n-  const tagName = `Urgent-${suffix}`;\n   const taskId = `contract-task-${suffix}`;\n \n+  const initialCatalog = await ctx.request({\n+    method: \"GET\",\n+    path: \"/api/app/todo-tags/tags\",\n+  });\n+  assert.equal(initialCatalog.status, 200);\n+  const preexisting = tagsOf(initialCatalog.body);\n+\n+  // Newly saved tags are lowercased and whitespace-collapsed.\n+  const rawName = `  Release   Notes-${suffix}  `;\n+  const normalizedName = `release notes-${suffix}`;\n   const created = await ctx.request({\n...\n     path: \"/api/app/todo-tags/tags\",\n... (truncated)"
+                  }
+                ]
+              }
+            ],
+            "noBehaviorDiffWarning": false,
+            "warnings": []
+          },
+          "budget": {
+            "callLimit": 18,
+            "callsUsed": 5,
+            "activeMsLimit": 1200000,
+            "activeMsUsed": 158974,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 215537,
+            "exhaustedResource": null
+          },
+          "error": null,
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-23T07:01:51.412Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-23T07:01:51.413Z",
+              "stage": "calling_model",
+              "message": "第 1/18 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-23T07:01:52.255Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-tags"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-23T07:01:52.257Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-core"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-23T07:01:52.260Z",
+              "stage": "calling_model",
+              "message": "第 2/18 次模型调用中"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-23T07:03:25.279Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-counter"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-23T07:03:25.285Z",
+              "stage": "calling_model",
+              "message": "第 3/18 次模型调用中"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-23T07:04:25.714Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-23T07:04:25.721Z",
+              "stage": "calling_model",
+              "message": "第 4/18 次模型调用中"
+            },
+            {
+              "seq": 10,
+              "timestamp": "2026-11-23T07:04:27.380Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 11,
+              "timestamp": "2026-11-23T07:04:28.885Z",
+              "stage": "verifying_candidate",
+              "message": "四道验证门禁全部通过，可调用 present_preview 挂载隔离预览"
+            },
+            {
+              "seq": 12,
+              "timestamp": "2026-11-23T07:04:28.891Z",
+              "stage": "calling_model",
+              "message": "第 5/18 次模型调用中"
+            },
+            {
+              "seq": 13,
+              "timestamp": "2026-11-23T07:04:31.943Z",
+              "stage": "opening_preview",
+              "message": "门禁全绿，正在挂载隔离预览会话"
+            },
+            {
+              "seq": 14,
+              "timestamp": "2026-11-23T07:04:32.047Z",
+              "stage": "preview_ready",
+              "message": "隔离预览已就绪 (prev-b0815e0c)：升级 todo-tags：新保存标签统一小写规范化并大小写无感去重，历史标签保持原样可读，测试同步更新并通过全部验证。"
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-23T06-56-12-573Z/todo-six-step/step-3.png",
+          "activeCompositionId": "cand-comp-a0209a1f"
+        },
+        {
+          "step": 4,
+          "prompt": "新增一个 todo-review 复盘插件：完成任务前必须填写复盘总结，通过为 todo-core 开放通用双端拦截接缝并在 todo-review 中弹窗收集与服务端强校验实现，不得把复盘逻辑写进 todo-core。",
+          "runId": "evo-17f4e076",
+          "status": "awaiting_budget",
+          "highlights": [],
+          "changeBrief": null,
+          "budget": {
+            "callLimit": 18,
+            "callsUsed": 18,
+            "activeMsLimit": 1200000,
+            "activeMsUsed": 508010,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 1873212,
+            "exhaustedResource": "calls"
+          },
+          "error": "已达到 18 次模型调用上限",
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-23T07:04:32.690Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-23T07:04:32.690Z",
+              "stage": "calling_model",
+              "message": "第 1/18 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-23T07:04:35.980Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-core"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-23T07:04:35.981Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-tags"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-23T07:04:35.983Z",
+              "stage": "calling_model",
+              "message": "第 2/18 次模型调用中"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-23T07:04:39.257Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-counter"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-23T07:04:39.261Z",
+              "stage": "calling_model",
+              "message": "第 3/18 次模型调用中"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-23T07:08:36.755Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-23T07:08:36.773Z",
+              "stage": "calling_model",
+              "message": "第 4/18 次模型调用中"
+            },
+            {
+              "seq": 10,
+              "timestamp": "2026-11-23T07:08:56.279Z",
+              "stage": "calling_model",
+              "message": "模型响应协议校验失败，已回喂修正：工具参数不符合 JSON 业务契约：stage_plugin_changes：Expected ',' or ']' after array element in JSON at position 18782 (line 1 column 18783)"
+            },
+            {
+              "seq": 11,
+              "timestamp": "2026-11-23T07:08:56.285Z",
+              "stage": "calling_model",
+              "message": "第 5/18 次模型调用中"
+            },
+            {
+              "seq": 12,
+              "timestamp": "2026-11-23T07:09:19.901Z",
+              "stage": "calling_model",
+              "message": "模型响应协议校验失败，已回喂修正：工具参数不符合 JSON 业务契约：stage_plugin_changes：Unexpected non-whitespace character after JSON at position 22694 (line 1 column 22695)"
+            },
+            {
+              "seq": 13,
+              "timestamp": "2026-11-23T07:09:19.905Z",
+              "stage": "calling_model",
+              "message": "第 6/18 次模型调用中"
+            },
+            {
+              "seq": 14,
+              "timestamp": "2026-11-23T07:09:42.440Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 15,
+              "timestamp": "2026-11-23T07:09:42.452Z",
+              "stage": "calling_model",
+              "message": "第 7/18 次模型调用中"
+            },
+            {
+              "seq": 16,
+              "timestamp": "2026-11-23T07:09:45.689Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-review"
+            },
+            {
+              "seq": 17,
+              "timestamp": "2026-11-23T07:09:45.698Z",
+              "stage": "calling_model",
+              "message": "第 8/18 次模型调用中"
+            },
+            {
+              "seq": 18,
+              "timestamp": "2026-11-23T07:09:55.284Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 19,
+              "timestamp": "2026-11-23T07:09:55.294Z",
+              "stage": "calling_model",
+              "message": "第 9/18 次模型调用中"
+            },
+            {
+              "seq": 20,
+              "timestamp": "2026-11-23T07:10:14.162Z",
+              "stage": "calling_model",
+              "message": "模型响应协议校验失败，已回喂修正：工具参数不符合 JSON 业务契约：stage_plugin_changes：Unexpected non-whitespace character after JSON at position 22694 (line 1 column 22695)"
+            },
+            {
+              "seq": 21,
+              "timestamp": "2026-11-23T07:10:14.169Z",
+              "stage": "calling_model",
+              "message": "第 10/18 次模型调用中"
+            },
+            {
+              "seq": 22,
+              "timestamp": "2026-11-23T07:10:35.199Z",
+              "stage": "calling_model",
+              "message": "模型响应协议校验失败，已回喂修正：工具参数不符合 JSON 业务契约：stage_plugin_changes：Unexpected non-whitespace character after JSON at position 22694 (line 1 column 22695)"
+            },
+            {
+              "seq": 23,
+              "timestamp": "2026-11-23T07:10:35.208Z",
+              "stage": "calling_model",
+              "message": "第 11/18 次模型调用中"
+            },
+            {
+              "seq": 24,
+              "timestamp": "2026-11-23T07:11:04.851Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 25,
+              "timestamp": "2026-11-23T07:11:04.863Z",
+              "stage": "calling_model",
+              "message": "第 12/18 次模型调用中"
+            },
+            {
+              "seq": 26,
+              "timestamp": "2026-11-23T07:11:26.158Z",
+              "stage": "calling_model",
+              "message": "模型响应协议校验失败，已回喂修正：工具参数不符合 JSON 业务契约：stage_plugin_changes：Unexpected non-whitespace character after JSON at position 21337 (line 1 column 21338)"
+            },
+            {
+              "seq": 27,
+              "timestamp": "2026-11-23T07:11:26.168Z",
+              "stage": "calling_model",
+              "message": "第 13/18 次模型调用中"
+            },
+            {
+              "seq": 28,
+              "timestamp": "2026-11-23T07:11:51.229Z",
+              "stage": "calling_model",
+              "message": "模型响应协议校验失败，已回喂修正：工具参数不符合 JSON 业务契约：stage_plugin_changes：Unexpected non-whitespace character after JSON at position 19931 (line 1 column 19932)"
+            },
+            {
+              "seq": 29,
+              "timestamp": "2026-11-23T07:11:51.239Z",
+              "stage": "calling_model",
+              "message": "第 14/18 次模型调用中"
+            },
+            {
+              "seq": 30,
+              "timestamp": "2026-11-23T07:11:58.494Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 31,
+              "timestamp": "2026-11-23T07:11:58.509Z",
+              "stage": "calling_model",
+              "message": "第 15/18 次模型调用中"
+            },
+            {
+              "seq": 32,
+              "timestamp": "2026-11-23T07:11:59.846Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-review"
+            },
+            {
+              "seq": 33,
+              "timestamp": "2026-11-23T07:11:59.853Z",
+              "stage": "calling_model",
+              "message": "第 16/18 次模型调用中"
+            },
+            {
+              "seq": 34,
+              "timestamp": "2026-11-23T07:12:20.799Z",
+              "stage": "calling_model",
+              "message": "模型响应协议校验失败，已回喂修正：工具参数不符合 JSON 业务契约：stage_plugin_changes：Unexpected non-whitespace character after JSON at position 19619 (line 1 column 19620)"
+            },
+            {
+              "seq": 35,
+              "timestamp": "2026-11-23T07:12:20.807Z",
+              "stage": "calling_model",
+              "message": "第 17/18 次模型调用中"
+            },
+            {
+              "seq": 36,
+              "timestamp": "2026-11-23T07:12:45.296Z",
+              "stage": "calling_model",
+              "message": "模型响应协议校验失败，已回喂修正：工具参数不符合 JSON 业务契约：stage_plugin_changes：Unexpected non-whitespace character after JSON at position 15906 (line 1 column 15907)"
+            },
+            {
+              "seq": 37,
+              "timestamp": "2026-11-23T07:12:45.304Z",
+              "stage": "calling_model",
+              "message": "第 18/18 次模型调用中"
+            },
+            {
+              "seq": 38,
+              "timestamp": "2026-11-23T07:13:01.020Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 39,
+              "timestamp": "2026-11-23T07:13:01.040Z",
+              "stage": "awaiting_budget",
+              "message": "预算耗尽暂停：已达到 18 次模型调用上限"
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-23T06-56-12-573Z/todo-six-step/step-4.png",
+          "activeCompositionId": "cand-comp-a0209a1f"
+        }
+      ]
+    }
+  ]
+}

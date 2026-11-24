@@ -1,0 +1,235 @@
+{
+  "executedAt": "2026-11-23T06:40:32.327Z",
+  "scenario": "todo-six-step",
+  "limits": {
+    "maxCalls": 24,
+    "maxCostCny": 8
+  },
+  "evolutionBudget": {
+    "callLimit": 12,
+    "activeMsLimit": 900000
+  },
+  "usage": {
+    "calls": 12,
+    "promptTokens": 919469,
+    "completionTokens": 114952,
+    "unknownUsageCalls": 0,
+    "estimatedCostCny": 5.517108
+  },
+  "results": [
+    {
+      "scenario": "todo-six-step",
+      "seedPluginDir": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/plugins/todo-core",
+      "steps": [
+        {
+          "step": 1,
+          "prompt": "新增一个 todo-tags 标签插件：为任务提供自有标签表、标签增删查接口，以及在任务行展示标签和编辑标签的界面。",
+          "runId": "evo-a9c3ef73",
+          "status": "awaiting_budget",
+          "highlights": [],
+          "changeBrief": null,
+          "budget": {
+            "callLimit": 12,
+            "callsUsed": 12,
+            "activeMsLimit": 900000,
+            "activeMsUsed": 486991,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 1034421,
+            "exhaustedResource": "calls"
+          },
+          "error": "已达到 12 次模型调用上限",
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-23T06:32:20.706Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-23T06:32:20.707Z",
+              "stage": "calling_model",
+              "message": "第 1/12 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-23T06:32:21.882Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-core"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-23T06:32:21.885Z",
+              "stage": "calling_model",
+              "message": "第 2/12 次模型调用中"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-23T06:36:34.493Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-23T06:36:34.504Z",
+              "stage": "calling_model",
+              "message": "第 3/12 次模型调用中"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-23T06:36:36.040Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-23T06:36:36.311Z",
+              "stage": "verifying_candidate",
+              "message": "插件 todo-tags 构建/类型检查失败（2 条诊断）"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-23T06:36:36.315Z",
+              "stage": "calling_model",
+              "message": "第 4/12 次模型调用中"
+            },
+            {
+              "seq": 10,
+              "timestamp": "2026-11-23T06:36:56.295Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 11,
+              "timestamp": "2026-11-23T06:36:56.310Z",
+              "stage": "calling_model",
+              "message": "第 5/12 次模型调用中"
+            },
+            {
+              "seq": 12,
+              "timestamp": "2026-11-23T06:36:57.809Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 13,
+              "timestamp": "2026-11-23T06:36:59.330Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate3-red-green-diff)：Red-Green differential check failed for \"todo-tags\": no new or modified test file provided to distinguish behavior change"
+            },
+            {
+              "seq": 14,
+              "timestamp": "2026-11-23T06:36:59.335Z",
+              "stage": "calling_model",
+              "message": "第 6/12 次模型调用中"
+            },
+            {
+              "seq": 15,
+              "timestamp": "2026-11-23T06:37:30.217Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 16,
+              "timestamp": "2026-11-23T06:37:30.227Z",
+              "stage": "calling_model",
+              "message": "第 7/12 次模型调用中"
+            },
+            {
+              "seq": 17,
+              "timestamp": "2026-11-23T06:37:31.553Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 18,
+              "timestamp": "2026-11-23T06:37:32.194Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate3-subgraph-contract)：Subgraph contract tests failed for \"todo-tags\" in closure [todo-tags, todo-core]: todo-tags.spec.ts: Expected values to be strictly equal:\n\n500 !== 200\n"
+            },
+            {
+              "seq": 19,
+              "timestamp": "2026-11-23T06:37:32.200Z",
+              "stage": "calling_model",
+              "message": "第 8/12 次模型调用中"
+            },
+            {
+              "seq": 20,
+              "timestamp": "2026-11-23T06:39:00.727Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 21,
+              "timestamp": "2026-11-23T06:39:00.744Z",
+              "stage": "calling_model",
+              "message": "第 9/12 次模型调用中"
+            },
+            {
+              "seq": 22,
+              "timestamp": "2026-11-23T06:39:03.247Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 23,
+              "timestamp": "2026-11-23T06:39:03.828Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate3-subgraph-contract)：Subgraph contract tests failed for \"todo-tags\" in closure [todo-tags, todo-core]: todo-tags.spec.ts: missing task: expected 404, received 200; body={\"tags\":[]}\n\n200 !== 404\n"
+            },
+            {
+              "seq": 24,
+              "timestamp": "2026-11-23T06:39:03.834Z",
+              "stage": "calling_model",
+              "message": "第 10/12 次模型调用中"
+            },
+            {
+              "seq": 25,
+              "timestamp": "2026-11-23T06:40:01.645Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 26,
+              "timestamp": "2026-11-23T06:40:01.661Z",
+              "stage": "calling_model",
+              "message": "第 11/12 次模型调用中"
+            },
+            {
+              "seq": 27,
+              "timestamp": "2026-11-23T06:40:03.209Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 28,
+              "timestamp": "2026-11-23T06:40:03.754Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate3-subgraph-contract)：Subgraph contract tests failed for \"todo-tags\" in closure [todo-tags, todo-core]: todo-tags.spec.ts: todo access diagnostics: {\"injectedCaptured\":true,\"injected\":\"object keys=[ctx,name,db]\",\"direct\":\"threw:cannot get property \\\"todo\\\" without inject\",\"get\":\"object keys=[ctx,name,db]\",\"reflect\":\"object keys=[ctx,name,db]\",\"injectType\":\"function\",\"getType\":\"function\",\"ownKeys\":\"object keys=[length]\",\"protoKeys\":\"object keys=[length]\"}"
+            },
+            {
+              "seq": 29,
+              "timestamp": "2026-11-23T06:40:03.760Z",
+              "stage": "calling_model",
+              "message": "第 12/12 次模型调用中"
+            },
+            {
+              "seq": 30,
+              "timestamp": "2026-11-23T06:40:31.427Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 31,
+              "timestamp": "2026-11-23T06:40:31.443Z",
+              "stage": "awaiting_budget",
+              "message": "预算耗尽暂停：已达到 12 次模型调用上限"
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-23T06-32-19-170Z/todo-six-step/step-1.png",
+          "activeCompositionId": "seed-todo-core-v1"
+        }
+      ]
+    }
+  ]
+}

@@ -46,6 +46,12 @@ const UNKNOWN_USAGE_CONSERVATIVE_COST_CNY = 0.2;
 export const DEFAULT_REAL_MODEL_MAX_CALLS = 24;
 export const DEFAULT_REAL_MODEL_MAX_COST_CNY = 8.0;
 
+/** Per-run EvolutionLoop budget for real DeepSeek reasoner latency (outer call/cost caps still apply). */
+export const REAL_MODEL_EVOLUTION_BUDGET = {
+  callLimit: 18,
+  activeMsLimit: 20 * 60_000,
+} as const;
+
 export const TODO_SIX_STEP_PROMPTS: readonly string[] = [
   "新增一个 todo-tags 标签插件：为任务提供自有标签表、标签增删查接口，以及在任务行展示标签和编辑标签的界面。",
   "新增一个 todo-counter 计数插件，在页面顶部状态插槽展示当前未完成与已完成任务数量，不要修改 todo-core 与 todo-tags。",
@@ -215,6 +221,7 @@ async function runScenario(
     seedPluginDir,
     port: 0,
     driver: guardedDriver,
+    defaultBudget: REAL_MODEL_EVOLUTION_BUDGET,
   });
 
   const browser = await chromium.launch({ headless: true });
@@ -279,6 +286,34 @@ async function runScenario(
   return { scenario: scenarioName, seedPluginDir, steps };
 }
 
+export function assertRealModelScenarioPassed(result: {
+  readonly scenario: string;
+  readonly steps: ReadonlyArray<{
+    readonly step: number;
+    readonly status: string;
+    readonly prompt: string;
+    readonly error?: string | null;
+  }>;
+  readonly expectedSteps: number;
+}): void {
+  if (result.steps.length < result.expectedSteps) {
+    const last = result.steps[result.steps.length - 1];
+    throw new Error(
+      `Real-model scenario ${result.scenario} stopped after ${result.steps.length}/${result.expectedSteps} steps` +
+        (last
+          ? ` (last status=${last.status}${last.error ? `, error=${last.error}` : ""})`
+          : ""),
+    );
+  }
+  for (const step of result.steps) {
+    if (step.status !== "preview_ready" && step.status !== "applied") {
+      throw new Error(
+        `Real-model scenario ${result.scenario} step ${step.step} did not reach preview_ready (status=${step.status}${step.error ? `, error=${step.error}` : ""})`,
+      );
+    }
+  }
+}
+
 export async function runRealModelAcceptance(
   options: RealModelAcceptanceOptions,
 ): Promise<void> {
@@ -296,7 +331,18 @@ export async function runRealModelAcceptance(
     estimatedCostCny: 0,
   };
 
-  const results: unknown[] = [];
+  const results: Array<{
+    readonly scenario: string;
+    readonly seedPluginDir: string;
+    readonly steps: Array<{
+      readonly step: number;
+      readonly prompt: string;
+      readonly status: string;
+      readonly screenshotPath: string;
+      readonly activeCompositionId?: string;
+      readonly error?: string | null;
+    }>;
+  }> = [];
   if (options.scenario === "todo-six-step" || options.scenario === "all") {
     results.push(
       await runScenario(
@@ -333,6 +379,7 @@ export async function runRealModelAcceptance(
           maxCalls: options.maxCalls,
           maxCostCny: options.maxCostCny,
         },
+        evolutionBudget: REAL_MODEL_EVOLUTION_BUDGET,
         usage: accounting,
         results,
       },
@@ -341,6 +388,14 @@ export async function runRealModelAcceptance(
     ),
     "utf8",
   );
+
+  for (const result of results) {
+    const expectedSteps =
+      result.scenario === "todo-six-step"
+        ? TODO_SIX_STEP_PROMPTS.length
+        : INVENTORY_MIGRATION_PROMPTS.length;
+    assertRealModelScenarioPassed({ ...result, expectedSteps });
+  }
 }
 
 const isDirectEntry =

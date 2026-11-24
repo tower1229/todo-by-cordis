@@ -474,6 +474,11 @@ const SYSTEM_PROMPT = [
   "- After stage_plugin_changes, you MUST call verify_candidate and get ok=true before calling present_preview.",
   "- If verify_candidate fails, read the real build/test diagnostics, fix the staged plugin code, and re-verify.",
   "- You cannot modify host budget, verification gates, or execution policy.",
+  "Plugin contract tests (tests/*.spec.ts):",
+  "- Export `default async function (ctx: PluginTestContext)` and drive assertions via HTTP `ctx.request({ method, path, body })` (and optionally `ctx.openBrowserPage` / `ctx.introspect`).",
+  "- Mirror existing seed plugin tests (e.g. todo-core.spec.ts): assert status codes and response bodies; do NOT use Cordis `ctx.inject` / `ctx.get` / direct service property access inside tests.",
+  "- Cross-plugin behavior must be verified through public HTTP APIs and UI, never by probing another plugin's internal service object.",
+  "- Keep tests short and deterministic; do not add diagnostic-only endpoints solely to debug inject/get.",
 ].join("\n");
 
 export class EvolutionLoop {

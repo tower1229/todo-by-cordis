@@ -7,7 +7,11 @@ import {
   createDeepSeekModelDriver,
   createUnconfiguredModelDriver,
 } from "./deepseek-driver.js";
-import { EvolutionLoop, type ModelDriver } from "./evolution-loop.js";
+import {
+  EvolutionLoop,
+  type EvolutionBudgetConfig,
+  type ModelDriver,
+} from "./evolution-loop.js";
 import { startV3HttpServer, type V3HttpServerHandle } from "./http-gateway.js";
 import { buildPluginPackage } from "./plugin-builder.js";
 import type { CompositionSnapshot, PluginArtifact } from "./types.js";
@@ -20,6 +24,7 @@ export interface StartV3AppOptions {
   readonly htmlTitle?: string;
   readonly clientAssetsDir?: string;
   readonly driver?: ModelDriver;
+  readonly defaultBudget?: Partial<EvolutionBudgetConfig>;
 }
 
 export interface V3AppHandle {
@@ -171,6 +176,9 @@ export async function startV3App(
   const evolution = new EvolutionLoop({
     release,
     modelDriver: driver,
+    ...(options.defaultBudget
+      ? { defaultBudget: options.defaultBudget }
+      : {}),
   });
   release.setEvolutionController(evolution);
 

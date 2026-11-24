@@ -9,8 +9,10 @@ import {
 } from "../../src/v3/deepseek-driver.js";
 import { loadDotEnvIfPresent, startV3App } from "../../src/v3/main.js";
 import {
+  assertRealModelScenarioPassed,
   createBudgetGuardedDriver,
   parseRealModelArgs,
+  REAL_MODEL_EVOLUTION_BUDGET,
   TODO_SIX_STEP_PROMPTS,
   validateRealModelAuthorization,
   type UsageAccounting,
@@ -262,4 +264,34 @@ test("Real-model six-step prompts match 5-tool contract (step 6 re-enables todo-
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("Real-model acceptance uses elevated EvolutionLoop budget and fails closed on incomplete steps", () => {
+  assert.ok(REAL_MODEL_EVOLUTION_BUDGET.activeMsLimit >= 15 * 60_000);
+  assert.ok(REAL_MODEL_EVOLUTION_BUDGET.callLimit >= 10);
+
+  assert.doesNotThrow(() =>
+    assertRealModelScenarioPassed({
+      scenario: "todo-six-step",
+      expectedSteps: 1,
+      steps: [{ step: 1, status: "preview_ready", prompt: "ok" }],
+    }),
+  );
+
+  assert.throws(
+    () =>
+      assertRealModelScenarioPassed({
+        scenario: "todo-six-step",
+        expectedSteps: 6,
+        steps: [
+          {
+            step: 1,
+            status: "awaiting_budget",
+            prompt: "tags",
+            error: "已达到 180s 活动时间上限",
+          },
+        ],
+      }),
+    /stopped after 1\/6/,
+  );
 });
