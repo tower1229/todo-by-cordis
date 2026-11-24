@@ -1,4 +1,4 @@
-name: M1 checks
+name: CI checks
 on: [push, pull_request]
 jobs:
   verify:
@@ -11,7 +11,6 @@ jobs:
       - run: npm install -g pnpm@12.3.4
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      # Application tests already exercise the built frontend in Chromium.
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test

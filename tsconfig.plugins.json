@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "paths": {
+      "@host/server-sdk": ["./src/contracts/server-sdk.ts"],
+      "@host/client-sdk": ["./src/contracts/client-sdk.ts"]
+    }
+  },
+  "include": ["plugins/**/*.ts", "plugins/**/*.tsx", "plugins/**/*.d.ts"]
+}

@@ -4,4 +4,4 @@
 
 不要把词汇表当作实现规格或工作笔记。新术语需要澄清后再由 domain-modeling 记录；遇到 ADR 冲突应明确指出，不静默覆盖。
 
-当前 Agent 重构的完整设计为 `docs/engineering/06-agent-redesign.md`。历史 PRD 和工程文档中的冲突规则按该设计及已接受的 ADR 覆盖；历史测试报告不代替新改动验收。
+当前现行架构的完整设计为 `docs/engineering/07-cordis-self-iteration-v3.md` 与 `ADR 0006` / `ADR 0007` / `ADR 0008`。V1/V2 历史工程文档（如 `00-core-direction-v2.md`）仅作复盘归档，其中冲突规则以现行架构设计及已接受的 ADR 为准；历史测试报告不代替新改动验收。

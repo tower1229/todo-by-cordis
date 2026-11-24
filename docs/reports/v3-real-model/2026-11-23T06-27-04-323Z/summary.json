@@ -1,0 +1,99 @@
+{
+  "executedAt": "2026-11-23T06:30:30.602Z",
+  "scenario": "todo-six-step",
+  "limits": {
+    "maxCalls": 24,
+    "maxCostCny": 8
+  },
+  "usage": {
+    "calls": 3,
+    "promptTokens": 27295,
+    "completionTokens": 45304,
+    "unknownUsageCalls": 0,
+    "estimatedCostCny": 0.834044
+  },
+  "results": [
+    {
+      "scenario": "todo-six-step",
+      "seedPluginDir": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/plugins/todo-core",
+      "steps": [
+        {
+          "step": 1,
+          "prompt": "新增一个 todo-tags 标签插件：为任务提供自有标签表、标签增删查接口，以及在任务行展示标签和编辑标签的界面。",
+          "runId": "evo-a4674f58",
+          "status": "awaiting_budget",
+          "highlights": [],
+          "changeBrief": null,
+          "budget": {
+            "callLimit": 10,
+            "callsUsed": 3,
+            "activeMsLimit": 180000,
+            "activeMsUsed": 203606,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 72599,
+            "exhaustedResource": "milliseconds"
+          },
+          "error": "已达到 180s 活动时间上限",
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-23T06:27:06.109Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-23T06:27:06.110Z",
+              "stage": "calling_model",
+              "message": "第 1/10 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-23T06:27:07.150Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-core"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-23T06:27:07.152Z",
+              "stage": "calling_model",
+              "message": "第 2/10 次模型调用中"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-23T06:27:26.189Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：@host/client-sdk"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-23T06:27:26.190Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：@host/server-sdk"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-23T06:27:26.192Z",
+              "stage": "calling_model",
+              "message": "第 3/10 次模型调用中"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-23T06:30:29.726Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-23T06:30:29.736Z",
+              "stage": "awaiting_budget",
+              "message": "预算耗尽暂停：已达到 180s 活动时间上限"
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-23T06-27-04-323Z/todo-six-step/step-1.png",
+          "activeCompositionId": "seed-todo-core-v1"
+        }
+      ]
+    }
+  ]
+}
