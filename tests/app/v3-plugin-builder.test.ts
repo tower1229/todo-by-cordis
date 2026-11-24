@@ -142,4 +142,27 @@ export function apply(ctx: Context) {
       /Invalid pluginId/,
     );
   });
+
+  it("bundles multi-file relative imports in server.ts and client.tsx into self-contained ESM", async () => {
+    const artifact = await buildPluginPackage({
+      pluginId: "multi-file-demo",
+      name: "Multi File Demo",
+      dependencies: [],
+      sourceFiles: {
+        "helper.ts": `export function greet(who: string): string { return "hello-" + who; }`,
+        "Badge.tsx": `export function Badge() { return <span className="text-red-500">ok</span>; }`,
+        "server.ts": `import { greet } from "./helper.js"; export const name = "multi-file-demo"; export function apply() { return greet("world"); }`,
+        "client.tsx": `import { Badge } from "./Badge.js"; export const name = "multi-file-demo"; export function apply() { return Badge; }`,
+      },
+      serverSource: `import { greet } from "./helper.js"; export const name = "multi-file-demo"; export function apply() { return greet("world"); }`,
+      clientSource: `import { Badge } from "./Badge.js"; export const name = "multi-file-demo"; export function apply() { return Badge; }`,
+    });
+
+    assert.ok(artifact.serverCode);
+    assert.match(artifact.serverCode, /hello-/);
+    assert.doesNotMatch(artifact.serverCode, /from\s+["']\.\/helper/);
+    assert.ok(artifact.clientCode);
+    assert.match(artifact.clientCode, /text-red-500/);
+    assert.doesNotMatch(artifact.clientCode, /from\s+["']\.\/Badge/);
+  });
 });

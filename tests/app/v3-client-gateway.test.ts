@@ -303,6 +303,96 @@ describe("V3 ClientCordisRuntime (Node unit checks)", () => {
 
     await runtime.close();
   });
+
+  it("coalesces concurrent reconcile snapshots and aborts mounting when closed mid-load", async () => {
+    let releaseFirstLoad!: () => void;
+    const firstLoadGate = new Promise<void>((r) => {
+      releaseFirstLoad = r;
+    });
+    const loadedUrls: string[] = [];
+
+    const runtime = new ClientCordisRuntime({
+      moduleImporter: async (url) => {
+        loadedUrls.push(url);
+        if (url.includes("/slow/")) {
+          await firstLoadGate;
+        }
+        return { default: () => {} };
+      },
+    });
+
+    const p1 = runtime.reconcile({
+      compositionId: "c-1",
+      plugins: [
+        {
+          pluginId: "slow",
+          versionId: "v1",
+          dependencies: [],
+          clientEntryUrl: "/plugins/slow/v1/client.mjs",
+        },
+      ],
+    });
+    // Queue two more snapshots while c-1 is suspended -> c-2 should be coalesced away by c-3
+    const p2 = runtime.reconcile({
+      compositionId: "c-2",
+      plugins: [
+        {
+          pluginId: "mid",
+          versionId: "v1",
+          dependencies: [],
+          clientEntryUrl: "/plugins/mid/v1/client.mjs",
+        },
+      ],
+    });
+    const p3 = runtime.reconcile({
+      compositionId: "c-3",
+      plugins: [
+        {
+          pluginId: "final",
+          versionId: "v1",
+          dependencies: [],
+          clientEntryUrl: "/plugins/final/v1/client.mjs",
+        },
+      ],
+    });
+
+    releaseFirstLoad();
+    await Promise.all([p1, p2, p3]);
+    assert.equal(runtime.getRuntimeSnapshot().compositionId, "c-3");
+    assert.equal(
+      loadedUrls.some((u) => u.includes("/mid/")),
+      false,
+      "superseded c-2 snapshot should be coalesced",
+    );
+    await runtime.close();
+
+    // Now verify close() mid-import does not leak mounted plugins
+    let releaseClosingLoad!: () => void;
+    const closingGate = new Promise<void>((r) => {
+      releaseClosingLoad = r;
+    });
+    const runtime2 = new ClientCordisRuntime({
+      moduleImporter: async () => {
+        await closingGate;
+        return { default: () => {} };
+      },
+    });
+    const pending = runtime2.reconcile({
+      compositionId: "c-closing",
+      plugins: [
+        {
+          pluginId: "late",
+          versionId: "v1",
+          dependencies: [],
+          clientEntryUrl: "/plugins/late/v1/client.mjs",
+        },
+      ],
+    });
+    await runtime2.close();
+    releaseClosingLoad();
+    await pending;
+    assert.equal(runtime2.getRuntimeSnapshot().mountedPlugins.length, 0);
+  });
 });
 
 describe("V3 HTTP gateway importmap, plugin assets & SSE composition snapshots", () => {

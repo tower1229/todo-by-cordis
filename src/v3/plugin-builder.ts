@@ -87,22 +87,103 @@ export interface CompileFullStackPluginInput {
   readonly testFiles?: Readonly<Record<string, string>>;
 }
 
+async function bundleSourceFilesEntry(
+  pluginId: string,
+  sourceFiles: Readonly<Record<string, string>>,
+  entryRelPath: string,
+  external: readonly string[],
+): Promise<string> {
+  const tempRoot = mkdtempSync(join(tmpdir(), `v3-bundle-${pluginId}-`));
+  try {
+    for (const [relPath, content] of Object.entries(sourceFiles)) {
+      const target = resolveSafeSubPath(pluginId, tempRoot, relPath);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, content, "utf8");
+    }
+    const entryPath = resolveSafeSubPath(pluginId, tempRoot, entryRelPath);
+    const result = await viteBuild({
+      configFile: false,
+      logLevel: "silent",
+      esbuild: { jsx: "automatic" },
+      build: {
+        write: false,
+        minify: false,
+        sourcemap: false,
+        lib: {
+          entry: entryPath,
+          formats: ["es"],
+          fileName: () => "entry.mjs",
+        },
+        rollupOptions: {
+          external: (id) =>
+            external.includes(id) ||
+            id.startsWith("node:") ||
+            id === "@host/server-sdk" ||
+            id === "@host/client-sdk",
+        },
+      },
+    });
+    const outputs = Array.isArray(result) ? result : [result];
+    for (const out of outputs) {
+      if ("output" in out) {
+        const chunk = out.output.find((item) => item.type === "chunk");
+        if (chunk && chunk.type === "chunk") {
+          return chunk.code;
+        }
+      }
+    }
+    throw new Error(`Failed to bundle multi-file entry "${entryRelPath}" for plugin "${pluginId}"`);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 export async function compileFullStackPluginArtifact(
   input: CompileFullStackPluginInput,
 ): Promise<PluginArtifact> {
   const dependencies = input.dependencies ? [...input.dependencies] : [];
   const contractTypes = input.contractTypes ?? "";
 
-  const serverCode =
-    input.serverSource !== undefined
-      ? transpileServerTypeScript(input.serverSource)
-      : undefined;
+  const hasExtraSourceFiles =
+    input.sourceFiles !== undefined &&
+    Object.keys(input.sourceFiles).filter((k) => !k.endsWith(".d.ts")).length > 1;
+
+  let serverCode: string | undefined;
+  if (input.serverSource !== undefined) {
+    if (
+      hasExtraSourceFiles &&
+      input.sourceFiles &&
+      RELATIVE_IMPORT_RE.test(input.serverSource)
+    ) {
+      serverCode = await bundleSourceFilesEntry(
+        input.pluginId,
+        { ...input.sourceFiles, "server.ts": input.serverSource },
+        "server.ts",
+        ["cordis", "@host/server-sdk"],
+      );
+    } else {
+      serverCode = transpileServerTypeScript(input.serverSource);
+    }
+  }
 
   let clientCode: string | undefined;
   if (input.clientEntryPath) {
     clientCode = await bundleClientEntryFile(input.clientEntryPath);
   } else if (input.clientSource !== undefined) {
-    clientCode = await compileClientTypeScript(input.clientSource, "client.tsx");
+    if (
+      hasExtraSourceFiles &&
+      input.sourceFiles &&
+      RELATIVE_IMPORT_RE.test(input.clientSource)
+    ) {
+      clientCode = await bundleSourceFilesEntry(
+        input.pluginId,
+        { ...input.sourceFiles, "client.tsx": input.clientSource },
+        "client.tsx",
+        V3_IMPORTMAP_SPECIFIERS,
+      );
+    } else {
+      clientCode = await compileClientTypeScript(input.clientSource, "client.tsx");
+    }
   }
 
   let styleCss = input.styleCss;
@@ -113,6 +194,13 @@ export async function compileFullStackPluginArtifact(
     }
     if (input.extraClientSources) {
       cssSources.push(...input.extraClientSources);
+    }
+    if (input.sourceFiles) {
+      for (const [k, v] of Object.entries(input.sourceFiles)) {
+        if (k !== "client.tsx" && (k.endsWith(".tsx") || k.endsWith(".jsx"))) {
+          cssSources.push(v);
+        }
+      }
     }
     if (cssSources.length > 0) {
       const compiled = await compilePluginTailwindCss(cssSources);

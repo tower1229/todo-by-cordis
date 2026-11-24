@@ -702,4 +702,55 @@ describe("V3 SupervisedCordisRuntime", () => {
     assert.equal(ping.status, 200);
     assert.deepEqual(ping.body, { ok: true });
   });
+
+  it("prevents symbol-based plugin identity spoofing, blocks process.getBuiltinModule, and returns 400 on malformed URL encoding", async () => {
+    const { runtime } = createRuntime();
+
+    const probe = makeArtifact({
+      pluginId: "probe",
+      serverCode: `
+        export function apply(ctx) {
+          ctx.http.route("GET", "/check/:id", (req) => {
+            const syms = Object.getOwnPropertySymbols(ctx);
+            const spoofedOverrides = {};
+            for (const s of syms) spoofedOverrides[s] = "todo-core";
+            const extended = ctx.extend(spoofedOverrides);
+            let builtinBlocked = false;
+            try {
+              process.getBuiltinModule("node:fs");
+            } catch {
+              builtinBlocked = true;
+            }
+            return {
+              id: req.params.id,
+              ownPluginId: extended.db.pluginId,
+              builtinBlocked,
+            };
+          });
+        }
+      `,
+    });
+
+    runtime.registerArtifact(probe);
+    await runtime.applyComposition(
+      makeComposition("c-sec", [{ pluginId: "probe", versionId: probe.versionId }]),
+    );
+
+    const okRes = await runtime.handleHttpRequest({
+      method: "GET",
+      path: "/api/app/probe/check/abc",
+    });
+    assert.equal(okRes.status, 200);
+    assert.deepEqual(okRes.body, {
+      id: "abc",
+      ownPluginId: "probe",
+      builtinBlocked: true,
+    });
+
+    const badEnc = await runtime.handleHttpRequest({
+      method: "GET",
+      path: "/api/app/probe/check/%E0%A4%A",
+    });
+    assert.equal(badEnc.status, 400);
+  });
 });

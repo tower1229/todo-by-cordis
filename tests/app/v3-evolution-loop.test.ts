@@ -980,4 +980,92 @@ export function apply(ctx: Context) {
       await release.close();
     }
   });
+
+  it("preserves sibling tool receipts when clarify_request appears in a multi-tool turn and closes preview session on cancelRun", async () => {
+    const dir = createTempDir("v3-evo-clarify-cancel-");
+    const { release } = await createSeedRelease(dir);
+
+    let turn = 0;
+    const driver: ModelDriver = {
+      async generate() {
+        turn += 1;
+        if (turn === 1) {
+          return {
+            calls: [
+              { id: "c_inspect", name: "inspect_plugin", args: { pluginId: "core-notes" } },
+              { id: "c_clarify", name: "clarify_request", args: { question: "确认范围？" } },
+              { id: "c_skipped", name: "verify_candidate", args: {} },
+            ],
+          };
+        }
+        if (turn === 2) {
+          return {
+            calls: [
+              {
+                id: "c_stage",
+                name: "stage_plugin_changes",
+                args: {
+                  upserts: [
+                    {
+                      pluginId: "core-notes",
+                      contractTypes: "export interface NoteService { ping(): string; }\n",
+                    },
+                  ],
+                },
+              },
+              { id: "c_verify", name: "verify_candidate", args: {} },
+            ],
+          };
+        }
+        return {
+          calls: [
+            {
+              id: "c_preview",
+              name: "present_preview",
+              args: { summary: "ready", highlights: ["ok"] },
+            },
+          ],
+        };
+      },
+    };
+
+    const loop = new EvolutionLoop({
+      release,
+      modelDriver: driver,
+      verifyFn: async () => makePassingReport(["core-notes"]),
+    });
+
+    try {
+      const started = await loop.startRun("测试多工具澄清与取消回收预览");
+      const paused = await loop.waitForRun(started.runId);
+      assert.equal(paused.status, "awaiting_clarification");
+
+      // Both sibling tool_calls (c_inspect and c_skipped) must have receipts persisted
+      const persistedPaused = release.controlStore.getEvolutionRun(started.runId)!;
+      const receiptIds: string[] = [];
+      for (const m of persistedPaused.messages) {
+        const parts = (m as { parts?: Array<{ functionResponse?: { id?: string } }> })?.parts;
+        if (!Array.isArray(parts)) continue;
+        for (const p of parts) {
+          if (p.functionResponse?.id) receiptIds.push(p.functionResponse.id);
+        }
+      }
+      assert.ok(receiptIds.includes("c_inspect"));
+      assert.ok(receiptIds.includes("c_skipped"));
+
+      // Resume -> preview_ready -> cancelRun must close preview session and clear preview fields
+      await loop.answerClarification(started.runId, "确认");
+      const previewReady = await loop.waitForRun(started.runId);
+      assert.equal(previewReady.status, "preview_ready");
+      assert.ok(previewReady.previewSessionId);
+
+      const cancelled = await loop.cancelRun(started.runId);
+      assert.equal(cancelled.status, "cancelled");
+      assert.equal(cancelled.previewSessionId, null);
+      assert.equal(cancelled.previewUrl, null);
+    } finally {
+      await loop.close();
+      await release.close();
+    }
+  });
 });
