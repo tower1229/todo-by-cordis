@@ -933,14 +933,21 @@ export function apply(ctx: Context) {
     }
   });
 
-  it("system prompt documents the canonical client/server plugin authoring surface", async () => {
+  it("initial topology context delivers canonical .d.ts hostSdkContracts and system prompt points to it", async () => {
     const dir = createTempDir("v3-evo-system-prompt-");
     const { release } = await createSeedRelease(dir);
 
     let capturedSystem = "";
+    let capturedInitialContext = "";
     const driver: ModelDriver = {
       async generate(request) {
         capturedSystem = request.system;
+        const firstMsg = request.history[0] as
+          | { parts?: Array<{ text?: string }>; content?: string }
+          | undefined;
+        capturedInitialContext =
+          firstMsg?.parts?.[0]?.text ??
+          (typeof firstMsg?.content === "string" ? firstMsg.content : "");
         return {
           calls: [
             { id: "call_done", name: "clarify_request", args: { question: "阅读提示" } },
@@ -956,13 +963,18 @@ export function apply(ctx: Context) {
     });
 
     try {
-      const started = await loop.startRun("读取 system prompt");
+      const started = await loop.startRun("读取 hostSdkContracts");
       await loop.waitForRun(started.runId);
-      assert.match(capturedSystem, /@host\/client-sdk/);
-      assert.match(capturedSystem, /ctx\.router\.registerPage\(/);
-      assert.match(capturedSystem, /ctx\.slots\.register\(/);
-      assert.match(capturedSystem, /@host\/server-sdk/);
-      assert.match(capturedSystem, /ctx\.http\.route\(/);
+      assert.match(capturedSystem, /hostSdkContracts/);
+      const parsed = JSON.parse(capturedInitialContext) as {
+        hostSdkContracts?: string;
+      };
+      assert.equal(typeof parsed.hostSdkContracts, "string");
+      assert.match(parsed.hostSdkContracts!, /declare module "@host\/client-sdk"/);
+      assert.match(parsed.hostSdkContracts!, /declare module "@host\/server-sdk"/);
+      assert.match(parsed.hostSdkContracts!, /registerPage\(/);
+      assert.match(parsed.hostSdkContracts!, /readonly slots:/);
+      assert.match(parsed.hostSdkContracts!, /route\(/);
     } finally {
       await loop.close();
       await release.close();

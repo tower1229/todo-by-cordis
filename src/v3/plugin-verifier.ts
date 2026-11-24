@@ -326,9 +326,12 @@ async function runClientHotSwapProbe(
     await clientRuntime.reconcile(toClientSnapshot(compositionId, new Set()));
     const initialDiags = clientRuntime.getDiagnostics();
     if (initialDiags.length > 0) {
-      return initialDiags.map(
-        (d) => `[client-initial-mount] ${d.pluginId} (${d.kind}): ${d.message}`,
-      );
+      return initialDiags.map((d) => {
+        const hint = /without inject/i.test(d.message)
+          ? " (available client Context services: ctx.router, ctx.slots)"
+          : "";
+        return `[client-initial-mount] ${d.pluginId} (${d.kind}): ${d.message}${hint}`;
+      });
     }
 
     const clientIdSet = new Set(clientPlugins.map((e) => e.member.pluginId));

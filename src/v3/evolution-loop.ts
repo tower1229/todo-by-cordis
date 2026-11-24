@@ -360,6 +360,108 @@ function extractDeclaredSymbols(contractTypes: string): {
   return { slots, events };
 }
 
+export const HOST_SDK_CONTRACTS = `// Canonical Host SDK declarations (matches @host/client-sdk, @host/server-sdk, and Cordis Context)
+declare module "cordis" {
+  interface Context {
+    // Client-side services (client.tsx)
+    readonly router: {
+      registerPage(page: {
+        readonly path: string;
+        readonly navLabel?: string;
+        readonly order?: number;
+        readonly component: import("react").ComponentType;
+      }): () => void;
+    };
+    readonly slots: {
+      register<K extends string>(
+        slotName: K,
+        component: import("react").ComponentType<any>,
+        options?: { readonly order?: number; readonly id?: string },
+      ): () => void;
+    };
+    // Server-side services (server.ts)
+    readonly db: {
+      readonly pluginId: string;
+      readonly tablePrefix: string;
+      exec(sql: string): void;
+      prepare(sql: string): {
+        run(...params: unknown[]): { changes: number; lastInsertRowid: number | bigint };
+        get<T = Record<string, unknown>>(...params: unknown[]): T | undefined;
+        all<T = Record<string, unknown>>(...params: unknown[]): T[];
+      };
+      transaction<T>(fn: () => T): T;
+    };
+    readonly http: {
+      route(
+        method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
+        subPath: string, // served at /api/app/<pluginId><subPath>
+        handler: (req: {
+          readonly method: string;
+          readonly path: string;
+          readonly params: Record<string, string>;
+          readonly query: Record<string, string>;
+          readonly headers: Record<string, string>;
+          readonly body: unknown;
+        }) => Promise<unknown> | unknown,
+      ): () => void;
+    };
+    readonly scheduler: {
+      every(intervalMs: number, task: () => Promise<void> | void): () => void;
+      at(timestampIso: string, key: string, task: () => Promise<void> | void): () => void;
+    };
+  }
+}
+
+declare module "@host/client-sdk" {
+  export function Slot<K extends string>(props: {
+    readonly name: K;
+    readonly props?: Record<string, unknown>;
+    readonly className?: string;
+  }): import("react").ReactElement | null;
+  export function useClientContext(): import("cordis").Context;
+  export function useClientRoutes(): ReadonlyArray<{
+    readonly pluginId: string;
+    readonly path: string;
+    readonly navLabel?: string;
+    readonly order: number;
+  }>;
+  export function useCurrentPath(): string;
+  export function useNavigate(): (path: string) => void;
+  export function dispatchClientBail<TPayload>(
+    ctx: import("cordis").Context,
+    eventName: string,
+    payload: TPayload,
+  ): Promise<void | false | string>;
+}
+
+declare module "@host/server-sdk" {
+  export type { ScopedDb } from "./types.js";
+  export interface PluginTestContext {
+    request(input: {
+      readonly method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+      readonly path: string;
+      readonly query?: Record<string, string>;
+      readonly headers?: Record<string, string>;
+      readonly body?: unknown;
+    }): Promise<{ readonly status: number; readonly headers: Record<string, string>; readonly body: unknown }>;
+    introspect(): Promise<unknown>;
+    openBrowserPage(path?: string): Promise<{
+      readonly baseUrl: string;
+      readonly page: unknown;
+      readonly pageErrors: readonly string[];
+      readonly consoleErrors: readonly string[];
+      getClientDiagnostics(): ReadonlyArray<{ readonly pluginId: string; readonly kind: string; readonly message: string }>;
+      close(): Promise<void>;
+    }>;
+  }
+  export function dispatchServerBail<TPayload>(
+    ctx: import("cordis").Context,
+    eventName: string,
+    payload: TPayload,
+  ): Promise<void | false | string>;
+}
+`;
+
 export function buildInitialTopologyContext(
   topology: CompositionTopology,
   artifacts: ReadonlyMap<string, PluginArtifact>,
@@ -388,6 +490,7 @@ export function buildInitialTopologyContext(
   return JSON.stringify(
     {
       compositionId: topology.compositionId,
+      hostSdkContracts: HOST_SDK_CONTRACTS,
       installedPlugins: pluginSummaries,
       registeredSlots: [...slots].sort(),
       registeredEvents: [...events].sort(),
@@ -475,11 +578,7 @@ const SYSTEM_PROMPT = [
   "- After stage_plugin_changes succeeds, immediately call verify_candidate and get ok=true before calling present_preview; do not blindly rewrite unchanged files.",
   "- If verify_candidate fails, read the real build/test diagnostics, fix the staged plugin code, and re-verify.",
   "- You cannot modify host budget, verification gates, or execution policy.",
-  "Plugin authoring surface (follow the seed plugins exactly):",
-  "- server.ts: `export default class X extends Service` using `ctx.db` (ScopedDb; tables auto-namespaced as `plg_<pluginId>__*`), `ctx.http.route(method, subPath, handler)` (served at `/api/app/<pluginId><subPath>`), and `ctx.emit` / `ctx.on` for events; host helpers (`ScopedDb`, `dispatchServerBail`) come from `@host/server-sdk`.",
-  "- client.tsx: `export function apply(ctx: Context)`; pages via `ctx.router.registerPage({ path, navLabel, component, order? })`; downstream UI via `ctx.slots.register(slotName, Component, { order? })` for slot names listed in the topology's registeredSlots; render upstream slots with `<Slot name=\"...\" props={...} />`.",
-  "- Client imports come from `@host/client-sdk` (`Slot`, `useClientContext`, `useClientRoutes`, `useNavigate`, `dispatchClientBail`). The client services are `ctx.router` and `ctx.slots` (plural); `ctx.slot` does not exist.",
-  "- Never ship diagnostic/probing constants (DIAG_*) or speculative multi-shape registration helpers inside plugin code; read the verification error and fix the API usage directly.",
+  "- Follow the exact Host SDK `.d.ts` declarations provided in `hostSdkContracts` of the initial context (e.g. `ctx.router.registerPage`, `ctx.slots.register`, `ctx.http.route`, `ctx.db`). Never ship speculative runtime probing or `DIAG_*` constants in plugin code.",
   "Plugin contract tests (tests/*.spec.ts):",
   "- Export `default async function (ctx: PluginTestContext)` and drive assertions via HTTP `ctx.request({ method, path, body })` (and optionally `ctx.openBrowserPage` / `ctx.introspect`).",
   "- Mirror existing seed plugin tests (e.g. todo-core.spec.ts): assert status codes and response bodies; do NOT use Cordis `ctx.inject` / `ctx.get` / direct service property access inside tests.",
