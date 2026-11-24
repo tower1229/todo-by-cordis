@@ -1,0 +1,1011 @@
+{
+  "executedAt": "2026-11-24T02:05:23.246Z",
+  "scenario": "todo-six-step",
+  "limits": {
+    "maxCalls": 72,
+    "maxCostCny": 40
+  },
+  "evolutionBudget": {
+    "callLimit": 24,
+    "activeMsLimit": 1200000
+  },
+  "usage": {
+    "calls": 41,
+    "promptTokens": 1853114,
+    "completionTokens": 197838,
+    "unknownUsageCalls": 0,
+    "estimatedCostCny": 10.577863999999998
+  },
+  "results": [
+    {
+      "scenario": "todo-six-step",
+      "seedPluginDir": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/plugins/todo-core",
+      "steps": [
+        {
+          "step": 1,
+          "prompt": "新增一个 todo-tags 标签插件：为任务提供自有标签表、标签增删查接口，以及在任务行展示标签和编辑标签的界面。",
+          "runId": "evo-c7bfd020",
+          "status": "preview_ready",
+          "highlights": [
+            "自有数据表 plg_todo_tags__tags 与 plg_todo_tags__task_tags（含 tag_id 索引），只读写本插件命名空间",
+            "接口：GET/POST/GET :id/DELETE /tags（重名 409、空名 400、颜色规范化）、GET /assignments（批量给任务行取标签）、GET/PUT /tasks/:taskId/tags、POST /tasks/:taskId/tags、DELETE /tasks/:taskId/tags/:tagId",
+            "任务校验通过 todo 服务按需解析（不可用时优雅降级），不做跨插件内部探测",
+            "注册 cordis 服务 ctx.todoTags 与事件 todo-tags:changed（tag-created / tag-deleted / assignment-changed）",
+            "todo.item.badges：任务行标签 chip + 编辑弹窗（可勾选、可内联新建标签）；todo.item.detail：标签区支持移除/追加/新建并添加；todo.header.actions：标签入口与数量",
+            "新页面 /tags 管理标签库，显示每个标签被多少任务使用，可创建与删除（删除时同步清理关联）",
+            "契约测试覆盖增删查、重名/非法入参、幂等 detach、未知任务 404、删除标签后关联清空、以及两次删除的 404",
+            "浏览器级测试验证任务行 chip 渲染、编辑弹窗选中态与客户端零运行时错误"
+          ],
+          "changeBrief": {
+            "summary": "新增 todo-tags 插件：自有标签表 + 标签/打标签接口，并通过 todo.item.badges、todo.item.detail、todo.header.actions 插槽提供任务行标签展示与标签编辑界面，另附标签管理页。",
+            "affectedPlugins": [
+              {
+                "pluginId": "todo-tags",
+                "action": "added",
+                "toVersionId": "0b270a97da588ac8"
+              }
+            ],
+            "dataCompatibility": {
+              "compatible": true,
+              "summary": "已通过真实克隆数据冒烟验证，与当前业务库兼容",
+              "disabledPluginDataChecks": []
+            },
+            "testChangeDisclosures": [],
+            "noBehaviorDiffWarning": false,
+            "warnings": []
+          },
+          "budget": {
+            "callLimit": 24,
+            "callsUsed": 11,
+            "activeMsLimit": 1200000,
+            "activeMsUsed": 230643,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 653696,
+            "exhaustedResource": null
+          },
+          "error": null,
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-24T01:50:15.734Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-24T01:50:15.735Z",
+              "stage": "calling_model",
+              "message": "第 1/24 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-24T01:50:16.389Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-core"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-24T01:50:16.390Z",
+              "stage": "calling_model",
+              "message": "第 2/24 次模型调用中"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-24T01:52:59.376Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-24T01:52:59.385Z",
+              "stage": "calling_model",
+              "message": "第 3/24 次模型调用中"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-24T01:53:19.602Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-24T01:53:19.616Z",
+              "stage": "calling_model",
+              "message": "第 4/24 次模型调用中"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-24T01:53:21.032Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 10,
+              "timestamp": "2026-11-24T01:53:23.573Z",
+              "stage": "verifying_candidate",
+              "message": "四道验证门禁全部通过，可调用 present_preview 挂载隔离预览"
+            },
+            {
+              "seq": 11,
+              "timestamp": "2026-11-24T01:53:23.584Z",
+              "stage": "calling_model",
+              "message": "第 5/24 次模型调用中"
+            },
+            {
+              "seq": 12,
+              "timestamp": "2026-11-24T01:53:45.231Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 13,
+              "timestamp": "2026-11-24T01:53:45.239Z",
+              "stage": "calling_model",
+              "message": "第 6/24 次模型调用中"
+            },
+            {
+              "seq": 14,
+              "timestamp": "2026-11-24T01:53:46.729Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 15,
+              "timestamp": "2026-11-24T01:53:48.091Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate3-subgraph-contract)：Subgraph contract tests failed for \"todo-tags\" in closure [todo-tags, todo-core]: todo-tags.ui.spec.ts: page.waitForSelector is not a function"
+            },
+            {
+              "seq": 16,
+              "timestamp": "2026-11-24T01:53:48.098Z",
+              "stage": "calling_model",
+              "message": "第 7/24 次模型调用中"
+            },
+            {
+              "seq": 17,
+              "timestamp": "2026-11-24T01:53:54.798Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 18,
+              "timestamp": "2026-11-24T01:53:54.808Z",
+              "stage": "calling_model",
+              "message": "第 8/24 次模型调用中"
+            },
+            {
+              "seq": 19,
+              "timestamp": "2026-11-24T01:53:56.220Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 20,
+              "timestamp": "2026-11-24T01:53:57.602Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate3-subgraph-contract)：Subgraph contract tests failed for \"todo-tags\" in closure [todo-tags, todo-core]: todo-tags.ui.spec.ts: PAGE_PROBE own=[baseUrl,page,pageErrors,consoleErrors,getClientDiagnostics,close] proto=[constructor,__defineGetter__,__defineSetter__,hasOwnProperty,__lookupGetter__,__lookupSetter__,isPrototypeOf,propertyIsEnumerable,toString,valueOf,__proto__,toLocaleString]"
+            },
+            {
+              "seq": 21,
+              "timestamp": "2026-11-24T01:53:57.609Z",
+              "stage": "calling_model",
+              "message": "第 9/24 次模型调用中"
+            },
+            {
+              "seq": 22,
+              "timestamp": "2026-11-24T01:54:06.261Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 23,
+              "timestamp": "2026-11-24T01:54:06.274Z",
+              "stage": "calling_model",
+              "message": "第 10/24 次模型调用中"
+            },
+            {
+              "seq": 24,
+              "timestamp": "2026-11-24T01:54:07.471Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 25,
+              "timestamp": "2026-11-24T01:54:10.002Z",
+              "stage": "verifying_candidate",
+              "message": "四道验证门禁全部通过，可调用 present_preview 挂载隔离预览"
+            },
+            {
+              "seq": 26,
+              "timestamp": "2026-11-24T01:54:10.019Z",
+              "stage": "calling_model",
+              "message": "第 11/24 次模型调用中"
+            },
+            {
+              "seq": 27,
+              "timestamp": "2026-11-24T01:54:14.365Z",
+              "stage": "opening_preview",
+              "message": "门禁全绿，正在挂载隔离预览会话"
+            },
+            {
+              "seq": 28,
+              "timestamp": "2026-11-24T01:54:14.475Z",
+              "stage": "preview_ready",
+              "message": "隔离预览已就绪 (prev-62f9b567)：新增 todo-tags 插件：自有标签表 + 标签/打标签接口，并通过 todo.item.badges、todo.item.detail、todo.header.actions 插槽提供任务行标签展示与标签编辑界面，另附标签管理页。"
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-24T01-50-13-616Z/todo-six-step/step-1.png",
+          "activeCompositionId": "cand-comp-f2553140"
+        },
+        {
+          "step": 2,
+          "prompt": "新增一个 todo-counter 计数插件，在页面顶部状态插槽展示当前未完成与已完成任务数量，不要修改 todo-core 与 todo-tags。",
+          "runId": "evo-7e4fee34",
+          "status": "preview_ready",
+          "highlights": [
+            "todo-counter 依赖 todo-core，通过公开 todo 服务按状态实时统计，新增 GET /api/app/todo-counter/stats 返回 { open, done, total }",
+            "客户端在页面顶部 todo.header.actions 插槽渲染计数徽标，数据随 todo-core 任务列表刷新自动更新（无可用列表时回退到自身 stats 接口）",
+            "新增服务端契约测试（创建任务 → 完成任务的计数增量）与 UI 测试（顶部计数与勾选后实时变化、无客户端错误）",
+            "验证通过：构建 / DAG / 热插拔、消融、克隆 DB 冒烟与测试差异披露全部通过"
+          ],
+          "changeBrief": {
+            "summary": "新增独立插件 todo-counter，在任务页顶部栏展示未完成 / 已完成任务数量，未改动 todo-core 与 todo-tags。",
+            "affectedPlugins": [
+              {
+                "pluginId": "todo-counter",
+                "action": "added",
+                "toVersionId": "13cd4a92d4069278"
+              }
+            ],
+            "dataCompatibility": {
+              "compatible": true,
+              "summary": "已通过真实克隆数据冒烟验证，与当前业务库兼容",
+              "disabledPluginDataChecks": []
+            },
+            "testChangeDisclosures": [],
+            "noBehaviorDiffWarning": false,
+            "warnings": []
+          },
+          "budget": {
+            "callLimit": 24,
+            "callsUsed": 6,
+            "activeMsLimit": 1200000,
+            "activeMsUsed": 74571,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 215246,
+            "exhaustedResource": null
+          },
+          "error": null,
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-24T01:54:15.147Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-24T01:54:15.147Z",
+              "stage": "calling_model",
+              "message": "第 1/24 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-24T01:54:17.188Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-core"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-24T01:54:17.190Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-tags"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-24T01:54:17.193Z",
+              "stage": "calling_model",
+              "message": "第 2/24 次模型调用中"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-24T01:55:20.407Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-24T01:55:20.418Z",
+              "stage": "calling_model",
+              "message": "第 3/24 次模型调用中"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-24T01:55:21.383Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-24T01:55:21.705Z",
+              "stage": "verifying_candidate",
+              "message": "插件 todo-counter 构建/类型检查失败（1 条诊断）"
+            },
+            {
+              "seq": 10,
+              "timestamp": "2026-11-24T01:55:21.719Z",
+              "stage": "calling_model",
+              "message": "第 4/24 次模型调用中"
+            },
+            {
+              "seq": 11,
+              "timestamp": "2026-11-24T01:55:26.123Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 12,
+              "timestamp": "2026-11-24T01:55:26.131Z",
+              "stage": "calling_model",
+              "message": "第 5/24 次模型调用中"
+            },
+            {
+              "seq": 13,
+              "timestamp": "2026-11-24T01:55:27.202Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 14,
+              "timestamp": "2026-11-24T01:55:30.736Z",
+              "stage": "verifying_candidate",
+              "message": "四道验证门禁全部通过，可调用 present_preview 挂载隔离预览"
+            },
+            {
+              "seq": 15,
+              "timestamp": "2026-11-24T01:55:30.755Z",
+              "stage": "calling_model",
+              "message": "第 6/24 次模型调用中"
+            },
+            {
+              "seq": 16,
+              "timestamp": "2026-11-24T01:55:33.660Z",
+              "stage": "opening_preview",
+              "message": "门禁全绿，正在挂载隔离预览会话"
+            },
+            {
+              "seq": 17,
+              "timestamp": "2026-11-24T01:55:33.780Z",
+              "stage": "preview_ready",
+              "message": "隔离预览已就绪 (prev-a438dccf)：新增独立插件 todo-counter，在任务页顶部栏展示未完成 / 已完成任务数量，未改动 todo-core 与 todo-tags。"
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-24T01-50-13-616Z/todo-six-step/step-2.png",
+          "activeCompositionId": "cand-comp-f7829faf"
+        },
+        {
+          "step": 3,
+          "prompt": "升级 todo-tags 插件：新保存的标签自动标准化为小写并去重，同时保留历史标签数据原样可读，并同步更新 todo-tags 测试。",
+          "runId": "evo-cf934f53",
+          "status": "preview_ready",
+          "highlights": [
+            "POST /api/app/todo-tags/tags now trims + lowercases new names; mixed-case/whitespace input returns the canonical lowercase name with normalized color",
+            "Case-variant saves return the existing tag with status 200 and deduplicated: true (no new row, original color/casing preserved); brand-new tags still return 201 with deduplicated: false",
+            "Historical data is read-only as-is: no migration/rewrite, dedupe folds names in JS for lookup only, and reads always surface stored names verbatim",
+            "Client merges created/deduped tags by id (no duplicate local rows) and the tags page states the lowercase/dedupe policy",
+            "todo-tags.spec.ts covers normalization, dedupe, single-row guarantee, assignment de-dup and a before/after snapshot proving historical tag names are unchanged; todo-tags.ui.spec.ts verifies the normalized lowercase chip renders in the task row",
+            "Service create() keeps its TodoTag signature; contract adds CreateTodoTagResponse documenting the 200/201 dedupe semantics"
+          ],
+          "changeBrief": {
+            "summary": "Upgraded todo-tags so newly saved tag names are trimmed and lowercased, and case-variant saves deduplicate onto the existing tag instead of creating duplicates. Historical tags are never migrated or rewritten: list/get/assignment reads return stored names verbatim. Contract tests and the UI test were updated to cover normalization, idempotent dedupe (201 create vs 200 deduplicated response), color preservation, and historical-data non-mutation.",
+            "affectedPlugins": [
+              {
+                "pluginId": "todo-tags",
+                "action": "upgraded",
+                "fromVersionId": "0b270a97da588ac8",
+                "toVersionId": "82980f06e20ed525"
+              }
+            ],
+            "dataCompatibility": {
+              "compatible": true,
+              "summary": "已通过真实克隆数据冒烟验证，与当前业务库兼容",
+              "disabledPluginDataChecks": []
+            },
+            "testChangeDisclosures": [
+              {
+                "pluginId": "todo-tags",
+                "modifiedFiles": [
+                  "todo-tags.spec.ts",
+                  "todo-tags.ui.spec.ts"
+                ],
+                "addedFiles": [],
+                "removedFiles": [],
+                "fileDiffs": [
+                  {
+                    "file": "todo-tags.spec.ts",
+                    "status": "modified",
+                    "affectedTestCases": [
+                      "default"
+                    ],
+                    "diffSummary": " \n+interface CreateTagBody {\n+  readonly tag: TagShape;\n+  readonly deduplicated?: boolean;\n+}\n+\n export default async function (ctx: PluginTestContext): Promise<void> {\n   const suffix = globalThis.crypto.randomUUID().slice(0, 8);\n-  const tagName = `紧急-${suffix}`;\n-  const secondaryName = `前端-${suffix}`;\n+  const rawTagName = `  紧急-${suffix.toUpperCase()}-MIXED  `;\n+  const canonicalTagName = `紧急-${suffix}-mixed`;\n+  const rawSecondaryName = `FrontEnd-${suffix}`;\n+  const canonicalSecondaryName = `frontend-${suffix}`;\n \n+  // Snapshot whatever already exists so the test can prove that saving new\n+  // (normalized) tags never rewrites historical tag names.\n+  const initialCatalog = await ctx.request({\n+    method: \"GET\",\n+    path: \"/api/app/todo-tags/tags\",\n+  });\n+  assert.equal(initialCatalog.status, 200);\n+  const historicalNames = new Map(\n+    (initialCatalog.body as TagListBody).tags.map(\n+      (item) => [item.id, item.name] as const,\n+    ),\n+  );\n+\n   const taskResponse = await ctx.request({\n...\n \n+  // Mixed-case/whitespace input is stored and returned as lowercase.\n   const createdTag = await ctx.request({\n...\n     path: \"/api/app/todo-tags/tags\",\n-    body: { name: tagName, color: \"#ef4444\" },\n+    body: { name: rawTagName, color: \"#EF4444\" },\n   });\n   assert.equal(createdTag.status, 201);\n-  const tag = (createdTag.body as { tag: TagShape }).tag;\n... (truncated)"
+                  },
+                  {
+                    "file": "todo-tags.ui.spec.ts",
+                    "status": "modified",
+                    "affectedTestCases": [
+                      "default"
+                    ],
+                    "diffSummary": "   const suffix = globalThis.crypto.randomUUID().slice(0, 8);\n-  const tagName = `ui-${suffix}`;\n+  const rawTagName = `UI-${suffix}`;\n+  const tagName = rawTagName.toLowerCase();\n \n...\n     path: \"/api/app/todo-tags/tags\",\n-    body: { name: tagName },\n+    body: { name: rawTagName },\n   });\n   assert.equal(tagResponse.status, 201);\n-  const tagId = (tagResponse.body as { tag: { id: string } }).tag.id;\n+  const tag = (tagResponse.body as { tag: { id: string; name: string } }).tag;\n+  assert.equal(tag.name, tagName);\n+  const tagId = tag.id;\n "
+                  }
+                ]
+              }
+            ],
+            "noBehaviorDiffWarning": false,
+            "warnings": []
+          },
+          "budget": {
+            "callLimit": 24,
+            "callsUsed": 8,
+            "activeMsLimit": 1200000,
+            "activeMsUsed": 197020,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 471849,
+            "exhaustedResource": null
+          },
+          "error": null,
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-24T01:55:34.468Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-24T01:55:34.471Z",
+              "stage": "calling_model",
+              "message": "第 1/24 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-24T01:55:35.507Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-tags"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-24T01:55:35.513Z",
+              "stage": "calling_model",
+              "message": "第 2/24 次模型调用中"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-24T01:56:33.427Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-core"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-24T01:56:33.431Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-counter"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-24T01:56:33.441Z",
+              "stage": "calling_model",
+              "message": "第 3/24 次模型调用中"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-24T01:58:03.881Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-24T01:58:03.896Z",
+              "stage": "calling_model",
+              "message": "第 4/24 次模型调用中"
+            },
+            {
+              "seq": 10,
+              "timestamp": "2026-11-24T01:58:24.809Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 11,
+              "timestamp": "2026-11-24T01:58:24.825Z",
+              "stage": "calling_model",
+              "message": "第 5/24 次模型调用中"
+            },
+            {
+              "seq": 12,
+              "timestamp": "2026-11-24T01:58:34.963Z",
+              "stage": "calling_model",
+              "message": "模型响应协议校验失败，已回喂修正：工具参数不符合 JSON 业务契约：stage_plugin_changes：$o.upserts[0].sourceFiles: 缺少必填字段"
+            },
+            {
+              "seq": 13,
+              "timestamp": "2026-11-24T01:58:34.966Z",
+              "stage": "calling_model",
+              "message": "第 6/24 次模型调用中"
+            },
+            {
+              "seq": 14,
+              "timestamp": "2026-11-24T01:58:45.967Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 15,
+              "timestamp": "2026-11-24T01:58:45.980Z",
+              "stage": "calling_model",
+              "message": "第 7/24 次模型调用中"
+            },
+            {
+              "seq": 16,
+              "timestamp": "2026-11-24T01:58:47.530Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 17,
+              "timestamp": "2026-11-24T01:58:50.639Z",
+              "stage": "verifying_candidate",
+              "message": "四道验证门禁全部通过，可调用 present_preview 挂载隔离预览"
+            },
+            {
+              "seq": 18,
+              "timestamp": "2026-11-24T01:58:50.645Z",
+              "stage": "calling_model",
+              "message": "第 8/24 次模型调用中"
+            },
+            {
+              "seq": 19,
+              "timestamp": "2026-11-24T01:58:54.743Z",
+              "stage": "opening_preview",
+              "message": "门禁全绿，正在挂载隔离预览会话"
+            },
+            {
+              "seq": 20,
+              "timestamp": "2026-11-24T01:58:54.876Z",
+              "stage": "preview_ready",
+              "message": "隔离预览已就绪 (prev-3b860b03)：Upgraded todo-tags so newly saved tag names are trimmed and lowercased, and case-variant saves deduplicate onto the existing tag instead of creating duplicates. Historical tags are never migrated or rewritten: list/get/assignment reads return stored names verbatim. Contract tests and the UI test were updated to cover normalization, idempotent dedupe (201 create vs 200 deduplicated response), color preservation, and historical-data non-mutation."
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-24T01-50-13-616Z/todo-six-step/step-3.png",
+          "activeCompositionId": "cand-comp-550ffd42"
+        },
+        {
+          "step": 4,
+          "prompt": "新增一个 todo-review 复盘插件：完成任务前必须填写复盘总结，通过为 todo-core 开放通用双端拦截接缝并在 todo-review 中弹窗收集与服务端强校验实现，不得把复盘逻辑写进 todo-core。",
+          "runId": "evo-74b2f77e",
+          "status": "preview_ready",
+          "highlights": [
+            "todo-core：将 `todo:before-transition` 双端 bail 接缝的 `meta` 通道显式类型化为 `TransitionMeta` 并补充契约说明；流转路由统一透传插件的 422/404 判定，核心不感知任何复盘规则",
+            "todo-review 客户端：通过 `todo:before-transition` 客户端守卫拦截完成动作，弹出复盘弹窗收集总结；取消则中止流转，提交后把 reviewId 写入通用 meta 通道，同时在任务徽标与详情面板展示复盘状态",
+            "todo-review 服务端：注册 `todo:before-transition` 服务端守卫，校验 review 存在、归属任务、未使用、长度 4–2000 字，校验通过后才放行；`todo:changed` 落库为 done 后才归档消费复盘，避免误消耗",
+            "数据与 API：`plg_todo_review__reviews` 独立存储，提供创建/查询/历史接口，合法复盘在完成时置为 consumed，重新打开任务后必须重新填写",
+            "测试：新增 HTTP 契约测试覆盖无复盘拦截、空白/超短/超长校验、跨任务 reviewId 拒绝、消费后不可复用、无 meta 的强校验路径；UI 测试覆盖弹窗拦截、提交完成、取消中止与徽标刷新"
+          ],
+          "changeBrief": {
+            "summary": "新增 todo-review 复盘插件：完成任务前必须通过弹窗填写复盘总结，并由服务端强校验后才允许流转。todo-core 仅保留/加固通用双端拦截接缝，未写入任何复盘业务逻辑。",
+            "affectedPlugins": [
+              {
+                "pluginId": "todo-core",
+                "action": "upgraded",
+                "fromVersionId": "c0937fab93031970",
+                "toVersionId": "b903824c3268b14e"
+              },
+              {
+                "pluginId": "todo-review",
+                "action": "added",
+                "toVersionId": "be68e21b356b6ff1"
+              }
+            ],
+            "dataCompatibility": {
+              "compatible": true,
+              "summary": "已通过真实克隆数据冒烟验证，与当前业务库兼容",
+              "disabledPluginDataChecks": []
+            },
+            "testChangeDisclosures": [],
+            "noBehaviorDiffWarning": false,
+            "warnings": []
+          },
+          "budget": {
+            "callLimit": 24,
+            "callsUsed": 7,
+            "activeMsLimit": 1200000,
+            "activeMsUsed": 347904,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 471014,
+            "exhaustedResource": null
+          },
+          "error": null,
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-24T01:58:55.598Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-24T01:58:55.598Z",
+              "stage": "calling_model",
+              "message": "第 1/24 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-24T01:58:57.778Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-core"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-24T01:58:57.779Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-tags"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-24T01:58:57.785Z",
+              "stage": "calling_model",
+              "message": "第 2/24 次模型调用中"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-24T01:59:10.219Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-counter"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-24T01:59:10.221Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：@host/client-sdk"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-24T01:59:10.224Z",
+              "stage": "calling_model",
+              "message": "第 3/24 次模型调用中"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-24T01:59:36.813Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：host"
+            },
+            {
+              "seq": 10,
+              "timestamp": "2026-11-24T01:59:36.816Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-filter"
+            },
+            {
+              "seq": 11,
+              "timestamp": "2026-11-24T01:59:36.820Z",
+              "stage": "calling_model",
+              "message": "第 4/24 次模型调用中"
+            },
+            {
+              "seq": 12,
+              "timestamp": "2026-11-24T02:03:59.508Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 13,
+              "timestamp": "2026-11-24T02:03:59.549Z",
+              "stage": "calling_model",
+              "message": "第 5/24 次模型调用中"
+            },
+            {
+              "seq": 14,
+              "timestamp": "2026-11-24T02:04:35.933Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 15,
+              "timestamp": "2026-11-24T02:04:35.955Z",
+              "stage": "calling_model",
+              "message": "第 6/24 次模型调用中"
+            },
+            {
+              "seq": 16,
+              "timestamp": "2026-11-24T02:04:37.616Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 17,
+              "timestamp": "2026-11-24T02:04:43.366Z",
+              "stage": "verifying_candidate",
+              "message": "四道验证门禁全部通过，可调用 present_preview 挂载隔离预览"
+            },
+            {
+              "seq": 18,
+              "timestamp": "2026-11-24T02:04:43.375Z",
+              "stage": "calling_model",
+              "message": "第 7/24 次模型调用中"
+            },
+            {
+              "seq": 19,
+              "timestamp": "2026-11-24T02:04:49.395Z",
+              "stage": "opening_preview",
+              "message": "门禁全绿，正在挂载隔离预览会话"
+            },
+            {
+              "seq": 20,
+              "timestamp": "2026-11-24T02:04:49.513Z",
+              "stage": "preview_ready",
+              "message": "隔离预览已就绪 (prev-29a72d89)：新增 todo-review 复盘插件：完成任务前必须通过弹窗填写复盘总结，并由服务端强校验后才允许流转。todo-core 仅保留/加固通用双端拦截接缝，未写入任何复盘业务逻辑。"
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-24T01-50-13-616Z/todo-six-step/step-4.png",
+          "activeCompositionId": "cand-comp-73066098"
+        },
+        {
+          "step": 5,
+          "prompt": "停用 todo-tags 插件（零业务代码变更），确认计数与复盘功能继续正常运行且历史标签数据未丢失。",
+          "runId": "evo-d627dd3a",
+          "status": "preview_ready",
+          "highlights": [
+            "变更形态：仅 todo-tags 的 enabled=false 开关，未新增/修改任何 server、client、contract 或测试文件",
+            "依赖安全：todo-counter / todo-review 仅依赖 todo-core，不订阅 todo-tags:changed、不注入 todoTags，禁用后无悬空依赖或事件订阅",
+            "计数功能：todo-counter 的 /api/app/todo-counter/stats 与 header 槽位不受影响，契约测试（含 open/done 增量断言与 UI 计数）全绿",
+            "复盘功能：todo-review 独占 todo:before-transition 服务端守卫与 todo:changed 归档逻辑，完成前复盘强制校验、consumed 归档行为保持全绿",
+            "标签数据：标签存放于插件级独立表 plg_todo_tags__tags / plg_todo_tags__task_tags，停用只卸载路由与槽位注册，不执行任何 DROP / DELETE / 迁移语句，历史标签与任务关联原样保留，重新启用即可读回",
+            "用户可见影响：任务行标签徽标、任务详情标签区、顶部“标签”入口及 /tags 页面随之隐藏；标签相关 API 返回 404（插件未挂载），属预期行为",
+            "验证结果：静态/DAG/热插拔、消融、克隆库子图 red-green、测试差异披露四道闸门全部通过，无遗留失败项"
+          ],
+          "changeBrief": {
+            "summary": "停用 todo-tags 插件：仅切换启用状态，业务代码零改动。计数（todo-counter）与复盘（todo-review）两个插件及其全部契约测试仍正常通过，历史标签数据保持原样未被清理。",
+            "affectedPlugins": [
+              {
+                "pluginId": "todo-tags",
+                "action": "disabled",
+                "fromVersionId": "82980f06e20ed525",
+                "toVersionId": "82980f06e20ed525"
+              }
+            ],
+            "dataCompatibility": {
+              "compatible": true,
+              "summary": "已核验 1 个停用插件的历史数据表完好无损，与正式业务库兼容",
+              "disabledPluginDataChecks": [
+                {
+                  "pluginId": "todo-tags",
+                  "preserved": true,
+                  "violations": []
+                }
+              ]
+            },
+            "testChangeDisclosures": [],
+            "noBehaviorDiffWarning": false,
+            "warnings": []
+          },
+          "budget": {
+            "callLimit": 24,
+            "callsUsed": 5,
+            "activeMsLimit": 1200000,
+            "activeMsUsed": 18988,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 175485,
+            "exhaustedResource": null
+          },
+          "error": null,
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-24T02:04:50.209Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-24T02:04:50.209Z",
+              "stage": "calling_model",
+              "message": "第 1/24 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-24T02:04:52.649Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-tags"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-24T02:04:52.650Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-core"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-24T02:04:52.654Z",
+              "stage": "calling_model",
+              "message": "第 2/24 次模型调用中"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-24T02:04:54.515Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-counter"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-24T02:04:54.517Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-review"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-24T02:04:54.524Z",
+              "stage": "calling_model",
+              "message": "第 3/24 次模型调用中"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-24T02:05:02.992Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 10,
+              "timestamp": "2026-11-24T02:05:03.011Z",
+              "stage": "calling_model",
+              "message": "第 4/24 次模型调用中"
+            },
+            {
+              "seq": 11,
+              "timestamp": "2026-11-24T02:05:04.586Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 12,
+              "timestamp": "2026-11-24T02:05:05.931Z",
+              "stage": "verifying_candidate",
+              "message": "四道验证门禁全部通过，可调用 present_preview 挂载隔离预览"
+            },
+            {
+              "seq": 13,
+              "timestamp": "2026-11-24T02:05:05.935Z",
+              "stage": "calling_model",
+              "message": "第 5/24 次模型调用中"
+            },
+            {
+              "seq": 14,
+              "timestamp": "2026-11-24T02:05:10.600Z",
+              "stage": "opening_preview",
+              "message": "门禁全绿，正在挂载隔离预览会话"
+            },
+            {
+              "seq": 15,
+              "timestamp": "2026-11-24T02:05:10.690Z",
+              "stage": "preview_ready",
+              "message": "隔离预览已就绪 (prev-6824c864)：停用 todo-tags 插件：仅切换启用状态，业务代码零改动。计数（todo-counter）与复盘（todo-review）两个插件及其全部契约测试仍正常通过，历史标签数据保持原样未被清理。"
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-24T01-50-13-616Z/todo-six-step/step-5.png",
+          "activeCompositionId": "cand-comp-94f85e3b"
+        },
+        {
+          "step": 6,
+          "prompt": "重新启用 todo-tags 插件（零业务代码变更），确认标签界面、功能与历史标签数据完整恢复。",
+          "runId": "evo-f4a180ec",
+          "status": "preview_ready",
+          "highlights": [
+            "仅切换 todo-tags 的 enabled 状态为 true，未 upsert 任何 source/test 文件，属于纯视觉/功能恢复型变更",
+            "四个门禁全部通过：静态/DAG/热插拔、消融门禁、子图红绿 + 克隆库冒烟、测试变更披露（无测试文件改动）",
+            "标签界面恢复：todo.item.badges 行内徽标与标签编辑器、todo.item.detail 详情打标区、todo.header.actions 标签入口计数、/tags 标签库页面",
+            "历史标签数据完整：plg_todo_tags__tags 与 plg_todo_tags__task_tags 表沿用 CREATE TABLE IF NOT EXISTS，重启用后存量标签与任务关联不丢",
+            "契约测试覆盖：新标签名 trim+小写归一化、大小写重名去重复用、历史标签名不被改写、赋值去重、404/400 边界"
+          ],
+          "changeBrief": {
+            "summary": "重新启用 todo-tags 插件，源码、契约与测试均未做任何改动（零业务代码变更），历史标签数据由原 scoped 数据表原位保留。",
+            "affectedPlugins": [
+              {
+                "pluginId": "todo-tags",
+                "action": "enabled",
+                "fromVersionId": "82980f06e20ed525",
+                "toVersionId": "82980f06e20ed525"
+              }
+            ],
+            "dataCompatibility": {
+              "compatible": true,
+              "summary": "已通过真实克隆数据冒烟验证，与当前业务库兼容",
+              "disabledPluginDataChecks": []
+            },
+            "testChangeDisclosures": [],
+            "noBehaviorDiffWarning": false,
+            "warnings": []
+          },
+          "budget": {
+            "callLimit": 24,
+            "callsUsed": 4,
+            "activeMsLimit": 1200000,
+            "activeMsUsed": 8696,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 63662,
+            "exhaustedResource": null
+          },
+          "error": null,
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-24T02:05:11.308Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-24T02:05:11.308Z",
+              "stage": "calling_model",
+              "message": "第 1/24 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-24T02:05:12.407Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：todo-tags"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-24T02:05:12.410Z",
+              "stage": "calling_model",
+              "message": "第 2/24 次模型调用中"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-24T02:05:16.223Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-24T02:05:16.230Z",
+              "stage": "calling_model",
+              "message": "第 3/24 次模型调用中"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-24T02:05:17.555Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-24T02:05:20.019Z",
+              "stage": "verifying_candidate",
+              "message": "四道验证门禁全部通过，可调用 present_preview 挂载隔离预览"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-24T02:05:20.022Z",
+              "stage": "calling_model",
+              "message": "第 4/24 次模型调用中"
+            },
+            {
+              "seq": 10,
+              "timestamp": "2026-11-24T02:05:22.494Z",
+              "stage": "opening_preview",
+              "message": "门禁全绿，正在挂载隔离预览会话"
+            },
+            {
+              "seq": 11,
+              "timestamp": "2026-11-24T02:05:22.581Z",
+              "stage": "preview_ready",
+              "message": "隔离预览已就绪 (prev-6aa81001)：重新启用 todo-tags 插件，源码、契约与测试均未做任何改动（零业务代码变更），历史标签数据由原 scoped 数据表原位保留。"
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-24T01-50-13-616Z/todo-six-step/step-6.png",
+          "activeCompositionId": "cand-comp-a0557b87"
+        }
+      ]
+    }
+  ]
+}
