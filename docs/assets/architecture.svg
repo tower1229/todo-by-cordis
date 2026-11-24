@@ -1,0 +1,336 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 764" width="1260" height="764" role="img" aria-labelledby="arch-title arch-desc">
+  <title id="arch-title">Todo by Cordis 双平面架构图</title>
+  <desc id="arch-desc">维护者持有的监督壳平面（Supervisor Plane）与模型可演进的双端对称 Cordis 应用平面（App Plane）在浏览器与服务端的边界、自迭代验证闭环与热插拔数据流。</desc>
+  <defs>
+    <style>
+      .font-sans { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif; }
+      .font-mono { font-family: "SFMono-Regular", "JetBrains Mono", Menlo, Monaco, Consolas, monospace; }
+      .plane-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+      .plane-sub { font-size: 12px; font-weight: 600; }
+      .lane-label { font-size: 12px; font-weight: 700; fill: #64748B; letter-spacing: 0.08em; }
+      .sec-title { font-size: 14px; font-weight: 700; }
+      .card-title { font-size: 13.5px; font-weight: 700; fill: #0F172A; }
+      .card-sub { font-size: 11.5px; font-weight: 500; fill: #475569; }
+      .card-meta { font-size: 11px; font-weight: 500; fill: #64748B; }
+      .pill-text { font-size: 11.5px; font-weight: 600; }
+      .code-pill { font-size: 11px; font-weight: 600; }
+      .edge-label { font-size: 11.5px; font-weight: 600; }
+    </style>
+
+    <filter id="card-shadow" x="-4%" y="-6%" width="108%" height="118%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0F172A" flood-opacity="0.055" />
+    </filter>
+
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8.5 5 L 1 8.5 z" fill="#2563EB" />
+    </marker>
+    <marker id="arrow-slate" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8.5 5 L 1 8.5 z" fill="#475569" />
+    </marker>
+    <marker id="arrow-emerald" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8.5 5 L 1 8.5 z" fill="#059669" />
+    </marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8.5 5 L 1 8.5 z" fill="#D97706" />
+    </marker>
+  </defs>
+
+  <!-- Outer Canvas -->
+  <rect x="0.5" y="0.5" width="1259" height="763" rx="16" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1" />
+
+  <!-- Top Plane Header Banners -->
+  <rect x="64" y="18" width="516" height="44" rx="10" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1" />
+  <circle cx="84" cy="40" r="5" fill="#2563EB" />
+  <text x="98" y="45" class="font-sans plane-title" fill="#1E3A8A">监督壳平面 · Supervisor Plane</text>
+  <rect x="406" y="28" width="160" height="24" rx="12" fill="#DBEAFE" />
+  <text x="486" y="44" text-anchor="middle" class="font-sans plane-sub" fill="#1D4ED8">维护者持有 · 零业务硬编码</text>
+
+  <rect x="728" y="18" width="516" height="44" rx="10" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1" />
+  <circle cx="748" cy="40" r="5" fill="#059669" />
+  <text x="762" y="45" class="font-sans plane-title" fill="#065F46">双端 Cordis 应用平面 · App Plane</text>
+  <rect x="1058" y="28" width="172" height="24" rx="12" fill="#D1FAE5" />
+  <text x="1144" y="44" text-anchor="middle" class="font-sans plane-sub" fill="#047857">模型可演进 · 插件 DAG 组合</text>
+
+  <!-- Orthogonal Boundary Dividers -->
+  <line x1="654" y1="22" x2="654" y2="744" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="6 5" />
+  <rect x="606" y="28" width="96" height="24" rx="12" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1" />
+  <text x="654" y="44" text-anchor="middle" class="font-sans" font-size="11" font-weight="600" fill="#475569">权限与演进边界</text>
+
+  <line x1="20" y1="298" x2="1244" y2="298" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="6 5" />
+
+  <!-- Left Swimlane Labels -->
+  <rect x="16" y="76" width="34" height="190" rx="10" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1" />
+  <text x="33" y="171" text-anchor="middle" class="font-sans lane-label" transform="rotate(-90 33 171)">BROWSER · 浏览器</text>
+
+  <rect x="16" y="328" width="34" height="414" rx="10" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1" />
+  <text x="33" y="535" text-anchor="middle" class="font-sans lane-label" transform="rotate(-90 33 535)">SERVER · 服务端进程</text>
+
+  <!-- ====================================================================== -->
+  <!-- QUADRANT 1: BROWSER · SUPERVISOR SHELL (Top-Left)                      -->
+  <!-- ====================================================================== -->
+  <rect x="64" y="76" width="516" height="190" rx="14" fill="#F8FAFC" stroke="#BFDBFE" stroke-width="1.25" />
+  <text x="84" y="104" class="font-sans sec-title" fill="#1E3A8A">SupervisorShell</text>
+  <text x="200" y="104" class="font-sans card-meta">极薄受保护外壳（异常与业务完全隔离）</text>
+  <rect x="442" y="88" width="122" height="22" rx="6" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1" />
+  <text x="503" y="103" text-anchor="middle" class="font-mono code-pill" fill="#1D4ED8">#supervisor-root</text>
+
+  <g filter="url(#card-shadow)">
+    <rect x="84" y="122" width="232" height="56" rx="10" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1" />
+    <text x="98" y="146" class="font-sans card-title">自迭代对话与真实进度</text>
+    <text x="98" y="165" class="font-sans card-sub">按需抽屉 · 阶段/工具状态实时推送</text>
+
+    <rect x="332" y="122" width="232" height="56" rx="10" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1" />
+    <text x="346" y="146" class="font-sans card-title">候选变更简报与澄清</text>
+    <text x="346" y="165" class="font-sans card-sub">展示变更插件、验证结果与测试 Diff</text>
+
+    <rect x="84" y="192" width="232" height="56" rx="10" fill="#FFFFFF" stroke="#FDE68A" stroke-width="1.25" />
+    <text x="98" y="216" class="font-sans card-title">隔离预览横幅与微调</text>
+    <text x="98" y="235" class="font-sans card-sub">打开克隆预览 · 预览内继续对话修正</text>
+
+    <rect x="332" y="192" width="232" height="56" rx="10" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1" />
+    <text x="346" y="216" class="font-sans card-title">乐观锁应用与保数据撤回</text>
+    <text x="346" y="235" class="font-sans card-sub">确认应用生效 · 随时启停或回退版本</text>
+  </g>
+
+  <!-- ====================================================================== -->
+  <!-- QUADRANT 2: BROWSER · APP PLANE (Top-Right)                            -->
+  <!-- ====================================================================== -->
+  <rect x="728" y="76" width="516" height="190" rx="14" fill="#F0FDF4" stroke="#86EFAC" stroke-width="1.25" />
+  <text x="748" y="104" class="font-sans sec-title" fill="#065F46">Browser Cordis Context</text>
+  <text x="916" y="104" class="font-sans card-meta">ClientCordisRuntime</text>
+  <rect x="1142" y="88" width="86" height="22" rx="6" fill="#DCFCE7" stroke="#86EFAC" stroke-width="1" />
+  <text x="1185" y="103" text-anchor="middle" class="font-mono code-pill" fill="#047857">#app-root</text>
+
+  <!-- Runtime Capability Pills -->
+  <rect x="748" y="118" width="140" height="26" rx="7" fill="#FFFFFF" stroke="#BBF7D0" stroke-width="1" />
+  <text x="818" y="135" text-anchor="middle" class="font-sans pill-text" fill="#065F46">importmap 单例依赖</text>
+
+  <rect x="898" y="118" width="156" height="26" rx="7" fill="#FFFFFF" stroke="#BBF7D0" stroke-width="1" />
+  <text x="976" y="135" text-anchor="middle" class="font-sans pill-text" fill="#065F46">SSE 快照幂等 Reconcile</text>
+
+  <rect x="1064" y="118" width="164" height="26" rx="7" fill="#FFFFFF" stroke="#BBF7D0" stroke-width="1" />
+  <text x="1146" y="135" text-anchor="middle" class="font-sans pill-text" fill="#065F46">&lt;Slot&gt; 隔离 · 插件级 CSS</text>
+
+  <!-- Browser Plugin DAG -->
+  <g filter="url(#card-shadow)">
+    <!-- Root Business Plugin (Client) -->
+    <rect x="748" y="158" width="224" height="90" rx="10" fill="#FFFFFF" stroke="#10B981" stroke-width="1.5" stroke-dasharray="5 3" />
+    <rect x="762" y="169" width="76" height="22" rx="5" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1" />
+    <text x="800" y="184" text-anchor="middle" class="font-mono" font-size="11" font-weight="700" fill="#065F46">todo-core</text>
+    <text x="846" y="184" text-anchor="middle" class="font-sans" font-size="11" font-weight="600" fill="#94A3B8">/</text>
+    <rect x="854" y="169" width="104" height="22" rx="5" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1" />
+    <text x="906" y="184" text-anchor="middle" class="font-mono" font-size="11" font-weight="700" fill="#047857">inventory-core</text>
+    <text x="762" y="212" class="font-sans card-sub">根业务前端（client.tsx）</text>
+    <text x="762" y="232" class="font-sans" font-size="11" font-weight="600" fill="#059669">零内核修改 · 跨业务可切换</text>
+
+    <!-- Incremental Plugins (Client) -->
+    <rect x="1038" y="158" width="190" height="41" rx="9" fill="#FFFFFF" stroke="#86EFAC" stroke-width="1.2" />
+    <text x="1052" y="176" class="font-sans" font-size="12" font-weight="700" fill="#0F172A">增量插件 A</text>
+    <text x="1052" y="191" class="font-mono" font-size="10.5" fill="#64748B">tags / expiry</text>
+
+    <rect x="1038" y="207" width="190" height="41" rx="9" fill="#FFFFFF" stroke="#86EFAC" stroke-width="1.2" />
+    <text x="1052" y="225" class="font-sans" font-size="12" font-weight="700" fill="#0F172A">增量插件 B</text>
+    <text x="1052" y="240" class="font-mono" font-size="10.5" fill="#64748B">review / approval</text>
+  </g>
+
+  <!-- Client DAG Dependency Arrows -->
+  <path d="M 1038 178 L 1006 178 L 1006 196 L 976 196" fill="none" stroke="#059669" stroke-width="1.5" marker-end="url(#arrow-emerald)" />
+  <path d="M 1038 228 L 1006 228 L 1006 210 L 976 210" fill="none" stroke="#059669" stroke-width="1.5" marker-end="url(#arrow-emerald)" />
+  <rect x="984" y="193" width="44" height="19" rx="5" fill="#F0FDF4" />
+  <text x="1006" y="206" text-anchor="middle" class="font-mono" font-size="10.5" font-weight="600" fill="#047857">inject</text>
+
+  <!-- ====================================================================== -->
+  <!-- QUADRANT 3: SERVER · SUPERVISOR HOST (Bottom-Left)                     -->
+  <!-- ====================================================================== -->
+  <rect x="64" y="328" width="516" height="414" rx="14" fill="#F8FAFC" stroke="#BFDBFE" stroke-width="1.25" />
+  <text x="84" y="355" class="font-sans sec-title" fill="#1E3A8A">Supervisor Host</text>
+  <text x="204" y="355" class="font-sans card-meta">控制面网关 · 演进闭环 · 门禁 · 发布</text>
+
+  <!-- Row 1: HTTP Gateway -->
+  <g filter="url(#card-shadow)">
+    <rect x="84" y="372" width="480" height="54" rx="10" fill="#FFFFFF" stroke="#93C5FD" stroke-width="1.3" />
+    <text x="100" y="395" class="font-sans card-title">HTTP Gateway</text>
+    <text x="100" y="414" class="font-sans card-sub">统一入口：控制面 API + 业务转发 + SSE 状态流</text>
+    <rect x="374" y="386" width="84" height="24" rx="6" fill="#EFF6FF" />
+    <text x="416" y="402" text-anchor="middle" class="font-mono code-pill" fill="#1D4ED8">/api/host/*</text>
+    <rect x="466" y="386" width="84" height="24" rx="6" fill="#ECFDF5" />
+    <text x="508" y="402" text-anchor="middle" class="font-mono code-pill" fill="#047857">/api/app/*</text>
+  </g>
+
+  <!-- Internal Gateway -> Pipeline Arrows -->
+  <line x1="158" y1="426" x2="158" y2="454" stroke="#2563EB" stroke-width="1.5" marker-end="url(#arrow-blue)" />
+  <line x1="490" y1="426" x2="490" y2="454" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)" />
+  <text x="166" y="445" class="font-sans" font-size="10.5" font-weight="600" fill="#2563EB">触发自迭代</text>
+  <text x="482" y="445" text-anchor="end" class="font-sans" font-size="10.5" font-weight="600" fill="#475569">启停 / 应用 / 撤回</text>
+
+  <!-- Row 2: 3-Stage Evolution & Verification Pipeline -->
+  <g filter="url(#card-shadow)">
+    <!-- EvolutionLoop -->
+    <rect x="84" y="460" width="146" height="120" rx="10" fill="#FFFFFF" stroke="#93C5FD" stroke-width="1.25" />
+    <rect x="84" y="460" width="146" height="28" rx="10" fill="#EFF6FF" />
+    <rect x="84" y="478" width="146" height="10" fill="#EFF6FF" />
+    <text x="157" y="479" text-anchor="middle" class="font-sans" font-size="13" font-weight="700" fill="#1E3A8A">EvolutionLoop</text>
+    <text x="98" y="507" class="font-sans card-sub">· 极简 5 工具闭环</text>
+    <text x="98" y="527" class="font-sans card-sub">· 读 contract.d.ts</text>
+    <text x="98" y="547" class="font-sans card-sub">· 写 TS 插件与测试</text>
+    <text x="98" y="568" class="font-sans card-meta">DeepSeek · 有界预算</text>
+
+    <!-- Verifier (Amber Highlight) -->
+    <rect x="251" y="460" width="146" height="120" rx="10" fill="#FFFDF5" stroke="#F59E0B" stroke-width="1.4" />
+    <rect x="251" y="460" width="146" height="28" rx="10" fill="#FEF3C7" />
+    <rect x="251" y="478" width="146" height="10" fill="#FEF3C7" />
+    <text x="324" y="479" text-anchor="middle" class="font-sans" font-size="13" font-weight="700" fill="#92400E">Verifier</text>
+    <text x="265" y="507" class="font-sans" font-size="11.5" font-weight="600" fill="#92400E">四道确定性门禁</text>
+    <text x="265" y="527" class="font-sans card-sub">① 静态/AST/热插拔</text>
+    <text x="265" y="547" class="font-sans card-sub">② 下游剥离验证</text>
+    <text x="265" y="568" class="font-sans card-sub">③ 子图红绿 ④ Diff</text>
+
+    <!-- CompositionRelease -->
+    <rect x="418" y="460" width="146" height="120" rx="10" fill="#FFFFFF" stroke="#93C5FD" stroke-width="1.25" />
+    <rect x="418" y="460" width="146" height="28" rx="10" fill="#EFF6FF" />
+    <rect x="418" y="478" width="146" height="10" fill="#EFF6FF" />
+    <text x="491" y="479" text-anchor="middle" class="font-sans" font-size="13" font-weight="700" fill="#1E3A8A">Release</text>
+    <text x="432" y="507" class="font-sans card-sub">· 不可变组合产物</text>
+    <text x="432" y="527" class="font-sans card-sub">· 乐观锁 apply</text>
+    <text x="432" y="547" class="font-sans card-sub">· 保数据 rollback</text>
+    <text x="432" y="568" class="font-sans card-meta">CompositionRelease</text>
+  </g>
+
+  <!-- Pipeline Connectors -->
+  <line x1="230" y1="520" x2="247" y2="520" stroke="#2563EB" stroke-width="1.6" marker-end="url(#arrow-blue)" />
+  <line x1="397" y1="520" x2="414" y2="520" stroke="#D97706" stroke-width="1.6" marker-end="url(#arrow-amber)" />
+
+  <!-- Row 3: supervisor.db + Preview Clone -->
+  <g filter="url(#card-shadow)">
+    <!-- supervisor.db -->
+    <rect x="84" y="622" width="182" height="100" rx="10" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.2" />
+    <!-- Clean Layered Database Icon -->
+    <path d="M 98 643 L 98 657 A 10 4.2 0 0 0 118 657 L 118 643 Z" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.2" />
+    <path d="M 98 650 A 10 4.2 0 0 0 118 650" fill="none" stroke="#93C5FD" stroke-width="1" />
+    <ellipse cx="108" cy="643" rx="10" ry="4.2" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.2" />
+    <text x="126" y="650" class="font-mono" font-size="13" font-weight="700" fill="#1E3A8A">supervisor.db</text>
+    <text x="98" y="679" class="font-sans card-sub">控制面持久化存储</text>
+    <text x="98" y="700" class="font-sans card-meta">组合锁 · 会话 · 不可变版本</text>
+
+    <!-- Preview Clone -->
+    <rect x="282" y="622" width="282" height="100" rx="10" fill="#FFFBEB" stroke="#F59E0B" stroke-width="1.4" stroke-dasharray="5 3" />
+    <text x="298" y="646" class="font-sans" font-size="13.5" font-weight="700" fill="#92400E">Preview Clone · 隔离预览子进程</text>
+    <text x="298" y="669" class="font-sans card-sub">· 门禁全绿自动拉起，试跑真实克隆数据</text>
+    <text x="298" y="689" class="font-sans card-sub">· 预览内支持对话微调，确认后才应用</text>
+    <text x="298" y="709" class="font-sans card-meta">独立进程与端口 · 绝不污染 app.db</text>
+  </g>
+
+  <!-- Release -> Preview Clone & supervisor.db -->
+  <line x1="491" y1="580" x2="491" y2="616" stroke="#D97706" stroke-width="1.5" marker-end="url(#arrow-amber)" />
+  <text x="499" y="603" class="font-sans" font-size="10.5" font-weight="600" fill="#B45309">挂载预览</text>
+
+  <path d="M 452 580 L 452 601 L 175 601 L 175 616" fill="none" stroke="#94A3B8" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#arrow-slate)" />
+  <rect x="268" y="591" width="90" height="19" rx="9.5" fill="#F8FAFC" />
+  <text x="313" y="604" text-anchor="middle" class="font-sans" font-size="10.5" font-weight="600" fill="#64748B">版本与会话落盘</text>
+
+  <!-- ====================================================================== -->
+  <!-- QUADRANT 4: SERVER · WORKER SUBPROCESS / APP PLANE (Bottom-Right)      -->
+  <!-- ====================================================================== -->
+  <rect x="728" y="328" width="516" height="414" rx="14" fill="#F0FDF4" stroke="#86EFAC" stroke-width="1.25" />
+  <text x="748" y="355" class="font-sans sec-title" fill="#065F46">Worker Subprocess · Server Cordis</text>
+  <rect x="1104" y="339" width="124" height="22" rx="6" fill="#DCFCE7" stroke="#86EFAC" stroke-width="1" />
+  <text x="1166" y="354" text-anchor="middle" class="font-sans" font-size="11" font-weight="600" fill="#047857">常驻子进程 · 失败重建</text>
+
+  <!-- Server Runtime Capability Strip -->
+  <g filter="url(#card-shadow)">
+    <rect x="748" y="372" width="480" height="54" rx="10" fill="#FFFFFF" stroke="#86EFAC" stroke-width="1.25" />
+    <text x="764" y="395" class="font-sans card-title">Server Cordis Context</text>
+    <text x="764" y="414" class="font-sans card-sub">插件路由、事件钩子与定时任务均绑定 Fiber 生命周期</text>
+    <rect x="1064" y="386" width="150" height="24" rx="6" fill="#ECFDF5" />
+    <text x="1139" y="402" text-anchor="middle" class="font-mono code-pill" fill="#047857">[HOST_PLUGIN_ID]</text>
+  </g>
+
+  <!-- Server Plugin DAG (Symmetrically aligned with Browser Plugin DAG) -->
+  <rect x="748" y="446" width="480" height="148" rx="12" fill="#FFFFFF" fill-opacity="0.72" stroke="#BBF7D0" stroke-width="1.1" />
+  <text x="762" y="468" class="font-sans" font-size="11.5" font-weight="700" fill="#047857">服务端插件 DAG（与浏览器端对称组合）</text>
+  <text x="1214" y="468" text-anchor="end" class="font-sans card-meta">停用 = fiber.dispose()，零代码手术</text>
+
+  <g filter="url(#card-shadow)">
+    <!-- Root Business Plugin (Server) -->
+    <rect x="762" y="482" width="214" height="98" rx="10" fill="#FFFFFF" stroke="#10B981" stroke-width="1.5" stroke-dasharray="5 3" />
+    <rect x="774" y="492" width="74" height="21" rx="5" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1" />
+    <text x="811" y="506.5" text-anchor="middle" class="font-mono" font-size="10.5" font-weight="700" fill="#065F46">todo-core</text>
+    <text x="855" y="506.5" text-anchor="middle" class="font-sans" font-size="10.5" font-weight="600" fill="#94A3B8">/</text>
+    <rect x="862" y="492" width="102" height="21" rx="5" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1" />
+    <text x="913" y="506.5" text-anchor="middle" class="font-mono" font-size="10.5" font-weight="700" fill="#047857">inventory-core</text>
+    <text x="774" y="532" class="font-sans card-sub">根业务服务端（server.ts）</text>
+    <text x="774" y="551" class="font-sans card-meta">ctx.provide · 业务钩子</text>
+    <text x="774" y="568" class="font-sans card-meta">ctx.http · ctx.schedule</text>
+
+    <!-- Incremental Plugins (Server) -->
+    <rect x="1038" y="482" width="176" height="44" rx="9" fill="#FFFFFF" stroke="#86EFAC" stroke-width="1.2" />
+    <text x="1052" y="501" class="font-sans" font-size="12" font-weight="700" fill="#0F172A">增量插件 A</text>
+    <text x="1052" y="517" class="font-mono" font-size="10.5" fill="#64748B">tags / expiry</text>
+
+    <rect x="1038" y="536" width="176" height="44" rx="9" fill="#FFFFFF" stroke="#86EFAC" stroke-width="1.2" />
+    <text x="1052" y="555" class="font-sans" font-size="12" font-weight="700" fill="#0F172A">增量插件 B</text>
+    <text x="1052" y="571" class="font-mono" font-size="10.5" fill="#64748B">review / approval</text>
+  </g>
+
+  <!-- Server DAG Dependency Arrows -->
+  <path d="M 1038 504 L 1007 504 L 1007 524 L 980 524" fill="none" stroke="#059669" stroke-width="1.5" marker-end="url(#arrow-emerald)" />
+  <path d="M 1038 558 L 1007 558 L 1007 538 L 980 538" fill="none" stroke="#059669" stroke-width="1.5" marker-end="url(#arrow-emerald)" />
+  <rect x="985" y="521" width="44" height="19" rx="5" fill="#F0FDF4" />
+  <text x="1007" y="534" text-anchor="middle" class="font-mono" font-size="10.5" font-weight="600" fill="#047857">inject</text>
+
+  <!-- Server Data Layer: ScopedDb + app.db -->
+  <g filter="url(#card-shadow)">
+    <rect x="748" y="622" width="480" height="100" rx="10" fill="#FFFFFF" stroke="#6EE7B7" stroke-width="1.3" />
+    <!-- ScopedDb Left Half -->
+    <text x="766" y="648" class="font-sans card-title">ScopedDb 引擎级隔离</text>
+    <text x="766" y="669" class="font-sans card-sub">SQLite setAuthorizer 按插件强制隔离表前缀</text>
+    <rect x="766" y="683" width="124" height="22" rx="5" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1" />
+    <text x="828" y="698" text-anchor="middle" class="font-mono" font-size="10.5" font-weight="600" fill="#047857">plg_todo_core__*</text>
+    <rect x="898" y="683" width="96" height="22" rx="5" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1" />
+    <text x="946" y="698" text-anchor="middle" class="font-mono" font-size="10.5" font-weight="600" fill="#047857">plg_tags__*</text>
+    <rect x="1002" y="683" width="76" height="22" rx="5" fill="#F1F5F9" />
+    <text x="1040" y="698" text-anchor="middle" class="font-sans" font-size="10.5" font-weight="600" fill="#64748B">停用保数据</text>
+
+    <!-- Divider inside card -->
+    <line x1="1096" y1="636" x2="1096" y2="708" stroke="#E2E8F0" stroke-width="1.2" />
+
+    <!-- app.db Clean Layered Database Icon -->
+    <path d="M 1146 650 L 1146 671 A 16 6.2 0 0 0 1178 671 L 1178 650 Z" fill="#ECFDF5" stroke="#059669" stroke-width="1.4" />
+    <path d="M 1146 660.5 A 16 6.2 0 0 0 1178 660.5" fill="none" stroke="#6EE7B7" stroke-width="1.1" />
+    <ellipse cx="1162" cy="650" rx="16" ry="6.2" fill="#D1FAE5" stroke="#059669" stroke-width="1.4" />
+    <text x="1162" y="695" text-anchor="middle" class="font-mono" font-size="13" font-weight="700" fill="#065F46">app.db</text>
+    <text x="1162" y="711" text-anchor="middle" class="font-sans" font-size="10.5" font-weight="600" fill="#64748B">生产业务库</text>
+  </g>
+
+  <!-- Internal Server DAG -> ScopedDb Connector -->
+  <line x1="988" y1="598" x2="988" y2="617" stroke="#059669" stroke-width="1.5" marker-start="url(#arrow-emerald)" marker-end="url(#arrow-emerald)" />
+
+  <!-- ====================================================================== -->
+  <!-- CROSS-BOUNDARY FLOWS (Zero Crossings, Aligned to Gateway Badges)       -->
+  <!-- ====================================================================== -->
+
+  <!-- Flow 1: Browser SupervisorShell <-> Server HTTP Gateway (/api/host/*) -->
+  <line x1="416" y1="270" x2="416" y2="367" stroke="#2563EB" stroke-width="1.8" marker-start="url(#arrow-blue)" marker-end="url(#arrow-blue)" />
+  <rect x="358" y="285" width="116" height="26" rx="13" fill="#EFF6FF" stroke="#93C5FD" stroke-width="1.2" />
+  <text x="416" y="302" text-anchor="middle" class="font-mono edge-label" fill="#1D4ED8">/api/host/*</text>
+
+  <!-- Flow 2: Browser App Plane <-> Server HTTP Gateway (/api/app/* · SSE) -->
+  <path d="M 804 270 L 804 298 L 508 298 L 508 367" fill="none" stroke="#059669" stroke-width="1.8" marker-start="url(#arrow-emerald)" marker-end="url(#arrow-emerald)" />
+  <rect x="574" y="285" width="160" height="26" rx="13" fill="#ECFDF5" stroke="#6EE7B7" stroke-width="1.2" />
+  <text x="654" y="302" text-anchor="middle" class="font-sans edge-label" fill="#047857">/api/app/* · SSE 快照</text>
+
+  <!-- Flow 3: HTTP Gateway <-> Server Cordis (/api/app/* 转发) -->
+  <line x1="569" y1="399" x2="743" y2="399" stroke="#059669" stroke-width="1.8" marker-start="url(#arrow-emerald)" marker-end="url(#arrow-emerald)" />
+  <rect x="594" y="386" width="120" height="26" rx="13" fill="#FFFFFF" stroke="#6EE7B7" stroke-width="1.2" />
+  <text x="654" y="403" text-anchor="middle" class="font-sans edge-label" fill="#047857">/api/app/* 转发</text>
+
+  <!-- Flow 4: Release -> Server Plugin DAG (排空 -> Fiber 热插拔) -->
+  <line x1="568" y1="520" x2="743" y2="520" stroke="#2563EB" stroke-width="2" marker-end="url(#arrow-blue)" />
+  <rect x="580" y="507" width="148" height="26" rx="13" fill="#EFF6FF" stroke="#93C5FD" stroke-width="1.2" />
+  <text x="654" y="524" text-anchor="middle" class="font-sans edge-label" fill="#1D4ED8">排空 → Fiber 热插拔</text>
+
+  <!-- Flow 5: app.db -> Preview Clone (sqlite.backup 在线克隆) -->
+  <line x1="744" y1="672" x2="569" y2="672" stroke="#D97706" stroke-width="1.8" stroke-dasharray="5 3" marker-end="url(#arrow-amber)" />
+  <rect x="580" y="659" width="148" height="26" rx="13" fill="#FFFBEB" stroke="#FCD34D" stroke-width="1.2" />
+  <text x="654" y="676" text-anchor="middle" class="font-sans edge-label" fill="#B45309">sqlite.backup 克隆</text>
+</svg>
