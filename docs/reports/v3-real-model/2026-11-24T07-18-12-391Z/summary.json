@@ -1,0 +1,394 @@
+{
+  "executedAt": "2026-11-24T07:27:11.456Z",
+  "scenario": "inventory-migration",
+  "limits": {
+    "maxCalls": 40,
+    "maxCostCny": 20
+  },
+  "evolutionBudget": {
+    "callLimit": 24,
+    "activeMsLimit": 1200000
+  },
+  "usage": {
+    "calls": 18,
+    "promptTokens": 1092773,
+    "completionTokens": 133275,
+    "unknownUsageCalls": 0,
+    "estimatedCostCny": 6.5034920000000005
+  },
+  "results": [
+    {
+      "scenario": "inventory-migration",
+      "seedPluginDir": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/plugins/inventory-core",
+      "steps": [
+        {
+          "step": 1,
+          "prompt": "新增一个 inventory-expiry 效期预警插件：为库存批次提供效期登记与临期预警展示，不破坏 inventory-core 原有功能。",
+          "runId": "evo-68110307",
+          "status": "preview_ready",
+          "highlights": [
+            "服务端：新增 inventoryExpiry 服务与 plg_inventory_expiry__batches 私有表；GET/POST /batches、GET/DELETE /batches/:id、GET /alerts（支持 itemId/sku/status/days 过滤，days 默认 30 天窗口），效期状态按 UTC 日期实时计算为 expired/expiring/fresh。",
+            "跨插件集成：依赖 inventory-core 并通过 ctx.inject(['inventory']) 注入其公开 inventory 服务，登记批次时校验商品存在并冻结 SKU/名称快照；不写入、不修改库存核心表。",
+            "客户端展示：注册 /expiry 页面（库存页导航自动出现“效期预警”按钮），并接入 inventory.list.banner（过期/临期横幅）、inventory.item.badges（条目预警徽章）、inventory.item.detail（条目内批次明细与快捷登记）。",
+            "服务端校验：日期格式与合法性、数量非负、批次号唯一（409）、商品不存在（404）、`status`/`quantity` 非法入参（400）。",
+            "契约测试：覆盖登记/窗口语义（30 天 vs 60 天）/alerts/过滤/删除/四类错误分支，并回归验证 inventory-core 的查询与出入库接口不受影响。"
+          ],
+          "changeBrief": {
+            "summary": "新增 inventory-expiry 插件：为库存批次提供效期登记与临期/过期预警，通过 inventory-core 已声明的插槽与独立 /expiry 页面展示，inventory-core 源码与行为完全未改动。",
+            "affectedPlugins": [
+              {
+                "pluginId": "inventory-expiry",
+                "action": "added",
+                "toVersionId": "2b2a9b7a0930df86"
+              }
+            ],
+            "dataCompatibility": {
+              "compatible": true,
+              "summary": "已通过真实克隆数据冒烟验证，与当前业务库兼容",
+              "disabledPluginDataChecks": []
+            },
+            "testChangeDisclosures": [],
+            "noBehaviorDiffWarning": false,
+            "warnings": []
+          },
+          "budget": {
+            "callLimit": 24,
+            "callsUsed": 11,
+            "activeMsLimit": 1200000,
+            "activeMsUsed": 339069,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 798561,
+            "exhaustedResource": null
+          },
+          "error": null,
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-24T07:18:13.852Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-24T07:18:13.852Z",
+              "stage": "calling_model",
+              "message": "第 1/24 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-24T07:18:15.281Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：inventory-core"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-24T07:18:15.284Z",
+              "stage": "calling_model",
+              "message": "第 2/24 次模型调用中"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-24T07:21:55.050Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-24T07:21:55.074Z",
+              "stage": "calling_model",
+              "message": "第 3/24 次模型调用中"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-24T07:22:13.072Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-24T07:22:13.082Z",
+              "stage": "calling_model",
+              "message": "第 4/24 次模型调用中"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-24T07:22:20.793Z",
+              "stage": "calling_model",
+              "message": "模型响应协议校验失败，已回喂修正：工具参数不符合 JSON 业务契约：stage_plugin_changes：$o.upserts[0].sourceFiles: 缺少必填字段"
+            },
+            {
+              "seq": 10,
+              "timestamp": "2026-11-24T07:22:20.797Z",
+              "stage": "calling_model",
+              "message": "第 5/24 次模型调用中"
+            },
+            {
+              "seq": 11,
+              "timestamp": "2026-11-24T07:22:29.174Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 12,
+              "timestamp": "2026-11-24T07:22:29.187Z",
+              "stage": "calling_model",
+              "message": "第 6/24 次模型调用中"
+            },
+            {
+              "seq": 13,
+              "timestamp": "2026-11-24T07:22:29.876Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 14,
+              "timestamp": "2026-11-24T07:22:30.860Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate3-subgraph-contract)：Subgraph contract tests failed for \"inventory-expiry\" in closure [inventory-expiry, inventory-core]: tests/inventory-expiry.spec.ts: Expected values to be strictly equal:\n\n500 !== 201\n"
+            },
+            {
+              "seq": 15,
+              "timestamp": "2026-11-24T07:22:30.867Z",
+              "stage": "calling_model",
+              "message": "第 7/24 次模型调用中"
+            },
+            {
+              "seq": 16,
+              "timestamp": "2026-11-24T07:23:07.133Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 17,
+              "timestamp": "2026-11-24T07:23:07.152Z",
+              "stage": "calling_model",
+              "message": "第 8/24 次模型调用中"
+            },
+            {
+              "seq": 18,
+              "timestamp": "2026-11-24T07:23:08.874Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 19,
+              "timestamp": "2026-11-24T07:23:09.524Z",
+              "stage": "verifying_candidate",
+              "message": "验证未通过 (gate3-subgraph-contract)：Subgraph contract tests failed for \"inventory-expiry\" in closure [inventory-expiry, inventory-core]: tests/inventory-expiry.spec.ts: {\"error\":\"cannot get property \\\"inventory\\\" without inject\",\"stage\":\"at InventoryExpiryServiceImpl.resolveInventory (file:///private/var/folders/3g/sbd2x9l51tb9gkn_k1y2j_7w0000gn/T/host-plugin-tests-nDzUnM/releases/inventory-expiry-96641b9b52ccf52a/server.mjs:244:19)\"}\n\n500 !== 201\n"
+            },
+            {
+              "seq": 20,
+              "timestamp": "2026-11-24T07:23:09.531Z",
+              "stage": "calling_model",
+              "message": "第 9/24 次模型调用中"
+            },
+            {
+              "seq": 21,
+              "timestamp": "2026-11-24T07:23:43.703Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 22,
+              "timestamp": "2026-11-24T07:23:43.715Z",
+              "stage": "calling_model",
+              "message": "第 10/24 次模型调用中"
+            },
+            {
+              "seq": 23,
+              "timestamp": "2026-11-24T07:23:44.437Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 24,
+              "timestamp": "2026-11-24T07:23:46.175Z",
+              "stage": "verifying_candidate",
+              "message": "四道验证门禁全部通过，可调用 present_preview 挂载隔离预览"
+            },
+            {
+              "seq": 25,
+              "timestamp": "2026-11-24T07:23:46.183Z",
+              "stage": "calling_model",
+              "message": "第 11/24 次模型调用中"
+            },
+            {
+              "seq": 26,
+              "timestamp": "2026-11-24T07:23:56.476Z",
+              "stage": "opening_preview",
+              "message": "门禁全绿，正在挂载隔离预览会话"
+            },
+            {
+              "seq": 27,
+              "timestamp": "2026-11-24T07:23:56.586Z",
+              "stage": "preview_ready",
+              "message": "隔离预览已就绪 (prev-c3cb4fa7)：新增 inventory-expiry 插件：为库存批次提供效期登记与临期/过期预警，通过 inventory-core 已声明的插槽与独立 /expiry 页面展示，inventory-core 源码与行为完全未改动。"
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-24T07-18-12-391Z/inventory-migration/step-1.png",
+          "activeCompositionId": "cand-comp-2969d084"
+        },
+        {
+          "step": 2,
+          "prompt": "新增一个 inventory-approval 出库审批插件：当单次出库数量大于 50 时拦截并要求填写审批理由，且卸载该插件后 inventory-core 仍独立正常出库。",
+          "runId": "evo-a375c6d2",
+          "status": "preview_ready",
+          "highlights": [
+            "通过自有作用域监听 inventory:before-stock-change 事件拦截：出库（delta < 0）绝对值 > 阈值且缺少 reason 时返回中文拦截提示，库存不变；填写理由后放行。",
+            "阈值策略可配置（默认 50，范围 1-100000），并提供 requireReason 开关；入库与 <= 阈值的出库完全不受影响。",
+            "所有超限出库写入插件自有审计表（approved/rejected、数量、前后库存、理由、阈值、提示），提供 GET /policy、PUT /policy、GET /records、GET /records/:id、GET /summary、GET /evaluate 公开接口。",
+            "客户端新增 /approval 页面（出库申请表单会携带审批理由调用 inventory-core 公开接口、策略编辑、记录筛选与统计），并挂载 inventory.list.banner 与 inventory.item.detail 槽位。",
+            "inventory-core 从未引用本插件；拦截逻辑注册在插件自身上下文，卸载即释放，因此卸载后出库恢复无审批直通（由组合消融门禁验证）。",
+            "契约测试覆盖阈值边界（-50 放行 / -51 拦截）、缺理由拦截且库存不变、带理由放行、入库不受限、策略校验与调整、记录与摘要、理由长度校验及 inventory-core 独立可用性。"
+          ],
+          "changeBrief": {
+            "summary": "新增 inventory-approval 出库审批插件：拦截单次出库 > 50 且未填写审批理由的库存变动，并为每次超限出库留痕；卸载后 inventory-core 仍可独立出库。",
+            "affectedPlugins": [
+              {
+                "pluginId": "inventory-approval",
+                "action": "added",
+                "toVersionId": "bc3a45c18973ad54"
+              }
+            ],
+            "dataCompatibility": {
+              "compatible": true,
+              "summary": "已通过真实克隆数据冒烟验证，与当前业务库兼容",
+              "disabledPluginDataChecks": []
+            },
+            "testChangeDisclosures": [],
+            "noBehaviorDiffWarning": false,
+            "warnings": []
+          },
+          "budget": {
+            "callLimit": 24,
+            "callsUsed": 7,
+            "activeMsLimit": 1200000,
+            "activeMsUsed": 190987,
+            "unknownUsageCount": 0,
+            "estimatedTokens": 427487,
+            "exhaustedResource": null
+          },
+          "error": null,
+          "events": [
+            {
+              "seq": 1,
+              "timestamp": "2026-11-24T07:23:57.241Z",
+              "stage": "queued",
+              "message": "已接收需求，开始自迭代执行"
+            },
+            {
+              "seq": 2,
+              "timestamp": "2026-11-24T07:23:57.241Z",
+              "stage": "calling_model",
+              "message": "第 1/24 次模型调用中"
+            },
+            {
+              "seq": 3,
+              "timestamp": "2026-11-24T07:23:58.588Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：inventory-core"
+            },
+            {
+              "seq": 4,
+              "timestamp": "2026-11-24T07:23:58.589Z",
+              "stage": "inspecting_plugin",
+              "message": "读取插件源码与测试：inventory-expiry"
+            },
+            {
+              "seq": 5,
+              "timestamp": "2026-11-24T07:23:58.591Z",
+              "stage": "calling_model",
+              "message": "第 2/24 次模型调用中"
+            },
+            {
+              "seq": 6,
+              "timestamp": "2026-11-24T07:26:27.347Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 7,
+              "timestamp": "2026-11-24T07:26:27.361Z",
+              "stage": "calling_model",
+              "message": "第 3/24 次模型调用中"
+            },
+            {
+              "seq": 8,
+              "timestamp": "2026-11-24T07:26:51.580Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 9,
+              "timestamp": "2026-11-24T07:26:51.608Z",
+              "stage": "calling_model",
+              "message": "第 4/24 次模型调用中"
+            },
+            {
+              "seq": 10,
+              "timestamp": "2026-11-24T07:26:52.412Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 11,
+              "timestamp": "2026-11-24T07:26:52.677Z",
+              "stage": "verifying_candidate",
+              "message": "插件 inventory-approval 构建/类型检查失败（1 条诊断）"
+            },
+            {
+              "seq": 12,
+              "timestamp": "2026-11-24T07:26:52.686Z",
+              "stage": "calling_model",
+              "message": "第 5/24 次模型调用中"
+            },
+            {
+              "seq": 13,
+              "timestamp": "2026-11-24T07:27:04.331Z",
+              "stage": "staging_changes",
+              "message": "正在向沙箱工作区写入插件变更"
+            },
+            {
+              "seq": 14,
+              "timestamp": "2026-11-24T07:27:04.349Z",
+              "stage": "calling_model",
+              "message": "第 6/24 次模型调用中"
+            },
+            {
+              "seq": 15,
+              "timestamp": "2026-11-24T07:27:05.974Z",
+              "stage": "verifying_candidate",
+              "message": "正在执行构建与四道验证门禁"
+            },
+            {
+              "seq": 16,
+              "timestamp": "2026-11-24T07:27:08.038Z",
+              "stage": "verifying_candidate",
+              "message": "四道验证门禁全部通过，可调用 present_preview 挂载隔离预览"
+            },
+            {
+              "seq": 17,
+              "timestamp": "2026-11-24T07:27:08.045Z",
+              "stage": "calling_model",
+              "message": "第 7/24 次模型调用中"
+            },
+            {
+              "seq": 18,
+              "timestamp": "2026-11-24T07:27:10.683Z",
+              "stage": "opening_preview",
+              "message": "门禁全绿，正在挂载隔离预览会话"
+            },
+            {
+              "seq": 19,
+              "timestamp": "2026-11-24T07:27:10.790Z",
+              "stage": "preview_ready",
+              "message": "隔离预览已就绪 (prev-bbbd9e8d)：新增 inventory-approval 出库审批插件：拦截单次出库 > 50 且未填写审批理由的库存变动，并为每次超限出库留痕；卸载后 inventory-core 仍可独立出库。"
+            }
+          ],
+          "screenshotPath": "/Users/zangtao/Workspace/tower1229/todo-by-cordis/docs/reports/v3-real-model/2026-11-24T07-18-12-391Z/inventory-migration/step-2.png",
+          "activeCompositionId": "cand-comp-7d678f0c"
+        }
+      ]
+    }
+  ]
+}

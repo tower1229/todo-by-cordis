@@ -27,37 +27,7 @@
 
 系统严格划分为维护者持有的**监督壳平面（Supervisor Plane）**与模型可演进的**双端 Cordis 应用平面（App Plane）**：
 
-```mermaid
-flowchart TB
-  subgraph Browser["浏览器（Browser）"]
-    Shell["SupervisorShell（#supervisor-root：对话 / 进度 / 预览横幅 / 乐观锁应用 / 撤回）"]
-    subgraph AppPlaneB["应用挂载根（#app-root：Browser Cordis Context + importmap 单例）"]
-      ClientBase["ClientCordisRuntime（SSE 快照幂等 Reconcile / Slot ErrorBoundary / StyleEffect）"]
-      ClientPlugins["插件前端：todo-core | inventory-core | 增量插件..."]
-      ClientBase --> ClientPlugins
-    end
-  end
-
-  subgraph Supervisor["服务端监督壳（Supervisor Plane · supervisor.db）"]
-    Gateway["HTTP 网关（/api/host/* 控制面 + /api/app/* 业务转发）"]
-    Evo["EvolutionLoop（5 工具闭环 + 有界预算）"]
-    Verify["Verifier（四道确定性门禁）"]
-    Release["CompositionRelease（不可变产物 / 乐观锁 apply / 保数据 rollback / 隔离预览）"]
-  end
-
-  subgraph Worker["常驻业务子进程（App Plane · app.db）"]
-    ServerBase["Server Cordis Context（[HOST_PLUGIN_ID] / ScopedDb / HttpRouter / Scheduler）"]
-    ServerPlugins["插件服务端：todo-core | inventory-core | 增量插件..."]
-    ServerBase --> ServerPlugins
-  end
-
-  Shell <-->|"/api/host/*"| Gateway
-  AppPlaneB <-->|"/api/app/* + SSE 快照"| Gateway
-  Gateway --> Release
-  Gateway --> Evo
-  Evo --> Verify
-  Release -->|"排空闸门 -> 进程内 Fiber 热插拔（失败自动重建）"| Worker
-```
+![Todo by Cordis 双平面架构图](docs/assets/architecture.svg)
 
 ---
 
