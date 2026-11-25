@@ -8,6 +8,11 @@ import { CompositionRelease } from "../../src/release/composition-release.js";
 import { EvolutionLoop } from "../../src/evolution/loop.js";
 import { startHostServer } from "../../src/supervisor/server/gateway.js";
 import { buildPluginPackage } from "../../src/build/plugin-builder.js";
+import {
+  assertRealModelScenarioPassed,
+  runAcceptanceScenario,
+  TODO_SIX_STEP_PROMPTS,
+} from "../../scripts/accept-real-model.js";
 import type { CompositionSnapshot } from "../../src/contracts/types.js";
 import {
   createStepStubDriver,
@@ -588,6 +593,137 @@ export default async function (ctx) {
 }
 `;
 
+// The incomplete fixture's own tests verify lowercase writes and omit deduplication.
+const TODO_TAG_UPGRADE_PLANS = [
+  {
+    prompt: "Step 1: 新增标签插件（自有表、接口与客户端标签展示编辑）",
+    stageArgs: {
+      upserts: [
+        {
+          pluginId: "todo-tags",
+          name: "Todo Tags",
+          dependencies: ["todo-core"],
+          contractTypes: "",
+          sourceFiles: {
+            "server.ts": TODO_TAGS_SERVER_V1,
+            "client.tsx": TODO_TAGS_CLIENT,
+          },
+          testFiles: {
+            "tags.contract.test.ts": TODO_TAGS_TEST_V1,
+          },
+        },
+      ],
+    },
+    summary: "Step 1: 新增标签插件",
+    highlights: ["自有表 plg_todo_tags__tags", "任务列表与详情支持标签展示与添加"],
+  },
+  {
+    prompt: "Step 2: 新增独立计数插件",
+    stageArgs: {
+      upserts: [
+        {
+          pluginId: "todo-counter",
+          name: "Todo Counter",
+          dependencies: ["todo-core"],
+          contractTypes: "",
+          sourceFiles: {
+            "server.ts": TODO_COUNTER_SERVER,
+            "client.tsx": TODO_COUNTER_CLIENT,
+          },
+          testFiles: {
+            "counter.contract.test.ts": TODO_COUNTER_TEST,
+          },
+        },
+      ],
+    },
+    summary: "Step 2: 新增独立计数插件",
+    highlights: ["展示总计/待办/已完成数量", "上游与标签插件版本锁定不动"],
+  },
+  {
+    prompt: "Step 3: 升级标签插件使新保存标签统一小写，保留历史大写标签",
+    stageArgs: {
+      upserts: [
+        {
+          pluginId: "todo-tags",
+          name: "Todo Tags",
+          dependencies: ["todo-core"],
+          contractTypes: "",
+          sourceFiles: {
+            "server.ts": TODO_TAGS_SERVER_V2,
+            "client.tsx": TODO_TAGS_CLIENT,
+          },
+          testFiles: {
+            "tags.contract.test.ts": TODO_TAGS_TEST_V2,
+          },
+        },
+      ],
+    },
+    summary: "Step 3: 标签新保存统一小写",
+    highlights: ["新标签统一小写", "历史大写标签保留可读"],
+  },
+] as const satisfies readonly EvolutionStepPlan[];
+
+const TODO_TAGS_SERVER_WITH_DEDUP = TODO_TAGS_SERVER_V2.replace(
+  "const createdAt = new Date().toISOString();",
+  `const existing = ctx.db.prepare(
+      "SELECT id FROM plg_todo_tags__tags WHERE task_id = ? AND lower(label) = ?"
+    ).get(body.taskId.trim(), label);
+    if (existing) return { status: 409, body: { error: "Tag already exists" } };
+    const createdAt = new Date().toISOString();`,
+);
+
+for (const complete of [false, true]) {
+  test(`independent Todo tag upgrade acceptance ${complete ? "passes with deduplication and rollback" : "blocks a preview-ready candidate without deduplication"}`, async () => {
+    test.setTimeout(180_000);
+    const dir = mkdtempSync(join(tmpdir(), "host-tag-upgrade-acceptance-"));
+    const [installTags, installCounter, upgradeTags] = TODO_TAG_UPGRADE_PLANS;
+    const plans: EvolutionStepPlan[] = [installTags, installCounter, upgradeTags];
+    if (complete) {
+      plans[2] = {
+        ...upgradeTags,
+        stageArgs: {
+          upserts: [{
+            pluginId: "todo-tags",
+            sourceFiles: { "server.ts": TODO_TAGS_SERVER_WITH_DEDUP },
+            testFiles: { "tags.contract.test.ts": TODO_TAGS_TEST_V2 },
+          }],
+        },
+      };
+    }
+    try {
+      const result = await runAcceptanceScenario({
+        scenario: "todo-six-step",
+        seedPluginDir: TODO_CORE_DIR,
+        prompts: TODO_SIX_STEP_PROMPTS.slice(0, complete ? 3 : 4),
+        outDir: dir,
+        driver: createStepStubDriver(plans, "tag-upgrade"),
+      });
+      expect(result.steps).toHaveLength(3);
+      const [ , baseline, upgrade] = result.steps;
+      expect(upgrade?.status).toBe("preview_ready");
+      const acceptance = upgrade?.independentAcceptance;
+      if (complete) {
+        if (acceptance?.status !== "passed") {
+          throw new Error(acceptance?.error ?? "Missing independent acceptance result");
+        }
+        expect(acceptance.rollbackCompositionId).toMatch(/^comp-rb-/);
+        expect(upgrade?.activeCompositionId).toBe(acceptance.resumedCompositionId);
+        expect(() => assertRealModelScenarioPassed({ ...result, expectedSteps: 3 })).not.toThrow();
+      } else {
+        expect(acceptance).toMatchObject({
+          status: "failed",
+          candidateId: expect.any(String),
+          error: expect.stringContaining("按大小写去重"),
+        });
+        expect(upgrade?.activeCompositionId).toBe(baseline?.activeCompositionId);
+        expect(() => assertRealModelScenarioPassed({ ...result, expectedSteps: 4 })).toThrow(/按大小写去重/);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
 test.describe("Six-Step Todo Self-Iteration Acceptance (Zero-Cost Stub + Real Chromium)", () => {
   test("runs full 0->5 six-step Todo evolution, restart recovery, and data-preserving rollback", async ({
     page,
@@ -634,72 +770,7 @@ test.describe("Six-Step Todo Self-Iteration Acceptance (Zero-Cost Stub + Real Ch
     await release.bootstrap({ composition: initComp, artifacts: [todoCoreV1] });
 
     const steps: readonly EvolutionStepPlan[] = [
-      {
-        prompt: "Step 1: 新增标签插件（自有表、接口与客户端标签展示编辑）",
-        stageArgs: {
-          upserts: [
-            {
-              pluginId: "todo-tags",
-              name: "Todo Tags",
-              dependencies: ["todo-core"],
-              contractTypes: "",
-              sourceFiles: {
-                "server.ts": TODO_TAGS_SERVER_V1,
-                "client.tsx": TODO_TAGS_CLIENT,
-              },
-              testFiles: {
-                "tags.contract.test.ts": TODO_TAGS_TEST_V1,
-              },
-            },
-          ],
-        },
-        summary: "Step 1: 新增标签插件",
-        highlights: ["自有表 plg_todo_tags__tags", "任务列表与详情支持标签展示与添加"],
-      },
-      {
-        prompt: "Step 2: 新增独立计数插件",
-        stageArgs: {
-          upserts: [
-            {
-              pluginId: "todo-counter",
-              name: "Todo Counter",
-              dependencies: ["todo-core"],
-              contractTypes: "",
-              sourceFiles: {
-                "server.ts": TODO_COUNTER_SERVER,
-                "client.tsx": TODO_COUNTER_CLIENT,
-              },
-              testFiles: {
-                "counter.contract.test.ts": TODO_COUNTER_TEST,
-              },
-            },
-          ],
-        },
-        summary: "Step 2: 新增独立计数插件",
-        highlights: ["展示总计/待办/已完成数量", "上游与标签插件版本锁定不动"],
-      },
-      {
-        prompt: "Step 3: 升级标签插件使新保存标签统一小写，保留历史大写标签",
-        stageArgs: {
-          upserts: [
-            {
-              pluginId: "todo-tags",
-              name: "Todo Tags",
-              dependencies: ["todo-core"],
-              contractTypes: "",
-              sourceFiles: {
-                "server.ts": TODO_TAGS_SERVER_V2,
-                "client.tsx": TODO_TAGS_CLIENT,
-              },
-              testFiles: {
-                "tags.contract.test.ts": TODO_TAGS_TEST_V2,
-              },
-            },
-          ],
-        },
-        summary: "Step 3: 标签新保存统一小写",
-        highlights: ["新标签统一小写", "历史大写标签保留可读"],
-      },
+      ...TODO_TAG_UPGRADE_PLANS,
       {
         prompt: "Step 4: 完成前必须填写复盘（同批开放 todo-core 双端 bail 接缝并新增复盘插件）",
         stageArgs: {

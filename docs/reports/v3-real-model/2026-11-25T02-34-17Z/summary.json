@@ -1,0 +1,107 @@
+{
+  "scenario": "todo-six-step",
+  "result": "passed",
+  "attempts": 1,
+  "exitCode": 0,
+  "startedAt": "2026-11-25T10:34:17+08:00",
+  "completedAt": "2026-11-25T10:44:38.288000+08:00",
+  "provider": "DeepSeek",
+  "models": [
+    "deepseek-flash"
+  ],
+  "source": {
+    "head": "02ea65c403e86306c7571a869762e4ebfd292984",
+    "testedUncommittedAcceptanceChanges": true,
+    "sha256": {
+      "scripts/accept-real-model.ts": "57eacb1dd74fc6d00cf32e55941b807c6687787912acaf9387708807de1ceff1",
+      "scripts/todo-tag-upgrade-acceptance.ts": "91ff208617faecbc05f927b568b36a64aa87f7bd103cddedd22445ecbcfb9234"
+    }
+  },
+  "limits": {
+    "maxCalls": 72,
+    "maxCostCny": 40
+  },
+  "usage": {
+    "calls": 36,
+    "promptTokens": 1190243,
+    "completionTokens": 137847,
+    "unknownUsageCalls": 0,
+    "estimatedCostCny": 6.966524
+  },
+  "costBasis": "验收脚本用量估算，单位为人民币",
+  "steps": [
+    {
+      "step": 1,
+      "status": "applied",
+      "runId": "evo-19ce8364",
+      "activeCompositionId": "cand-comp-fc665925",
+      "calls": 11,
+      "promptTokens": 410508,
+      "completionTokens": 35594,
+      "estimatedCostCny": 2.211536
+    },
+    {
+      "step": 2,
+      "status": "applied",
+      "runId": "evo-8c8ab44e",
+      "activeCompositionId": "cand-comp-4ef14d73",
+      "calls": 6,
+      "promptTokens": 186626,
+      "completionTokens": 22775,
+      "estimatedCostCny": 1.110904
+    },
+    {
+      "step": 3,
+      "status": "applied",
+      "runId": "evo-9300a5c5",
+      "activeCompositionId": "comp-rb-508f38e1",
+      "calls": 5,
+      "promptTokens": 138730,
+      "completionTokens": 20461,
+      "estimatedCostCny": 0.882296,
+      "independentAcceptance": {
+        "status": "passed",
+        "candidateId": "cand-a53ed189",
+        "appliedCompositionId": "cand-comp-2fdf46fa",
+        "rollbackCompositionId": "comp-rb-ed0c74c3",
+        "resumedCompositionId": "comp-rb-508f38e1",
+        "checked": [
+          "历史标签 URGENT 原样保留，ID 一致",
+          "Backend 写入为 backend，随后提交 BACKEND 未增加第二条标签",
+          "撤回后，旧版读取到 URGENT 和 backend，两条标签 ID 与写入时一致"
+        ],
+        "rollbackTargetCompositionId": "cand-comp-4ef14d73"
+      }
+    },
+    {
+      "step": 4,
+      "status": "applied",
+      "runId": "evo-8ba0cedb",
+      "activeCompositionId": "cand-comp-354e92b7",
+      "calls": 5,
+      "promptTokens": 249821,
+      "completionTokens": 54041,
+      "estimatedCostCny": 1.86394
+    },
+    {
+      "step": 5,
+      "status": "applied",
+      "runId": "evo-2b985856",
+      "activeCompositionId": "cand-comp-9f724a71",
+      "calls": 5,
+      "promptTokens": 127594,
+      "completionTokens": 2511,
+      "estimatedCostCny": 0.550552
+    },
+    {
+      "step": 6,
+      "status": "applied",
+      "runId": "evo-900fd780",
+      "activeCompositionId": "cand-comp-3b802e89",
+      "calls": 4,
+      "promptTokens": 76964,
+      "completionTokens": 2465,
+      "estimatedCostCny": 0.347296
+    }
+  ]
+}

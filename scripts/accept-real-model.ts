@@ -1,19 +1,30 @@
-import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { chromium } from "playwright";
+import { chromium, type Browser } from "playwright";
 import {
   createDeepSeekDriver,
   type DeepSeekCallRecord,
 } from "../src/evolution/model/deepseek.js";
-import type { ModelDriver } from "../src/evolution/loop.js";
-import { loadDotEnvIfPresent, startHostApp } from "../src/main.js";
+import type { EvolutionRunView, ModelDriver } from "../src/evolution/loop.js";
+import {
+  loadDotEnvIfPresent,
+  startHostApp,
+  type HostAppHandle,
+} from "../src/main.js";
+import {
+  acceptTodoTagUpgrade,
+  seedTodoTagUpgrade,
+} from "./todo-tag-upgrade-acceptance.js";
 
-export type RealModelScenario =
-  | "todo-six-step"
-  | "inventory-migration"
-  | "all";
+export type RealModelScenario = "todo-six-step" | "inventory-migration" | "all";
 
 export interface RealModelAcceptanceOptions {
   readonly authorizePaidRun: boolean;
@@ -52,10 +63,12 @@ export const REAL_MODEL_EVOLUTION_BUDGET = {
   activeMsLimit: 20 * 60_000,
 } as const;
 
+const TODO_TAG_UPGRADE_STEP = 3;
+
 export const TODO_SIX_STEP_PROMPTS: readonly string[] = [
-  "新增一个 todo-tags 标签插件：为任务提供自有标签表、标签增删查接口，以及在任务行展示标签和编辑标签的界面。",
+  "新增一个 todo-tags 标签插件：为任务提供自有标签表、标签增删查接口，以及在任务行展示标签和编辑标签的界面。旧版应原样保存标签大小写。请提供稳定接口：POST /api/app/todo-tags/tags 接收 { taskId, label }，GET /api/app/todo-tags/tags?taskId=... 返回 { tags: [{ id, label }] }。",
   "新增一个 todo-counter 计数插件，在页面顶部状态插槽展示当前未完成与已完成任务数量，不要修改 todo-core 与 todo-tags。",
-  "升级 todo-tags 插件：新保存的标签自动标准化为小写并去重，同时保留历史标签数据原样可读，并同步更新 todo-tags 测试。",
+  "升级 todo-tags 插件：新保存的标签自动标准化为小写并去重，同时保留历史标签的 id 和原始大小写，并同步更新 todo-tags 测试。保持原有标签 HTTP 接口，重复提交可幂等成功或返回 HTTP 409。",
   "新增一个 todo-review 复盘插件：完成任务前必须填写复盘总结，通过为 todo-core 开放通用双端拦截接缝并在 todo-review 中弹窗收集与服务端强校验实现，不得把复盘逻辑写进 todo-core。",
   "停用 todo-tags 插件（零业务代码变更），确认计数与复盘功能继续正常运行且历史标签数据未丢失。",
   "重新启用 todo-tags 插件（零业务代码变更），确认标签界面、功能与历史标签数据完整恢复。",
@@ -182,64 +195,88 @@ export function createBudgetGuardedDriver(
   };
 }
 
-async function runScenario(
-  scenarioName: "todo-six-step" | "inventory-migration",
+type TagUpgradeAcceptance =
+  | Awaited<ReturnType<typeof acceptTodoTagUpgrade>>
+  | {
+      readonly status: "failed";
+      readonly candidateId: string | null;
+      readonly error: string;
+    };
+
+interface ScenarioStep {
+  readonly step: number;
+  readonly prompt: string;
+  readonly runId?: string;
+  readonly status: string;
+  readonly highlights?: readonly string[];
+  readonly changeBrief?: unknown;
+  readonly budget?: unknown;
+  readonly error?: string | null;
+  readonly events?: readonly unknown[];
+  readonly screenshotPath: string;
+  readonly activeCompositionId?: string;
+  readonly independentAcceptance?: TagUpgradeAcceptance;
+}
+
+interface ScenarioResult {
+  readonly scenario: Exclude<RealModelScenario, "all">;
+  readonly seedPluginDir: string;
+  readonly steps: readonly ScenarioStep[];
+}
+
+async function runPaidScenario(
+  scenario: ScenarioResult["scenario"],
   seedPluginDir: string,
   prompts: readonly string[],
   options: RealModelAcceptanceOptions,
   accounting: UsageAccounting,
-): Promise<{
-  readonly scenario: string;
-  readonly seedPluginDir: string;
-  readonly steps: Array<{
-    readonly step: number;
-    readonly prompt: string;
-    readonly status: string;
-    readonly screenshotPath: string;
-    readonly activeCompositionId?: string;
-  }>;
-}> {
-  const scenarioDir = join(options.outDir, scenarioName);
-  mkdirSync(scenarioDir, { recursive: true });
-  const callsLogPath = join(scenarioDir, "calls.jsonl");
-  const dataDir = join(tmpdir(), `host-real-model-${scenarioName}-${Date.now()}`);
-
+): Promise<ScenarioResult> {
+  const callsLogPath = join(options.outDir, scenario, "calls.jsonl");
   const rawDriver = createDeepSeekDriver({
     apiKey: options.apiKey!,
     onRecord: (record: DeepSeekCallRecord) => {
       appendFileSync(callsLogPath, `${JSON.stringify(record)}\n`, "utf8");
     },
   });
-  const guardedDriver = createBudgetGuardedDriver(
-    rawDriver,
-    { maxCalls: options.maxCalls, maxCostCny: options.maxCostCny },
-    accounting,
-  );
-
-  const app = await startHostApp({
-    dataDir,
+  const driver = createBudgetGuardedDriver(rawDriver, options, accounting);
+  return await runAcceptanceScenario({
+    scenario,
     seedPluginDir,
-    port: 0,
-    driver: guardedDriver,
-    defaultBudget: REAL_MODEL_EVOLUTION_BUDGET,
+    prompts,
+    outDir: options.outDir,
+    driver,
   });
+}
 
-  const browser = await chromium.launch({ headless: true });
-  const steps: Array<{
-    readonly step: number;
-    readonly prompt: string;
-    readonly runId: string;
-    readonly status: string;
-    readonly highlights?: readonly string[];
-    readonly changeBrief?: unknown;
-    readonly budget: unknown;
-    readonly error?: string | null;
-    readonly events: readonly unknown[];
-    readonly screenshotPath: string;
-    readonly activeCompositionId?: string;
-  }> = [];
+export async function runAcceptanceScenario({
+  scenario,
+  seedPluginDir,
+  prompts,
+  outDir,
+  driver,
+}: {
+  readonly scenario: ScenarioResult["scenario"];
+  readonly seedPluginDir: string;
+  readonly prompts: readonly string[];
+  readonly outDir: string;
+  readonly driver: ModelDriver;
+}): Promise<ScenarioResult> {
+  const scenarioDir = join(outDir, scenario);
+  mkdirSync(scenarioDir, { recursive: true });
+  const dataDir = mkdtempSync(join(tmpdir(), `host-real-model-${scenario}-`));
+  const steps: ScenarioStep[] = [];
+  let app: HostAppHandle | undefined;
+  let browser: Browser | undefined;
 
   try {
+    app = await startHostApp({
+      dataDir,
+      seedPluginDir,
+      port: 0,
+      driver,
+      defaultBudget: REAL_MODEL_EVOLUTION_BUDGET,
+    });
+    browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
     await page.goto(app.url, { waitUntil: "networkidle" });
     await page.screenshot({
@@ -249,41 +286,71 @@ async function runScenario(
 
     for (let i = 0; i < prompts.length; i += 1) {
       const prompt = prompts[i]!;
-      const started = await app.evolution.startRun(prompt);
-      const run = await app.evolution.waitForRun(started.runId);
-      if (run.status === "preview_ready") {
-        await app.evolution.applyRun(run.runId);
+      const step = i + 1;
+      const isTagUpgrade =
+        scenario === "todo-six-step" && step === TODO_TAG_UPGRADE_STEP;
+      let run: EvolutionRunView | undefined;
+      let independentAcceptance: TagUpgradeAcceptance | undefined;
+
+      try {
+        const fixture = isTagUpgrade
+          ? await seedTodoTagUpgrade(page.request, app.url)
+          : undefined;
+        const started = await app.evolution.startRun(prompt);
+        run = await app.evolution.waitForRun(started.runId);
+        if (run.status === "preview_ready") {
+          if (fixture) {
+            independentAcceptance = await acceptTodoTagUpgrade(
+              app,
+              page.request,
+              run,
+              fixture,
+            );
+          } else {
+            await app.evolution.applyRun(run.runId);
+          }
+        }
+      } catch (error) {
+        if (!isTagUpgrade) throw error;
+        independentAcceptance = {
+          status: "failed",
+          candidateId: run?.candidateId ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
+
       await page.reload({ waitUntil: "networkidle" });
-      const screenshotPath = join(scenarioDir, `step-${i + 1}.png`);
+      const screenshotPath = join(scenarioDir, `step-${step}.png`);
       await page.screenshot({ path: screenshotPath, fullPage: true });
       steps.push({
-        step: i + 1,
+        step,
         prompt,
-        runId: run.runId,
-        status: run.status,
-        ...(run.highlights !== undefined ? { highlights: run.highlights } : {}),
-        ...(run.changeBrief !== undefined
-          ? { changeBrief: run.changeBrief }
-          : {}),
-        budget: run.budget,
-        ...(run.error !== undefined ? { error: run.error } : {}),
-        events: run.events,
+        runId: run?.runId,
+        status: run?.status ?? "not_started",
+        highlights: run?.highlights,
+        changeBrief: run?.changeBrief,
+        budget: run?.budget,
+        error: run?.error,
+        events: run?.events,
         screenshotPath,
         activeCompositionId:
           app.release.getStatus().activeComposition?.compositionId,
+        independentAcceptance,
       });
-      if (run.status !== "preview_ready") {
+      if (
+        run?.status !== "preview_ready" ||
+        independentAcceptance?.status === "failed"
+      ) {
         break;
       }
     }
   } finally {
-    await browser.close();
-    await app.close();
+    await browser?.close();
+    await app?.close();
     rmSync(dataDir, { recursive: true, force: true });
   }
 
-  return { scenario: scenarioName, seedPluginDir, steps };
+  return { scenario, seedPluginDir, steps };
 }
 
 export function assertRealModelScenarioPassed(result: {
@@ -293,9 +360,17 @@ export function assertRealModelScenarioPassed(result: {
     readonly status: string;
     readonly prompt: string;
     readonly error?: string | null;
+    readonly independentAcceptance?: TagUpgradeAcceptance;
   }>;
   readonly expectedSteps: number;
 }): void {
+  for (const step of result.steps) {
+    if (step.independentAcceptance?.status === "failed") {
+      throw new Error(
+        `Real-model scenario ${result.scenario} step ${step.step} failed independent acceptance: ${step.independentAcceptance.error}`,
+      );
+    }
+  }
   if (result.steps.length < result.expectedSteps) {
     const last = result.steps[result.steps.length - 1];
     throw new Error(
@@ -311,6 +386,14 @@ export function assertRealModelScenarioPassed(result: {
         `Real-model scenario ${result.scenario} step ${step.step} did not reach preview_ready (status=${step.status}${step.error ? `, error=${step.error}` : ""})`,
       );
     }
+  }
+  if (
+    result.scenario === "todo-six-step" &&
+    result.expectedSteps >= TODO_TAG_UPGRADE_STEP &&
+    result.steps.find((step) => step.step === TODO_TAG_UPGRADE_STEP)
+      ?.independentAcceptance?.status !== "passed"
+  ) {
+    throw new Error("Todo tag upgrade did not pass independent acceptance");
   }
 }
 
@@ -331,21 +414,10 @@ export async function runRealModelAcceptance(
     estimatedCostCny: 0,
   };
 
-  const results: Array<{
-    readonly scenario: string;
-    readonly seedPluginDir: string;
-    readonly steps: Array<{
-      readonly step: number;
-      readonly prompt: string;
-      readonly status: string;
-      readonly screenshotPath: string;
-      readonly activeCompositionId?: string;
-      readonly error?: string | null;
-    }>;
-  }> = [];
+  const results: ScenarioResult[] = [];
   if (options.scenario === "todo-six-step" || options.scenario === "all") {
     results.push(
-      await runScenario(
+      await runPaidScenario(
         "todo-six-step",
         resolve("plugins/todo-core"),
         TODO_SIX_STEP_PROMPTS,
@@ -355,11 +427,16 @@ export async function runRealModelAcceptance(
     );
   }
   if (
-    options.scenario === "inventory-migration" ||
-    options.scenario === "all"
+    (options.scenario === "inventory-migration" ||
+      options.scenario === "all") &&
+    !results.some((result) =>
+      result.steps.some(
+        (step) => step.independentAcceptance?.status === "failed",
+      ),
+    )
   ) {
     results.push(
-      await runScenario(
+      await runPaidScenario(
         "inventory-migration",
         resolve("plugins/inventory-core"),
         INVENTORY_MIGRATION_PROMPTS,
